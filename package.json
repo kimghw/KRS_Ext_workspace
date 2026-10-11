@@ -7,7 +7,8 @@
     "gen": "node tools/refdata.mjs gen",
     "check": "node tools/refdata.mjs check",
     "refdata": "node tools/refdata.mjs",
-    "rndskills": "node tools/rndskills.mjs"
+    "rndskills": "node tools/rndskills.mjs",
+    "rerp": "node tools/rerp.mjs"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",

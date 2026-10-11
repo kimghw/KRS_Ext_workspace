@@ -6,6 +6,8 @@
   <meta name="color-scheme" content="light dark" />
   <title>KRS WORKSPACE</title>
   <link rel="stylesheet" href="sidepanel.css" />
+  <!-- R&D 탭의 rERP 집행내역·예상 비용 표 — kr_ext_rerp 에서 옮긴 모양(rerp/plan.css, 클래스 krext-*). 어두운 화면 덮어쓰기는 sidepanel.css 의 .rd-erp 절. -->
+  <link rel="stylesheet" href="rerp/plan.css" />
 </head>
 <body>
   <main class="app">
@@ -118,6 +120,28 @@
         <span class="gm-projbar-caption"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="gm-projbar-label">연결 과제</span></span>
         <div id="gmPick" class="gm-pick-row" role="radiogroup" aria-label="연결 과제"></div>
       </div>
+      <!-- 에이전트 — 공문 검색(2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 '에이전트' 하나 추가해서 공문검색할 수 있는 기능 추가해줘, 받은공문, 보낸 공문").
+           갈래 줄의 '에이전트'를 누르면 작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨고 이 카드만 선다(sidepanel.css 의 .gongmun.agent).
+           말로 적으면(예: 지난달 받은 출장 공문) 방향(받은 — 결재함 · 보낸 — 기안함)·기간·찾을 말로 풀어(src/gmsearch.js, 규칙 풀이 — Claude 를 부르지 않는다)
+           전자결재 문서함을 제목 검색으로 읽고(src/gmlist.js) 공문 이력과 같은 카드로 보인다. 받은 공문·보낸 공문과 기간은 단추로도 고른다.
+           찾은 것은 이 브라우저(chrome.storage 의 gongmunSearch)에 남아 다시 열어도 바로 보인다. gongmunpanel.js 가 그린다. -->
+      <div id="gmSearch" class="gm-search card" hidden>
+        <div class="gm-chat gm-agent">
+          <div class="ask-bar">
+            <span class="sparkle-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/><path d="m20 2 .7 1.3L22 4l-1.3.7L20 6l-.7-1.3L18 4l1.3-.7L20 2Z"/></svg></span>
+            <input type="text" id="gmSearchText" aria-label="에이전트에게 — 찾을 공문" title="받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다. 예) 지난달 받은 출장 공문 · 올해 보낸 구매 품의 · 2025년 9월 참조 · 세미나" placeholder="에이전트에게 — 예) 지난달 받은 출장 공문" autocomplete="off" spellcheck="false" />
+            <button id="gmSearchGo" class="primary" aria-label="공문 찾기">찾기 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+          </div>
+        </div>
+        <div class="gm-search-tools">
+          <!-- 받은 공문·보낸 공문, 기간(3개월·올해·1y·2y — 말로 적은 기간이면 그 말이 선다). gongmunpanel.js 가 그린다. -->
+          <div id="gmSearchDir" class="gm-hist-span" role="radiogroup" aria-label="받은 공문 · 보낸 공문"></div>
+          <div id="gmSearchSpan" class="gm-hist-span" role="radiogroup" aria-label="보는 기간"></div>
+        </div>
+        <p id="gmSearchState" class="gm-search-state" role="status" aria-live="polite"></p>
+        <p id="gmSearchNote" class="gm-hist-note"></p>
+        <ul id="gmSearchList" class="gm-hist-list"></ul>
+      </div>
       <!-- 문서 넣는 곳 — 세 갈래가 같다. 캡처해 붙여 넣거나(Ctrl+V) 끌어다 놓거나 눌러서 고른다 — 탭 어디에 놓아도 여기로 온다. 글을 붙여 넣어도 읽는다.
            상자 안의 말은 머리말(gmDropLead)과 안내 한 줄뿐이다(2026-10-08 사용자 지정: "중간에 3줄이나 있는 건 모두 삭제하고 드래그, 붙여넣기, 캡처하기 가능 정도 짧게"). -->
       <div id="gmEvidence" class="gm-evidence card">
@@ -170,6 +194,9 @@
             <!-- 고른 과제의 기본 내용(별명·번호·연구기간·연구 내용) — 제목·과제 개요에 들어가고, 연구 내용은 사유의 근거다. -->
             <p id="gmProjInfo" class="gm-proj-info hidden"></p>
             <div id="gmFields" class="gm-fields"></div>
+            <!-- 외부활동의 사례비 누계(2026-10-11 사용자 지정: "지금까지 받은 금액 … 추가로 받는 금액 … 합계를 여기서") — 지금까지 받은 금액(eclass 에서 읽은 올해
+                 외부강의등 신고서의 당해 연도 사례금 누적 합계) + 이번 사례비(읽은 칸의 사례비) = 합계. 이력은 아래 공문 이력 칸(gmHistBox, src/gmlist.js). -->
+            <div id="gmFeeSum" class="gm-proj-info gm-fee-sum hidden" role="status"></div>
             <!-- 에이전트 — 고른 과제의 연구 내용을 보고 용도·사유를 쓰고, 여기 적은 말대로 고쳐 쓴다(src/llm.js 의 gongmunReasonSmart). -->
             <div id="gmAgent" class="gm-chat gm-agent">
               <div class="ask-bar">
@@ -233,6 +260,26 @@
           </div>
         </div>
       </div>
+      <!-- 공문 이력 — 근태의 신청 내역처럼 eclass 기안함(완료함·상신함·반려함·임시보관함)에서 내가 기안한 공문을 읽어 카드로 보인다(2026-10-11 사용자 지정:
+           "출장·근태 이력처럼 공문 이력을 … 시스템이 공문을 검색해서 읽어 와야지"). 고른 갈래의 것만 보이고 '전체'로 모두 본다. 외부강의등 신고서(외부활동)는
+           본문까지 읽어 사례금·당해 연도 누적 합계를 보이고, 작성 내용 탭의 사례비 누계가 그것을 쓴다. 읽은 것은 이 브라우저(chrome.storage 의 gongmunHist)에
+           두어 다시 열어도 바로 보인다 — src/gmlist.js. -->
+      <details id="gmHistBox" class="gm-box card">
+        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11l5 5v9a2 2 0 0 1-2 2H4z"/><path d="M15 5v5h5M8 13h8M8 17h5"/></svg><span>공문 이력</span><span id="gmHistState" class="summary-detail"></span></summary>
+        <div class="gm-box-body">
+          <div class="gm-hist-head">
+            <span id="gmHistRange" class="gm-hist-range"></span>
+            <div class="gm-hist-tools">
+              <!-- 기간 — 기본은 최근 3개월(기안일 기준 — 진행 중·예정인 것 포함), 올해, 1y·2y 는 그만큼 앞 해의 1월 1일부터(2026-10-12 사용자 지정). gongmunpanel.js 가 그린다. -->
+              <div id="gmHistSpan" class="gm-hist-span" role="radiogroup" aria-label="보는 기간"></div>
+              <button type="button" id="gmHistAll" class="ghost small" aria-pressed="false" title="고른 갈래만이 아니라 기안한 모든 공문을 봅니다">전체</button>
+              <button type="button" id="gmHistRefresh" class="ghost small" title="eclass 기안함을 다시 읽습니다">새로고침</button>
+            </div>
+          </div>
+          <p id="gmHistNote" class="gm-hist-note"></p>
+          <ul id="gmHistList" class="gm-hist-list"></ul>
+        </div>
+      </details>
       <!-- 양식 — 갈래마다 eclass 양식·제목 틀·본문 틀을 보고 고친다(2026-10-07 사용자 지정). 고친 것만 저장하고, 기본 양식으로 되돌릴 수 있다. -->
       <details id="gmTplBox" class="gm-box card">
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span>양식</span><span id="gmTplState" class="summary-detail">기본 양식</span></summary>
@@ -288,7 +335,7 @@
         </div>
       </div>
       <!-- 고른 과제의 머리 — 별칭 한 줄(예산 칸처럼 접혀 있고, 펴면 과제명·과제번호·책임자·연구기간·비고와 과제 고치기)
-           · 별칭이 없으면 그 자리에서 정하는 칸 · 차년도 칩(오늘이 든 차년도에 올해 표시). -->
+           · 별칭이 없으면 그 자리에서 정하는 칸 · 차년도 칩(오늘이 든 차년도에 올해 표시 — 예산 정보가 없는 차년도는 회색 점선. 누르면 넘어가되 아래 기록 칸 대신 rdYearEmpty 카드와 R&D 설정이 선다). -->
       <div id="rdHead" class="rd-head card hidden">
         <details id="rdInfo" class="rd-info">
           <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span id="rdName"></span><span class="summary-detail">과제 정보</span></summary>
@@ -326,17 +373,53 @@
         </div>
       </div>
       <div class="statusline"><span id="rdStatus" class="status" role="status" aria-live="polite"></span></div>
-      <!-- 칸마다 한 줄(아이콘 · 이름 · 형편 · 꺾쇠)로 접고 편다. 복사는 칸 안 오른쪽 위의 복사 아이콘. -->
+      <!-- 예산 정보가 없는 차년도를 보고 있을 때(2026-10-11 사용자 지정 — "비활성 차년도면 이전 차년도 기록을 보여주지 말고 R&D 설정을 열어서") —
+           지난 차년도의 기록 칸들(rdBody) 대신 이 까닭 카드가 서고 바로 아래 R&D 설정(rdSetBox)이 저절로 펴진다(rndpanel.js paintHead·openSetFor). 글은 rndpanel.js 가 채운다. -->
+      <div id="rdYearEmpty" class="rd-empty card hidden"></div>
+      <!-- 칸마다 한 줄(아이콘 · 이름 · 형편 · 꺾쇠)로 접고 편다. 복사는 칸 안 오른쪽 위의 복사 아이콘. 예산 정보가 없는 차년도를 볼 때는 통째로 숨는다. -->
       <div id="rdBody" class="hidden">
         <!-- 예산 — 비목마다 계획·집행·잔액. 계획을 고치면 변경이력에 저절로 남는다(src/rnd.js 의 budgetChanges). -->
         <details id="rdBudgetBox" class="rd-box card" open>
           <summary><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></svg><span>예산</span><span id="rdBudgetState" class="summary-detail"></span></summary>
           <div class="rd-box-body">
-            <div class="rd-box-tools"><button type="button" id="rdBudgetCopy" class="rd-icon" title="예산 표 복사 — 비목별 계획·집행·잔액·집행률과 합계를 탭으로 나눈 표로(엑셀·한글 표에 그대로 붙습니다)" aria-label="예산 표 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button></div>
-            <div class="rd-bhead" aria-hidden="true"><span>비목</span><span>계획(원)</span><span>집행(원)</span><span>잔액</span><span></span></div>
-            <div id="rdBudget" class="rd-budget" role="table" aria-label="비목별 예산"></div>
+            <!-- 맨 위 한 줄(2026-10-11 사용자 지정 — R&D 설정에서 예산 칸 위로): 집행 칸에 승인액 말고 무엇을 더할지 왼쪽에, 복사 아이콘 오른쪽에.
+                 미청구는 연구활동비 줄에(2026-10-12 사용자 지정 — 과제카드 청구는 연구활동비. src/rnderp.js UNBILLED_ITEM. 그 줄이 rERP 와 맞춰져 있지 않으면 합계 위 보조 줄로). 사용계획 = 예상 비용.
+                 승인전(청구했지만 결재 전) 체크는 2026-10-11 사용자 지정으로 뺐다 — 집행에 더하지 않는다. rERP 집행내역을 끄면(R&D 설정) 이 줄은 숨는다. -->
+            <div class="rd-box-tools">
+              <!-- 체크 상자 자체가 줄 아래 막대의 색(2026-10-11 사용자 지정 — 미청구·사용계획은 다른 색, 따로 색 점은 두지 않는다 — "체크 박스 자체에 색상을"): 보라 미청구 · 주황 사용계획(rd-tint, accent-color). 파랑은 승인액. -->
+              <div id="rdIncRow" class="rd-inc" title="비목별 집행 칸은 rERP 승인액입니다. 여기서 고른 것을 더합니다 — 미청구: 이 과제 카드로 썼지만 청구 전인 금액(연구활동비 줄에 — 그 줄이 없으면 합계 위에 한 줄) · 사용계획: rERP 집행내역의 ＋ 로 적은 예상 비용. 줄 아래 막대는 파랑 승인액 · 주황 사용계획 · 보라 미청구, 계획을 넘는 몫은 빨강">
+                <span>집행에 더하기</span>
+                <label><input type="checkbox" id="rdIncUnbilled" class="rd-tint unbilled" />미청구</label>
+                <label><input type="checkbox" id="rdIncPlan" class="rd-tint plan" />사용계획(예상 비용)</label>
+              </div>
+              <button type="button" id="rdBudgetCopy" class="rd-icon" title="예산 표 복사 — 비목별 계획·집행·잔액·집행률과 합계를 탭으로 나눈 표로(엑셀·한글 표에 그대로 붙습니다)" aria-label="예산 표 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button>
+            </div>
+            <!-- 금액은 천원 단위(2026-10-11 사용자 지정 — 연구개발계획서의 단위). 저장은 원이고, 숫자만 적으면 천원, 만·억·원을 붙이면 그 단위다(src/rnd.js amountOfThousand). -->
+            <div class="rd-bhead" aria-hidden="true"><span>비목</span><span>계획(천원)</span><span>집행(천원)</span><span>잔액</span><span></span></div>
+            <div id="rdBudget" class="rd-budget" role="table" aria-label="비목별 예산(천원)"></div>
             <div id="rdBudgetSum" class="rd-bsum"></div>
-            <div class="rd-actions"><button type="button" id="rdBudgetAdd" class="ghost small">비목 더하기</button></div>
+            <!-- 비목 더하기 단추는 2026-10-11 사용자 지정으로 뺐다 — 비목은 연구개발계획서 YAML(여섯 비목)에서 오고, 줄의 × 로만 뺀다. -->
+            <!-- rERP 집행내역(2026-10-11 사용자 지정) — kr_ext_rerp 의 과제집행비율 표(rerp/planui.js budgetTable: 비목별 예산·예산잔액·집행비율 + 예상 비용(＋) + 미청구·승인전 + 합계)를 그대로.
+                 비목별 예상 반영 줄은 항목 줄보다 먼저 비목 줄 바로 아래(rerp 원본대로)이고, 비목 이름을 앞에 붙이는 것만 이 패널의 것(rndpanel.js namePlanRows — 2026-10-11 사용자 지정).
+                 이 차년도를 rERP 과제에 이어 두면(src/rnderp.js — 과제번호로 저절로, 못 찾으면 목록에서 고름) 받아서 그리고, 맞춰진 비목의 집행 칸은 rERP 승인액이 된다. 금액은 rERP 그대로 원.
+                 기본은 접힌 한 줄(2026-10-11 사용자 지정 — 제목 · 이은 과제와 조회 시각 · 꺾쇠). 펴면 머리 줄(이은 과제 · ↻ · 잇기/끊기) · 고르기 · 표. -->
+            <details id="rdErp" class="rd-erp">
+              <summary><span class="rd-erp-title">rERP 집행내역 <small>(원)</small></span><span id="rdErpState" class="summary-detail"></span></summary>
+              <div class="rd-erp-head">
+                <span id="rdErpInfo" class="rd-erp-info"></span>
+                <span class="rd-erp-tools">
+                  <button type="button" id="rdErpRefresh" class="rd-icon" title="rERP 에서 지금 다시 받기 (열 때와 10분마다 저절로 받습니다)" aria-label="rERP 에서 다시 받기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button>
+                  <button type="button" id="rdErpLink" class="ghost small" title="이 차년도를 rERP 과제에 잇습니다 — 과제번호(없으면 과제명)로 찾고, 못 찾으면 진행 과제 목록에서 고릅니다">rERP 과제 잇기</button>
+                  <button type="button" id="rdErpUnlink" class="ghost small hidden" title="이 차년도와 rERP 과제의 연결을 끊습니다 — 집행 칸은 다시 손으로 적습니다">끊기</button>
+                </span>
+              </div>
+              <div id="rdErpPick" class="rd-erp-pick hidden">
+                <select id="rdErpSelect" aria-label="rERP 과제 고르기"></select>
+                <button type="button" id="rdErpPickOk" class="primary small">잇기</button>
+              </div>
+              <p id="rdErpMsg" class="rd-note-msg" role="status"></p>
+              <div id="rdErpTable" class="rd-erp-table"></div>
+            </details>
           </div>
         </details>
         <!-- 참여연구자 — 연구개발계획서(YAML)에서 온 그 차년도의 참여연구자 표. 계획서를 다시 넣으면 바뀐다(src/rndyaml.js). -->
@@ -374,8 +457,8 @@
             <ul id="rdLogs" class="rd-list"></ul>
           </div>
         </details>
-        <!-- 변경이력 — 날짜·구분·항목·변경 전·후·사유. 저절로 남은 줄(auto)은 사유만 적는다. -->
-        <details id="rdChangeBox" class="rd-box card" open>
+        <!-- 변경이력 — 날짜·구분·항목·변경 전·후·사유. 저절로 남은 줄(auto)은 사유만 적는다. 처음엔 접혀 있다(2026-10-11 사용자 지정 — 건수·사유 없음 n 은 머리 줄에). -->
+        <details id="rdChangeBox" class="rd-box card">
           <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg><span>변경이력</span><span id="rdChangeState" class="summary-detail"></span></summary>
           <div class="rd-box-body">
             <div class="rd-new" aria-label="변경이력 적기">
@@ -407,8 +490,23 @@
           <button type="button" id="rdImportGm" class="ghost small" title="공문 탭 공문 설정의 과제(과제명·별명·과제번호·책임자·연구기간)를 가져옵니다. 이미 있는 과제는 빈 칸만 채웁니다.">공문 탭의 과제 가져오기</button>
         </div>
       </div>
-      <!-- 원노트 공유(선택, 2026-10-08 사용자 지정) — 과제 정보(별칭·과제명·과제번호·책임자·연구기간·비고)만 원노트의 한 페이지에 두고 다른 기기와 맞춘다.
-           이 PC 의 KR_MS365_mcp onenote 서버(localhost:5005)에 기댄다. 꺼 두면 아무 데도 닿지 않는다. src/rndnote.js. 과제가 없어도 보인다(새 기기에서 받아 오려고). -->
+      <!-- R&D 설정(2026-10-11 사용자 지정 — 공문 탭의 공문 설정과 같은 카드 한 줄: 아이콘 · 굵은 이름 · 오른쪽 끝에 형편 · 화살표): rERP 집행내역 켜기/끄기 · 원노트 공유 · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬.
+           과제가 없어도 보인다(새 기기에서 원노트로 받아 오거나 YAML 을 넣으려고). 켜고 끈 것은 chrome.storage 의 rndSettings 에 남는다.
+           예산 정보가 없는 차년도로 넘어가면 저절로 펴진다(위 rdYearEmpty 카드 바로 아래 — 기록 칸이 숨어서) — rndpanel.js openSetFor. -->
+      <details id="rdSetBox" class="rd-set rd-box card">
+        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface)"/><circle cx="15" cy="17" r="3" fill="var(--surface)"/></svg><span>R&amp;D 설정</span><span id="rdSetState" class="summary-detail"></span></summary>
+        <div class="rd-set-body">
+          <!-- rERP 집행내역 — 끄면 예산 칸 아래의 rERP 칸이 숨고 rERP 를 부르지 않으며, 집행 칸은 다시 손으로 적는다(이어 둔 과제·스냅샷은 남아 켜면 돌아온다). -->
+          <label class="rd-check rd-set-check" title="예산 칸 아래에 R&D ERP 자금현황의 비목별 예산잔액·집행비율과 예상 비용(kr_ext_rerp 와 같은 표)을 보입니다. 끄면 rERP 를 부르지 않고 집행 칸은 손으로 적습니다."><input type="checkbox" id="rdErpOn" checked /><span>예산 칸에 <strong>rERP 집행내역</strong> 보이기 — R&amp;D ERP 자금현황의 비목별 잔액·집행비율과 예상 비용</span></label>
+          <!-- 예산 칸에 보일 비목(2026-10-11 사용자 지정 — "R&D 설정에서 어떤 항목을 볼지 고르게") — 계획서의 여섯 비목과 장부에 있는 다른 비목이 체크로 늘어선다(rndpanel.js paintItems).
+               끈 비목은 예산 칸의 줄에서만 숨고 합계·표 복사·요약·rERP 표에는 그대로 든다(숨긴 것이 있으면 합계 위에 한 줄로 알린다). 모든 과제에 같이 적용되고 chrome.storage 의 rndSettings.hide 에 남는다. -->
+          <div id="rdItemBox" class="rd-set-items" title="끈 비목은 예산 칸의 줄에서만 숨습니다 — 합계·표 복사·요약에는 그대로 듭니다. 모든 과제에 같이 적용됩니다.">
+            <span class="rd-set-items-title">예산 칸에 보일 비목</span>
+            <div id="rdItems" class="rd-set-items-list" role="group" aria-label="예산 칸에 보일 비목"></div>
+          </div>
+          <!-- 집행에 더하기(승인전·미청구·사용계획) 체크는 예산 칸 맨 위 줄(rdIncRow)로 옮겼다 — 2026-10-11 사용자 지정. -->
+          <!-- 원노트 공유(선택, 2026-10-08 사용자 지정) — 과제 정보(별칭·과제명·과제번호·책임자·연구기간·비고)만 원노트의 한 페이지에 두고 다른 기기와 맞춘다.
+               이 PC 의 KR_MS365_mcp onenote 서버(localhost:5005)에 기댄다. 꺼 두면 아무 데도 닿지 않는다. src/rndnote.js. -->
       <details id="rdNoteBox" class="rd-box card">
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6z"/><path d="M6 3v18M3.5 7.5h5M3.5 12h5M3.5 16.5h5"/></svg><span>원노트 공유</span><span id="rdNoteState" class="summary-detail">꺼짐</span></summary>
         <div class="rd-box-body">
@@ -418,11 +516,20 @@
             <select id="rdNoteSection" aria-label="원노트 섹션"><option value="">섹션 — 불러오기를 누르세요</option></select>
             <button type="button" id="rdNoteSections" class="ghost small">섹션 불러오기</button>
           </div>
+          <p id="rdNoteMsg" class="rd-note-msg" role="status"></p>
+          <!-- 예상 비용 공유(2026-10-11 사용자 지정) — rERP 집행내역의 ＋ 로 적은 예상 비용을 과제별 원노트 페이지 「[예상 비용] 과제번호 과제명」(섹션 RERP)으로 같은 과제 사람들과 나눈다.
+               kr_ext_rerp 확장 Plus 와 같은 섹션·같은 페이지·같은 병합(rerp/plussync.js · rerp/plansync.js)이라 eClass 홈의 rerp 패널에서 적은 것이 여기에 그대로 온다. 페이지는 과제 책임자만 만든다. -->
+          <label class="rd-check"><input type="checkbox" id="rdPlusOn" /><span><strong>예상 비용</strong>을 과제별 원노트 페이지에서 받아 보기 — kr_ext_rerp 확장(eClass 홈)에서 적은 예상 비용이 같은 섹션(RERP)·같은 페이지로 옵니다. 여기서는 보기만 하고, 적고 고치고 페이지를 만드는 것은 rerp 확장에서</span></label>
+          <div id="rdPlusRow" class="rd-note-row hidden">
+            <input type="text" id="rdPlusSection" value="RERP" aria-label="예상 비용 섹션 이름" placeholder="섹션 이름 — RERP" autocomplete="off" spellcheck="false" />
+            <select id="rdPlusNotebook" class="hidden" aria-label="섹션을 둘 노트북"></select>
+            <button type="button" id="rdPlusFind" class="ghost small">섹션 찾기/만들기</button>
+          </div>
+          <p id="rdPlusMsg" class="rd-note-msg" role="status"></p>
           <div class="rd-actions">
             <button type="button" id="rdNoteSync" class="primary small">지금 맞추기</button>
             <a id="rdNoteOpen" class="rd-note-open hidden" target="_blank" rel="noopener">원노트에서 열기</a>
           </div>
-          <p id="rdNoteMsg" class="rd-note-msg" role="status"></p>
         </div>
       </details>
       <!-- 연구개발계획서 YAML 넣기 — 맨 아래(2026-10-08 사용자 지정). RND 폴더의 KR_<과제>.yaml(스냅샷)과 history/*.yaml(개정 레지스트리·예산 이력·참여연구원 이력).
@@ -446,6 +553,8 @@
             <button type="button" id="rdSkillZip" class="primary small" title="스킬 다섯 개(SKILL.md · 스크립트 · 참고 · 양식)를 zip 하나로 내려받습니다. 맨 앞에 쓰는 법(README.md)이 들어 있습니다">스킬 묶음 저장 (zip)</button>
             <button type="button" id="rdSkillGuide" class="ghost small" title="zip 을 어디에 풀고 어떤 차례로 무엇을 부르는지를 글로 복사합니다 — 코딩 에이전트에 붙여 넣어도 됩니다">쓰는 법 복사</button>
           </div>
+        </div>
+      </details>
         </div>
       </details>
     </section>

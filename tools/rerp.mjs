@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+// rerp/ 폴더는 kr_ext_rerp(E:\dev\kr_ext_rerp)의 코드를 옮겨 온 것이다(rerp/README.md). 원본이 바뀌면 rerp/ 도 따라 고쳐야 하므로,
+// 옮길 때 원본 파일의 지문(sha1)을 rerp/origin.json 에 적어 두고 이 도구가 지금의 원본과 견준다.
+//
+//   node tools/rerp.mjs check [--source <kr_ext_rerp 경로>]   # 원본이 옮긴 뒤로 바뀌었는지 — 바뀐 파일이 있으면 1 로 끝남 (npm test 의 test/rerp-origin.test.mjs 가 부른다)
+//   node tools/rerp.mjs stamp [--source <경로>]               # 지금 원본의 지문·커밋·날짜를 rerp/origin.json 에 다시 적는다 (rerp/ 를 원본에 맞춰 고친 뒤)
+//   node tools/rerp.mjs list                                  # 무엇이 어디서 왔는지 보인다
+//
+// 원본 경로는 --source, 환경변수 KR_EXT_RERP, 기본값 E:/dev/kr_ext_rerp 차례. 원본이 없는 PC(다른 사람의 PC)에서는 check 가 "원본 없음" 으로 0 으로 끝난다.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ORIGIN = path.join(ROOT, 'rerp', 'origin.json');
+const DEFAULT_SOURCE = process.env.KR_EXT_RERP || 'E:/dev/kr_ext_rerp';
+
+/** 원본 파일 → rerp/ 의 파일. 한 원본이 여러 곳으로 가기도 한다(render.js → planui.js · background.js → plussync.js). */
+export const MAP = [
+  { from: 'lib/format.js', to: 'rerp/fmt.js', how: '그대로 (IIFE → export)' },
+  { from: 'lib/mcp-client.js', to: 'rerp/mcp.js', how: '그대로 (g = globalThis, export)' },
+  { from: 'lib/plus-onenote.js', to: 'rerp/onenote.js', how: '그대로 (export)' },
+  { from: 'lib/plan-sync.js', to: 'rerp/plansync.js', how: '그대로 (export)' },
+  { from: 'lib/plan.js', to: 'rerp/plan.js', how: '그대로 + chrome.runtime.sendMessage 네 곳 → api.send' },
+  { from: 'lib/render.js', to: 'rerp/planui.js', how: '과제집행비율 표 부분만 (rateCell·pct·rateOf·아이콘·isProjectLead·planBtn·planRow·planForm·budgetTable·projectLink)' },
+  { from: 'lib/rnd-api.js', to: 'rerp/erp.js', how: 'call·describe·pool·fetchProjectRecs·fetchProjects·dateRange·fetchCards·trunc·execRate·fetchBudget·ssoLogin + collect 의 미청구 합산(withPending) · settings.js 의 adv 기본값' },
+  { from: 'lib/settings.js', to: 'rerp/erp.js · rerp/plussync.js', how: 'DEFAULTS 의 adv·budgetExclude·plus 와 parseJson 만' },
+  { from: 'background.js', to: 'rerp/plussync.js', how: '확장 Plus 배선(planSync·queuePlanSync·plusProbe·plusNotebooks·planExport·planBind·plusResolveSection·onMessage 갈래) — 설정·과제 문맥·클립보드는 deps' },
+  { from: 'lib/panel.css', to: 'rerp/plan.css', how: '과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·원노트 아이콘 규칙만' },
+  { from: 'tests/plan-sync.test.js', to: 'test/rerp.test.mjs', how: 'ESM 으로 옮기고 erp.js·plussync.js 검사를 보탬' },
+];
+
+const sha1 = (file) => crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+function argOf(name) { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : ''; }
+const source = () => path.resolve(argOf('--source') || DEFAULT_SOURCE);
+const git = (dir, args) => { try { return execSync(`git ${args}`, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
+
+export function readOrigin() { return JSON.parse(fs.readFileSync(ORIGIN, 'utf8')); }
+
+/** 지금 원본과 origin.json 을 견준다 → { missing, changed:[{from, was, now}], same:[], head } */
+export function compare(src, origin) {
+  const out = { missing: !fs.existsSync(src), changed: [], same: [], head: '' };
+  if (out.missing) return out;
+  out.head = git(src, 'rev-parse --short HEAD');
+  for (const f of origin.files) {
+    const file = path.join(src, f.from);
+    if (!fs.existsSync(file)) { out.changed.push({ from: f.from, was: f.sha1, now: '(없음)' }); continue; }
+    const now = sha1(file);
+    if (now === f.sha1) out.same.push(f.from); else out.changed.push({ from: f.from, was: f.sha1, now });
+  }
+  return out;
+}
+
+function stamp(src) {
+  const files = [];
+  for (const m of MAP) {
+    const file = path.join(src, m.from);
+    if (!fs.existsSync(file)) throw new Error(`${m.from} 이 ${src} 에 없습니다.`);
+    files.push({ from: m.from, to: m.to, how: m.how, sha1: sha1(file), bytes: fs.statSync(file).size });
+  }
+  const origin = {
+    source: 'kr_ext_rerp', path: src.split(path.sep).join('/'),
+    commit: git(src, 'rev-parse --short HEAD'), commitDate: git(src, 'log -1 --format=%ad --date=short'), version: JSON.parse(fs.readFileSync(path.join(src, 'manifest.json'), 'utf8')).version,
+    dirty: git(src, 'status --short').split('\n').filter(Boolean).map((l) => l.trim()),
+    portedAt: new Date().toISOString().slice(0, 10), files,
+  };
+  fs.writeFileSync(ORIGIN, `${JSON.stringify(origin, null, 2)}\n`);
+  return origin;
+}
+
+function main() {
+  const cmd = process.argv[2] || 'check';
+  if (cmd === 'list') {
+    for (const m of MAP) console.log(`${m.from.padEnd(26)} → ${m.to.padEnd(32)} ${m.how}`);
+    return;
+  }
+  if (cmd === 'stamp') {
+    const o = stamp(source());
+    console.log(`rerp/origin.json 을 다시 적었습니다 — ${o.source} ${o.version} (${o.commit} ${o.commitDate}${o.dirty.length ? `, 작업 트리 변경 ${o.dirty.length}` : ''}), 파일 ${o.files.length}개`);
+    return;
+  }
+  if (cmd !== 'check') throw new Error(`모르는 명령 ${cmd} — check | stamp | list`);
+  const origin = readOrigin();
+  const r = compare(source(), origin);
+  if (r.missing) { console.log(`원본(${source()})이 없어 견주지 못했습니다 — rerp/ 는 ${origin.source} ${origin.version} (${origin.commit} ${origin.commitDate}) 기준입니다.`); return; }
+  console.log(`rerp/ 기준: ${origin.source} ${origin.version} (${origin.commit} ${origin.commitDate}) · 지금 원본: ${r.head}`);
+  for (const f of r.same) console.log(`  같음  ${f}`);
+  for (const c of r.changed) console.log(`  바뀜  ${c.from}  (${c.was.slice(0, 8)} → ${c.now.slice(0, 8)})`);
+  if (r.changed.length) {
+    console.log(`\n원본이 옮긴 뒤로 바뀐 파일 ${r.changed.length}개 — rerp/README.md 의 "갱신" 차례대로 rerp/ 에 반영한 뒤 \`node tools/rerp.mjs stamp\` 로 지문을 다시 적으세요.`);
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { main(); } catch (err) { console.error(err.message); process.exitCode = 1; }
+}

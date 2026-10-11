@@ -15,8 +15,10 @@ import {
   templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
   mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, moreLead,
-  writePlan, docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS,
+  writePlan, docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, OUTSIDE_TYPES, dotDate,
 } from './src/gongmun.js';
+import { HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, BOXES, normalizeHist, listMine, listBoxes, readOutsideReport, kindOf, stateOf, outsideSummary, viewUrl } from './src/gmlist.js';
+import { SEARCH_KEY, AGENT_KIND, DIRS, DIR_LABEL, DIR_BOXES, DIR_TITLE, CUSTOM, parseQuery, periodOf, filterRows, sameRead, normalizeSearch } from './src/gmsearch.js';
 import { writeGongmun, showTab } from './src/gmwrite.js';
 import { BOOK_KEY, normalizeBook, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
 import { gongmunSmart, gongmunReasonSmart } from './src/llm.js';
@@ -78,6 +80,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     presetBox: $('gmPresetBox'), presetState: $('gmPresetState'), dept: $('gmDept'), head: $('gmHead'), refs: $('gmRefs'),
     director: $('gmDirector'), chief: $('gmChief'), docNo: $('gmDocNo'), docNoHint: $('gmDocNoHint'),
     projList: $('gmProjList'), projAdd: $('gmProjAdd'), projCount: $('gmProjCount'),
+    // 공문 이력 — 작업 카드 아래의 접힌 칸(eclass 기안함에서 읽은 내 공문, src/gmlist.js)과 작성 내용 탭의 사례비 누계 줄(외부활동).
+    feeSum: $('gmFeeSum'), histBox: $('gmHistBox'), histState: $('gmHistState'), histRange: $('gmHistRange'), histSpan: $('gmHistSpan'), histAll: $('gmHistAll'),
+    histRefresh: $('gmHistRefresh'), histNote: $('gmHistNote'), histList: $('gmHistList'),
+    // 에이전트(공문 검색, src/gmsearch.js) — 갈래 줄의 에이전트 단추가 켜는 카드: 말 칸·찾기, 받은·보낸, 기간, 상태 줄, 찾은 공문 카드.
+    search: $('gmSearch'), searchText: $('gmSearchText'), searchGo: $('gmSearchGo'), searchDir: $('gmSearchDir'), searchSpan: $('gmSearchSpan'),
+    searchState: $('gmSearchState'), searchNote: $('gmSearchNote'), searchList: $('gmSearchList'),
   };
   // 웹페이지 캡처 단추 둘(보고 있는 탭 · 부분 골라 캡처) — 출장 카드의 증빙 넣는 곳과 같은 것이다(webpick.js, 2026-10-08 사용자 지정).
   const pick = createWebPick(webcap);
@@ -106,6 +114,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     // 갈래마다 세션 저장소에 건넨 오린 견적서 — 같은 것이면 다시 건네지 않는다.
     stashed: {},
     lastProject: '',
+    // 공문 이력(src/gmlist.js) — 저장소에 읽어 둔 것(at·from·to·span·rows·reports·notes)에 화면 형편(busy·step·error·all·open·tried)을 얹는다.
+    hist: { ...normalizeHist(null), busy: false, step: '', error: '', all: false, open: '', tried: false },
+    // 에이전트(공문 검색, src/gmsearch.js) — 저장소에 둔 것(on·dir·span·from·to·label·text·keyword·terms·at·read·rows·notes)에 화면 형편(busy·step·error·open)을 얹는다.
+    // on 이면 공문 탭이 에이전트 갈래로 열린다(갈래 줄과 검색 카드만). 비교작성 탭에는 없다.
+    search: { ...normalizeSearch(null), busy: false, step: '', error: '', open: '' },
   };
 
   const cur = () => st.work[st.kind] || null;
@@ -149,6 +162,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const saveTemplates = () => later('tpl', () => chrome.storage.local.set({ [TEMPLATES_KEY]: st.templates }));
   /** 비교작성 탭은 늘 두 칸이라 화면 상태를 남기지 않는다 — 사이드패널의 탭·접힘을 건드리지 않게. */
   const saveView = () => { if (!st.compareTab) later('view', () => chrome.storage.local.set({ [VIEW_KEY]: { ...st.view } })); };
+  /** 읽은 공문 이력을 남긴다 — 사이드패널과 비교작성 탭이 같이 보니 이 창의 표(by)를 적는다(onStorageChanged 가 내 것은 건너뛴다). */
+  const histKept = () => ({ at: st.hist.at, from: st.hist.from, to: st.hist.to, span: st.hist.span, rows: st.hist.rows, reports: st.hist.reports, notes: st.hist.notes });
+  const saveHist = () => later('hist', () => Promise.resolve(chrome.storage.local.set({ [HIST_KEY]: { ...histKept(), by: INSTANCE } })).catch(() => {}));
 
   /** 저장소의 초안 한 벌을 이 창의 것으로 — 읽은 파일·오린 견적서는 저장소에 없으니 keep(이 창이 들고 있던 것)에서 잇는다. */
   function restoreWork(k, w, keep = null) {
@@ -167,6 +183,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (area === 'session') {
       if (changes[CUT_KEY]) applyCut(changes[CUT_KEY].newValue);
       return;
+    }
+    // 공문 이력 — 다른 창이 읽어 둔 것을 따라간다. 내가 쓴 것(by)은 건너뛴다.
+    if (area === 'local' && changes[HIST_KEY] && st.loaded && changes[HIST_KEY].newValue?.by !== INSTANCE) {
+      Object.assign(st.hist, normalizeHist(changes[HIST_KEY].newValue));
+      paintHist();
+      paintFeeSum();
     }
     if (area !== 'local' || !changes[DRAFT_KEY] || !st.loaded) return;
     const kept = changes[DRAFT_KEY].newValue;
@@ -338,11 +360,26 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /* ---------------------------------------------------------- 갈래 */
 
+  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(공문 검색 — 비교작성 탭에는 없다). 에이전트가 켜져 있으면 갈래에는 불이 없다. */
   function paintKinds() {
+    const agent = st.compareTab ? '' : `<button type="button" class="gm-kind gm-kind-agent${agentOn() ? ' active' : ''}" data-kind="${AGENT_KIND}" aria-pressed="${agentOn()}"`
+      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>에이전트</button>';
     el.kinds.innerHTML = `<div class="gm-kind-row">${KIND_ORDER.map((k) => {
-      const on = k === st.kind;
+      const on = k === st.kind && !agentOn();
       return `<button type="button" class="gm-kind${on ? ' active' : ''}" data-kind="${k}" aria-pressed="${on}" title="${escapeHtml(KINDS[k].title)}">${escapeHtml(KINDS[k].label)}</button>`;
-    }).join('')}</div>`;
+    }).join('')}${agent}</div>`;
+  }
+
+  /** 갈래 줄 — 에이전트는 검색 카드를 켜고, 갈래는 에이전트를 끄고 그 갈래로 간다(같은 갈래라도 에이전트만 끈다). */
+  function onKindClick(e) {
+    const b = e.target instanceof Element ? e.target.closest('[data-kind]') : null;
+    if (!b) return;
+    if (b.dataset.kind === AGENT_KIND) {
+      enterAgent();
+      return;
+    }
+    leaveAgent();
+    setKind(b.dataset.kind);
   }
 
   function setKind(kind) {
@@ -356,6 +393,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     renderFields();
     paintDraft({ fold: true });
     paintTpl();
+    paintHist();
   }
 
   /* ---------------------------------------------------------- 문서 넣기 */
@@ -730,8 +768,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (!hasFiles(e)) return;
     e.preventDefault();
     e.stopPropagation();
-    // 비교작성 탭은 문서를 읽지 않는다(읽은 파일은 사이드패널에만 있다) — 놓아도 받지 않는다.
-    const can = !st.busy && !st.compareTab;
+    // 비교작성 탭은 문서를 읽지 않는다(읽은 파일은 사이드패널에만 있다) — 놓아도 받지 않는다. 에이전트(공문 검색)에서도 넣을 곳이 없다.
+    const can = !st.busy && !st.compareTab && !agentOn();
     e.dataTransfer.dropEffect = can ? 'copy' : 'none';
     if (e.type === 'dragleave') {
       if (!el.root.contains(e.relatedTarget)) el.intake.classList.remove('over');
@@ -745,7 +783,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     e.preventDefault();
     e.stopPropagation();
     el.intake.classList.remove('over');
-    if (st.compareTab) return;
+    if (st.compareTab || agentOn()) return;
     intake({ files: [...e.dataTransfer.files] });
   }
 
@@ -754,7 +792,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
    * 문서로 읽는다(쇼핑몰 화면의 글을 복사해 온 것) — 칸 안의 붙여넣기는 그대로 간다.
    */
   function onPaste(e) {
-    if (el.root.classList.contains('hidden') || st.compareTab) return;
+    if (el.root.classList.contains('hidden') || st.compareTab || agentOn()) return;
     const files = [...(e.clipboardData?.files || [])];
     if (files.length) {
       e.preventDefault();
@@ -790,6 +828,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       paintCut();
       paintAgent();
       paintProjects();
+      paintFeeSum();
       return;
     }
     paintSource();
@@ -1084,6 +1123,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.line.innerHTML = lineHtml(approvalLine(lineCtx(w)), { needLead: !!p && !String(p.lead || '').trim() });
     const left = needs(st.kind, w.draft, { preset: st.preset, project: projectOf(w), projects: choices(), rank: w.rank || '', setting: w.setting || {} });
     el.need.textContent = left.length ? `남은 것: ${left.join(' · ')}` : '';
+    paintFeeSum();
     paintDoc(blocked);
   }
 
@@ -1101,6 +1141,387 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     return `<span class="gm-steps">${steps.join('<span class="gm-arrow" aria-hidden="true">→</span>')}</span>`
       + (line.refs.length ? `<span class="gm-refs"><em>${role('참조')}</em>${escapeHtml(line.refs.join(', '))}</span>` : '')
       + line.notes.map((n) => `<span class="gm-note">${escapeHtml(n)}</span>`).join('');
+  }
+
+  /* ---------------------------------------------------------- 공문 이력 */
+
+  /** 읽어 둔 이력을 다시 읽지 않고 쓰는 시간 — 그 안에 다시 열면 저장소의 것을 보인다(새로고침 단추는 늘 다시 읽는다). */
+  const HIST_FRESH_MS = 10 * 60 * 1000;
+  /** 한 번에 본문까지 읽는 외부강의등 신고서 수(새 것부터) — 이미 읽은 것은 저장소에 있어 다시 읽지 않는다. */
+  const REPORT_MAX = 20;
+  const STATE_LABEL = { done: '완료', going: '결재 중', back: '반려', kept: '임시보관' };
+  /**
+   * 기간 단추 — 3개월(기본)·올해·1y·2y(src/gmlist.js 의 SPANS, 2026-10-12 사용자 지정: "기본 과거 3개월부터 예정인 것까지만 기본적으로 보여주고, 올해·1y·2y
+   * 이 정도 과거 히스토리"). 기안일 기준이라 진행 중·예정인 것도 기안했으면 든다.
+   */
+  const spanTitle = (span, ymd) => ({ '3m': '석 달 전부터 오늘까지 — 진행 중·예정인 것 포함', y0: '올해 1월 1일부터 오늘까지' }[span] || `${spanFrom(span, ymd).slice(0, 4)}년 1월 1일부터 오늘까지`);
+  /** 보는 기간의 첫날. */
+  const rangeFrom = () => spanFrom(st.hist.span, today());
+  const rangeText = () => ({ '3m': '최근 3개월', y0: '올해' }[st.hist.span] || `${rangeFrom().slice(0, 4)}년부터`);
+  /** 읽어 오는 첫날 — 고른 기간과 올해 1월 1일 가운데 이른 날. 외부활동 사례비 누계는 올해 외부강의등 신고서가 꼭 있어야 해서 올해는 늘 읽어 둔다. */
+  const fetchFrom = () => { const a = rangeFrom(); const b = spanFrom('y0', today()); return a < b ? a : b; };
+
+  const isOutside = () => st.kind === 'outside';
+  /** 보는 기간 안의 줄 — 읽어 둔 것이 더 넓어도 고른 기간만 보인다(날짜 없는 줄은 둔다). */
+  const inRange = () => { const from = rangeFrom(); return st.hist.rows.filter((r) => !r.date || r.date >= from); };
+  /** 이력 칸에 보일 줄 — 보는 기간 안에서 고른 갈래의 것만(src/gmlist.js 의 kindOf), '전체'면 다. */
+  const histRows = () => (st.hist.all ? inRange() : inRange().filter((r) => kindOf(r) === st.kind));
+  /** 읽어 둔 외부강의등 신고서(목록 줄 + 본문 칸) — 사례비 누계 줄과 카드의 사례금이 쓴다. */
+  const reportsOf = () => st.hist.rows.filter((r) => r.form === OUTSIDE_FORM && st.hist.reports[r.id]).map((r) => ({ ...st.hist.reports[r.id], id: r.id, date: r.date }));
+
+  /**
+   * eclass 기안함(완료함·상신함·반려함·임시보관함)을 읽어 내가 기안한 공문을 모은다(src/gmlist.js 의 listMine — 2026-10-11 사용자 지정: "출장·근태 이력처럼
+   * 공문 이력 … 시스템이 공문을 검색해서 읽어 와야지"). 외부강의등 신고서는 본문도 읽어 사례금·당해 연도 누적 합계를 꺼낸다(새 것부터 REPORT_MAX 건).
+   * 읽는 기간은 고른 기간(st.hist.span — 3개월·올해·1y·2y)의 첫날(올해 1월 1일보다 늦으면 올해 1월 1일 — fetchFrom)부터 오늘까지. force 가 아니면 HIST_FRESH_MS 안에
+   * 읽은 것이 그 기간을 덮으면 그대로 쓴다(좁히는 것은 걸러 보일 뿐 다시 읽지 않는다 — 넓힐 때만 다시 읽는다).
+   */
+  async function loadHist({ force = false } = {}) {
+    if (st.hist.busy) return;
+    const now = today();
+    const from = fetchFrom();
+    if (!force && st.hist.at && Date.now() - st.hist.at < HIST_FRESH_MS && st.hist.from && from >= st.hist.from) return;
+    st.hist.busy = true;
+    st.hist.tried = true;
+    st.hist.error = '';
+    st.hist.step = '';
+    paintHist();
+    paintFeeSum();
+    try {
+      const got = await listMine({ from, to: now, onBox: (box) => { st.hist.step = `${BOXES[box].label} 읽는 중…`; paintHistState(); } });
+      st.hist.rows = got.rows;
+      st.hist.notes = got.notes;
+      st.hist.from = from;
+      st.hist.to = now;
+      const todo = st.hist.rows.filter((r) => r.form === OUTSIDE_FORM && !st.hist.reports[r.id]).slice(0, REPORT_MAX);
+      for (const [i, r] of todo.entries()) {
+        st.hist.step = `외부강의등 신고서 읽는 중… ${i + 1}/${todo.length}`;
+        paintHistState();
+        try {
+          st.hist.reports = { ...st.hist.reports, [r.id]: await readOutsideReport(r) };
+        } catch (err) {
+          st.hist.notes.push(`${r.id} 본문을 읽지 못했습니다 — ${err.message}`);
+        }
+      }
+      st.hist.at = Date.now();
+      saveHist();
+      logEvent('gongmun', true, `공문 이력 읽음 · ${st.hist.rows.length}건 · ${from}부터${got.notes.length ? ` · ${got.notes.join(' / ')}` : ''}`);
+    } catch (err) {
+      st.hist.error = err.message;
+      logEvent('gongmun', false, `공문 이력 읽기 실패 · ${err.message}`);
+    } finally {
+      st.hist.busy = false;
+      st.hist.step = '';
+      paintHist();
+      paintFeeSum();
+    }
+  }
+
+  /** 접힌 줄의 형편 — 읽는 중이면 어느 함을 읽는지, 읽었으면 갈래의 건수와 기간. */
+  function paintHistState() {
+    const h = st.hist;
+    el.histState.textContent = h.busy ? (h.step || '읽는 중…') : h.error ? '읽지 못했습니다' : !h.at ? '펴면 eclass 에서 읽습니다'
+      : `${h.all ? '전체' : KINDS[st.kind].label} ${histRows().length}건 · ${rangeText()}`;
+  }
+
+  /**
+   * 공문 이력 칸 — 근태의 신청 내역처럼 한 건이 카드 하나다(상태 딱지 · 제목 · 양식·기안일, 외부강의등 신고서면 사례금·당해 연도 누적). 누르면 펴져서
+   * 본문의 칸(기관·주제·장소·일시·사례금·누적)과 "eclass 에서 열기"가 나온다. 고른 갈래의 것만 보이고 '전체'로 모두 본다.
+   */
+  function paintHist() {
+    const h = st.hist;
+    paintHistState();
+    const at = h.at ? new Date(h.at) : null;
+    el.histRange.textContent = h.at
+      ? `기안일 기준 · ${rangeText()} ${inRange().length}건 · ${pad(at.getHours())}:${pad(at.getMinutes())} 읽음`
+      : '기안일 기준 · 완료함·상신함·반려함·임시보관함';
+    const now = today();
+    el.histSpan.innerHTML = SPANS.map((s) => `<button type="button" class="gm-hist-spanbtn${s === h.span ? ' active' : ''}" data-span="${s}" role="radio" aria-checked="${s === h.span}"`
+      + ` title="${escapeHtml(spanTitle(s, now))}"${h.busy ? ' disabled' : ''}>${SPAN_LABEL[s]}</button>`).join('');
+    el.histAll.setAttribute('aria-pressed', String(h.all));
+    el.histAll.classList.toggle('active', h.all);
+    el.histRefresh.disabled = h.busy;
+    el.histNote.textContent = h.error || h.notes.join(' · ');
+    el.histNote.classList.toggle('bad', !!h.error);
+    const rows = histRows();
+    el.histList.innerHTML = !h.at ? (h.busy ? '<li class="gm-hist-empty">읽는 중…</li>' : '')
+      : !rows.length ? `<li class="gm-hist-empty">${h.all ? '이 기간에 기안한 공문이 없습니다.' : `이 기간에 ${KINDS[st.kind].label} 공문이 없습니다 — 전체를 누르면 모든 공문이 보입니다.`}</li>`
+        : rows.map(cardHtml).join('');
+  }
+
+  function cardHtml(r) {
+    const open = st.hist.open === r.id;
+    const state = stateOf(r);
+    const rep = r.form === OUTSIDE_FORM ? st.hist.reports[r.id] : null;
+    const sub = [r.formName, dotDate(r.date) || r.date, rep?.fee != null ? `사례금 ${won(rep.fee)}` : '', rep?.yearTotal != null ? `당해 연도 누적 ${won(rep.yearTotal)}` : ''].filter(Boolean).join(' · ');
+    const head = `<button type="button" class="gm-hist-head" aria-expanded="${open}"><span class="gm-hist-row">`
+      + `<span class="gm-hist-st" title="${escapeHtml(r.status || '')}">${escapeHtml(r.status || STATE_LABEL[state] || '상태 모름')}</span>`
+      + `<span class="gm-hist-sum">${escapeHtml(r.title || '(제목 없음)')}</span></span><span class="gm-hist-sub">${escapeHtml(sub)}</span></button>`;
+    if (!open) return `<li class="gm-hist-item st-${state}" data-id="${escapeHtml(r.id)}">${head}</li>`;
+    const line = (k, v) => (v ? `<span><em>${k}</em>${escapeHtml(v)}</span>` : '');
+    const when = rep ? [rep.from ? dotDate(rep.from) : '', rep.to && rep.to !== rep.from ? `~ ${dotDate(rep.to)}` : '', rep.start ? `${rep.start} ~ ${rep.end}` : '', rep.hours != null ? `${rep.hours}시간` : ''].filter(Boolean).join(' ') : '';
+    const more = rep
+      ? [line('기관', rep.org), line('주제', rep.subject), line('장소', rep.place), line('일시', when), line('사례금', rep.fee != null ? won(rep.fee) : ''),
+        line('당해 연도 누적', rep.yearTotal != null ? won(rep.yearTotal) : ''), line('당월 누적', rep.monthCount != null ? `${rep.monthCount}회` : ''),
+        line('교통·숙박·식비', rep.expenses ? won(rep.expenses) : ''), line('비고', rep.note)].filter(Boolean).join('')
+      : [line('문서번호', r.id), line('부서', r.dept), line('완료일', r.done ? dotDate(r.done) : '')].filter(Boolean).join('');
+    return `<li class="gm-hist-item open st-${state}" data-id="${escapeHtml(r.id)}">${head}<div class="gm-hist-more">${more}`
+      + '<div class="gm-actions"><button type="button" class="ghost small" data-act="open" title="전자결재 문서 보기 창을 새 탭에 엽니다">eclass 에서 열기</button></div></div></li>';
+  }
+
+  /** 카드를 누르면 펴고, 'eclass 에서 열기'는 문서 보기 창을 새 탭에 연다. */
+  function onHistClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-act="open"], .gm-hist-head') : null;
+    const li = btn?.closest('[data-id]');
+    const row = li && st.hist.rows.find((r) => r.id === li.dataset.id);
+    if (!row) return;
+    if (btn.dataset.act === 'open') {
+      chrome.tabs.create({ url: viewUrl(row) });
+      logEvent('gongmun', true, `공문 열기 · ${row.id} · ${row.title}`);
+      return;
+    }
+    st.hist.open = st.hist.open === row.id ? '' : row.id;
+    paintHist();
+  }
+
+  /** 접힌 칸을 펴면 읽는다(읽어 둔 것이 묵었으면 다시). */
+  function onHistToggle() {
+    if (el.histBox.open) loadHist();
+  }
+
+  /** 기간 단추(3개월·올해·1y·2y) — 고른 기간을 남기고, 읽어 둔 것이 그 기간을 덮지 못하면 다시 읽는다(좁히면 걸러 보이기만). */
+  function onHistSpanClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-span]') : null;
+    if (!btn || btn.disabled) return;
+    const span = btn.dataset.span;
+    if (!SPANS.includes(span) || span === st.hist.span) return;
+    st.hist.span = span;
+    saveHist();
+    paintHist();
+    loadHist();
+  }
+
+  function toggleHistAll() {
+    st.hist.all = !st.hist.all;
+    paintHist();
+  }
+
+  /* ---------------------------------------------------------- 에이전트(공문 검색) */
+
+  /** 찾은 것을 다시 읽지 않고 쓰는 시간 — 같은 조건(방향·기간·서버에 보낸 말)이면 그 안에는 저장소의 것을 보인다. 찾기 단추는 늘 다시 읽는다. */
+  const SEARCH_FRESH_MS = 10 * 60 * 1000;
+  /** 에이전트 갈래가 켜져 있는가 — 비교작성 탭에는 없다. */
+  const agentOn = () => st.search.on && !st.compareTab;
+  /** 보일 줄 — 읽어 둔 줄 가운데 모든 찾을 말이 제목에 드는 것(src/gmsearch.js 의 filterRows). */
+  const searchRows = () => filterRows(st.search.rows, st.search.terms);
+  const searchPeriod = () => periodOf(st.search, today());
+
+  function saveSearch() {
+    const { on, dir, span, from, to, label, text, keyword, terms, at, read, rows, notes } = st.search;
+    later('search', () => chrome.storage.local.set({ [SEARCH_KEY]: { on, dir, span, from, to, label, text, keyword, terms, at, read, rows, notes } }));
+  }
+
+  /** 갈래 줄과 검색 카드만 남긴다(sidepanel.css 의 .gongmun.agent) — 작성 쪽의 칸은 그대로 두고 가리기만 한다. */
+  function paintMode() {
+    const on = agentOn();
+    el.root.classList.toggle('agent', on);
+    el.search.hidden = !on;
+  }
+
+  /** 에이전트 갈래로(2026-10-12 사용자 지정) — 처음이거나 읽어 둔 것이 묵었으면 찾는다(같은 조건을 SEARCH_FRESH_MS 안에 읽었으면 그대로). */
+  function enterAgent() {
+    if (st.compareTab) return;
+    if (!st.search.on) {
+      st.search.on = true;
+      saveSearch();
+    }
+    setStatus('');
+    paintKinds();
+    paintMode();
+    paintSearch();
+    runSearch();
+  }
+
+  function leaveAgent() {
+    if (!st.search.on) return;
+    st.search.on = false;
+    saveSearch();
+    paintKinds();
+    paintMode();
+  }
+
+  /**
+   * 공문을 찾는다(2026-10-12 사용자 지정: "에이전트 … 공문검색 … 받은공문, 보낸 공문"). 말(text)이 있으면 방향·기간·찾을 말로 풀어(src/gmsearch.js 의 parseQuery)
+   * 고른 것에 얹고, 받은 공문이면 결재함 다섯 함, 보낸 공문이면 기안함 네 함을 제목 검색 포스트백으로 읽는다(src/gmlist.js 의 listBoxes — 서버에는 가장 긴 말
+   * 하나, 모든 말은 제목에서 거른다). force 가 아니면 같은 조건을 SEARCH_FRESH_MS 안에 읽었으면 다시 읽지 않는다.
+   */
+  async function runSearch({ force = false, text = null } = {}) {
+    const s = st.search;
+    if (s.busy) return;
+    const now = today();
+    if (text != null) {
+      const q = parseQuery(text, { today: now, dir: s.dir, span: s.span, from: s.from, to: s.to, label: s.label });
+      Object.assign(s, { text, dir: q.dir, span: q.span, from: q.from, to: q.to, label: q.label, keyword: q.keyword, terms: q.terms, open: '' });
+      saveSearch();
+    }
+    const p = searchPeriod();
+    const want = { dir: s.dir, from: p.from, to: p.to, keyword: s.keyword };
+    if (!force && s.at && Date.now() - s.at < SEARCH_FRESH_MS && sameRead(s.read, want)) {
+      paintSearch();
+      return;
+    }
+    s.busy = true;
+    s.error = '';
+    s.step = '';
+    paintSearch();
+    try {
+      const got = await listBoxes({ boxes: DIR_BOXES[s.dir], from: p.from, to: p.to, keyword: s.keyword, onBox: (box) => { s.step = `${BOXES[box].label} 읽는 중…`; paintSearchState(); } });
+      s.rows = got.rows;
+      s.notes = got.notes;
+      s.read = want;
+      s.at = Date.now();
+      saveSearch();
+      logEvent('gongmun', true, `공문 검색 · ${DIR_LABEL[s.dir]} · ${p.label}${s.terms.length ? ` · ${s.terms.join(' ')}` : ''} · ${searchRows().length}건${got.notes.length ? ` · ${got.notes.join(' / ')}` : ''}`);
+    } catch (err) {
+      s.error = err.message;
+      logEvent('gongmun', false, `공문 검색 실패 · ${err.message}`);
+    } finally {
+      s.busy = false;
+      s.step = '';
+      paintSearch();
+    }
+  }
+
+  /** 상태 줄 — 읽는 중이면 어느 함을 읽는지, 읽었으면 방향·기간·찾을 말·건수·읽은 시각. */
+  function paintSearchState() {
+    const s = st.search;
+    const p = searchPeriod();
+    const words = s.terms.length ? ` · ${s.terms.map((t) => `'${t}'`).join(' ')}` : '';
+    const at = s.at ? new Date(s.at) : null;
+    el.searchState.textContent = s.busy ? (s.step || '읽는 중…') : !s.at ? `${DIR_LABEL[s.dir]} · ${p.label}${words}`
+      : `${DIR_LABEL[s.dir]} · ${p.label}${words} · ${searchRows().length}건 · ${pad(at.getHours())}:${pad(at.getMinutes())} 읽음`;
+  }
+
+  /** 검색 카드 — 받은·보낸, 기간(말로 적은 기간이면 그 말이 단추 자리에 선다), 상태 줄, 못 읽은 함, 찾은 공문 카드(공문 이력과 같은 꼴). */
+  function paintSearch() {
+    const s = st.search;
+    const now = today();
+    el.searchDir.innerHTML = DIRS.map((d) => `<button type="button" class="gm-hist-spanbtn${d === s.dir ? ' active' : ''}" data-dir="${d}" role="radio" aria-checked="${d === s.dir}"`
+      + ` title="${escapeHtml(DIR_TITLE[d])}"${s.busy ? ' disabled' : ''}>${DIR_LABEL[d]}</button>`).join('');
+    el.searchSpan.innerHTML = SPANS.map((sp) => `<button type="button" class="gm-hist-spanbtn${sp === s.span ? ' active' : ''}" data-span="${sp}" role="radio" aria-checked="${sp === s.span}"`
+      + ` title="${escapeHtml(spanTitle(sp, now))}"${s.busy ? ' disabled' : ''}>${SPAN_LABEL[sp]}</button>`).join('')
+      + (s.span === CUSTOM ? `<span class="gm-hist-spanbtn active" role="radio" aria-checked="true" title="말로 적은 기간 — ${escapeHtml(`${s.from} ~ ${s.to}`)}">${escapeHtml(searchPeriod().label)}</span>` : '');
+    el.searchGo.disabled = s.busy;
+    paintSearchState();
+    el.searchNote.textContent = s.error || s.notes.join(' · ');
+    el.searchNote.classList.toggle('bad', !!s.error);
+    const rows = searchRows();
+    const p = searchPeriod();
+    el.searchList.innerHTML = !s.at ? (s.busy ? '<li class="gm-hist-empty">읽는 중…</li>' : '')
+      : !rows.length ? `<li class="gm-hist-empty">${escapeHtml(p.label)}에 ${s.terms.length ? `'${escapeHtml(s.terms.join(' '))}' 이 든 ` : ''}${DIR_LABEL[s.dir]}이 없습니다.</li>`
+        : rows.map(searchCardHtml).join('');
+  }
+
+  /** 찾은 공문 한 건 — 상태 딱지 · 제목, 아래에 함·양식·기안자(받은 공문)·기안일. 누르면 문서번호·기안자·부서·기안일·완료일과 'eclass 에서 열기'. */
+  function searchCardHtml(r) {
+    const open = st.search.open === r.id;
+    const state = stateOf(r);
+    const sub = [BOXES[r.box]?.label, r.formName, st.search.dir === 'in' ? r.name : '', dotDate(r.date) || r.date].filter(Boolean).join(' · ');
+    const head = `<button type="button" class="gm-hist-head" aria-expanded="${open}"><span class="gm-hist-row">`
+      + `<span class="gm-hist-st" title="${escapeHtml(r.status || '')}">${escapeHtml(r.status || STATE_LABEL[state] || '상태 모름')}</span>`
+      + `<span class="gm-hist-sum">${escapeHtml(r.title || '(제목 없음)')}</span></span><span class="gm-hist-sub">${escapeHtml(sub)}</span></button>`;
+    if (!open) return `<li class="gm-hist-item st-${state}" data-id="${escapeHtml(r.id)}">${head}</li>`;
+    const line = (k, v) => (v ? `<span><em>${k}</em>${escapeHtml(v)}</span>` : '');
+    const more = [line('문서번호', r.id), line('기안자', r.name), line('부서', r.dept), line('기안일', r.date ? dotDate(r.date) : ''), line('완료일', r.done ? dotDate(r.done) : '')].filter(Boolean).join('');
+    return `<li class="gm-hist-item open st-${state}" data-id="${escapeHtml(r.id)}">${head}<div class="gm-hist-more">${more}`
+      + '<div class="gm-actions"><button type="button" class="ghost small" data-act="open" title="전자결재 문서 보기 창을 새 탭에 엽니다">eclass 에서 열기</button></div></div></li>';
+  }
+
+  function onSearchGo() {
+    runSearch({ force: true, text: el.searchText.value.trim() });
+  }
+
+  /** 말 칸의 Enter — 한글을 조합하는 중(isComposing)이면 아니다. */
+  function onSearchKey(e) {
+    if (e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
+    e.preventDefault();
+    onSearchGo();
+  }
+
+  function onSearchDirClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-dir]') : null;
+    if (!btn || btn.disabled) return;
+    const dir = btn.dataset.dir;
+    if (!DIRS.includes(dir) || dir === st.search.dir) return;
+    Object.assign(st.search, { dir, open: '' });
+    saveSearch();
+    runSearch();
+  }
+
+  /** 기간 단추 — 말로 적은 기간(custom)은 버리고 그 단추의 기간으로. */
+  function onSearchSpanClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-span]') : null;
+    if (!btn || btn.disabled) return;
+    const span = btn.dataset.span;
+    if (!SPANS.includes(span) || span === st.search.span) return;
+    Object.assign(st.search, { span, from: '', to: '', label: '', open: '' });
+    saveSearch();
+    runSearch();
+  }
+
+  /** 카드를 누르면 펴고, 'eclass 에서 열기'는 문서 보기 창을 새 탭에 연다(공문 이력과 같다). */
+  function onSearchListClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-act="open"], .gm-hist-head') : null;
+    const li = btn?.closest('[data-id]');
+    const row = li && st.search.rows.find((r) => r.id === li.dataset.id);
+    if (!row) return;
+    if (btn.dataset.act === 'open') {
+      chrome.tabs.create({ url: viewUrl(row) });
+      logEvent('gongmun', true, `공문 열기 · ${row.id} · ${row.title}`);
+      return;
+    }
+    st.search.open = st.search.open === row.id ? '' : row.id;
+    paintSearch();
+  }
+
+  /**
+   * 작성 내용 탭의 사례비 누계 줄(외부활동) — 지금까지 받은 금액은 eclass 에서 읽은 올해 외부강의등 신고서 가운데 가장 늦은 것의 "당해 연도 사례금 누적 합계"
+   * (src/gmlist.js 의 outsideSummary, 2026-10-11 사용자 지정: "마지막 신청일 때 지금까지 받은 금액이 있고 추가로 받는 금액 … 합계를 여기서"). 거기에 이번 사례비
+   * (읽은 칸)를 더한 것이 합계다. 이력을 아직 읽지 않았으면 여기서 한 번 읽는다(tried).
+   */
+  function paintFeeSum() {
+    const w = cur();
+    const show = !!w && isOutside();
+    el.feeSum.classList.toggle('hidden', !show);
+    if (!show) {
+      el.feeSum.innerHTML = '';
+      return;
+    }
+    const h = st.hist;
+    if (!h.at && !h.busy && !h.tried) loadHist();
+    const s = outsideSummary(reportsOf(), { fee: moneyOf(w.draft.fee), today: today() });
+    const bit = (label, value, note = '', title = '') => `<span${title ? ` title="${escapeHtml(title)}"` : ''}>${label} <b>${escapeHtml(value)}</b>${note ? `<small>${escapeHtml(note)}</small>` : ''}</span>`;
+    // 기호(+·=)는 칩 안에 둔다 — 좁은 패널에서 줄이 바뀌어도 기호만 줄 끝에 남지 않게.
+    const op = (sign) => `<em class="gm-fee-op" aria-hidden="true">${sign}</em> `;
+    const mine = (sign) => (s.fee != null ? bit(`${sign}이번`, won(s.fee), '', '읽은 칸의 사례비') : `<span class="gm-miss">${sign}이번 사례비 없음</span>`);
+    const parts = ['<strong>사례비 누계</strong>'];
+    if (!h.at) {
+      parts.push(`<span class="gm-miss">${h.busy ? `공문 이력을 읽는 중입니다${h.step ? ` — ${escapeHtml(h.step)}` : '…'}` : h.error ? `공문 이력을 읽지 못했습니다 — ${escapeHtml(h.error)}` : '공문 이력을 아직 읽지 않았습니다'}</span>`, mine(''));
+    } else {
+      const note = s.basis ? `${dotDate(s.basis.date)} 외부강의등 신고서의 당해 연도 누적` : `${s.year}년 외부강의등 신고서 없음`;
+      parts.push(bit('지금까지', won(s.sofar), note, '올해 올린 외부강의등 신고서 가운데 가장 늦은 것의 "당해 연도 사례금 누적 합계"'), mine(op('+')),
+        bit(`${op('=')}합계`, won(s.total), '', '다음 신고서의 당해 연도 사례금 누적 합계에 적을 값'));
+    }
+    parts.push(`<button type="button" class="ghost small" data-act="ledger" title="공문 이력 — eclass 기안함에서 읽은 내 공문">${h.busy ? '읽는 중…' : '이력'}</button>`);
+    el.feeSum.innerHTML = parts.join('');
+  }
+
+  /** 사례비 누계 줄의 '이력' — 공문 이력 칸을 펴고 거기로 간다(펴면 읽는다). */
+  function onFeeSumClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-act="ledger"]') : null;
+    if (!btn) return;
+    el.histBox.open = true;
+    loadHist();
+    el.histBox.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }
 
   /* ---------------------------------------------------------- 공문 */
@@ -1219,6 +1640,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   async function writeDoc() {
     const w = cur();
     if (!w || st.writing) return undefined;
+    const kind = st.kind;
     const plan = writePlan(st.kind, {
       title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, setting: w.setting, rank: w.rank,
     }, ctxOf(w));
@@ -1238,6 +1660,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       if (res.tabId != null) el.writeLog.insertAdjacentHTML('beforeend', '<li class="gm-write-show"><button type="button" class="ghost small" data-act="show-tab">창 보기</button></li>');
       setStatus(bad.length ? `뒤 탭에 공문을 썼습니다 — ${bad.map((x) => x.label).join('·')}은(는) 창 보기로 열어 확인하세요.`
         : '뒤 탭에 공문을 썼습니다 — 창 보기로 열어 확인하고 첨부·임시저장 뒤 상신하세요.', bad.length ? 'error' : '');
+      // 쓴 공문은 창에서 임시저장·상신해야 기안함에 선다 — 읽어 둔 이력을 묵은 것으로 두어 다음에 펴면 다시 읽는다.
+      if (st.hist.at) st.hist.at = 1;
       logEvent('gongmun', !bad.length, `공문 작성 · ${KINDS[st.kind].title} · ${plan.values.title}${res.docId ? ` · ${res.docId}` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}`);
     } catch (err) {
       setStatus(`공문을 쓰지 못했습니다 — ${err.message}`, 'error');
@@ -1552,10 +1976,13 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.compare.addEventListener('click', openCompare);
     // 사이드패널과 비교작성 탭이 같은 초안을 본다 — 다른 창이 쓴 것을 따라간다.
     chrome.storage.onChanged?.addListener(onStorageChanged);
-    el.kinds.addEventListener('click', (e) => {
-      const b = e.target instanceof Element ? e.target.closest('[data-kind]') : null;
-      if (b) setKind(b.dataset.kind);
-    });
+    el.kinds.addEventListener('click', onKindClick);
+    // 에이전트(공문 검색) — 말 칸의 찾기·Enter, 받은·보낸, 기간, 카드 펴기·eclass 에서 열기.
+    el.searchGo.addEventListener('click', onSearchGo);
+    el.searchText.addEventListener('keydown', onSearchKey);
+    el.searchDir.addEventListener('click', onSearchDirClick);
+    el.searchSpan.addEventListener('click', onSearchSpanClick);
+    el.searchList.addEventListener('click', onSearchListClick);
     el.file.addEventListener('change', () => {
       const files = [...el.file.files];
       el.file.value = '';
@@ -1596,6 +2023,13 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.projList.addEventListener('input', onRowInput);
     el.projList.addEventListener('click', onRowClick);
     el.projAdd.addEventListener('click', addRow);
+    // 공문 이력 — 누계 줄의 '이력', 접힌 칸 펴기(읽기), 기간(3개월·올해·1y·2y)·전체·새로고침, 카드 펴기·eclass 에서 열기.
+    el.feeSum.addEventListener('click', onFeeSumClick);
+    el.histBox.addEventListener('toggle', onHistToggle);
+    el.histSpan.addEventListener('click', onHistSpanClick);
+    el.histAll.addEventListener('click', toggleHistAll);
+    el.histRefresh.addEventListener('click', () => loadHist({ force: true }));
+    el.histList.addEventListener('click', onHistClick);
     for (const type of ['dragover', 'dragleave']) el.root.addEventListener(type, onDrag);
     el.root.addEventListener('drop', onDrop);
     document.addEventListener('paste', onPaste);
@@ -1605,7 +2039,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   async function show() {
     el.root.classList.remove('hidden');
     if (!st.loaded) {
-      const saved = await chrome.storage.local.get([KIND_KEY, PRESET_KEY, PROJECTS_KEY, RND_EXTRA_KEY, TEMPLATES_KEY, DRAFT_KEY, VIEW_KEY]);
+      const saved = await chrome.storage.local.get([KIND_KEY, PRESET_KEY, PROJECTS_KEY, RND_EXTRA_KEY, TEMPLATES_KEY, DRAFT_KEY, VIEW_KEY, HIST_KEY, SEARCH_KEY]);
+      Object.assign(st.hist, normalizeHist(saved?.[HIST_KEY]));
+      // 에이전트(공문 검색) — 켜 두었으면 그 갈래로 열리고, 찾아 둔 것·적은 말이 그대로 보인다.
+      Object.assign(st.search, normalizeSearch(saved?.[SEARCH_KEY]));
+      el.searchText.value = st.search.text;
       const view = saved?.[VIEW_KEY];
       // 비교작성 탭은 늘 두 칸(작성 내용·읽은 내용)으로 시작하고 연 갈래를 본다.
       if (!st.compareTab) st.view = { tab: TAB_LABEL[view?.tab] ? view.tab : 'draft', evidenceOpen: view?.evidenceOpen !== false, workspaceOpen: view?.workspaceOpen !== false };
@@ -1631,6 +2069,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintDraft({ fold: true });
     paintTpl();
     paintPreset();
+    paintHist();
+    paintMode();
+    paintSearch();
+    if (agentOn()) runSearch();
   }
 
   /** R&D 탭의 장부(rndBook)를 읽어 초안에서 고를 과제로 — 탭을 열 때마다(R&D 탭에서 과제·연구 내용을 고치고 돌아온다). */

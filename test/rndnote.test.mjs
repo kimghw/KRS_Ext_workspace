@@ -19,9 +19,11 @@ console.log('모양');
 t('저장해 두는 형편 — 꺼짐이 기본, 모르는 것은 버린다', () => {
   assert.equal(NOTE_KEY, 'rndNote');
   assert.equal(ONENOTE_MCP_URL, 'http://localhost:5005/mcp');
-  assert.deepEqual(normalizeNote(null), { on: false, sectionId: '', sectionLabel: '', pageId: '', webUrl: '', at: 0, memo: {}, del: {}, last: '', error: '' });
+  assert.deepEqual(normalizeNote(null), { on: false, sectionId: '', sectionLabel: '', pageId: '', webUrl: '', at: 0, memo: {}, del: {}, last: '', error: '', plus: { on: false, sectionName: 'RERP', notebookId: '', notebookLabel: '', last: '', error: '' } });
   assert.equal(normalizeNote({ on: 'yes' }).on, false);
   assert.deepEqual(normalizeNote({ memo: [1], del: 'x' }).memo, {});
+  // 예상 비용 공유(rerp 확장 Plus 와 같은 섹션 RERP) — 섹션 이름을 비우면 기본값
+  assert.deepEqual(normalizeNote({ plus: { on: true, sectionName: '', notebookId: 'nb1' } }).plus, { on: true, sectionName: 'RERP', notebookId: 'nb1', notebookLabel: '', last: '', error: '' });
 });
 t('과제 정보는 여덟 칸뿐 — 차년도 내용은 올라가지 않는다', () => {
   assert.deepEqual(INFO_KEYS, ['name', 'alias', 'code', 'lead', 'start', 'end', 'calendar', 'note']);

@@ -1,0 +1,88 @@
+/* kr_ext_rerp `lib/panel.css`(0.8.3, 880a6bc) 가운데 과제집행비율 표(.krext-cards.krext-bgt)·집행비율 막대·예상 비용 줄과 폼·원노트 아이콘이 쓰는 규칙을 그대로 옮긴 것.
+ * 패널 틀(.krext-panel)·카드미청구·참여율·급여 쪽 규칙은 옮기지 않았다. 클래스 이름(krext-*)도 그대로라 WORKSPACE 쪽(rd-*)과 겹치지 않는다.
+ * 어두운 화면용 덮어쓰기는 sidepanel.css 의 ".rnd .rd-erp" 절에 있다(여기는 rerp 와 같은 밝은 색 그대로). 출처·갱신 규칙은 rerp/README.md. */
+.krext-red { color: #d7263d; }
+.krext-blue { color: #1a5fb4; }
+.krext-sub { flex-basis: 100%; font-size: 11px; color: #4b5563; margin-top: 2px; }
+.krext-dim { color: #6b7480; }
+.krext-err { color: #b3261e; }
+.krext-cards { width: 100%; border-collapse: collapse; font-size: 12px; }
+.krext-cards th, .krext-cards td { padding: 4px 6px; border-bottom: 1px solid #eef1f5; text-align: left; vertical-align: top; }
+.krext-cards th { color: #6b7480; font-weight: 600; background: #f3f5f8; }
+.krext-cards tr:last-child td { border-bottom: 0; }
+.krext-num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.krext-tag { display: inline-block; padding: 0 5px; border-radius: 8px; background: #fff0c2; color: #7a5200; font-size: 10px; line-height: 16px; font-weight: 600; vertical-align: middle; }
+.krext-tag-grey { background: #e6e9ee; color: #4b5563; }
+.krext-tag-warn { background: #ffd9d9; color: #9f1d1d; }
+/* 집행비율 막대 */
+.krext-rate { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.krext-rate-v { min-width: 44px; text-align: right; font-weight: 600; }   /* 책임자 성명(.krext-prj-rspr)과 같은 색·굵기 */
+.krext-bar { display: inline-block; width: 52px; height: 7px; border-radius: 4px; background: #e6ebf2; overflow: hidden; vertical-align: middle; }
+.krext-bar-fill { display: block; height: 100%; background: #4d8fe6; border-radius: 4px; }
+.krext-bar-fill.krext-bar-over { background: #d7263d; }
+.krext-rate-plus { color: #b3261e; font-weight: 600; }
+/* 비목별 잔액 표 */
+.krext-bgt .krext-bgt-nm { white-space: nowrap; }
+.krext-bgt tbody tr.krext-bgt-unbilled td { background: #fff8f8; border-top: 1px dashed #f3b3bb; }
+.krext-bgt tr.krext-bgt-unbilled .krext-bgt-nm { white-space: normal; }   /* 좁은 팝업(460px)에서는 태그가 다음 줄로 */
+.krext-bgt tr.krext-bgt-unbilled .krext-tag { white-space: nowrap; }
+.krext-bgt tfoot td { border-top: 2px solid #d5dbe3; background: #f3f5f8; font-weight: 700; }
+.krext-bgt .krext-rate { justify-content: flex-end; }
+/* 예상 비용 (비목 행의 ＋ → 세목 · 수량 · 단가 입력). 보라 계열로 미청구(빨강)와 구분 */
+.krext-plus-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; padding: 0; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-size: 13px; line-height: 1; cursor: pointer; vertical-align: middle; }
+.krext-plus-btn:hover { background: #e3edfb; border-color: #b7cdf0; }
+.krext-bgt tbody tr.krext-bgt-plan td, .krext-bgt tbody tr.krext-bgt-proj td, .krext-bgt tbody tr.krext-bgt-form td, .krext-bgt tbody tr.krext-bgt-orphan td { background: #f8f6ff; }
+.krext-bgt tbody tr.krext-bgt-plan td { color: #4b5563; border-bottom: 1px dotted #e3ddf5; }
+.krext-bgt tr.krext-bgt-plan .krext-bgt-nm, .krext-bgt tr.krext-bgt-orphan .krext-bgt-nm { white-space: normal; }
+.krext-bgt tbody tr.krext-bgt-orphan td { color: #6b7480; border-top: 1px dashed #d9d2f2; }
+.krext-plan-ind { color: #a89ed6; margin-right: 2px; }
+.krext-plan-nm { font-weight: 600; color: #4a3d8f; }
+.krext-plan-rate { color: #6b5cc4; }
+.krext-plan-acts { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: middle; }
+.krext-plan-acts button { border: 0; background: transparent; color: #8a919c; cursor: pointer; font-size: 12px; line-height: 16px; padding: 0 3px; border-radius: 4px; }
+.krext-plan-acts button:hover { background: #e6e0fa; color: #4a3d8f; }
+.krext-bgt tbody tr.krext-bgt-proj td { font-weight: 600; color: #4a3d8f; border-bottom: 1px solid #e3ddf5; }
+.krext-bgt tfoot tr.krext-bgt-proj td { background: #f1edfc; border-top: 1px dashed #c9bff0; color: #4a3d8f; }
+.krext-plan-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 2px 0; }
+.krext-plan-form input { height: 24px; padding: 2px 6px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 12px; line-height: 1.2; margin: 0; }
+.krext-plan-form input:focus { outline: none; border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
+.krext-plan-form input[data-plan="name"] { flex: 1 1 150px; min-width: 120px; }
+.krext-plan-form label { display: inline-flex; align-items: center; gap: 3px; margin: 0; font-size: 11px; font-weight: 400; color: #6b7480; white-space: nowrap; }
+.krext-plan-form input[data-plan="qty"] { width: 46px; text-align: right; }
+.krext-plan-form input[data-plan="unit"], .krext-plan-form input[data-plan="amt"] { width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+.krext-plan-btn { height: 24px; padding: 0 9px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-family: inherit; font-size: 12px; cursor: pointer; }
+.krext-plan-btn:hover { background: #eef3fa; }
+.krext-plan-btn.krext-plan-save { background: #1f4e9c; border-color: #1f4e9c; color: #fff; }
+.krext-plan-btn.krext-plan-save:hover { background: #17407f; }
+.krext-plan-err { font-size: 11px; flex-basis: 100%; }
+/* 표 머리글 "비목" 옆 아이콘 (눈: 과제 단위 감추기/보이기, 저장: CSV) 과 수량 −/＋ 버튼 */
+.krext-plan-ico { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; position: relative; }
+a.krext-ico-btn { text-decoration: none; }   /* 원노트에서 열기(↗) 링크도 아이콘 버튼처럼 */
+/* 원노트에서 가져오기: 동료가 보낸 페이지 링크를 붙여 넣는 칸 (비목 머리글 아이콘 옆) */
+.krext-plan-import { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-weight: 400; }
+.krext-plan-import input { width: 280px; height: 22px; padding: 2px 6px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 12px; line-height: 1.2; margin: 0; }
+.krext-plan-import button { height: 22px; padding: 0 7px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1f4e9c; font: inherit; font-size: 12px; cursor: pointer; }
+.krext-plan-import button:hover { background: #eef3fa; }
+.krext-ico-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 18px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #6b5cc4; cursor: pointer; }
+.krext-ico-btn:hover { background: #e6e0fa; border-color: #d9d2f2; }
+.krext-ico-btn.krext-ico-off { color: #8a919c; }
+.krext-ico-btn svg { display: block; }
+.krext-plan-saved { margin-left: 4px; font-size: 11px; font-weight: 400; color: #1a7f37; white-space: nowrap; }
+.krext-plan-saved.krext-busy { color: #6b5cc4; }
+.krext-ico-btn.krext-ico-err { color: #b3261e; }
+.krext-plan-qty { display: inline-flex; align-items: center; gap: 1px; margin-left: 4px; vertical-align: middle; }
+.krext-plan-qty button, .krext-plan-step button { width: 16px; height: 16px; padding: 0; border: 1px solid #d9d2f2; border-radius: 4px; background: #fff; color: #6b5cc4; font-size: 11px; line-height: 1; cursor: pointer; font-family: inherit; }
+.krext-plan-qty button:hover, .krext-plan-step button:hover { background: #e6e0fa; }
+.krext-plan-qty-v { min-width: 16px; text-align: center; font-weight: 600; color: #4a3d8f; font-variant-numeric: tabular-nums; }
+.krext-plan-step { display: inline-flex; align-items: center; gap: 2px; }
+.krext-plan-step button { width: 20px; height: 24px; border-radius: 5px; border-color: #c9d1dc; color: #1a5fb4; font-size: 13px; }
+.krext-plan-step button:hover { background: #eef3fa; }
+.krext-plan-lbl { font-size: 11px; color: #6b7480; white-space: nowrap; }
+.krext-plan-lbl b { color: #4a3d8f; }
+/* 월간 구독: 폼의 토글 버튼, 결제일 입력, 항목 줄의 태그 */
+.krext-plan-subtn { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 7px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #6b7480; font-family: inherit; font-size: 11px; cursor: pointer; }
+.krext-plan-subtn:hover { background: #f3f6fb; }
+.krext-plan-subtn.krext-on { background: #e6e0fa; border-color: #c9bff0; color: #4a3d8f; }
+.krext-plan-subtn svg { width: 12px; height: 12px; }
+.krext-plan-form input[data-plan="date"] { width: 132px; padding: 1px 4px; }
+.krext-tag-sub { background: #e6e0fa; color: #4a3d8f; }

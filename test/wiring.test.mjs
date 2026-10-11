@@ -867,7 +867,9 @@ console.log('공문 탭');
       ['gmReset', 'click'], ['gmCut', 'click'], ['gmAgentGo', 'click'], ['gmAgentInput', 'keydown'], ['gmMoreFields', 'input'], ['gmPick', 'click'], ['gmProjects', 'click'], ['gmFields', 'input'], ['gmTitle', 'input'], ['gmBody', 'input'], ['gmRegen', 'click'],
       ['gmWrite', 'click'], ['gmRank', 'change'], ['gmRetention', 'change'], ['gmDocNoOne', 'input'], ['gmSetReset', 'click'], ['gmSavePdf', 'click'], ['gmTplForm', 'change'], ['gmTplTitle', 'input'],
       ['gmTplBody', 'input'], ['gmTplReset', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmRefs', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
-      ['gmProjList', 'input'], ['gmEvidenceToggle', 'click'], ['gmWorkspaceToggle', 'click'], ['gmViewTabs', 'click'], ['gmViewTabs', 'keydown'], ['gmCompare', 'click'], ['gongmun', 'dragover'], ['gongmun', 'drop']];
+      ['gmProjList', 'input'], ['gmEvidenceToggle', 'click'], ['gmWorkspaceToggle', 'click'], ['gmViewTabs', 'click'], ['gmViewTabs', 'keydown'], ['gmCompare', 'click'], ['gongmun', 'dragover'], ['gongmun', 'drop'],
+      ['gmFeeSum', 'click'], ['gmHistBox', 'toggle'], ['gmHistSpan', 'click'], ['gmHistAll', 'click'], ['gmHistRefresh', 'click'], ['gmHistList', 'click'],
+      ['gmSearchGo', 'click'], ['gmSearchText', 'keydown'], ['gmSearchDir', 'click'], ['gmSearchSpan', 'click'], ['gmSearchList', 'click']];
     for (const [id, type] of want) assert.ok(wired.get(id)?.has(type), `${id} 에 ${type}`);
   });
   t('회의실 탭에서는 공문 화면이 숨어 있다', () => assert.ok(doc.getElementById('gongmun').classList.contains('hidden')));
@@ -886,9 +888,13 @@ console.log('공문 탭');
     assert.ok(doc.getElementById('attend').classList.contains('hidden'));
     for (const sel of ['.controls', '.schedule', '.ask']) assert.ok(doc.querySelector(sel).hasAttribute('hidden'), sel);
   });
-  t('갈래는 구매·교육·출장이고 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
+  t('갈래는 구매·교육·출장·외부활동이고 맨 끝이 에이전트(공문 검색), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
     const kinds = [...doc.querySelectorAll('#gmKinds .gm-kind')].map((b) => b.dataset.kind);
-    assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'outside']);
+    assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'outside', 'agent']);
+    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').textContent, '에이전트');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').getAttribute('aria-pressed'), 'false');
+    assert.ok(doc.getElementById('gmSearch').hidden, '검색 카드는 에이전트를 누르기 전에는 숨어 있다');
+    assert.ok(!doc.getElementById('gongmun').classList.contains('agent'));
     assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').textContent, '외부활동');
     assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').title, '외부활동 허가 신청서');
     assert.ok(!doc.querySelector('#gmKinds [data-kind="trip"]').textContent.includes('준비 중'));
@@ -1360,6 +1366,34 @@ console.log('공문 탭');
     assert.ok(!body.includes('예산계정'));
     assert.match(doc.getElementById('gmSteps').textContent, /첨부 요청 공문/);
   });
+
+  // 공문 이력(2026-10-11 사용자 지정: "출장·근태 이력처럼 공문 이력을 … 시스템이 공문을 검색해서 읽어 와야지") — 이 boot 는 네트워크가 막혀 있어 읽지 못한다.
+  // 읽는 흐름(카드·사례비 누계)은 아래 "공문 탭 — 공문 이력" 이 본다.
+  await settle(80);
+  t('외부활동 — 작성 내용 탭에 사례비 누계 줄이 서고, 공문 이력을 읽지 못하면 그렇다고 말한다(손으로 적는 장부는 없다)', () => {
+    const sum = doc.getElementById('gmFeeSum');
+    assert.ok(!sum.classList.contains('hidden'));
+    assert.equal(sum.closest('#gmDraft'), doc.getElementById('gmDraft'), '누계 줄은 작성 내용 탭에');
+    assert.match(sum.textContent, /^사례비 누계공문 이력을 읽지 못했습니다 — .+이번 사례비 없음이력$/);
+    assert.equal(doc.getElementById('gmOutsideBox'), null, '손으로 적는 사례비 장부 칸은 없다');
+    const box = doc.getElementById('gmHistBox');
+    assert.ok(box && !box.classList.contains('hidden'), '공문 이력 칸은 모든 갈래에서 선다');
+    assert.ok(box.compareDocumentPosition(doc.getElementById('gmWorkspace')) & window.Node.DOCUMENT_POSITION_PRECEDING, '작업 카드 아래, 양식 위');
+    assert.ok(box.compareDocumentPosition(doc.getElementById('gmTplBox')) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(doc.getElementById('gmHistState').textContent, '읽지 못했습니다');
+    assert.ok(doc.getElementById('gmHistNote').textContent.length > 0);
+    assert.ok((store.activityLog || []).some((e) => e.kind === 'gongmun' && /공문 이력 읽기 실패/.test(e.text)));
+  });
+  type(field('fee'), '300,000');
+  t('이번 사례비를 적으면 누계 줄에 보인다(지금까지는 이력을 읽어야 안다)', () => assert.match(doc.getElementById('gmFeeSum').textContent, /이번 300,000원이력$/));
+  doc.querySelector('#gmFeeSum [data-act="ledger"]').click();
+  await settle(80);
+  t('누계 줄의 이력 단추는 공문 이력 칸을 편다', () => assert.ok(doc.getElementById('gmHistBox').open));
+  doc.querySelector('#gmKinds [data-kind="trip"]').click();
+  t('다른 갈래로 가면 누계 줄은 숨고 공문 이력 칸은 남는다', () => {
+    assert.ok(doc.getElementById('gmFeeSum').classList.contains('hidden'));
+    assert.ok(!doc.getElementById('gmHistBox').classList.contains('hidden'));
+  });
   await settle(500);   // 저장 타이머가 다음 boot 의 전역 chrome 으로 넘어가지 않게 한다.
 }
 
@@ -1593,8 +1627,10 @@ console.log('R&D 탭');
     const want = [['rdProjects', 'click'], ['rdEmptyAdd', 'click'], ['rdEmptyImport', 'click'], ['rdEdit', 'click'], ['rdYears', 'click'],
       ['rdAliasSet', 'click'], ['rdAliasIn', 'keydown'], ['rdRosterCopy', 'click'], ['rdPlanCopy', 'click'],
       ['rdNoteOn', 'change'], ['rdNoteSection', 'change'], ['rdNoteSections', 'click'], ['rdNoteSync', 'click'],
+      ['rdPlusOn', 'change'], ['rdPlusFind', 'click'], ['rdPlusSection', 'keydown'],
+      ['rdErpRefresh', 'click'], ['rdErpLink', 'click'], ['rdErpUnlink', 'click'], ['rdErpPickOk', 'click'], ['rdErpSelect', 'keydown'], ['rdErpOn', 'change'], ['rdIncUnbilled', 'change'], ['rdIncPlan', 'change'], ['rdItems', 'change'],
       ['rdFSave', 'click'], ['rdFCancel', 'click'], ['rdFDel', 'click'], ['rdForm', 'keydown'],
-      ['rdBudget', 'input'], ['rdBudget', 'change'], ['rdBudget', 'click'], ['rdBudgetAdd', 'click'],
+      ['rdBudget', 'input'], ['rdBudget', 'change'], ['rdBudget', 'click'],
       ['rdLogAdd', 'click'], ['rdLogCancel', 'click'], ['rdLogTitle', 'keydown'], ['rdLogs', 'click'],
       ['rdChAdd', 'click'], ['rdChCancel', 'click'], ['rdChanges', 'click'], ['rdChanges', 'change'],
       ['rdCopy', 'click'], ['rdBudgetCopy', 'click'], ['rdLogsCopy', 'click'], ['rdChangesCopy', 'click'], ['rdExport', 'click'], ['rdImport', 'change'], ['rdImportGm', 'click'],
@@ -3389,6 +3425,288 @@ console.log('근태 폼의 차량 조회 — 빈 차량을 누르면 차량 탭�
     ]);
     assert.ok([...doc.querySelectorAll('#atCars .at-cars-note')].some((n) => /이 시간에 빈 차량이 없습니다/.test(n.textContent)));
   });
+}
+
+console.log('공문 탭 — 공문 이력(eclass 기안함을 읽어 카드로 — 기본 최근 3개월, 올해·1y·2y; 외부활동은 외부강의등 신고서의 당해 연도 누적으로 사례비 누계)');
+{
+  const { listPage, reportPage } = await import('./fixtures/gmlist-fixture.mjs');
+  const { blankDraft } = await import('../src/gongmun.js');
+  const { spanFrom, kindOf } = await import('../src/gmlist.js');
+  // 날짜는 오늘을 기준으로 만든다 — 기본 기간(최근 3개월)이 오늘에 따라 움직여서.
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const TODAY = ymd(new Date());
+  const Y = TODAY.slice(0, 4);
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+  const dot = (s) => `${+s.slice(0, 4)}. ${+s.slice(5, 7)}. ${+s.slice(8, 10)}.`;
+  const REP_DATE = daysAgo(60) > `${Y}-01-01` ? daysAgo(60) : `${Y}-01-01`;   // 올해 신고서 — 두 달 전(1~2월이면 1월 1일)
+  const A = { id: `HER-${Y}-000700`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '부산대학교 강의 외부활동 허가 신청', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(2), status: '결재처리중', flow: '3' };
+  const B = { id: `HER-${Y}-000266`, form: 'KR_Outside_Lecture_Report', formName: '외부강의등 신고서', title: '외부강의등 신고서', name: '김거화', dept: '수소전기추진연구팀', date: REP_DATE, done: REP_DATE, status: '발송', flow: '7' };
+  const C = { id: `HER-${Y}-000128`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '차단기 과제 수행을 위한 시험 장비 구매 품의', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(70), done: daysAgo(70), status: '발송', flow: '7' };
+  // 200일 전 것 — 문서함 흉내는 기간을 보지 않고 늘 주지만, 화면은 고른 기간(기본 최근 3개월)으로 걸러 보인다.
+  const D = { id: 'HER-0000-000900', form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '산업용 PC 구매 품의', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(200), done: daysAgo(200), status: '발송', flow: '7' };
+  const ALL = [A, B, C, D];
+  const FROM = Object.fromEntries(['3m', 'y0', 'y1', 'y2'].map((s) => [s, spanFrom(s, TODAY)]));
+  const fetchFrom = (span) => (FROM[span] < FROM.y0 ? FROM[span] : FROM.y0);
+  /** 그 기간·갈래에 보여야 할 문서번호(새 것이 위). */
+  const visible = (span, kind) => ALL.filter((r) => r.date >= FROM[span] && (kind === 'all' || kindOf(r) === kind)).sort((a, b) => b.date.localeCompare(a.date)).map((r) => r.id);
+  const page = (html, url) => ({ ok: true, status: 200, type: 'basic', url, headers: { get: () => 'text/html; charset=utf-8' }, arrayBuffer: async () => new TextEncoder().encode(html).buffer });
+  const posts = [];
+  const bodies = [];
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    if (/\/RealEANet\/AppBoard\/DocList(Finished|Requested|Rejected|Temp)\.aspx/.test(u)) {
+      if (init.method !== 'POST') return page(listPage({ rows: [], count: 0 }), u);
+      const body = new URLSearchParams(init.body);
+      posts.push({ box: RegExp.$1, target: body.get('__EVENTTARGET'), from: body.get('ctl00$ContentPlaceHolder1$SearchBar$dtpBeginningDate'), to: body.get('ctl00$ContentPlaceHolder1$SearchBar$dtpClosingDate'), state: body.get('__REAL_StatePersister'), keyword: body.get('ctl00$ContentPlaceHolder1$SearchBar$txtSearchKeyWord') });
+      const rows = /DocListFinished/.test(u) ? [B, C, D] : /DocListRequested/.test(u) ? [A] : [];
+      return page(listPage({ rows, count: rows.length }), u);
+    }
+    if (/\/RealEANET\/Forms\/Drafts\/KR_Outside_Lecture_Report\.aspx/.test(u)) {
+      bodies.push(u);
+      return page(reportPage({ org: '더브릿지전략컨설팅', subject: '대형선박 전동화 로드맵 회의', place: '중소조선연구원 4층 회의실', from: REP_DATE, to: REP_DATE, start: '오후 03:00', end: '오후 05:00', hours: 2, monthCount: 1, fee: 200000, yearTotal: 200000, expenses: 0 }), u);
+    }
+    throw new Error('offline');
+  };
+  const draft = { ...blankDraft('outside', { me: '김거화' }), org: '부산대학교', subject: 'MVDC 차단기 기술 특강', from: `${Y}-11-05`, to: `${Y}-11-05`, place: '부산대학교 공학관', fee: 300000, purpose: '연구 성과 확산', reason: '과제 연구 성과의 확산에 필요함' };
+  const PROJECT = 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발';
+  const { window, calls, store } = await boot({
+    mode: 'gongmun', gongmunKind: 'outside', myName: '김거화', gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
+    gongmunProjects: [{ name: PROJECT, alias: 'SSCB', code: 'RND-20-2026', lead: '박기도' }],
+    gongmunDraft: { outside: { draft, source: { label: '직접 입력' }, project: PROJECT, notes: [], touched: [] } },
+  }, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const stateText = () => doc.getElementById('gmHistState').textContent;
+  const shownIds = () => [...doc.querySelectorAll('#gmHistList .gm-hist-item')].map((li) => li.dataset.id);
+  for (let i = 0; i < 100 && !/건 · |읽지 못했습니다/.test(stateText()); i++) await settle(50);
+  await settle(480);   // 저장 타이머
+  t('외부활동 초안이 서면 공문 이력을 저절로 읽는다 — 기본은 최근 3개월(읽어 오는 것은 올해 1월 1일 이상), 네 함을 검색 포스트백(숨은 칸을 돌려보냄), 외부강의등 신고서는 본문까지', () => {
+    assert.equal(stateText(), `외부활동 ${visible('3m', 'outside').length}건 · 최근 3개월`, doc.getElementById('gmHistNote').textContent);
+    assert.deepEqual(posts.map((p) => p.box), ['Finished', 'Requested', 'Rejected', 'Temp']);
+    assert.ok(posts.every((p) => p.target === 'ctl00$ContentPlaceHolder1$SearchBar$btnSearch' && p.from === fetchFrom('3m') && p.to === TODAY && p.state === 'persist-1' && p.keyword === ''), JSON.stringify(posts[0]));
+    assert.equal(bodies.length, 1, '신고서 본문은 한 번');
+    assert.match(bodies[0], /DOCID=HER-\d{4}-000266.*&SYSTYPE=0$/);
+    assert.match(doc.getElementById('gmHistRange').textContent, new RegExp(`^기안일 기준 · 최근 3개월 ${visible('3m', 'all').length}건 · \\d{2}:\\d{2} 읽음$`), '200일 전 줄은 기간 밖이라 세지 않는다');
+    assert.deepEqual([...doc.querySelectorAll('#gmHistSpan [data-span]')].map((b) => [b.dataset.span, b.textContent, b.getAttribute('aria-checked')]), [['3m', '3개월', 'true'], ['y0', '올해', 'false'], ['y1', '1y', 'false'], ['y2', '2y', 'false']]);
+    assert.equal(store.gongmunHist.rows.length, 4, '읽어 둔 것에는 200일 전 줄도 있다');
+    assert.equal(store.gongmunHist.span, '3m');
+    assert.deepEqual(Object.keys(store.gongmunHist.reports), [B.id]);
+    assert.equal(store.gongmunHist.reports[B.id].yearTotal, 200000);
+  });
+  t('카드 — 근태 신청 내역처럼 상태 딱지·제목·양식·기안일. 외부활동 갈래에는 신고서와 외부활동 허가 신청만, 새 것이 위, 신고서에는 사례금·당해 연도 누적', () => {
+    assert.deepEqual(shownIds(), [A.id, B.id]);
+    const items = [...doc.querySelectorAll('#gmHistList .gm-hist-item')];
+    assert.ok(items[0].classList.contains('st-going'));
+    assert.ok(items[1].classList.contains('st-done'));
+    assert.equal(items[0].querySelector('.gm-hist-st').textContent, '결재처리중');
+    assert.equal(items[0].querySelector('.gm-hist-sum').textContent, '부산대학교 강의 외부활동 허가 신청');
+    assert.equal(items[0].querySelector('.gm-hist-sub').textContent, `연구업무품의서 · ${dot(A.date)}`);
+    assert.equal(items[1].querySelector('.gm-hist-st').textContent, '발송');
+    assert.equal(items[1].querySelector('.gm-hist-sub').textContent, `외부강의등 신고서 · ${dot(REP_DATE)} · 사례금 200,000원 · 당해 연도 누적 200,000원`);
+  });
+  t('사례비 누계 줄 — 지금까지(올해 신고서의 당해 연도 누적 200,000원) + 이번 300,000원 = 합계 500,000원', () => {
+    assert.equal(doc.getElementById('gmFeeSum').textContent, `사례비 누계지금까지 200,000원${dot(REP_DATE)} 외부강의등 신고서의 당해 연도 누적+ 이번 300,000원= 합계 500,000원이력`);
+  });
+  doc.querySelector(`#gmHistList [data-id="${B.id}"] .gm-hist-head`).click();
+  t('카드를 누르면 펴져서 본문의 칸(기관·주제·장소·일시·사례금·누적·당월 누적)과 eclass 에서 열기가 나온다', () => {
+    const li = doc.querySelector(`#gmHistList [data-id="${B.id}"]`);
+    assert.ok(li.classList.contains('open'));
+    const more = li.querySelector('.gm-hist-more').textContent;
+    assert.equal(more, `기관더브릿지전략컨설팅주제대형선박 전동화 로드맵 회의장소중소조선연구원 4층 회의실일시${dot(REP_DATE)} 오후 03:00 ~ 오후 05:00 2시간사례금200,000원당해 연도 누적200,000원당월 누적1회eclass 에서 열기`);
+    const before = calls.tabs.length;
+    li.querySelector('[data-act="open"]').click();
+    assert.equal(calls.tabs.length, before + 1);
+    assert.match(calls.tabs.at(-1).url, /^https:\/\/eclass\.krs\.co\.kr\/RealEANET\/loginbyname\.aspx\?ReturnUrl=%2FRealEANET%2FMain%2FDocumentView\.aspx%3FFORMID%3DKR_Outside_Lecture_Report%26DOCID%3DHER-\d{4}-000266/);
+  });
+  doc.getElementById('gmHistAll').click();
+  t('전체 — 최근 3개월에 기안한 공문을 다 보인다(구매 품의도, 200일 전 것은 아직 아니다)', () => {
+    assert.deepEqual(shownIds(), visible('3m', 'all'));
+    assert.ok(!shownIds().includes(D.id));
+    assert.equal(stateText(), `전체 ${visible('3m', 'all').length}건 · 최근 3개월`);
+    assert.equal(doc.getElementById('gmHistAll').getAttribute('aria-pressed'), 'true');
+  });
+  doc.getElementById('gmHistAll').click();
+  doc.querySelector('#gmKinds [data-kind="purchase"]').click();
+  t('구매 갈래에서는 최근 3개월의 구매 품의만 보인다', () => {
+    assert.deepEqual(shownIds(), [C.id]);
+    assert.equal(stateText(), '구매 1건 · 최근 3개월');
+    assert.ok(doc.getElementById('gmFeeSum').classList.contains('hidden'), '누계 줄은 외부활동에서만');
+  });
+  doc.getElementById('gmHistRefresh').click();
+  for (let i = 0; i < 100 && posts.length < 8; i++) await settle(30);
+  await settle(80);
+  t('새로고침은 네 함을 다시 읽고, 읽어 둔 신고서 본문은 다시 읽지 않는다', () => {
+    assert.equal(posts.length, 8);
+    assert.equal(bodies.length, 1);
+    assert.equal(stateText(), '구매 1건 · 최근 3개월');
+  });
+  doc.querySelector('#gmHistSpan [data-span="y2"]').click();
+  for (let i = 0; i < 100 && posts.length < 12; i++) await settle(30);
+  await settle(480);
+  t('2y — 두 해 전 1월 1일부터 다시 읽고(넓힐 때만), 200일 전 구매 품의가 보인다. 고른 기간은 저장된다', () => {
+    assert.equal(posts.length, 12);
+    assert.equal(posts.at(-1).from, FROM.y2);
+    assert.equal(stateText(), `구매 2건 · ${FROM.y2.slice(0, 4)}년부터`);
+    assert.deepEqual(shownIds(), [C.id, D.id]);
+    assert.equal(doc.querySelector('#gmHistSpan [data-span="y2"]').getAttribute('aria-checked'), 'true');
+    assert.match(doc.getElementById('gmHistRange').textContent, new RegExp(`^기안일 기준 · ${FROM.y2.slice(0, 4)}년부터 4건 · `));
+    assert.equal(store.gongmunHist.span, 'y2');
+  });
+  doc.querySelector('#gmHistSpan [data-span="y0"]').click();
+  await settle(120);
+  t('올해로 좁히면 다시 읽지 않고 읽어 둔 것을 걸러 보인다', () => {
+    assert.equal(posts.length, 12, '다시 읽지 않는다');
+    assert.deepEqual(shownIds(), visible('y0', 'purchase'));
+    assert.equal(stateText(), `구매 ${visible('y0', 'purchase').length}건 · 올해`);
+  });
+  doc.querySelector('#gmHistSpan [data-span="3m"]').click();
+  await settle(120);
+  t('3개월로 돌아오면 200일 전 것은 다시 숨는다', () => {
+    assert.equal(posts.length, 12);
+    assert.deepEqual(shownIds(), [C.id]);
+    assert.equal(stateText(), '구매 1건 · 최근 3개월');
+  });
+  await settle(500);   // 저장 타이머가 다음 boot 의 전역 chrome 으로 넘어가지 않게 한다.
+}
+
+console.log('공문 탭 — 에이전트(공문 검색, 2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 \'에이전트\' 하나 추가해서 공문검색 … 받은공문, 보낸 공문")');
+{
+  const { listPage } = await import('./fixtures/gmlist-fixture.mjs');
+  const { spanFrom } = await import('../src/gmlist.js');
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const TODAY = ymd(new Date());
+  const Y = TODAY.slice(0, 4);
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+  const dot = (s) => `${+s.slice(0, 4)}. ${+s.slice(5, 7)}. ${+s.slice(8, 10)}.`;
+  // 받은 공문(결재함) — 남이 기안해 내게 결재·참조로 온 것. 보낸 공문(기안함) — 내가 기안한 것. 문서함 흉내는 기간을 보지 않고 제목 검색만 흉내 낸다.
+  const IN1 = { id: `HER-${Y}-000510`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '전력변환 시험 장비 구매 품의', name: '홍길동', dept: '친환경선박연구팀', date: daysAgo(5), done: daysAgo(4), status: '발송', flow: '7', writer: 'hong' };
+  const IN2 = { id: `HER-${Y}-000480`, form: 'KR_EA_Form2', formName: '일반품의서', title: '부산 출장 결과 보고', name: '이몽룡', dept: '친환경선박연구팀', date: daysAgo(20), status: '결재처리중', flow: '3', writer: 'lee' };
+  const OUT1 = { id: `HER-${Y}-000128`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '차단기 과제 수행을 위한 시험 장비 구매 품의', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(70), done: daysAgo(70), status: '발송', flow: '7' };
+  const OUT2 = { id: `HER-${Y}-000700`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '대전 출장 품의', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(2), status: '결재처리중', flow: '3' };
+  const page = (html, url) => ({ ok: true, status: 200, type: 'basic', url, headers: { get: () => 'text/html; charset=utf-8' }, arrayBuffer: async () => new TextEncoder().encode(html).buffer });
+  const posts = [];
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    const m = u.match(/\/RealEANet\/AppBoard\/DocList(\w+)\.aspx/);
+    if (!m) throw new Error('offline');
+    if (init.method !== 'POST') return page(listPage({ rows: [], count: 0 }), u);
+    const body = new URLSearchParams(init.body);
+    const keyword = body.get('ctl00$ContentPlaceHolder1$SearchBar$txtSearchKeyWord');
+    posts.push({ box: m[1], from: body.get('ctl00$ContentPlaceHolder1$SearchBar$dtpBeginningDate'), to: body.get('ctl00$ContentPlaceHolder1$SearchBar$dtpClosingDate'), keyword, target: body.get('__EVENTTARGET') });
+    // 서버의 제목 검색 — 이어진 한 토막만(실측). IN1 은 결재 완료함과 참조함 둘 다에 있다.
+    const all = { Decided: [IN1], Reference: [IN2, IN1], Finished: [OUT1], Requested: [OUT2] }[m[1]] || [];
+    const rows = all.filter((r) => !keyword || r.title.includes(keyword));
+    return page(listPage({ rows, count: rows.length }), u);
+  };
+  const { window, calls, store } = await boot({ mode: 'gongmun', gongmunKind: 'purchase', myName: '김거화' }, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const stateText = () => doc.getElementById('gmSearchState').textContent;
+  const shownIds = () => [...doc.querySelectorAll('#gmSearchList .gm-hist-item')].map((li) => li.dataset.id);
+  const waitPosts = async (n) => { for (let i = 0; i < 100 && posts.length < n; i++) await settle(30); await settle(500); };
+  const input = doc.getElementById('gmSearchText');
+  await settle();
+  doc.querySelector('#gmKinds [data-kind="agent"]').click();
+  await waitPosts(5);
+  t('에이전트를 누르면 갈래 줄과 검색 카드만 남고(.agent) 받은 공문·최근 3개월을 바로 읽는다 — 결재함 다섯 함을 검색 포스트백, 찾을 말 없이, 새 것이 위, 같은 문서번호는 앞 함의 것', () => {
+    assert.ok(doc.getElementById('gongmun').classList.contains('agent'));
+    assert.ok(!doc.getElementById('gmSearch').hidden);
+    assert.equal(doc.querySelector('#gmKinds .gm-kind.active').dataset.kind, 'agent');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="purchase"]').getAttribute('aria-pressed'), 'false', '갈래에는 불이 없다');
+    assert.deepEqual(posts.map((p) => p.box), ['Undecided', 'Progress', 'Decided', 'Reference', 'DecidedRejected']);
+    assert.ok(posts.every((p) => p.target === 'ctl00$ContentPlaceHolder1$SearchBar$btnSearch' && p.from === spanFrom('3m', TODAY) && p.to === TODAY && p.keyword === ''), JSON.stringify(posts[0]));
+    assert.match(stateText(), /^받은 공문 · 최근 3개월 · 2건 · \d{2}:\d{2} 읽음$/);
+    assert.deepEqual(shownIds(), [IN1.id, IN2.id]);
+    const items = [...doc.querySelectorAll('#gmSearchList .gm-hist-item')];
+    assert.equal(items[0].querySelector('.gm-hist-sub').textContent, `결재 완료함 · 연구업무품의서 · 홍길동 · ${dot(IN1.date)}`, '받은 공문은 함·양식·기안자·기안일');
+    assert.equal(items[1].querySelector('.gm-hist-sub').textContent, `참조함 · 일반품의서 · 이몽룡 · ${dot(IN2.date)}`);
+    assert.ok(items[0].classList.contains('st-done') && items[1].classList.contains('st-going'));
+    assert.deepEqual([...doc.querySelectorAll('#gmSearchDir [data-dir]')].map((b) => [b.dataset.dir, b.textContent, b.getAttribute('aria-checked')]), [['in', '받은 공문', 'true'], ['out', '보낸 공문', 'false']]);
+    assert.deepEqual([...doc.querySelectorAll('#gmSearchSpan [data-span]')].map((b) => [b.dataset.span, b.getAttribute('aria-checked')]), [['3m', 'true'], ['y0', 'false'], ['y1', 'false'], ['y2', 'false']]);
+    assert.equal(store.gongmunSearch.on, true);
+    assert.equal(store.gongmunSearch.rows.length, 2);
+    assert.deepEqual(store.gongmunSearch.read, { dir: 'in', from: spanFrom('3m', TODAY), to: TODAY, keyword: '' });
+    assert.ok(!doc.getElementById('gmEvidence').classList.contains('hidden'), '작성 쪽의 칸은 그대로 두고 CSS 로 가린다');
+  });
+  input.value = '올해 보낸 구매 공문 찾아줘';
+  input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await waitPosts(9);
+  t('"올해 보낸 구매 공문 찾아줘" + Enter — 보낸 공문·올해로 바뀌고 기안함 네 함을 "구매" 로 검색, 상태 줄에 방향·기간·말·건수, 적은 말·푼 것이 저장된다', () => {
+    assert.deepEqual(posts.slice(5).map((p) => p.box), ['Finished', 'Requested', 'Rejected', 'Temp']);
+    assert.ok(posts.slice(5).every((p) => p.keyword === '구매' && p.from === `${Y}-01-01` && p.to === TODAY), JSON.stringify(posts.at(-1)));
+    assert.deepEqual(shownIds(), [OUT1.id]);
+    assert.match(stateText(), /^보낸 공문 · 올해 · '구매' · 1건 · \d{2}:\d{2} 읽음$/);
+    assert.equal(doc.querySelector('#gmSearchDir [data-dir="out"]').getAttribute('aria-checked'), 'true');
+    assert.equal(doc.querySelector('#gmSearchSpan [data-span="y0"]').getAttribute('aria-checked'), 'true');
+    assert.equal(doc.querySelector('#gmSearchList .gm-hist-sub').textContent, `완료함 · 연구업무품의서 · ${dot(OUT1.date)}`, '보낸 공문에는 기안자(나)를 적지 않는다');
+    assert.deepEqual([store.gongmunSearch.dir, store.gongmunSearch.span, store.gongmunSearch.text, store.gongmunSearch.keyword, store.gongmunSearch.terms], ['out', 'y0', '올해 보낸 구매 공문 찾아줘', '구매', ['구매']]);
+  });
+  doc.querySelector('#gmSearchDir [data-dir="in"]').click();
+  await waitPosts(14);
+  t('받은 공문 단추 — 찾을 말·기간은 그대로 두고 결재함을 다시 읽는다', () => {
+    assert.deepEqual(posts.slice(9).map((p) => p.box), ['Undecided', 'Progress', 'Decided', 'Reference', 'DecidedRejected']);
+    assert.ok(posts.slice(9).every((p) => p.keyword === '구매' && p.from === `${Y}-01-01`));
+    assert.deepEqual(shownIds(), [IN1.id]);
+    assert.match(stateText(), /^받은 공문 · 올해 · '구매' · 1건/);
+  });
+  doc.querySelector(`#gmSearchList [data-id="${IN1.id}"] .gm-hist-head`).click();
+  t('카드를 누르면 펴져 문서번호·기안자·부서·기안일·완료일과 eclass 에서 열기(문서 보기 창을 새 탭에)', () => {
+    const li = doc.querySelector(`#gmSearchList [data-id="${IN1.id}"]`);
+    assert.ok(li.classList.contains('open'));
+    assert.equal(li.querySelector('.gm-hist-more').textContent, `문서번호${IN1.id}기안자홍길동부서친환경선박연구팀기안일${dot(IN1.date)}완료일${dot(IN1.done)}eclass 에서 열기`);
+    const before = calls.tabs.length;
+    li.querySelector('[data-act="open"]').click();
+    assert.equal(calls.tabs.length, before + 1);
+    assert.match(calls.tabs.at(-1).url, new RegExp(`^https://eclass\\.krs\\.co\\.kr/RealEANET/loginbyname\\.aspx\\?ReturnUrl=%2FRealEANET%2FMain%2FDocumentView\\.aspx%3FFORMID%3DKR_EA_Research_Task%26DOCID%3D${IN1.id}`));
+  });
+  input.value = '지난달 출장 보고';
+  doc.getElementById('gmSearchGo').click();
+  await waitPosts(19);
+  t('"지난달 출장 보고" + 찾기 — 말로 적은 기간은 그 달의 첫날~끝날로 읽고 단추 자리에 "지난달" 이 선다, 서버에는 가장 긴 말, 두 말이 다 든 제목만', () => {
+    const d = new Date();
+    const lm = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const le = new Date(d.getFullYear(), d.getMonth(), 0);
+    assert.ok(posts.slice(14).every((p) => p.keyword === '출장' && p.from === ymd(lm) && p.to === ymd(le)), JSON.stringify(posts.at(-1)));
+    assert.equal(doc.querySelectorAll('#gmSearchSpan [data-span][aria-checked="true"]').length, 0);
+    assert.equal(doc.querySelector('#gmSearchSpan span.active').textContent, '지난달');
+    assert.deepEqual(shownIds(), [IN2.id]);
+    assert.match(stateText(), /^받은 공문 · 지난달 · '출장' '보고' · 1건/);
+    assert.deepEqual([store.gongmunSearch.span, store.gongmunSearch.from, store.gongmunSearch.to, store.gongmunSearch.label], ['custom', ymd(lm), ymd(le), '지난달']);
+  });
+  doc.querySelector('#gmSearchSpan [data-span="3m"]').click();
+  await waitPosts(24);
+  t('기간 단추를 누르면 말로 적은 기간은 버리고 그 기간으로 다시 읽는다(찾을 말은 그대로)', () => {
+    assert.ok(posts.slice(19).every((p) => p.from === spanFrom('3m', TODAY) && p.to === TODAY && p.keyword === '출장'));
+    assert.equal(doc.querySelector('#gmSearchSpan [data-span="3m"]').getAttribute('aria-checked'), 'true');
+    assert.equal(doc.querySelector('#gmSearchSpan span.active'), null);
+    assert.deepEqual(shownIds(), [IN2.id]);
+  });
+  doc.querySelector('#gmKinds [data-kind="purchase"]').click();
+  await settle(500);
+  t('갈래를 누르면 에이전트가 꺼지고 작성 쪽으로 돌아온다 — 끈 것은 저장되고 갈래는 그대로', () => {
+    assert.ok(!doc.getElementById('gongmun').classList.contains('agent'));
+    assert.ok(doc.getElementById('gmSearch').hidden);
+    assert.equal(doc.querySelector('#gmKinds .gm-kind.active').dataset.kind, 'purchase');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').getAttribute('aria-pressed'), 'false');
+    assert.equal(store.gongmunSearch.on, false);
+    assert.equal(store.gongmunKind, 'purchase');
+    assert.equal(posts.length, 24, '다시 읽지 않는다');
+  });
+  const kept = { ...store.gongmunSearch, on: true, at: Date.now() };
+  const second = await boot({ mode: 'gongmun', gongmunKind: 'edu', myName: '김거화', gongmunSearch: kept }, { fetchImpl: async () => { throw new Error('offline'); } });
+  await settle(100);
+  t('켜 두고 닫았으면 에이전트로 열리고, 10분 안의 같은 조건이면 읽지 않고 찾아 둔 것을 보인다 — 적은 말도 그대로', () => {
+    const d2 = second.window.document;
+    assert.ok(d2.getElementById('gongmun').classList.contains('agent'));
+    assert.equal(d2.querySelector('#gmKinds .gm-kind.active').dataset.kind, 'agent');
+    assert.equal(second.calls.urls.filter((u) => /DocList/.test(u)).length, 0, '문서함을 읽지 않는다');
+    assert.deepEqual([...d2.querySelectorAll('#gmSearchList .gm-hist-item')].map((li) => li.dataset.id), [IN2.id]);
+    assert.equal(d2.getElementById('gmSearchText').value, '지난달 출장 보고');
+    assert.match(d2.getElementById('gmSearchState').textContent, /^받은 공문 · 최근 3개월 · '출장' '보고' · 1건 · \d{2}:\d{2} 읽음$/);
+  });
+  await settle(500);
 }
 
 console.log(`\n통과 ${pass}건`);

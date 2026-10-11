@@ -11,6 +11,8 @@
 // 과제번호(없으면 과제명)가 같으면 같은 과제로 보고 빈 칸만 채운다(mergeProjects). 여기 담은 것은 이 브라우저에만 남으니
 // JSON 으로 내보내고(exportJson) 들여올(importJson) 수 있다.
 
+import { normalizeErp, erpSummaryLines } from './rnderp.js';
+
 export const BOOK_KEY = 'rndBook';
 export const MAX_PROJECTS = 10;
 /** 한 과제를 자를 수 있는 차년도 수의 한도 — 연구기간을 잘못 적어도(2026~2099) 끝없이 자르지 않는다. */
@@ -70,6 +72,20 @@ export function amountOf(v) {
 }
 export const comma = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('ko-KR') : '');
 export const won = (n) => (Number.isFinite(n) ? `${comma(n)}원` : '');
+/** 예산 칸은 **천원** 단위로 보인다(2026-10-11 사용자 지정 — 연구개발계획서의 단위). 원 → 천원 글 "31,425". 저장은 원 그대로다. */
+export const thousand = (n) => (Number.isFinite(n) ? comma(Math.round(n / 1000)) : '');
+/**
+ * 천원 단위 칸에 적은 글 → 원. 숫자만 적으면 천원(31,425 → 31,425,000), 만·억·천·원 같은 단위를 붙이면 그 단위 그대로(150만 → 1,500,000 · 3천만 → 30,000,000 · 500,000원 → 500,000).
+ * 비었거나 못 읽으면 null.
+ */
+export function amountOfThousand(v) {
+  if (typeof v === 'number') return amountOf(v);
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  if (/(억|만|천|원|₩)\s*$/.test(s)) return amountOf(s);
+  const n = amountOf(s);
+  return n == null ? null : n * 1000;
+}
 /** 1.2억 · 3,500만 · 5,000원 처럼 짧게 — 접힌 칸의 머리와 과제 칩에 쓴다. */
 export function shortWon(n) {
   if (!Number.isFinite(n)) return '';
@@ -141,7 +157,12 @@ export function blankYear() {
 
 /** key 는 파일에서 들여온 줄의 꼬리표(src/rndyaml.js) — 같은 파일을 다시 넣어도 그 줄을 다시 만들지 않는다. 손으로 적은 줄에는 없다. */
 const withKey = (o, raw) => (text(raw?.key, 120) ? { ...o, key: text(raw.key, 120) } : o);
-const normalizeRow = (r) => ({ id: text(r?.id, 40) || newId(), item: text(r?.item, 60), plan: amountOf(r?.plan), used: amountOf(r?.used) });
+/** erpKey 는 rERP 집행내역과 맞춰진 비목의 '재원코드|비목명'(src/rnderp.js) — 있으면 집행은 rERP 승인액이고 손으로 못 고친다. */
+const normalizeRow = (r) => {
+  const row = { id: text(r?.id, 40) || newId(), item: text(r?.item, 60), plan: amountOf(r?.plan), used: amountOf(r?.used) };
+  if (text(r?.erpKey, 120)) row.erpKey = text(r.erpKey, 120);
+  return row;
+};
 const normalizeLog = (l) => withKey({ id: text(l?.id, 40) || newId(), date: isYmd(l?.date) ? l.date : '', title: text(l?.title, 200), text: text(l?.text, 4000) }, l);
 const normalizeChange = (c) => withKey({
   id: text(c?.id, 40) || newId(), date: isYmd(c?.date) ? c.date : '', kind: CHANGE_KINDS.includes(c?.kind) ? c.kind : '기타',
@@ -165,6 +186,9 @@ export function normalizeYear(raw) {
       items: (Array.isArray(raw.snapshot.items) ? raw.snapshot.items : []).map((s) => text(s, 60)).filter(Boolean),
     };
   }
+  // 이 차년도에 이어 둔 rERP 과제와 마지막 집행내역 스냅샷(src/rnderp.js) — 없으면 이어지지 않은 차년도.
+  const erp = normalizeErp(raw.erp);
+  if (erp) y.erp = erp;
   return y;
 }
 
@@ -243,6 +267,12 @@ export function budgetTotals(rows) {
   }
   return { plan, used, left: plan - used, rate: plan > 0 ? Math.round((used / plan) * 100) : null };
 }
+
+/**
+ * 차년도에 예산 정보가 들어 있는가 — 비목 줄 가운데 계획이나 집행이 적힌 줄이 하나라도 있으면(손으로 적은 것·계획서 YAML·rERP 집행내역 다 같다).
+ * 없는 차년도(아직 장부에 없음)나 기본 비목 여섯 줄만 깔린 차년도는 아니다. 차년도 칩은 이것이 없으면 회색으로 잠긴다(rndpanel.js — 2026-10-11 사용자 지정).
+ */
+export const hasBudget = (y) => !!y && (y.budget || []).some((r) => r.plan != null || r.used != null);
 
 /**
  * 예산 계획이 바뀐 줄을 변경이력으로. 전에 적어 둔 계획(0 보다 큼)이 있던 줄만 — 처음 적는 것은 변경이 아니다.
@@ -439,12 +469,12 @@ export function parseSections(text) {
 
 /* ------------------------------------------------------------ 복사할 글 */
 
-/** 비목별 계획·집행·잔액·집행률과 합계를 탭으로 나눈 표로 — 엑셀·한글 표에 그대로 붙는다. 적은 것이 없는 줄은 뺀다. */
+/** 비목별 계획·집행·잔액·집행률과 합계를 탭으로 나눈 표로 — 엑셀·한글 표에 그대로 붙는다. 적은 것이 없는 줄은 뺀다. 금액은 예산 칸처럼 **천원**. */
 export function budgetTsv(rows) {
   const list = (rows || []).filter((r) => r.item && (r.plan != null || r.used != null));
   const sum = budgetTotals(list);
-  const line = (name, plan, used) => [name, comma(plan), comma(used), comma(plan - used), plan > 0 ? `${Math.round((used / plan) * 100)}%` : ''].join('\t');
-  return ['비목\t계획(원)\t집행(원)\t잔액(원)\t집행률', ...list.map((r) => line(r.item, r.plan || 0, r.used || 0)), ...(list.length ? [line('합계', sum.plan, sum.used)] : [])].join('\n');
+  const line = (name, plan, used) => [name, thousand(plan), thousand(used), thousand(plan - used), plan > 0 ? `${Math.round((used / plan) * 100)}%` : ''].join('\t');
+  return ['비목\t계획(천원)\t집행(천원)\t잔액(천원)\t집행률', ...list.map((r) => line(r.item, r.plan || 0, r.used || 0)), ...(list.length ? [line('합계', sum.plan, sum.used)] : [])].join('\n');
 }
 
 /** 연구내역 한 줄을 복사할 글로 — 참여연구자(표의 줄들)는 탭으로 나눈 표, 그 밖은 제목 줄 아래 글 그대로. */
@@ -503,6 +533,8 @@ export function summaryText(project, n, today = todayStr()) {
     lines.push(`- ${r.item}: 계획 ${won(r.plan || 0)} · 집행 ${won(r.used || 0)} · 잔액 ${won((r.plan || 0) - (r.used || 0))}${rate}`);
   }
   if (rows.length) lines.push(`- 합계: 계획 ${won(sum.plan)} · 집행 ${won(sum.used)} · 잔액 ${won(sum.left)}${sum.rate == null ? '' : ` · 집행률 ${sum.rate}%`}`);
+  // rERP 로 이어진 차년도면 집행은 rERP 승인액이고, 집행비율(미청구·승인전 반영)·조회 시각도 같이 적는다(src/rnderp.js).
+  lines.push(...erpSummaryLines(book.erp));
 
   const roster = fileLog(book, 'roster');
   if (roster) {

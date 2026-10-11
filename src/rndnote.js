@@ -35,9 +35,12 @@ export function normalizeNote(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const str = (v, max = 400) => (typeof v === 'string' ? v.slice(0, max) : '');
   const map = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const plus = map(o.plus);
   return {
     on: o.on === true, sectionId: str(o.sectionId), sectionLabel: str(o.sectionLabel), pageId: str(o.pageId), webUrl: str(o.webUrl, 2000),
     at: Number.isFinite(o.at) ? o.at : 0, memo: map(o.memo), del: map(o.del), last: str(o.last, 600), error: str(o.error, 600),
+    // 예상 비용 공유(2026-10-11) — kr_ext_rerp 확장 Plus 의 설정(plus.sectionName · notebookId)과 같은 뜻. 섹션 이름 기본 RERP. 동기화 결과는 rerp 와 같은 키(planSyncState · plusPlanPages · plusSection)에.
+    plus: { on: plus.on === true, sectionName: str(plus.sectionName, 80) || 'RERP', notebookId: str(plus.notebookId, 200), notebookLabel: str(plus.notebookLabel, 200), last: str(plus.last, 600), error: str(plus.error, 600) },
   };
 }
 

@@ -7,6 +7,7 @@ import { JSDOM } from 'jsdom';
 
 import { readZip } from '../src/zip.js';
 import { PAGE_TITLE, blockHtml, findBlock, readBlock } from '../src/rndnote.js';
+import PLAN_SYNC from '../rerp/plansync.js';
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -24,10 +25,13 @@ globalThis.window = window;
 const store = { gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', period: '2026.04.01 ~ 2029.12.31', about: '', content: '', account: '' }] };
 globalThis.chrome = { storage: { local: { get: async () => store, set: async (obj) => { Object.assign(store, JSON.parse(JSON.stringify(obj))); } } } };
 
+// rerp/plan.js 의 내보내기(⬆)는 navigator.clipboard 로 바로 복사한다 — 패널의 copyText 와 같은 바구니(copied)에 담는다.
+const copied = [];
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'rndpanel-test', clipboard: { writeText: async (text) => { copied.push(text); } } } });
+
 const { createRndPanel } = await import('../rndpanel.js');
 const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const logs = [];
-const copied = [];
 const downloads = [];
 const flashed = [];
 // 원노트 흉내(KR_MS365_mcp 의 onenote 서버 자리) — 섹션 하나, 페이지는 글(body)로 둔다. 다른 기기가 고친 것은 body 를 직접 바꿔 흉내 낸다.
@@ -54,7 +58,54 @@ const fakeNote = {
     return fail(`모르는 도구 ${name}`);
   },
 };
+// rERP 흉내(rerp/erp.js 자리) — 과제 목록(recs)·비목별 잔액(items)·미청구 카드(cards)를 검사가 정한다. 처음엔 비어 있어 저절로 잇기가 "목록이 비어 있습니다" 로 끝난다.
+const erpFake = {
+  recs: [], items: [], cards: [], loggedIn: true, calls: [],
+  settingsOf: (o) => ({ ...o }),
+  async fetchProjectRecs() { erpFake.calls.push('recs'); if (!erpFake.loggedIn) throw Object.assign(new Error('rcomm_0009_01_r001: 사용자 정보가 존재하지 않습니다'), { kind: 'login' }); return { recs: erpFake.recs, calls: [], capped: false, firstErr: null }; },
+  async fetchBudget(prjNo) {
+    erpFake.calls.push(`budget:${prjNo}`);
+    if (!erpFake.loggedIn) throw Object.assign(new Error('rcomm_0041_01_r004: 사용자 정보가 존재하지 않습니다'), { kind: 'login' });
+    const items = erpFake.items.map((x) => ({ ...x, bal: x.bal ?? x.bgt - x.appr - (x.req || 0), rate: x.bgt > 0 && x.appr > 0 ? Math.trunc(x.appr / x.bgt * 10000) / 100 : 0, excluded: /인건비|연구수당|간접비/.test(x.exp) }));
+    const inc = items.filter((x) => !x.excluded);
+    const sum = (k) => inc.reduce((s, x) => s + (x[k] || 0), 0);
+    const bgtAmt = sum('bgt'), apprAmt = sum('appr');
+    return { std: '10', items, bgtAmt, apprAmt, balAmt: sum('bal'), reqAmt: sum('req'), rate: bgtAmt > 0 && apprAmt > 0 ? Math.trunc(apprAmt / bgtAmt * 10000) / 100 : 0, exclNames: items.filter((x) => x.excluded).map((x) => x.exp), resCount: new Set(items.map((x) => x.resCd)).size };
+  },
+  async fetchCards(prjNo) { erpFake.calls.push(`cards:${prjNo}`); return erpFake.cards; },
+  withPending(b, unbilled, count) { b.unbilled = unbilled; b.unbilledCount = count; b.pending = unbilled + (b.reqAmt || 0); b.execAmt = b.apprAmt + b.pending; b.balAfter = b.balAmt - unbilled; b.rateAll = b.bgtAmt > 0 && b.execAmt > 0 ? Math.trunc(b.execAmt / b.bgtAmt * 10000) / 100 : 0; b.pendingRate = b.bgtAmt > 0 && b.pending > 0 ? Math.trunc(b.pending / b.bgtAmt * 10000) / 100 : 0; return b; },
+  async ssoLogin() { erpFake.calls.push('sso'); if (erpFake.eclassDown) throw Object.assign(new Error('eClass 로그인이 풀려 R&D ERP 자동 로그인(SSO)을 못 했습니다'), { kind: 'eclass-login' }); erpFake.loggedIn = true; return { ok: true }; },
+};
+// 예상 비용 원노트 동기화가 두드릴 OneNote MCP 서버 흉내(rerp/mcp.js 가 fetch 로 부른다) — 섹션 RERP 하나, 페이지는 메모리. test/rerp.test.mjs 의 것과 같은 꼴.
+const mcp = { pages: [], calls: [], up: true, n: 0 };
+const mcpGuid = (k) => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`;
+const mcpTool = (name, a) => {
+  mcp.calls.push(`${name}${a.action ? `:${a.action}` : ''}`);
+  if (name === 'read_onenote' && a.action === 'list_sections') return { success: true, sections: [{ id: 'sec-rerp', display_name: 'RERP', parent_notebook_id: 'nb1', parent_notebook_name: '연구' }] };
+  if (name === 'read_onenote' && a.action === 'list_pages') return { success: true, pages: mcp.pages.filter((p) => !a.section_id || p.section === a.section_id).map((p) => ({ page_id: p.id, title: p.title, web_url: p.url, section_id: p.section })) };
+  if (name === 'sync_onenote_db') return { success: true };
+  if (name === 'write_onenote' && a.action === 'create_page') { const k = ++mcp.n; const p = { id: `1-${'b'.repeat(32)}!${k}-${mcpGuid(k)}`, section: a.section_id, title: a.title, url: `https://krclass-my.sharepoint.com/x?wd=target%28RERP.one%7C${mcpGuid(0)}%2Fp%7C${mcpGuid(k)}%2F%29`, body: a.content }; mcp.pages.push(p); return { success: true, page: { id: p.id, web_url: p.url, title: p.title } }; }
+  const p = mcp.pages.find((x) => x.id === a.page_id);
+  if (!p) throw new Error('page not found');
+  if (a.action === 'get_content') return { success: true, content: `<html><head><title>${p.title}</title></head><body>${p.body.replace('<table data-id', '<table id="table:{t}{1}" data-id')}</body></html>` };
+  if (a.action === 'replace') { p.body = p.body.replace(/<table[\s\S]*<\/table>/, a.content); return { success: true }; }
+  if (a.action === 'append') { p.body += a.content; return { success: true }; }
+  throw new Error(`모르는 도구 ${name}`);
+};
+const mcpFetch = async (url, init) => {
+  if (!mcp.up) throw new TypeError('Failed to fetch');
+  if (init.method === 'DELETE') return { ok: true, status: 200, headers: { get: () => null }, text: async () => '' };
+  const msg = JSON.parse(init.body);
+  const reply = (result) => ({ ok: true, status: 200, headers: { get: (h) => (h === 'mcp-session-id' ? 's-1' : h === 'content-type' ? 'text/event-stream' : null) }, text: async () => `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })}\n\n` });
+  if (msg.method === 'initialize') return reply({ protocolVersion: '2025-06-18' });
+  if (!('id' in msg)) return { ok: true, status: 202, headers: { get: () => null }, text: async () => '' };
+  if (msg.method === 'tools/list') return reply({ tools: [{ name: 'read_onenote' }, { name: 'write_onenote' }, { name: 'sync_onenote_db' }] });
+  try { return reply({ content: [{ type: 'text', text: JSON.stringify(mcpTool(msg.params.name, msg.params.arguments || {})) }], isError: false }); }
+  catch (e) { return reply({ content: [{ type: 'text', text: JSON.stringify({ success: false, error: e.message }) }], isError: true }); }
+};
+let myName = '박기도';   // 설정의 내 이름 — 예상 비용 페이지는 과제책임자(== 내 이름)만 만든다
 const make = () => createRndPanel({
+  erp: erpFake, me: () => myName, mcpFetch,
   openNote: async () => (one.up ? fakeNote : Promise.reject(new Error('이 PC 의 OneNote MCP 서버(http://localhost:5005/mcp)에 닿지 않습니다'))),
   $: (id) => doc.getElementById(id), escapeHtml,
   logEvent: (kind, ok, text) => logs.push({ kind, ok, text }),
@@ -76,6 +127,8 @@ const type = (node, value, ev = 'input') => { node.value = value; node.dispatchE
 const commit = (node, value) => { type(node, value); node.dispatchEvent(new window.Event('change', { bubbles: true })); };
 const chips = () => [...$('rdProjects').querySelectorAll('[data-proj]')].map((b) => [b.textContent, b.classList.contains('active')]);
 const years = () => [...$('rdYears').querySelectorAll('[data-year]')].map((b) => `${b.textContent}${b.classList.contains('active') ? '*' : ''}`);
+/** 예산 정보가 없어 회색으로 잠긴 차년도 칩들. */
+const locked = () => [...$('rdYears').querySelectorAll('[data-year].off')].map((b) => b.dataset.year);
 const rows = () => [...$('rdBudget').querySelectorAll('.rd-brow')].map((r) => [r.querySelector('[data-k="item"]').value, r.querySelector('[data-k="plan"]').value, r.querySelector('[data-k="used"]').value, r.querySelector('[data-left]').textContent]);
 const row = (item) => [...$('rdBudget').querySelectorAll('.rd-brow')].find((r) => r.querySelector('[data-k="item"]').value === item);
 const sum = () => [...$('rdBudgetSum').children].map((s) => s.textContent);
@@ -111,11 +164,14 @@ t('과제 칩 하나(별칭)가 켜져 있고 머리는 별칭 한 줄 — 과�
   assert.match(status(), /공문 탭의 과제 1개를 가져왔습니다/);
   assert.ok(logs.some((l) => l.kind === 'rnd' && /처음 열 때/.test(l.text)));
 });
-t('차년도 칩은 넷, 오늘(2026-10-08)이 든 1차년도가 켜져 있고 "올해" 표시', () => {
+t('차년도 칩은 넷, 오늘(2026-10-08)이 든 1차년도가 켜져 있고 "올해" 표시 — 예산이 없는 2·3·4차년도는 회색으로 잠겨 있다', () => {
   assert.deepEqual(years(), ['1차년도올해*', '2차년도', '3차년도', '4차년도']);
   assert.equal(q('#rdYears .rd-year.now').dataset.year, '1');
-  assert.equal(q('#rdYears [data-year="2"]').title, '2027.04.01 ~ 2028.03.31');
+  assert.deepEqual(locked(), ['2', '3', '4']);
+  assert.equal(q('#rdYears [data-year="2"]').title, '2027.04.01 ~ 2028.03.31 · 예산 정보가 들어 있지 않습니다');
+  assert.equal(q('#rdYears [data-year="2"]').getAttribute('aria-disabled'), null, '잠긴 칩도 누를 수 있다(2026-10-11 사용자 지정 — 넘어가면 기록 칸 대신 R&D 설정이 선다)');
   assert.equal($('rdYearNote').textContent, '1차년도 · 2026.04.01 ~ 2027.03.31 · 진행 중');
+  assert.ok(hidden('rdYearEmpty'), '예산이 든(올해) 차년도에는 까닭 카드가 없다');
 });
 t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 참여연구자·연구개발 계획은 넣는 곳을 짚는다 · 변경이력 구분 다섯', () => {
   assert.deepEqual(rows().map((r) => r[0]), ['인건비', '연구시설·장비비', '연구재료비', '연구활동비', '연구수당', '간접비']);
@@ -123,11 +179,29 @@ t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 
   assert.deepEqual([$('rdRosterState').textContent, $('rdPlanState').textContent], ['계획서 없음', '계획서 없음']);
   assert.match($('rdRoster').textContent, /맨 아래 칸에 연구개발계획서 YAML/);
   assert.ok(hidden('rdRosterTools') && hidden('rdPlanTools'), '복사할 것이 없으면 복사 아이콘도 없다');
-  assert.ok(!$('rdRosterBox').open && !$('rdPlanBox').open && !$('rdLogBox').open, '참여연구자·연구개발 계획·진행 기록은 접혀 있다');
+  assert.ok(!$('rdRosterBox').open && !$('rdPlanBox').open && !$('rdLogBox').open && !$('rdChangeBox').open, '참여연구자·연구개발 계획·진행 기록·변경이력은 접혀 있다(변경이력은 2026-10-11 사용자 지정)');
+  assert.ok($('rdBudgetBox').open, '예산만 펴져 있다');
   assert.deepEqual([...$('rdBody').querySelectorAll(':scope > details > summary > span:first-of-type')].map((s) => s.textContent), ['예산', '참여연구자', '연구개발 계획', '진행 기록', '변경이력']);
   assert.ok(!$('rnd').textContent.includes('연구내역'), '"연구내역" 이라는 말은 화면에 없다');
-  assert.equal($('rnd').lastElementChild.id, 'rdSkillBox');
-  assert.equal($('rdSkillBox').previousElementSibling.id, 'rdIntake', '연구개발계획서 넣기는 맨 아래(스킬 칸 바로 위)');
+  // R&D 설정(2026-10-11 사용자 지정) — 탭 맨 아래 접힌 한 줄 안에 rERP 집행내역 체크 · 원노트 공유 · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬
+  assert.equal($('rnd').lastElementChild.id, 'rdSetBox');
+  assert.ok(!$('rdSetBox').open, 'R&D 설정은 접혀 있다');
+  // 2026-10-11 사용자 지정 — 공문 탭의 공문 설정(gmPresetBox)과 같은 카드 한 줄: 아이콘 · 이름 · 형편(summary-detail) · 화살표
+  assert.ok($('rdSetBox').classList.contains('card') && $('rdSetBox').classList.contains('rd-box'), 'R&D 설정은 공문 설정처럼 카드');
+  assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > summary > *')].map((x) => x.tagName.toLowerCase() + (x.getAttribute('class') ? `.${x.getAttribute('class')}` : '')), ['svg', 'span', 'span.summary-detail']);
+  assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > .rd-set-body > *')].map((x) => x.id || x.className), ['rd-check rd-set-check', 'rdItemBox', 'rdNoteBox', 'rdIntake', 'rdSkillBox']);
+  assert.ok($('rdErpOn').checked, 'rERP 집행내역은 기본 켬');
+  // 예산 칸에 보일 비목(2026-10-11 사용자 지정) — 계획서의 여섯 비목이 모두 켜진 채 늘어선다
+  assert.deepEqual([...$('rdItems').querySelectorAll('label')].map((l) => [l.textContent, l.querySelector('input').checked]), [['인건비', true], ['연구시설·장비비', true], ['연구재료비', true], ['연구활동비', true], ['연구수당', true], ['간접비', true]]);
+  // 집행에 더하기(미청구·사용계획 — 승인전 체크는 2026-10-11 사용자 지정으로 뺌)는 예산 칸 맨 위 줄 — 복사 아이콘 왼쪽(2026-10-11 사용자 지정으로 R&D 설정에서 옮김)
+  assert.equal($('rdIncRow').closest('details').id, 'rdBudgetBox', '집행에 더하기는 예산 칸 안');
+  assert.equal($('rdIncRow').parentElement, $('rdBudgetBox').querySelector('.rd-box-body').firstElementChild, '예산 칸 맨 위 줄');
+  assert.equal($('rdIncRow').nextElementSibling.id, 'rdBudgetCopy', '복사 아이콘 왼쪽');
+  assert.ok(!hidden('rdIncRow'));
+  assert.equal($('rdIncReq'), null, '승인전 체크는 없다');
+  assert.deepEqual([$('rdIncUnbilled').checked, $('rdIncPlan').checked], [false, false], '집행은 승인액만이 기본');
+  assert.equal($('rdSetState').textContent, 'rERP 켬 · 원노트 꺼짐', '형편은 공문 설정처럼 한 줄에 들어가게 짧게');
+  assert.equal($('rdSkillBox').previousElementSibling.id, 'rdIntake', '연구개발계획서 넣기는 스킬 칸 바로 위');
   assert.equal($('rdLogState').textContent, '적은 것 없음');
   assert.equal($('rdChangeState').textContent, '적은 것 없음');
   assert.deepEqual([...$('rdChKind').options].map((o) => o.value), ['예산', '연구내용', '연구기간', '연구진', '기타']);
@@ -140,17 +214,18 @@ await ta('저장소(rndBook)에 남는다', async () => {
 });
 
 console.log('예산');
-t('계획을 1,000만처럼 적으면 원으로 읽어 쉼표로 보이고, 처음 적는 것은 변경이 아니다', () => {
+t('계획을 1,000만처럼 적으면 원으로 읽어 천원으로 보이고(2026-10-11 사용자 지정), 처음 적는 것은 변경이 아니다', () => {
   commit(row('인건비').querySelector('[data-k="plan"]'), '1,000만');
-  assert.equal(row('인건비').querySelector('[data-k="plan"]').value, '10,000,000');
-  assert.equal(row('인건비').querySelector('[data-left]').textContent, '10,000,000');
-  assert.deepEqual(sum(), ['합계', '10,000,000', '0', '10,000,000', '']);
+  assert.equal(row('인건비').querySelector('[data-k="plan"]').value, '10,000');
+  assert.equal(row('인건비').querySelector('[data-left]').textContent, '10,000');
+  assert.deepEqual(sum(), ['합계', '10,000', '0', '10,000', '']);
   assert.equal($('rdBudgetState').textContent, '계획 1,000만 · 집행 0원 (0%)');
   assert.equal(chItems().length, 0);
+  assert.match(doc.querySelector('#rdBudgetBox .rd-bhead').textContent, /계획\(천원\)집행\(천원\)/);
 });
-t('집행을 적으면 잔액·집행률 — 막대 80%. 집행은 변경이 아니다', () => {
-  commit(row('인건비').querySelector('[data-k="used"]'), '8000000');
-  assert.equal(row('인건비').querySelector('[data-left]').textContent, '2,000,000');
+t('집행을 천원 숫자로 적으면(8,000 = 800만원) 잔액·집행률 — 막대 80%. 집행은 변경이 아니다', () => {
+  commit(row('인건비').querySelector('[data-k="used"]'), '8,000');
+  assert.equal(row('인건비').querySelector('[data-left]').textContent, '2,000');
   assert.equal(row('인건비').querySelector('.rd-bar').style.width, '80%');
   assert.equal($('rdBudgetState').textContent, '계획 1,000만 · 집행 800만 (80%)');
   assert.equal(chItems().length, 0);
@@ -161,7 +236,7 @@ t('계획을 고치면 변경이력에 저절로 남고 사유를 묻는다', ()
   assert.equal($('rdChangeState').textContent, '1건 · 사유 없음 1');
   assert.match(status(), /변경이력에 1건을 남겼습니다/);
   assert.ok($('rdChanges').querySelector('[data-reason]'), '줄 안에 사유 칸');
-  assert.deepEqual(sum(), ['합계', '15,000,000', '8,000,000', '7,000,000', '']);
+  assert.deepEqual(sum(), ['합계', '15,000', '8,000', '7,000', '']);
 });
 t('줄 안의 사유 칸에 적으면 붙는다', () => {
   commit($('rdChanges').querySelector('[data-reason]'), '연구원 1명 충원');
@@ -171,36 +246,34 @@ t('줄 안의 사유 칸에 적으면 붙는다', () => {
 });
 t('못 읽는 금액은 되돌리고 말한다', () => {
   commit(row('인건비').querySelector('[data-k="plan"]'), 'abc');
-  assert.equal(row('인건비').querySelector('[data-k="plan"]').value, '15,000,000');
-  assert.match(status(), /금액을 읽지 못했습니다/);
+  assert.equal(row('인건비').querySelector('[data-k="plan"]').value, '15,000');
+  assert.match(status(), /금액을 읽지 못했습니다.*천원 단위/);
   assert.equal(chItems().length, 1);
 });
-t('집행이 계획을 넘으면 잔액이 빨갛고 막대도 넘침', () => {
+t('집행이 계획을 넘으면 잔액이 빨갛고 막대도 넘침 — 단위를 붙이면(2천만) 그 단위로 읽는다', () => {
   commit(row('인건비').querySelector('[data-k="used"]'), '2천만');
-  assert.equal(row('인건비').querySelector('[data-left]').textContent, '-5,000,000');
+  assert.equal(row('인건비').querySelector('[data-left]').textContent, '-5,000');
   assert.ok(row('인건비').querySelector('[data-left]').classList.contains('over'));
   assert.ok(row('인건비').querySelector('.rd-bar').classList.contains('over'));
   assert.equal(row('인건비').querySelector('.rd-bar').style.width, '100%');
-  commit(row('인건비').querySelector('[data-k="used"]'), '8,000,000');
+  commit(row('인건비').querySelector('[data-k="used"]'), '8,000');
   assert.ok(!row('인건비').querySelector('[data-left]').classList.contains('over'));
+  assert.equal(panel.book().projects[0].years[1].budget[0].used, 8000000, '저장은 원');
 });
-t('비목 더하기 → 이름 적기. 빈 줄은 바로 빼고 금액 있는 줄은 두 번 — 뺀 비목도 변경이력에', () => {
-  $('rdBudgetAdd').click();
-  assert.equal(rows().length, 7);
-  type(q('#rdBudget .rd-brow:last-child [data-k="item"]'), '위탁연구개발비');
-  commit(q('#rdBudget .rd-brow:last-child [data-k="plan"]'), '300만');
+t('비목 더하기 단추는 없다(2026-10-11 사용자 지정 — 비목은 계획서의 여섯 비목). 빈 줄은 바로 빼고 금액 있는 줄은 두 번 — 뺀 비목도 변경이력에', () => {
+  assert.equal($('rdBudgetAdd'), null, '비목 더하기 단추가 없다');
+  assert.equal(rows().length, 6);
+  row('연구재료비').querySelector('[data-del]').click();
+  assert.equal(rows().length, 5, '빈 줄은 바로');
+  commit(row('연구수당').querySelector('[data-k="plan"]'), '300만');
   assert.equal(chItems().length, 1, '처음 적는 계획은 변경이 아니다');
-  $('rdBudgetAdd').click();
-  assert.equal(rows().length, 8);
-  q('#rdBudget .rd-brow:last-child [data-del]').click();
-  assert.equal(rows().length, 7, '빈 줄은 바로');
-  const del = row('위탁연구개발비').querySelector('[data-del]');
+  const del = row('연구수당').querySelector('[data-del]');
   del.click();
-  assert.equal(rows().length, 7, '한 번으로는 안 뺀다');
+  assert.equal(rows().length, 5, '한 번으로는 안 뺀다');
   assert.equal(del.textContent, '정말');
   del.click();
-  assert.equal(rows().length, 6);
-  assert.deepEqual(chItems()[0].slice(1, 4), ['예산', '위탁연구개발비', '3,000,000원→(비목 뺌)']);
+  assert.equal(rows().length, 4);
+  assert.deepEqual(chItems()[0].slice(1, 4), ['예산', '연구수당', '3,000,000원→(비목 뺌)']);
   assert.equal($('rdChangeState').textContent, '2건 · 사유 없음 1');
 });
 
@@ -288,25 +361,67 @@ t('고치기·지우기(두 번)', () => {
 });
 
 console.log('차년도 바꾸기');
-t('2차년도를 누르면 그 차년도의 빈 장부, 1차년도로 돌아오면 그대로', () => {
+// 2026-10-11 사용자 지정 — "3·4차년도처럼 비활성이면 이전 차년도 기록을 보여주지 말고 R&D 설정을 열어서": 넘어가되 상관없는 예산·참여연구자·계획·기록 칸은 숨긴다.
+t('예산 정보가 없는 2차년도를 누르면 넘어간다 — 1차년도의 예산·참여연구자·계획·기록 칸은 숨고, 까닭 카드와 R&D 설정(YAML 넣기)이 저절로 펴진다', () => {
+  assert.ok(!$('rdSetBox').open);
   q('#rdYears [data-year="2"]').click();
   assert.deepEqual(years(), ['1차년도올해', '2차년도*', '3차년도', '4차년도']);
+  assert.deepEqual(locked(), ['2', '3', '4'], '보고 있어도 예산이 없으면 점선 그대로');
+  assert.equal(status(), '', '까닭은 카드에만 — 상태 줄에 같은 말을 또 적지 않는다');
   assert.equal($('rdYearNote').textContent, '2차년도 · 2027.04.01 ~ 2028.03.31 · 예정');
-  assert.equal($('rdBudgetState').textContent, '적은 것 없음');
-  assert.equal(rows().length, 6);
+  assert.ok(hidden('rdBody'), '예산·참여연구자·연구개발 계획·진행 기록·변경이력·요약 복사는 없다');
+  assert.ok(!hidden('rdYearEmpty'));
+  assert.match($('rdYearEmpty').textContent, /^2차년도 — 예산 정보가 들어 있지 않습니다\. 아래 R&D 설정의 연구개발계획서 YAML 넣기에/);
+  assert.equal($('rdYearEmpty').nextElementSibling.id, 'rdBody', '까닭 카드는 상태 줄 아래, 숨은 기록 칸 자리 위');
+  assert.ok($('rdSetBox').open, 'R&D 설정이 저절로 펴진다');
+  assert.ok($('rdSetBox').contains($('rdIntake')), 'YAML 넣는 칸이 그 안에');
+  // 예산이 든 1차년도로 돌아오면 기록 칸이 다시 서고, 저절로 편 설정은 도로 접힌다.
+  q('#rdYears [data-year="1"]').click();
+  assert.deepEqual(years(), ['1차년도올해*', '2차년도', '3차년도', '4차년도']);
+  assert.ok(!hidden('rdBody') && hidden('rdYearEmpty'));
+  assert.ok(!$('rdSetBox').open, '저절로 편 것은 도로 접는다');
+  assert.equal(status(), '');
+  assert.equal(rows().find((r) => r[0] === '인건비')[1], '15,000');
+});
+t('R&D 설정을 손으로 펴 두었으면 예산 없는 차년도를 오가도 그대로 펴져 있다', () => {
+  $('rdSetBox').open = true;
+  q('#rdYears [data-year="3"]').click();
+  assert.ok($('rdSetBox').open && hidden('rdBody') && !hidden('rdYearEmpty'));
+  assert.match($('rdYearEmpty').textContent, /^3차년도 — /);
+  q('#rdYears [data-year="1"]').click();
+  assert.ok($('rdSetBox').open, '손으로 편 것은 접지 않는다');
+  $('rdSetBox').open = false;
+});
+t('장부에 2차년도 예산이 들어가면(계획서 YAML 이 넣듯) 그 칩이 열린다 — 누르면 그 차년도의 장부, 1차년도로 돌아오면 그대로', () => {
+  // 계획서 YAML 넣기가 하는 일을 장부에 바로 — 비목 한 줄에 계획만.
+  panel.book().projects[0].years[2] = { budget: [{ id: 'y2-a', item: '인건비', plan: 20000000, used: null }], logs: [], changes: [] };
+  q('#rdYears [data-year="2"]').click();
+  assert.deepEqual(years(), ['1차년도올해', '2차년도*', '3차년도', '4차년도']);
+  assert.deepEqual(locked(), ['3', '4'], '예산이 든 2차년도는 더는 잠기지 않는다');
+  assert.equal($('rdYearNote').textContent, '2차년도 · 2027.04.01 ~ 2028.03.31 · 예정');
+  assert.deepEqual(rows().map((r) => [r[0], r[1]]), [['인건비', '20,000']]);
   assert.equal(logItems().length, 0);
   assert.equal(chItems().length, 0);
   q('#rdYears [data-year="1"]').click();
+  assert.deepEqual(years(), ['1차년도올해*', '2차년도', '3차년도', '4차년도']);
+  assert.deepEqual(locked(), ['3', '4']);
   assert.equal(logItems().length, 1);
   assert.equal(chItems().length, 2);
-  assert.equal(rows().find((r) => r[0] === '인건비')[1], '15,000,000');
+  assert.equal(rows().find((r) => r[0] === '인건비')[1], '15,000');
 });
-await ta('보고 있던 차년도가 저장된다', async () => {
-  q('#rdYears [data-year="3"]').click();
+await ta('보고 있던 차년도가 저장된다 — 예산 없는 3차년도로 넘어간 것도 남는다(다시 열면 그 자리에 까닭 카드와 R&D 설정)', async () => {
+  q('#rdYears [data-year="2"]').click();
   await wait(500);
   const id = store.rndBook.projects[0].id;
+  assert.equal(store.rndBook.current.year[id], 2);
+  assert.ok(!hidden('rdBody') && !$('rdSetBox').open, '예산이 든 2차년도는 보통대로');
+  q('#rdYears [data-year="3"]').click();
+  await wait(500);
   assert.equal(store.rndBook.current.year[id], 3);
+  assert.deepEqual(years(), ['1차년도올해', '2차년도', '3차년도*', '4차년도']);
+  assert.ok(hidden('rdBody') && $('rdSetBox').open);
   q('#rdYears [data-year="1"]').click();
+  assert.ok(!$('rdSetBox').open);
 });
 
 console.log('과제 더하기·고치기·지우기');
@@ -471,7 +586,7 @@ await ta('스냅샷을 탭 어디에나 끌어다 놓으면 과제가 생기고(
   assert.deepEqual(years(), ['1차년도올해*', '2차년도', '3차년도', '4차년도']);
   assert.equal($('rdYearNote').textContent, '1차년도 · 2026.04.01 ~ 2026.12.31 · 진행 중');
   assert.match(metaText(), /과제번호 RS-2026-00000001.*책임자 홍길동.*연구기간 2026\.04\.01 ~ 2029\.12\.31 \(총 4차년도 · 1월 1일 기준\).*산업통상부/);
-  assert.deepEqual(rows().map((r) => [r[0], r[1]]), [['인건비', '30,000,000'], ['연구시설·장비비', ''], ['연구재료비', ''], ['연구활동비', '50,000,000'], ['연구수당', '6,000,000'], ['간접비', '20,000,000']]);
+  assert.deepEqual(rows().map((r) => [r[0], r[1]]), [['인건비', '30,000'], ['연구시설·장비비', ''], ['연구재료비', ''], ['연구활동비', '50,000'], ['연구수당', '6,000'], ['간접비', '20,000']]);
   assert.equal($('rdBudgetState').textContent, '계획 1.1억 · 집행 0원 (0%)');
   // 계획서에서 온 두 줄은 진행 기록이 아니라 저마다의 칸에 — 참여연구자는 표로, 계획은 절 제목과 번호·점 목록으로(글은 그대로).
   assert.deepEqual(logItems(), [], '진행 기록에는 없다');
@@ -530,7 +645,7 @@ await ta('r2 재생성본과 history 세 파일을 한꺼번에 넣으면 차례
     new window.File([fx('budget_history.yaml')], 'budget_history.yaml'),
   ]);
   await until(() => /참여연구원 이력/.test(status()));
-  assert.deepEqual(rows().map((r) => [r[0], r[1]]).filter((r) => r[1]), [['인건비', '30,000,000'], ['연구시설·장비비', '10,000,000'], ['연구활동비', '40,000,000'], ['연구수당', '6,000,000'], ['간접비', '20,000,000']]);
+  assert.deepEqual(rows().map((r) => [r[0], r[1]]).filter((r) => r[1]), [['인건비', '30,000'], ['연구시설·장비비', '10,000'], ['연구활동비', '40,000'], ['연구수당', '6,000'], ['간접비', '20,000']]);
   const items = chItems();
   // 앞서 둘(차년도 기준) + 스냅샷 r2 의 달라진 것 셋 + 레지스트리 셋 + 예산 이력은 스냅샷 줄에 사유만 붙임 + 참여연구원 둘
   assert.equal(items.length, 2 + 3 + 3 + 0 + 2);
@@ -563,7 +678,7 @@ await ta('칸마다 복사 아이콘 — 예산·참여연구자는 탭으로 �
   }
   $('rdBudgetCopy').click();
   await until(() => copied.length === n + 1);
-  assert.equal(copied[n], ['비목\t계획(원)\t집행(원)\t잔액(원)\t집행률', '인건비\t30,000,000\t0\t30,000,000\t0%', '연구시설·장비비\t10,000,000\t0\t10,000,000\t0%', '연구활동비\t40,000,000\t0\t40,000,000\t0%', '연구수당\t6,000,000\t0\t6,000,000\t0%', '간접비\t20,000,000\t0\t20,000,000\t0%', '합계\t106,000,000\t0\t106,000,000\t0%'].join('\n'));
+  assert.equal(copied[n], ['비목\t계획(천원)\t집행(천원)\t잔액(천원)\t집행률', '인건비\t30,000\t0\t30,000\t0%', '연구시설·장비비\t10,000\t0\t10,000\t0%', '연구활동비\t40,000\t0\t40,000\t0%', '연구수당\t6,000\t0\t6,000\t0%', '간접비\t20,000\t0\t20,000\t0%', '합계\t106,000\t0\t106,000\t0%'].join('\n'));
   assert.ok(copiedIcon('rdBudgetCopy'), '체크로 바뀐다');
   assert.ok(!flashed.some((f) => f[0] === 'rdBudgetCopy'), '아이콘은 글자를 바꾸는 flash 를 쓰지 않는다');
   $('rdRosterCopy').click();
@@ -624,7 +739,7 @@ await ta('YAML 이 아니거나 모르는 모양이면 말만 하고 아무것�
   assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /YAML 넣기 실패/.test(l.text)));
 });
 await ta('과제가 없는 장부에 이력 파일만 넣으면 먼저 스냅샷을 넣으라고 한다', async () => {
-  const empty = createRndPanel({ $: (id) => doc.getElementById(id), escapeHtml, logEvent: () => {}, today: () => '2026-10-08' });
+  const empty = createRndPanel({ $: (id) => doc.getElementById(id), escapeHtml, logEvent: () => {}, today: () => '2026-10-08', erp: erpFake });
   // 같은 화면을 빌려 쓰되 저장소는 빈 것으로 — 배선은 하지 않고 넣기만 부른다
   const saved = store.rndBook;
   delete store.rndBook;
@@ -668,7 +783,7 @@ await ta('칸을 펴면 스킬 다섯 개가 서고, zip 으로 받고(README �
 });
 await ta('목록을 못 읽으면 버튼을 잠그고 까닭을 보인다', async () => {
   // 같은 화면을 빌려 쓰되 배선은 하지 않는다(배선된 패널의 리스너가 이미 붙어 있다) — 읽기만 직접 부른다.
-  const broken = createRndPanel({ $: (id) => doc.getElementById(id), escapeHtml, logEvent: () => {}, readAsset: async () => { throw new Error('없음'); }, today: () => '2026-10-08' });
+  const broken = createRndPanel({ $: (id) => doc.getElementById(id), escapeHtml, logEvent: () => {}, readAsset: async () => { throw new Error('없음'); }, today: () => '2026-10-08', erp: erpFake });
   assert.equal(await broken.skills(), null);
   assert.match($('rdSkills').textContent, /스킬 목록을 읽지 못했습니다 — 없음/);
   assert.ok($('rdSkillZip').disabled && $('rdSkillGuide').disabled);
@@ -691,6 +806,7 @@ t('꺼져 있는 것이 기본 — 아무 데도 닿지 않는다. 칸은 YAML �
   assert.deepEqual(one.calls, []);
   assert.equal($('rdNoteBox').nextElementSibling.id, 'rdIntake');
   assert.ok(!$('rdBody').contains($('rdNoteBox')));
+  assert.ok($('rdSetBox').contains($('rdNoteBox')), 'R&D 설정 칸 안');
 });
 await ta('켜면 섹션을 불러와 고르게 한다', async () => {
   $('rdNoteOn').checked = true;
@@ -763,6 +879,287 @@ await ta('끄면 더는 닿지 않는다 — 과제 정보를 고쳐도', async 
   pickChip('TEST');
 });
 
+console.log('rERP 집행내역 — kr_ext_rerp 의 과제집행비율 표를 예산 칸 아래에 그대로(rerp/ 로 옮긴 코드, 2026-10-11 사용자 지정)');
+const used = (item) => row(item).querySelector('[data-k="used"]');
+const PRJ = 'RS-2026-00000001';
+t('이어지지 않은 차년도 — 과제번호로 찾는다는 안내, 표 없음. 탭을 열 때 저절로 잇기를 해 봤지만 목록이 비어 끝났다', () => {
+  assert.equal($('rdErpInfo').textContent, `과제번호 ${PRJ} 로 rERP 과제를 찾습니다`);
+  assert.equal($('rdErpTable').innerHTML, '');
+  assert.ok($('rdErpRefresh').disabled);
+  assert.ok(hidden('rdErpUnlink'));
+  assert.equal($('rdErpLink').textContent, 'rERP 과제 잇기');
+  assert.ok(erpFake.calls.includes('recs'), '탭을 열 때 과제 목록을 받아 저절로 잇기를 해 봤다');
+  assert.ok(logs.every((l) => !/rERP 잇기:/.test(l.text)), '목록이 비어 잇지 못했다');
+  assert.equal($('rdErp').parentElement.closest('details').id, 'rdBudgetBox', '예산 칸 안, 비목 더하기 아래');
+  // 2026-10-11 사용자 지정 — 기본은 접힌 한 줄(제목 · 형편 · 꺾쇠). 펴면 머리 줄(이은 과제 · ↻ · 잇기/끊기) · 고르기 · 표
+  assert.equal($('rdErp').tagName, 'DETAILS');
+  assert.ok(!$('rdErp').open, 'rERP 집행내역은 접혀 있다');
+  assert.deepEqual([...$('rdErp').querySelectorAll(':scope > summary > *')].map((x) => x.className), ['rd-erp-title', 'summary-detail']);
+  assert.equal($('rdErpState').textContent, '잇지 않음');
+  assert.ok($('rdErp').querySelector(':scope > .rd-erp-head').contains($('rdErpLink')) && !$('rdErp').querySelector('summary').contains($('rdErpLink')), '단추는 펴야 보인다');
+});
+await ta('rERP 과제 잇기 — 과제번호의 연차 행에서 1차년도를 골라 잇고 바로 받는다: 표가 서고, 맞춰진 비목의 집행 칸은 rERP 승인액(읽기 전용), 칸 머리에 집행비율', async () => {
+  const NM = 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발';
+  erpFake.recs = [
+    { PRJ_NO: PRJ, ANL: '1', PRJ_NM: NM, PRJ_RSPR_EMP_NM: '홍길동', PROG_STS_NM: '진행', RCH_ST_DT: '20260401', RCH_END_DT: '20261231' },
+    { PRJ_NO: PRJ, ANL: '2', PRJ_NM: NM, PRJ_RSPR_EMP_NM: '홍길동', PROG_STS_NM: '진행', RCH_ST_DT: '20270101', RCH_END_DT: '20271231' },
+    { PRJ_NO: 'RS-2025-00000009', ANL: '1', PRJ_NM: '다른 과제', PRJ_RSPR_EMP_NM: '김아무', PROG_STS_NM: '진행', RCH_ST_DT: '20250101', RCH_END_DT: '20251231' },
+  ];
+  erpFake.items = [
+    { res: '산업부', resCd: '10', exp: '인건비', bgt: 30000000, appr: 12345000, req: 0, dir: false, psnl: true },
+    { res: '산업부', resCd: '10', exp: '연구시설·장비비', bgt: 10000000, appr: 0, req: 0, dir: true, psnl: false },
+    { res: '산업부', resCd: '10', exp: '연구활동비', bgt: 40000000, appr: 19712839, req: 148500, dir: true, psnl: false },
+    { res: '산업부', resCd: '10', exp: '위탁연구개발비', bgt: 5000000, appr: 3000000, req: 0, dir: true, psnl: false },
+  ];
+  erpFake.cards = [{ amount: 500000 }, { amount: 23000 }];
+  $('rdErpLink').click();
+  await until(() => /조회 /.test($('rdErpInfo').textContent));
+  const e = panel.erp();
+  assert.deepEqual([e.prjNo, e.anl, e.rspr, e.auto, e.prjNm], [PRJ, 1, '홍길동', false, NM]);
+  assert.match($('rdErpInfo').textContent, new RegExp(`^${PRJ} 1연차 · ${NM} · 조회 \\d\\d\\.\\d\\d \\d\\d:\\d\\d$`));
+  assert.match($('rdErpState').textContent, new RegExp(`^${PRJ} 1연차 · 조회 \\d\\d\\.\\d\\d \\d\\d:\\d\\d$`), '접힌 한 줄에는 과제명 없이 과제번호·연차·조회 시각');
+  assert.ok(!$('rdErp').open, '받아도 저절로 펴지 않는다');
+  assert.equal($('rdErpLink').textContent, 'rERP 잇기 바꾸기');
+  assert.ok(!hidden('rdErpUnlink') && !$('rdErpRefresh').disabled);
+  assert.equal($('rdErpMsg').textContent, '');
+  // 표는 rerp 그대로 — 제외 비목(인건비)은 빠지고, 비목·예산·예산잔액·집행비율, 미청구·승인전 행, 합계(미청구·승인전 반영)
+  const tbl = $('rdErpTable');
+  const body = [...tbl.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
+  assert.deepEqual(body.map((r) => r[0].split(' ')[0]), ['연구시설·장비비', '연구활동비', '위탁연구개발비', '미청구']);
+  assert.deepEqual(body[1].slice(1), ['40,000,000', '20,138,661', '49.2%']);
+  assert.match(body[3][0], /과제카드 2건.*승인전 148,500/);
+  assert.deepEqual(body[3].slice(1), ['-', '−523,000', '+1.2%']);
+  const foot = [...tbl.querySelectorAll('tfoot tr')].map((tr) => [...tr.children].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
+  assert.deepEqual(foot, [['합계 (미청구 · 승인전 반영)', '55,000,000', '31,615,661', '42.5%']]);
+  assert.equal(tbl.querySelector('[data-act="plan-open"]'), null, '비목 줄에 ＋ 가 없다 — 예상 비용은 rerp 확장에서 적는다(보기만)');
+  // 장부 줄: 맞춰진 비목은 집행 = rERP 승인액(천원으로 보임, 읽기 전용) — 승인전 148,500 은 더하지 않는다(2026-10-11 사용자 지정), 간접비는 rERP 에 없어 그대로. 연구활동비 19,712,839
+  assert.deepEqual(['인건비', '연구시설·장비비', '연구활동비'].map((n) => [used(n).value, used(n).readOnly]), [['12,345', true], ['0', true], ['19,713', true]]);
+  assert.equal(used('간접비').readOnly, false);
+  assert.equal($('rdBudgetState').textContent, '계획 1.1억 · 집행 3,206만 (30%) · rERP 집행비율 42.5%');
+  assert.deepEqual(panel.book().projects[3].years[1].budget.filter((r) => r.erpKey).map((r) => [r.item, r.erpKey, r.used]), [['인건비', '10|인건비', 12345000], ['연구시설·장비비', '10|연구시설·장비비', 0], ['연구활동비', '10|연구활동비', 19712839]]);
+  commit(used('인건비'), '1');
+  assert.match(status(), /집행은 rERP 승인액입니다/);
+  assert.equal(used('인건비').value, '12,345');
+  assert.equal(erpFake.calls.filter((c) => c === `budget:${PRJ}`).length, 1);
+  await wait(500);
+  assert.equal(store.rndBook.projects[3].years[1].erp.snap.budget.bgtAmt, 55000000, '스냅샷이 장부에 남는다');
+  assert.ok(logs.some((l) => l.kind === 'rnd' && /rERP 잇기: TEST 1차년도 → RS-2026-00000001 1연차/.test(l.text)));
+});
+await ta('↻ 는 다시 받고, 10분 안의 탭 열기는 다시 받지 않는다 · 로그인이 풀리면 SSO 를 한 번 하고, eClass 도 풀렸으면 로그인이 필요하다고 한다', async () => {
+  const n = erpFake.calls.length;
+  await panel.refreshErp({ reason: '열 때' });
+  assert.equal(erpFake.calls.length, n, '막 받았으면 건너뛴다');
+  erpFake.loggedIn = false;
+  $('rdErpRefresh').click();
+  await until(() => erpFake.calls.length >= n + 3);
+  assert.deepEqual(erpFake.calls.slice(n), [`budget:${PRJ}`, 'sso', `budget:${PRJ}`, `cards:${PRJ}`]);
+  erpFake.loggedIn = false;
+  erpFake.eclassDown = true;
+  $('rdErpRefresh').click();
+  await until(() => /로그인이 필요합니다/.test($('rdErpMsg').textContent));
+  assert.equal($('rdErpMsg').textContent, '로그인이 필요합니다. eclass 에 로그인한 뒤 ↻ 를 누르세요.');
+  assert.equal($('rdBudgetState').textContent, '계획 1.1억 · 집행 3,206만 (30%) · rERP 집행비율 42.5% · 로그인 필요');
+  assert.ok($('rdErpTable').querySelector('tfoot'), '지난 스냅샷은 그대로 보인다');
+  erpFake.loggedIn = true;
+  erpFake.eclassDown = false;
+});
+await ta('R&D 설정의 "rERP 집행내역" 체크를 끄면 칸이 숨고 집행 칸은 다시 손으로 적을 수 있으며(이어 둔 것은 남음), 켜면 돌아온다', async () => {
+  $('rdErpOn').checked = false;
+  change($('rdErpOn'));
+  assert.ok(hidden('rdErp'));
+  assert.equal(used('인건비').readOnly, false);
+  assert.equal(used('인건비').value, '12,345', '값은 남는다');
+  assert.equal($('rdBudgetState').textContent, '계획 1.1억 · 집행 3,206만 (30%)');
+  assert.equal($('rdSetState').textContent, 'rERP 끔 · 원노트 꺼짐');
+  assert.ok($('rdIncUnbilled').disabled && $('rdIncPlan').disabled, '끄면 집행에 더할 것도 잠근다');
+  assert.ok(hidden('rdIncRow'), '예산 칸 위의 집행에 더하기 줄도 숨는다');
+  assert.ok(panel.erp(), '이어 둔 과제는 장부에 그대로');
+  await wait(10);
+  assert.equal(store.rndSettings.erp, false);
+  const n = erpFake.calls.length;
+  $('rdErpOn').checked = true;
+  change($('rdErpOn'));
+  assert.ok(!hidden('rdErp') && !hidden('rdIncRow'));
+  assert.equal(used('인건비').readOnly, true);
+  assert.match($('rdBudgetState').textContent, /rERP 집행비율 42\.5%/);
+  assert.equal(erpFake.calls.length, n, '막 받은 스냅샷이라 다시 부르지 않는다');
+  assert.ok(logs.some((l) => /R&D 설정: rERP 집행내역 끔/.test(l.text)));
+});
+t('예상 비용은 보기만(2026-10-11 사용자 지정) — 표에 ＋·저장·내보내기가 없다. 적고 고치고 페이지를 만드는 것은 rerp 확장에서', () => {
+  const tbl = $('rdErpTable');
+  assert.ok(tbl.querySelector('tbody tr'), '표는 있다');
+  for (const sel of ['[data-act="plan-open"]', '[data-act="plan-persist"]', '[data-act="plan-export"]', '[data-act="plan-qty"]', '.krext-plan-acts']) assert.equal(tbl.querySelector(sel), null, sel);
+  assert.equal(store.plannedExpenses, undefined, '여기서 적은 예상 비용은 없다');
+});
+await ta('원노트 칸의 예상 비용 공유를 켜면 RERP 섹션을 찾아 맞춘다 — 페이지가 없는 과제는 만들지 않고 rerp 확장에서 만들라고 알린다', async () => {
+  $('rdPlusOn').checked = true;
+  change($('rdPlusOn'));
+  await until(() => /맞춤 |못 맞춤/.test($('rdPlusMsg').textContent));
+  assert.match($('rdPlusMsg').textContent, /^맞춤 \d\d\.\d\d \d\d:\d\d · 과제 0개 · 항목 0건 · 페이지 없음 1개\(rerp 확장에서 만듭니다\)$/);
+  assert.equal(mcp.pages.length, 0, '여기서는 만들지 않는다');
+  assert.match($('rdNoteState').textContent, /^예상 비용 맞춤 /);
+  assert.ok(!hidden('rdPlusRow') && $('rdPlusSection').value === 'RERP');
+  assert.ok(!$('rdNoteSync').disabled, '예상 비용만 켜도 지금 맞추기를 쓸 수 있다');
+  await wait(10);
+  assert.deepEqual([store.rndNote.plus.on, store.plusSection.id], [true, 'sec-rerp']);
+  const tbl = $('rdErpTable');
+  assert.ok(tbl.querySelector('[data-act="plan-import"]'), '켜면 가져오기(⬇)가 선다');
+  assert.equal(tbl.querySelector('[data-act="plan-export"]'), null, '내보내기(⬆)는 없다 — 페이지는 rerp 확장에서');
+});
+await ta('rerp 확장이 만든 페이지(동료가 적은 예상 비용)를 지금 맞추기로 받는다 — 표에 비목 → 비목 예상 반영 → 항목 줄(보기만), 저장소(plannedExpenses)에 과제번호로', async () => {
+  // rerp 확장(책임자)이 RERP 섹션에 만든 페이지 — 같은 제목·같은 블록(rerp/plansync.js serialize)
+  const k = ++mcp.n;
+  mcp.pages.push({
+    id: `1-${'b'.repeat(32)}!${k}-${mcpGuid(k)}`, section: 'sec-rerp', title: `[예상 비용] ${PRJ} MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발`,
+    url: `https://krclass-my.sharepoint.com/x?wd=target%28RERP.one%7C${mcpGuid(0)}%2Fp%7C${mcpGuid(k)}%2F%29`,
+    body: PLAN_SYNC.serialize({ items: [{ id: 'a1', prj: PRJ, key: '10|연구활동비', name: '회의비', qty: 3, unit: 50000, amt: 150000, ts: 1000, by: '동료' }], del: {}, at: 1000, by: '동료' }, { title: `MW급 (${PRJ})` }),
+  });
+  $('rdNoteSync').click();
+  await until(() => !!store.plannedExpenses?.[PRJ]);
+  await until(() => /과제 1개 · 항목 1건$/.test($('rdPlusMsg').textContent));
+  const list = store.plannedExpenses[PRJ]['10|연구활동비'];
+  assert.deepEqual([list.length, list[0].name, list[0].qty, list[0].unit, list[0].amt, list[0].by], [1, '회의비', 3, 50000, 150000, '동료']);
+  assert.equal(mcp.pages.length, 1, '페이지는 그대로');
+  const tbl = $('rdErpTable');
+  tbl.querySelector('[data-act="plan-hide"]').click();   // 항목이 있는 과제는 기본 감춤 — 눈으로 펼친다
+  const text = tbl.textContent.replace(/\s+/g, ' ');
+  assert.match(text, /↳ 회의비 .*× 50,000.*−150,000/);
+  // 예상 반영 줄은 항목 줄보다 먼저 비목 줄 바로 아래(rerp 원본대로), 비목 이름을 앞에(이 패널만 — 2026-10-11 사용자 지정) — 연구활동비 → ↳ 연구활동비 예상 반영 → ↳ 회의비. 합계 아래 예상 반영은 그대로.
+  assert.match(text, /↳ 연구활동비 예상 반영 1건 · 150,000원.*19,988,661.*↳ 회의비/, '연구활동비 잔액 20,138,661 − 150,000 이 항목 줄보다 먼저');
+  const proj = tbl.querySelector('tbody tr.krext-bgt-proj');
+  assert.ok(proj.previousElementSibling && !proj.previousElementSibling.className, '바로 위가 비목 줄');
+  assert.ok(/krext-bgt-plan/.test(proj.nextElementSibling.className), '바로 아래가 항목 줄');
+  assert.match(text, /합계 \(미청구 · 승인전 반영\).*예상 반영 \(예상 1건 · 150,000원\).*31,465,661/, '합계와 그 아래 예상 반영은 그대로');
+  for (const sel of ['[data-act="plan-open"]', '[data-act="plan-qty"]', '.krext-plan-acts', '[data-act="plan-persist"]', '[data-act="plan-export"]']) assert.equal(tbl.querySelector(sel), null, `${sel} 은 없다(보기만)`);
+  assert.ok(tbl.querySelector('a.krext-ico-btn')?.href.startsWith('https://krclass-my.sharepoint.com/'), '열기(↗) 링크');
+});
+await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그 비목의 예상 비용이, 미청구를 켜면 연구활동비 줄에 더해진다(2026-10-12 사용자 지정 — 보조 줄이 아니라 그 줄의 집행·잔액·막대·표 복사). 승인전 체크는 없다', async () => {
+  const bars = (node) => [...node.querySelectorAll('.rd-bar')].map((b) => [b.className.replace('rd-bar ', ''), b.style.left, b.style.width]);
+  assert.deepEqual(bars(row('연구활동비')), [['base', '0%', '49.28%']], '승인액 19,712,839 ÷ 계획 40,000,000 — 파랑 하나');
+  $('rdIncPlan').checked = true;
+  change($('rdIncPlan'));
+  assert.equal(used('연구활동비').value, '19,863', '19,712,839 + 예상 150,000');
+  assert.equal($('rdSetState').textContent, 'rERP 켬 · 원노트 예상 비용', '설정 줄에는 집행에 더할 것이 안 보인다 — 예산 칸 위에 있다');
+  assert.ok(logs.some((l) => /R&D 예산 집행에 더하기: 사용계획$/.test(l.text)));
+  // 막대는 몫마다 다른 색(2026-10-11 사용자 지정) — 승인액(파랑) 뒤에 사용계획(주황)이 이어 붙는다. 150,000 ÷ 40,000,000 = 0.375%
+  const seg = bars(row('연구활동비'));
+  assert.deepEqual([seg.length, seg[0], seg[1][0], seg[1][1]], [2, ['base', '0%', '49.28%'], 'plan', '49.28%']);
+  assert.ok(Math.abs(parseFloat(seg[1][2]) - 0.375) < 0.02, `사용계획 몫 ${seg[1][2]}`);
+  assert.match(used('연구활동비').title, /^rERP 승인액 19,712,839원 \+ 사용계획 150,000원/);
+  assert.deepEqual(bars(row('인건비')), [['base', '0%', '41.15%']], '예상 비용이 없는 비목은 파랑 하나 — 12,345,000 ÷ 30,000,000');
+  $('rdIncUnbilled').checked = true;
+  change($('rdIncUnbilled'));
+  // 미청구(과제카드 2건 523,000)는 연구활동비 줄에 든다(2026-10-12 사용자 지정) — 보조 줄은 없고 그 줄의 집행·잔액이 바뀐다: 19,862,839 + 523,000 = 20,385,839 · 잔액 19,614,161
+  assert.equal(q('#rdBudget .rd-brow-extra'), null, '미청구 보조 줄은 연구활동비 줄이 없을 때만');
+  assert.equal(used('연구활동비').value, '20,386', '승인액 + 사용계획 + 미청구');
+  assert.equal(row('연구활동비').querySelector('[data-left]').textContent, '19,614');
+  assert.match(used('연구활동비').title, /^rERP 승인액 19,712,839원 \+ 사용계획 150,000원 \+ 미청구 523,000원\(과제카드 2건/);
+  assert.equal(used('인건비').value, '12,345', '다른 줄은 그대로');
+  // 연구활동비 줄 막대 — 승인액(파랑) → 사용계획(주황) → 미청구(보라, 523,000 ÷ 40,000,000 = 1.3075%)
+  const seg2 = bars(row('연구활동비'));
+  assert.deepEqual([seg2.length, seg2[0], seg2[1][0], seg2[2][0], seg2[2][1]], [3, ['base', '0%', '49.28%'], 'plan', 'unbilled', '49.66%']);
+  assert.ok(Math.abs(parseFloat(seg2[2][2]) - 1.3075) < 0.02, `미청구 몫 ${seg2[2][2]}`);
+  assert.deepEqual(sum(), ['합계', '106,000', '32,731', '73,269', ''], '12,345,000 + 0 + 20,385,839 — 합계는 보조 줄로 더하던 때와 같다');
+  // 합계 줄 막대 — 승인액 32,057,839 → 사용계획 150,000 → 미청구 523,000 (÷ 106,000,000), 마지막 빈 칸 안에 있어 칸 수는 다섯 그대로
+  const tot = bars($('rdBudgetSum'));
+  assert.deepEqual(tot.map((b) => b[0]), ['base', 'plan', 'unbilled']);
+  assert.deepEqual([tot[0][1], tot[0][2], tot[1][1], tot[2][2]], ['0%', '30.24%', '30.24%', '0.49%']);
+  assert.ok($('rdBudgetSum').lastElementChild.querySelector('.rd-bars'));
+  // 범례는 체크 상자 자체의 색(accent-color — 사용자 지정 "체크 박스 자체에 색상을", 따로 색 점은 없다)
+  assert.ok($('rdIncPlan').classList.contains('rd-tint') && $('rdIncPlan').classList.contains('plan'));
+  assert.ok($('rdIncUnbilled').classList.contains('rd-tint') && $('rdIncUnbilled').classList.contains('unbilled'));
+  assert.equal($('rdIncRow').querySelector('.rd-dot'), null, '체크와 글 사이에 색 점은 없다');
+  assert.equal(doc.querySelector('#rnd .rd-dot'), null);
+  assert.match($('rdBudgetState').textContent, /^계획 1\.1억 · 집행 3,273만 \(31%\) · rERP 집행비율 42\.5%/);
+  const n = copied.length;
+  $('rdBudgetCopy').click();
+  await until(() => copied.length === n + 1);
+  assert.match(copied[n], /\n연구활동비\t40,000\t20,386\t19,614\t51%\n/, '표 복사의 연구활동비 집행에 미청구가 들어 있다');
+  assert.ok(!/미청구\(과제카드/.test(copied[n]), '미청구 줄은 따로 없다(연구활동비 줄에 들었으므로)');
+  assert.match(copied[n], /\n합계\t106,000\t32,731\t73,269\t31%$/);
+  await wait(10);
+  assert.deepEqual(store.rndSettings, { erp: true, unbilled: true, plan: true, hide: [] }, '승인전(req)은 저장하지 않는다');
+  // 기본값으로 돌려 둔다
+  $('rdIncUnbilled').checked = false; change($('rdIncUnbilled'));
+  $('rdIncPlan').checked = false; change($('rdIncPlan'));
+  assert.equal(used('연구활동비').value, '19,713');
+  assert.ok(!q('#rdBudget .rd-brow-extra'));
+});
+await ta('과제책임자가 내 이름이어도 여기서는 페이지를 만들지 않고 받기만 한다(보기만) — 다른 과제의 페이지가 없어도 그대로', async () => {
+  myName = '홍길동';   // 이 과제의 책임자
+  const before = store.planSyncState?.at;
+  const n = mcp.calls.length;
+  $('rdNoteSync').click();
+  await until(() => store.planSyncState?.at !== before);
+  await wait(30);
+  assert.equal(mcp.pages.length, 1, '새 페이지 없음');
+  assert.ok(!mcp.calls.slice(n).includes('write_onenote:create_page'));
+  assert.match($('rdPlusMsg').textContent, /과제 1개 · 항목 1건$/);
+  assert.ok(logs.some((l) => /R&D 예상 비용 원노트 맞춤\(manual\)/.test(l.text)));
+});
+await ta('MCP 서버가 없으면 까닭을 보이고, 끄면 아이콘도 동기화도 없다', async () => {
+  mcp.up = false;
+  $('rdNoteSync').click();
+  await until(() => /못 맞춤/.test($('rdNoteState').textContent));
+  assert.match($('rdPlusMsg').textContent, /MCP 서버에 연결할 수 없습니다/);
+  assert.ok($('rdPlusMsg').classList.contains('error'));
+  mcp.up = true;
+  $('rdPlusOn').checked = false;
+  change($('rdPlusOn'));
+  assert.equal($('rdNoteState').textContent, '꺼짐');
+  assert.equal($('rdPlusMsg').textContent, '');
+  assert.ok(!$('rdErpTable').querySelector('[data-act="plan-export"]'));
+  assert.ok($('rdNoteSync').disabled);
+});
+t('끊기(두 번) — 표가 사라지고 집행 칸은 다시 손으로 적는다(값은 남는다)', () => {
+  $('rdErpUnlink').click();
+  assert.ok(panel.erp(), '한 번으로는 안 끊는다');
+  $('rdErpUnlink').click();
+  assert.equal(panel.erp(), null);
+  assert.deepEqual([used('인건비').readOnly, used('인건비').value], [false, '12,345']);
+  assert.equal($('rdErpTable').innerHTML, '');
+  assert.ok(hidden('rdErpUnlink'));
+  assert.match(status(), /rERP 연결을 끊었습니다/);
+  assert.equal($('rdBudgetState').textContent, '계획 1.1억 · 집행 3,206만 (30%)');
+  myName = '박기도';
+});
+
+console.log('R&D 설정 — 예산 칸에 보일 비목');
+await ta('비목 체크를 끄면 그 줄만 숨고(합계·표 복사는 그대로) 합계 위에 알림 한 줄, 설정 줄에 "비목 1 숨김", 저장·기록 — 다시 켜면 돌아온다', async () => {
+  const names = rows().map((r) => r[0]);
+  assert.ok(names.includes('인건비') && names.includes('간접비'), `보고 있는 차년도에 인건비·간접비 줄이 있다 — ${names.join(',')}`);
+  const before = { sum: sum(), state: $('rdBudgetState').textContent, count: rows().length };
+  const box = $('rdItems').querySelector('input[data-item="간접비"]');
+  box.checked = false;
+  change(box);
+  assert.ok(!row('간접비'), '간접비 줄이 숨는다');
+  assert.equal(rows().length, before.count - 1);
+  assert.deepEqual(sum(), before.sum, '합계는 그대로');
+  assert.equal($('rdBudgetState').textContent, before.state, '칸 머리도 그대로');
+  assert.equal(q('#rdBudget .rd-hidden-note').textContent, '숨긴 비목 1 · 간접비 — 합계에는 듭니다 (R&D 설정)');
+  assert.equal(q('#rdBudget .rd-hidden-note').nextElementSibling, null, '알림은 줄들 아래(미청구 보조 줄이 없을 때는 맨 아래)');
+  assert.match($('rdSetState').textContent, / · 비목 1 숨김$/);
+  await wait(10);
+  assert.deepEqual(store.rndSettings.hide, ['간접비']);
+  assert.ok(logs.some((l) => /^R&D 설정: 예산 칸에 숨긴 비목 — 간접비$/.test(l.text)));
+  const n = copied.length;
+  $('rdBudgetCopy').click();
+  await until(() => copied.length === n + 1);
+  assert.match(copied[n], /\n간접비\t/, '표 복사에는 숨긴 비목도 든다');
+  // 다른 차년도·과제로 가도 같은 설정 — 체크 목록은 장부의 비목을 다 모은다(여섯 비목 차례, 겹치지 않게)
+  assert.deepEqual([...$('rdItems').querySelectorAll('label')].map((l) => l.textContent).slice(0, 6), ['인건비', '연구시설·장비비', '연구재료비', '연구활동비', '연구수당', '간접비']);
+  const again = $('rdItems').querySelector('input[data-item="간접비"]');   // 설정 줄을 다시 그려 새 요소
+  assert.equal(again.checked, false, '다시 그려도 끈 채');
+  again.checked = true;
+  change(again);
+  assert.ok(row('간접비'), '다시 켜면 돌아온다');
+  assert.equal(q('#rdBudget .rd-hidden-note'), null);
+  assert.ok(!/숨김/.test($('rdSetState').textContent));
+  await wait(10);
+  assert.deepEqual(store.rndSettings.hide, []);
+  assert.ok(logs.some((l) => /^R&D 설정: 예산 칸에 숨긴 비목 — 없음\(모두 보임\)$/.test(l.text)));
+});
+
 console.log('다시 열기');
 await ta('저장된 것으로 다시 선다 — 공문 탭에서 다시 가져오지 않는다', async () => {
   await wait(500);
@@ -779,7 +1176,7 @@ await ta('저장된 것으로 다시 선다 — 공문 탭에서 다시 가져�
   assert.equal(logItems().length, 1);
   assert.equal(rosterTable($('rdRoster')).length, 2);
   assert.equal(chItems().length, 11);
-  assert.equal(rows().find((r) => r[0] === '인건비')[1], '30,000,000');
+  assert.equal(rows().find((r) => r[0] === '인건비')[1], '30,000');
   assert.equal(panel.book().projects.length, 4);
   assert.equal(panel.book().projects[3].years[1].snapshot.rev, 'r2');
 });

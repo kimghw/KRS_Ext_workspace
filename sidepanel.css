@@ -1032,6 +1032,17 @@ button.danger:hover { filter: brightness(1.08); }
 .gongmun .gm-kind:hover { background: var(--pick-soft); border-color: var(--pick); }
 .gongmun .gm-kind.active { background: var(--pick); border-color: var(--pick); color: #fff; }
 .gongmun .gm-kind.active small { color: rgb(255 255 255 / 75%); }
+/* 에이전트 갈래(2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 '에이전트' 하나 추가해서 공문검색") — 켜면 갈래 줄과 검색 카드(gmSearch)만 남고
+   작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨는다. 다른 갈래를 누르면 돌아온다. 단추에는 에이전트 칸과 같은 반짝임이 붙는다. */
+.gongmun .gm-kind-agent svg { width: 13px; height: 13px; }
+.gongmun.agent > :not(.gm-kinds):not(.gm-search) { display: none; }
+.gongmun .gm-search { padding: 12px 14px 14px; }
+.gongmun .gm-search .gm-agent { margin: 0; }
+.gongmun .gm-search .ask-bar input { min-width: 0; }
+.gongmun .gm-search-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin: 10px 0 8px; }
+.gongmun .gm-search-tools .gm-hist-span { margin: 0; }
+.gongmun .gm-search-state { margin: 0 0 6px; color: var(--faint); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.gongmun .gm-search-state:empty { display: none; }
 
 /* 연결 과제는 업무 탭보다 가벼운 설정 행으로 표시한다. 별칭과 라디오 표시로 고른 과제를 구분한다. */
 .gongmun .gm-projbar { display: flex; align-items: flex-start; gap: 10px; margin: -2px 0 14px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px; }
@@ -1137,6 +1148,7 @@ button.danger:hover { filter: brightness(1.08); }
    양식·공문 설정은 사이드패널에서 한다(읽은 파일이 거기 있다). 참고 문서 카드는 상태 말·한도 알림이 있을 때만 보인다. */
 body.compare-tab .app { max-width: 1240px; }
 body.compare-tab .gongmun #gmIntake, body.compare-tab .gongmun #gmReset, body.compare-tab .gongmun #gmTplBox, body.compare-tab .gongmun #gmPresetBox,
+body.compare-tab .gongmun #gmHistBox, body.compare-tab .gongmun .gm-fee-sum [data-act="ledger"],
 body.compare-tab .gongmun .gm-cut-acts, body.compare-tab .gongmun [data-act="rnd"] { display: none; }
 body.compare-tab .gongmun .gm-evidence:has(.status:empty):has(.gm-limit.hidden) { display: none; }
 body.compare-tab .gongmun .gm-evidence-body { margin-top: 0; }
@@ -1293,6 +1305,46 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .gongmun .gm-attach { color: var(--fg); font-weight: 600; }
 .gongmun .gm-row-fields textarea { grid-column: 1 / -1; min-height: 60px; font-size: 13px; }
 
+/* 외부활동의 사례비 누계 줄(2026-10-11 사용자 지정: "지금까지 받은 금액 … 추가로 받는 금액 … 합계를 여기서") — 과제 기본 내용과 같은 칩 줄: 지금까지 + 이번 = 합계. */
+.gongmun .gm-fee-sum { margin-top: 12px; }
+.gongmun .gm-fee-sum small { margin-left: 4px; color: var(--faint); font-size: 11px; }
+.gongmun .gm-fee-op { color: var(--faint); font-style: normal; font-weight: 600; }
+/* 공문 이력 — 근태의 신청 내역 카드와 같은 꼴(상태 딱지 · 제목 · 양식·기안일 한 줄). 누르면 펴져 본문의 칸과 'eclass 에서 열기'가 나온다. */
+.gongmun .gm-hist-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin: 2px 0 8px; }
+.gongmun .gm-hist-range { color: var(--faint); font-size: 12px; }
+.gongmun .gm-hist-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.gongmun .gm-hist-tools button.active { border-color: var(--pick); color: var(--pick); background: var(--pick-soft); }
+/* 기간 단추 — 올해·1y·2y·3y 가 한 묶음(라디오). */
+.gongmun .gm-hist-span { display: inline-flex; margin-right: 4px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.gongmun .gm-hist-spanbtn { min-height: 0; padding: 4px 8px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.gongmun .gm-hist-spanbtn + .gm-hist-spanbtn { border-left: 1px solid var(--line); }
+.gongmun .gm-hist-spanbtn:hover:not(:disabled) { background: var(--pick-soft); }
+.gongmun .gm-hist-spanbtn.active { color: var(--pick); background: var(--pick-soft); }
+.gongmun .gm-hist-spanbtn:disabled { opacity: .6; cursor: default; }
+.gongmun .gm-hist-note { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.gongmun .gm-hist-note:empty { display: none; }
+.gongmun .gm-hist-note.bad { color: var(--danger); }
+.gongmun .gm-hist-list { list-style: none; margin: 0; padding: 0; }
+.gongmun .gm-hist-item { margin-bottom: 6px; border: 1px solid var(--line); border-radius: 11px; font-size: 14px; }
+.gongmun .gm-hist-item:last-child { margin-bottom: 0; }
+.gongmun .gm-hist-item.open { border-color: var(--pick); }
+.gongmun .gm-hist-head button.gm-hist-head, .gongmun button.gm-hist-head { display: block; width: 100%; min-height: 0; padding: 9px 12px; border: 0; border-radius: 10px; background: transparent; text-align: left; font: inherit; font-size: 14px; color: inherit; }
+.gongmun button.gm-hist-head:hover { background: var(--pick-soft); }
+.gongmun .gm-hist-row { display: flex; align-items: baseline; gap: 8px; }
+.gongmun .gm-hist-st { flex: none; padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 650; background: var(--busy); color: var(--muted); }
+.gongmun .st-done .gm-hist-st { background: var(--pick-soft); color: var(--pick); }
+.gongmun .st-going .gm-hist-st { background: color-mix(in srgb, var(--mine) 28%, var(--surface)); color: var(--fg); }
+.gongmun .st-back .gm-hist-st { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); }
+.gongmun .gm-hist-sum { min-width: 0; font-weight: 600; line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gongmun .gm-hist-sub { display: block; margin-top: 1px; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gongmun .gm-hist-item.open .gm-hist-sum, .gongmun .gm-hist-item.open .gm-hist-sub { white-space: normal; overflow-wrap: anywhere; }
+.gongmun .gm-hist-more { display: flex; flex-wrap: wrap; gap: 3px 12px; padding: 0 12px 10px; font-size: 12.5px; line-height: 1.5; }
+.gongmun .gm-hist-more > span { min-width: 0; overflow-wrap: anywhere; }
+.gongmun .gm-hist-more em { margin-right: 4px; font-style: normal; font-size: 11px; font-weight: 650; color: var(--pick); }
+.gongmun .gm-hist-more .gm-actions { flex-basis: 100%; margin-top: 4px; }
+.gongmun .gm-hist-more .gm-actions button { flex: none; }
+.gongmun .gm-hist-empty { padding: 6px 2px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
 /* ------------------------------------------------------------ R&D */
 
 /* 탭이 여섯 개(근태·공문·R&D·회의실·차량·현황)다 — 위의 공문 쪽 간격 그대로 한 줄에 든다. */
@@ -1350,6 +1402,12 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .rnd .rd-year:hover { background: var(--pick-soft); border-color: var(--pick); }
 .rnd .rd-year.active { background: var(--pick); border-color: var(--pick); color: #fff; }
 .rnd .rd-year.active small { background: rgb(255 255 255 / 22%); color: #fff; }
+/* 예산 정보가 없는 차년도 — 진한 회색 글씨에 점선 테두리로 잠긴다. 눌러도 넘어가지 않는다(rndpanel.js pickYear, 2026-10-11 사용자 지정). */
+/* 예산 정보가 없는 차년도 — 회색 점선(2026-10-11 사용자 지정). 누를 수는 있다(넘어가면 기록 칸 대신 R&D 설정이 선다) — 보고 있으면 점선 그대로 연한 파랑. */
+.rnd .rd-year.off { border-style: dashed; border-color: var(--line); background: color-mix(in srgb, var(--line) 45%, var(--surface)); color: var(--muted); }
+.rnd .rd-year.off:hover { border-color: var(--pick); background: var(--pick-soft); color: var(--pick); }
+.rnd .rd-year.off small { background: var(--line); color: var(--muted); }
+.rnd .rd-year.active.off { border-style: dashed; border-color: var(--pick); background: var(--pick-soft); color: var(--pick); }
 .rnd .rd-year-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 
 /* 과제 폼 — 두 칸 격자. 과제명·비고는 한 줄 통째. */
@@ -1395,9 +1453,17 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .rnd .rd-left.over { color: var(--danger); font-weight: 600; }
 .rnd .rd-brow-del { width: 22px; min-height: 22px; padding: 0; border-radius: 50%; background: transparent; color: var(--faint); font-size: 16px; line-height: 1; }
 .rnd .rd-brow-del:hover { background: var(--surface-soft); color: var(--danger); }
-.rnd .rd-bar { position: absolute; left: 0; bottom: 1px; height: 2px; max-width: 100%; border-radius: 1px; background: var(--pick); opacity: .6; }
+/* 줄 아래 막대(2026-10-11 사용자 지정 — 미청구·사용계획은 다른 색) — 계획 대비 몫을 이어 붙인다: 파랑 승인액(손으로 적은 집행), 주황 사용계획(예상 비용), 보라 미청구(합계 줄만). 계획을 넘는 몫은 빨강.
+   .rd-bars 가 줄 바닥에 깔리고 몫(.rd-bar)마다 left·width 를 % 로 받는다(rndpanel.js barsHtml). "집행에 더하기"의 체크 상자(.rd-tint)가 같은 색이라 범례 노릇을 한다 — 따로 색 점은 두지 않는다(사용자 지정). */
+.rnd { --bar-plan: #e0890a; --bar-unbilled: #8a5cd6; }
+.rnd .rd-bars { position: absolute; left: 0; right: 0; bottom: 1px; height: 3px; pointer-events: none; }
+.rnd .rd-bar { position: absolute; top: 0; height: 100%; max-width: 100%; border-radius: 1px; background: var(--pick); opacity: .7; }
+.rnd .rd-bar.plan { background: var(--bar-plan); }
+.rnd .rd-bar.unbilled { background: var(--bar-unbilled); }
 .rnd .rd-bar.over { background: var(--danger); opacity: .9; }
-.rnd .rd-bsum { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rnd .rd-tint.plan { accent-color: var(--bar-plan); }
+.rnd .rd-tint.unbilled { accent-color: var(--bar-unbilled); }
+.rnd .rd-bsum { position: relative; margin-top: 4px; padding: 6px 0 5px; border-top: 1px solid var(--line); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rnd .rd-bsum:empty { display: none; }
 .rnd .rd-bsum span:nth-child(n+2) { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rnd .rd-box-body .rd-actions { margin-top: 6px; }
@@ -1422,6 +1488,68 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .rnd .rd-note-msg { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .rnd .rd-note-msg:empty { display: none; }
 .rnd .rd-note-msg.error { color: var(--danger); }
+/* rERP 로 이어진 비목의 집행 칸 — rERP 승인액이라 읽기 전용(흐리게). */
+.rnd .rd-brow input[data-k="used"][readonly] { background: var(--surface-soft); color: var(--muted); cursor: default; }
+/* 예산 칸 맨 위 줄의 "집행에 더하기" 체크 셋(2026-10-11 사용자 지정 — R&D 설정에서 옮김) — 복사 아이콘 왼쪽에, 좁으면 줄을 바꾼다. rERP 를 끄면 잠그고 숨긴다. */
+.rnd .rd-inc { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-right: auto; font-size: 11px; color: var(--muted); }
+.rnd .rd-inc > span { color: var(--faint); font-size: 11px; }
+.rnd .rd-inc label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.rnd .rd-inc input { width: auto; min-height: 0; margin: 0; }
+.rnd .rd-inc label:has(input:disabled) { opacity: .5; }
+/* rERP 집행내역 — kr_ext_rerp 의 과제집행비율 표(rerp/plan.css 의 krext-*)를 예산 칸 아래에 그대로 둔다. 기본은 접힌 한 줄(제목 · 이은 과제와 조회 시각 · 꺾쇠, 2026-10-11 사용자 지정) —
+   펴면 머리 줄(이은 과제 · ↻ · 잇기/끊기) · 고르기 · 표. */
+.rnd .rd-erp { margin-top: 10px; border-top: 1px solid var(--line); }
+.rnd .rd-erp > summary { min-height: 36px; gap: 6px; font-size: 12px; }
+.rnd .rd-erp > summary .summary-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.rnd .rd-erp > summary::after { flex: none; }
+.rnd .rd-erp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-bottom: 4px; }
+.rnd .rd-erp-title { font-size: 12px; font-weight: 650; color: var(--fg); white-space: nowrap; }
+.rnd .rd-erp-title small { font-weight: 400; color: var(--muted); }
+/* 펴면 첫 줄 오른쪽에 ↻ · 잇기/끊기, 이은 과제·과제명·조회 시각은 둘째 줄 통째로 — 좁은 패널에서 잘리지 않게. */
+.rnd .rd-erp-info { order: 3; flex-basis: 100%; min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.rnd .rd-erp-info:empty { display: none; }
+.rnd .rd-erp-info b { color: var(--fg); font-weight: 600; }
+.rnd .rd-erp-tools { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.rnd .rd-erp-tools .rd-icon[disabled] { opacity: .4; }
+.rnd .rd-erp.busy .rd-icon svg { animation: rd-spin 1s linear infinite; }
+@keyframes rd-spin { to { transform: rotate(360deg); } }
+.rnd .rd-erp-pick { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.rnd .rd-erp-pick select { flex: 1; min-width: 0; }
+.rnd .rd-erp-pick button { flex: none; }
+/* 표는 rerp 의 것 그대로지만 패널(약 400px)에 맞게 글자·여백·막대를 줄이고 비목 이름은 접는다 — 넘치면 가로로 민다. */
+.rnd .rd-erp-table { margin-top: 6px; overflow-x: auto; }
+.rnd .rd-erp-table .krext-cards { font-size: 11px; }
+.rnd .rd-erp-table .krext-cards th, .rnd .rd-erp-table .krext-cards td { padding: 4px 4px; }
+.rnd .rd-erp-table .krext-bgt .krext-bgt-nm { white-space: normal; }
+.rnd .rd-erp-table .krext-bgt tfoot td:first-child .krext-dim { display: block; font-weight: 400; }
+.rnd .rd-erp-table .krext-bgt .krext-bar { width: 36px; }
+.rnd .rd-erp-table .krext-rate { gap: 4px; }
+.rnd .rd-erp-table .krext-rate-v { min-width: 34px; }
+.rnd .rd-erp-table .krext-tag { padding: 0 4px; }
+.rnd .rd-erp-table .krext-plan-form input, .rnd .rd-erp-table .krext-plan-import input { min-height: 0; border-radius: 5px; }
+.rnd .rd-erp-table .krext-plan-form input[data-plan="name"] { width: auto; }
+.rnd .rd-erp-table .krext-plan-import input { width: 100%; max-width: 280px; }
+.rnd .rd-erp-table .krext-plan-form input[data-plan="qty"] { width: 46px; }
+.rnd .rd-erp-table .krext-plan-form input[data-plan="unit"], .rnd .rd-erp-table .krext-plan-form input[data-plan="amt"] { width: 92px; }
+.rnd .rd-erp-table .krext-plan-form input[data-plan="date"] { width: 132px; }
+.rnd .rd-erp-table button { min-height: 0; }
+.rnd .rd-erp-table .krext-plan-btn, .rnd .rd-erp-table .krext-plan-subtn { border-radius: 5px; }
+/* 어두운 화면 — rerp/plan.css 는 rerp 와 같은 밝은 색이라 표의 바탕·선·글자만 이 패널의 변수로 덮는다. 막대의 사용계획·미청구 색도 밝게. */
+@media (prefers-color-scheme: dark) {
+  .rnd { --bar-plan: #f2ad3d; --bar-unbilled: #b193ee; }
+  .rnd .rd-erp-table .krext-cards th { background: var(--surface-soft); color: var(--muted); }
+  .rnd .rd-erp-table .krext-cards th, .rnd .rd-erp-table .krext-cards td { border-bottom-color: var(--line); color: var(--fg); }
+  .rnd .rd-erp-table .krext-bgt tfoot td { background: var(--surface-soft); border-top-color: var(--line); }
+  .rnd .rd-erp-table .krext-bgt tbody tr.krext-bgt-plan td, .rnd .rd-erp-table .krext-bgt tbody tr.krext-bgt-proj td, .rnd .rd-erp-table .krext-bgt tbody tr.krext-bgt-form td, .rnd .rd-erp-table .krext-bgt tbody tr.krext-bgt-orphan td { background: #2a2740; }
+  .rnd .rd-erp-table .krext-bgt tfoot tr.krext-bgt-proj td { background: #2a2740; }
+  .rnd .rd-erp-table .krext-bgt tbody tr.krext-bgt-unbilled td { background: #3a2a2d; }
+  .rnd .rd-erp-table .krext-dim, .rnd .rd-erp-table .krext-sub { color: var(--muted); }
+  .rnd .rd-erp-table .krext-plan-nm, .rnd .rd-erp-table .krext-plan-qty-v, .rnd .rd-erp-table .krext-plan-lbl b, .rnd .rd-erp-table .krext-bgt tbody tr.krext-bgt-proj td, .rnd .rd-erp-table .krext-bgt tfoot tr.krext-bgt-proj td { color: #c3b8ff; }
+  .rnd .rd-erp-table .krext-plus-btn, .rnd .rd-erp-table .krext-plan-form input, .rnd .rd-erp-table .krext-plan-import input, .rnd .rd-erp-table .krext-plan-btn, .rnd .rd-erp-table .krext-plan-subtn, .rnd .rd-erp-table .krext-plan-qty button, .rnd .rd-erp-table .krext-plan-step button, .rnd .rd-erp-table .krext-plan-import button { background: var(--surface); color: var(--fg); border-color: var(--line); }
+  .rnd .rd-erp-table .krext-plan-btn.krext-plan-save { background: var(--pick); border-color: var(--pick); color: #fff; }
+  .rnd .rd-erp-table .krext-bar { background: var(--busy, #414149); }
+  .rnd .rd-erp-table .krext-tag-grey { background: var(--surface-soft); color: var(--muted); }
+}
 
 /* 진행 기록·변경이력 — 적는 칸과 목록(늦은 것부터). */
 .rnd .rd-new { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; background: color-mix(in srgb, var(--pick) 5%, var(--surface)); }
@@ -1487,6 +1615,30 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 
 /* 요약 복사 · JSON 저장·불러오기 · 공문 탭의 과제 가져오기 */
 .rnd .rd-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+/* R&D 설정 — 공문 탭의 공문 설정(.gm-box card)과 같은 카드 한 줄(2026-10-11 사용자 지정): 아이콘 · 굵은 이름 · 오른쪽 끝에 형편(길면 줄임표) · 화살표.
+   안의 원노트 공유·스킬 칸은 공문 탭의 문서설정처럼 연한 바탕으로 한 단 낮추고, YAML 넣는 곳은 점선 상자만 남긴다. */
+.rnd .rd-set { margin: 12px 0 10px; }
+.rnd .rd-set > summary > span:first-of-type { flex: none; white-space: nowrap; }
+.rnd .rd-set > summary .summary-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rd-set > summary::after { flex: none; }
+.rnd .rd-set-body { padding: 0 0 14px; }
+.rnd .rd-set-check { margin: 0 2px 12px; }
+/* 미청구(과제카드) 보조 줄 — 비목이 없어 합계 바로 위에 글로만. */
+.rnd .rd-brow-extra { min-height: 28px; padding: 2px 0 4px; color: var(--muted); font-size: 12px; }
+.rnd .rd-brow-extra .rd-extra-name { padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rd-brow-extra .rd-extra-used { text-align: right; font-variant-numeric: tabular-nums; padding-right: 8px; }
+/* R&D 설정에서 숨긴 비목이 이 차년도에 있으면 합계 위에 한 줄로(합계에는 든다). */
+.rnd .rd-hidden-note { padding: 2px 8px 3px; color: var(--faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* R&D 설정의 "예산 칸에 보일 비목"(2026-10-11 사용자 지정) — 제목 뒤로 체크가 한 줄에 흐르고 좁으면 줄을 바꾼다. */
+.rnd .rd-set-items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 2px 12px; font-size: 12px; color: var(--muted); }
+.rnd .rd-set-items-title { color: var(--faint); font-size: 11px; }
+.rnd .rd-set-items-list { display: contents; }
+.rnd .rd-set-items label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.rnd .rd-set-items input { width: auto; min-height: 0; margin: 0; }
+.rnd .rd-set .rd-box, .rnd .rd-set .rd-intake { margin: 0 0 10px; border-color: transparent; box-shadow: none; }
+.rnd .rd-set .rd-box { padding: 0 12px; border-radius: 12px; background: var(--surface-soft); }
+.rnd .rd-set .rd-box input[type="text"], .rnd .rd-set .rd-box select { background: var(--surface); }
+.rnd .rd-set .rd-intake { padding: 0; background: transparent; }
 .rnd .rd-import { position: relative; display: inline-flex; align-items: center; min-height: 28px; padding: 4px 8px; border-radius: 9px; background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; }
 .rnd .rd-import:hover { background: var(--surface-soft); color: var(--fg); }
 .rnd .rd-import input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

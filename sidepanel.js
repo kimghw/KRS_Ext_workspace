@@ -1762,6 +1762,8 @@ const rnd = createRndPanel({
   $, escapeHtml, logEvent,
   copyText: (text) => copyText(text),
   flash: (btn, text, ms) => flash(btn, text, ms),
+  // 내 이름(설정) — 예상 비용 원노트 페이지는 과제책임자만 만든다(장부의 과제책임자 == 내 이름, src/rnderp.js).
+  me: () => state.myName,
 });
 
 /** 내가 넣은 예약을 며칠간 기억한다. 지난 날짜는 버린다. */

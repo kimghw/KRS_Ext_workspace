@@ -8,7 +8,7 @@ import {
   periodOf, periodText, isYmd, amountOf, comma, won, shortWon,
   yearsOf, yearNo, currentYear, yearState, yearLabel,
   blankYear, normalizeYear, normalizeProject, normalizeBook, viewYear, yearBook, aliasOwner, fileLog, noteLogs,
-  budgetTotals, budgetChanges, projectChanges, newestFirst,
+  budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst,
   fromGongmun, mergeProjects, exportJson, exportName, importJson, restoreBook, summaryText, parseRoster, parseSections,
   budgetTsv, entryText, logLines, changeLine, changeLines,
 } from '../src/rnd.js';
@@ -216,6 +216,16 @@ t('합계·잔액·집행률 — 계획이 없으면 집행률은 null', () => {
   assert.deepEqual(budgetTotals([]), { plan: 0, used: 0, left: 0, rate: null });
   assert.deepEqual(budgetTotals([{ plan: 100, used: 150 }]), { plan: 100, used: 150, left: -50, rate: 150 });
 });
+t('예산 정보가 들어 있는 차년도 — 계획이나 집행이 적힌 줄이 하나라도. 없는 차년도·기본 비목만 깔린 차년도는 아니다', () => {
+  assert.equal(hasBudget(undefined), false, '장부에 없는 차년도');
+  assert.equal(hasBudget(null), false);
+  assert.equal(hasBudget(blankYear()), false, '기본 비목 여섯 줄만');
+  assert.equal(hasBudget({ budget: [] }), false);
+  assert.equal(hasBudget({ budget: [{ item: '인건비', plan: 1000000, used: null }] }), true, '계획만');
+  assert.equal(hasBudget({ budget: [{ item: '인건비', plan: null, used: 250000 }] }), true, '집행만(rERP 승인액)');
+  assert.equal(hasBudget({ budget: [{ item: '인건비', plan: 0, used: null }] }), true, '0 도 적은 것');
+  assert.equal(hasBudget(normalizeYear({ budget: [{ item: '인건비', plan: '1,500만' }] })), true, '저장된 것을 읽어도');
+});
 t('계획이 바뀐 줄만 변경이력으로 — 전에 적은 계획이 있던 줄만, id 로 맞춤(이름을 고쳐도 같은 줄), 뺀 비목도', () => {
   const before = [
     { id: 'a', item: '인건비', plan: 1000000, used: null }, { id: 'b', item: '재료비', plan: null, used: null },
@@ -394,8 +404,9 @@ t('계획서 글(■ 절·번호·줄표·점) → 절과 항목', () => {
 console.log('복사할 글');
 t('예산 표 — 탭으로 나눈 줄, 적은 것 없는 비목은 빼고 합계까지', () => {
   const rows = [{ item: '인건비', plan: 10000000, used: 2500000 }, { item: '연구재료비', plan: null, used: null }, { item: '간접비', plan: null, used: 100000 }, { item: '', plan: 5, used: null }];
-  assert.equal(budgetTsv(rows), ['비목\t계획(원)\t집행(원)\t잔액(원)\t집행률', '인건비\t10,000,000\t2,500,000\t7,500,000\t25%', '간접비\t0\t100,000\t-100,000\t', '합계\t10,000,000\t2,600,000\t7,400,000\t26%'].join('\n'));
-  assert.equal(budgetTsv([]), '비목\t계획(원)\t집행(원)\t잔액(원)\t집행률');
+  // 예산 칸처럼 천원 단위(2026-10-11 사용자 지정)
+  assert.equal(budgetTsv(rows), ['비목\t계획(천원)\t집행(천원)\t잔액(천원)\t집행률', '인건비\t10,000\t2,500\t7,500\t25%', '간접비\t0\t100\t-100\t', '합계\t10,000\t2,600\t7,400\t26%'].join('\n'));
+  assert.equal(budgetTsv([]), '비목\t계획(천원)\t집행(천원)\t잔액(천원)\t집행률');
 });
 t('연구내역 한 줄 — 참여연구자는 표, 그 밖은 제목 아래 글', () => {
   assert.equal(entryText({ title: '참여연구자 — 1차년도', text: '홍길동 — 수석 · 20% · 9개월 · 인건비 15,000,000원\n성춘향 — 책임 · 10% · 9개월 · 인건비 3,750,000원' }),

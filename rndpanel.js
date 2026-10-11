@@ -1,19 +1,26 @@
 // R&D 탭의 화면. 차년도 자르기·예산 셈·저절로 남는 변경이력·요약·가져오기·내보내기는 src/rnd.js 가 하고,
 // 여기는 그것을 화면에 잇고 chrome.storage(rndBook)에 남긴다.
 //
-//   과제 칩(별칭) → 머리(별칭 한 줄 — 펴면 과제 정보) · 차년도 칩(오늘이 든 것에 "올해")
-//   → 예산(비목 줄) · 참여연구자 · 연구개발 계획 · 진행 기록 · 변경이력 → 요약 복사 · JSON 저장·불러오기 → 연구개발계획서 YAML 넣기
+//   과제 칩(별칭) → 머리(별칭 한 줄 — 펴면 과제 정보) · 차년도 칩(오늘이 든 것에 "올해" — 예산 정보가 없는 차년도는 회색 점선)
+//   → 예산(비목 줄) · 참여연구자 · 연구개발 계획 · 진행 기록 · 변경이력 → 요약 복사 · JSON 저장·불러오기 → R&D 설정(연구개발계획서 YAML 넣기 …)
+//   예산 정보가 없는 차년도를 보고 있으면(2026-10-11 사용자 지정) 기록 칸들 대신 까닭 카드가 서고 R&D 설정이 저절로 펴진다 — 지난 차년도의 기록을 보이지 않는다.
 //
 // 어디에도 올리지 않는다 — 이 브라우저에만 남는다. 공문 탭의 공문 설정 과제를 가져올 수 있다(처음 열 때 과제가 없으면 저절로).
 // 예산 **계획**을 고치거나 비목을 빼면, 과제의 책임자·연구기간을 고치면 변경이력에 저절로 한 줄이 남고 사유만 사람이 적는다.
 // 과제는 별칭으로 다룬다 — 폼에서 별칭은 필수이고 과제끼리 겹치지 않으며, 별칭이 없는 과제는 머리에 정하는 칸이 선다.
 
 import {
-  BOOK_KEY, MAX_PROJECTS, CHANGE_KINDS, normalizeBook, normalizeProject, projectOf, aliasOwner, viewYear, yearBook, yearsOf, currentYear, yearLabel, yearState,
-  periodText, dot, todayStr, isYmd, amountOf, comma, shortWon, budgetTotals, budgetChanges, projectChanges, newestFirst, newId,
+  BOOK_KEY, MAX_PROJECTS, CHANGE_KINDS, BUDGET_ITEMS, normalizeBook, normalizeProject, projectOf, aliasOwner, viewYear, yearBook, yearsOf, currentYear, yearLabel, yearState,
+  periodText, dot, todayStr, isYmd, amountOf, comma, shortWon, budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst, newId,
   fromGongmun, mergeProjects, restoreBook, exportJson, exportName, importJson, summaryText, parseRoster, parseSections, fileLog, noteLogs,
-  budgetTsv, entryText, logLines, changeLine, changeLines,
+  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand,
 } from './src/rnd.js';
+import { SET_KEY, normalizeSet, includeNames, isHidden, nameKey, projectRecs, pickYearRec, candidates, linkOf, isLive, isFresh, fetchSnapshot, applySnapshot, erpExtras, erpHead, clock as erpClock } from './src/rnderp.js';
+// kr_ext_rerp 에서 옮긴 것(rerp/ — 출처·갱신 규칙은 rerp/README.md): rERP 호출(erp), 예상 비용 저장소와 입력 처리(PLAN), 과제집행비율 표(budgetTable), 원노트 동기화 배선(createPlusSync).
+import ERP from './rerp/erp.js';
+import PLAN from './rerp/plan.js';
+import { budgetTable } from './rerp/planui.js';
+import { createPlusSync } from './rerp/plussync.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
 import { kindOf, applyYaml, KIND_ORDER, revOf } from './src/rndyaml.js';
 import { MANIFEST_PATH, checkManifest, skillGuide, bundleSkills, zipName, kb } from './src/rndskills.js';
@@ -23,6 +30,8 @@ import {
 } from './src/rndnote.js';
 
 const SAVE_WAIT_MS = 400;
+/** 예산 정보가 없는 차년도 칩의 풍선말·상태 줄·까닭 카드(2026-10-11 사용자 지정) — 칩은 회색 점선이고, 누르면 넘어가되 기록 칸 대신 R&D 설정이 선다. */
+const NO_BUDGET = '예산 정보가 들어 있지 않습니다';
 /** 지우기 버튼은 두 번 누른다 — 처음 누르면 이만큼 동안 "정말 지우기" 로 바뀌고, 그 안에 다시 누르면 지운다. */
 const CONFIRM_MS = 3000;
 /** 원노트 공유가 켜져 있으면 과제 정보를 고친 뒤 이만큼 기다렸다 맞춘다(그 사이 더 고치면 모아서 한 번). 탭을 열 때는 이만큼 지났을 때만. */
@@ -40,9 +49,10 @@ const copyBtn = (attr, what) => `<button type="button" class="rd-icon" ${attr} t
  *   readAsset?:(path:string, as?:'text'|'bytes') => Promise<string|Uint8Array>, today?:() => string,
  *   openNote?:() => Promise<{tool:(name:string, args:object, ms?:number) => Promise<any>}>}} deps
  *   readAsset 은 확장 안의 파일(rnd/skills.json · rnd/skills/…)을 읽는 길, today 는 검사에서 날짜를 못 박는 데 쓴다,
- *   openNote 는 OneNote MCP 서버에 붙는 길(검사에서는 흉내)
+ *   openNote 는 OneNote MCP 서버에 붙는 길(검사에서는 흉내), erp 는 rERP 를 부르는 것(rerp/erp.js — 검사에서는 흉내), me 는 내 이름(설정),
+ *   mcpFetch 는 예상 비용 원노트 동기화가 MCP 서버를 두드릴 fetch(검사에서는 흉내, 없으면 전역)
  */
-export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote }) {
+export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote, erp = ERP, me = () => '', mcpFetch = undefined }) {
   const el = {
     root: $('rnd'), projects: $('rdProjects'), empty: $('rdEmpty'), emptyImport: $('rdEmptyImport'), emptyAdd: $('rdEmptyAdd'),
     intake: $('rdIntake'), yaml: $('rdYaml'),
@@ -50,8 +60,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     aliasAsk: $('rdAliasAsk'), aliasIn: $('rdAliasIn'), aliasSet: $('rdAliasSet'),
     form: $('rdForm'), formTitle: $('rdFormTitle'), fName: $('rdFName'), fAlias: $('rdFAlias'), fCode: $('rdFCode'), fLead: $('rdFLead'),
     fStart: $('rdFStart'), fEnd: $('rdFEnd'), fCalendar: $('rdFCalendar'), fNote: $('rdFNote'), fNeed: $('rdFNeed'), fSave: $('rdFSave'), fCancel: $('rdFCancel'), fDel: $('rdFDel'),
-    status: $('rdStatus'), body: $('rdBody'),
-    budgetState: $('rdBudgetState'), budget: $('rdBudget'), budgetSum: $('rdBudgetSum'), budgetAdd: $('rdBudgetAdd'), budgetCopy: $('rdBudgetCopy'),
+    status: $('rdStatus'), body: $('rdBody'), yearEmpty: $('rdYearEmpty'),
+    budgetState: $('rdBudgetState'), budget: $('rdBudget'), budgetSum: $('rdBudgetSum'), budgetCopy: $('rdBudgetCopy'),
     rosterState: $('rdRosterState'), roster: $('rdRoster'), rosterTools: $('rdRosterTools'), rosterSrc: $('rdRosterSrc'), rosterCopy: $('rdRosterCopy'),
     planState: $('rdPlanState'), plan: $('rdPlan'), planTools: $('rdPlanTools'), planSrc: $('rdPlanSrc'), planCopy: $('rdPlanCopy'),
     logState: $('rdLogState'), logDate: $('rdLogDate'), logTitle: $('rdLogTitle'), logText: $('rdLogText'), logAdd: $('rdLogAdd'), logCancel: $('rdLogCancel'), logs: $('rdLogs'), logsCopy: $('rdLogsCopy'),
@@ -61,19 +71,42 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     skillBox: $('rdSkillBox'), skillState: $('rdSkillState'), skills: $('rdSkills'), skillZip: $('rdSkillZip'), skillGuide: $('rdSkillGuide'),
     noteState: $('rdNoteState'), noteOn: $('rdNoteOn'), noteSection: $('rdNoteSection'), noteSections: $('rdNoteSections'), noteSync: $('rdNoteSync'),
     noteOpen: $('rdNoteOpen'), noteMsg: $('rdNoteMsg'),
+    // rERP 집행내역(예산 칸 아래, 접힌 한 줄 — erpState 가 그 줄의 형편)과 원노트 칸의 예상 비용 공유 — 2026-10-11.
+    erp: $('rdErp'), erpState: $('rdErpState'), erpInfo: $('rdErpInfo'), erpRefresh: $('rdErpRefresh'), erpLink: $('rdErpLink'), erpUnlink: $('rdErpUnlink'),
+    erpPick: $('rdErpPick'), erpSelect: $('rdErpSelect'), erpPickOk: $('rdErpPickOk'), erpMsg: $('rdErpMsg'), erpTable: $('rdErpTable'),
+    plusOn: $('rdPlusOn'), plusRow: $('rdPlusRow'), plusSection: $('rdPlusSection'), plusNotebook: $('rdPlusNotebook'), plusFind: $('rdPlusFind'), plusMsg: $('rdPlusMsg'),
+    // 예산 칸 맨 위 줄 — 집행에 더할 것(미청구·사용계획 — 승인전 체크는 2026-10-11 사용자 지정으로 뺐다). 2026-10-11 사용자 지정으로 R&D 설정에서 옮겼다(값은 여전히 rndSettings).
+    incRow: $('rdIncRow'), incUnbilled: $('rdIncUnbilled'), incPlan: $('rdIncPlan'),
+    // R&D 설정(접힌 한 줄) — rERP 집행내역 켜기/끄기 · 예산 칸에 보일 비목(items — 2026-10-11 사용자 지정). 원노트 공유·YAML 넣기·스킬 칸도 이 안에 있다.
+    setBox: $('rdSetBox'), setState: $('rdSetState'), erpOn: $('rdErpOn'), itemBox: $('rdItemBox'), items: $('rdItems'),
   };
   const st = {
     loaded: false, book: normalizeBook(null),
     // editing 은 고치는 중인 과제 id('new' 는 새 과제). snap 은 그린 시점의 예산 줄 — 계획이 바뀌었는지 이것과 견준다.
     editing: null, snap: [], logEdit: null, chEdit: null,
+    // 예산 정보가 없는 차년도를 보는 중이면 그 과제:차년도(emptyKey) — 들어올 때 R&D 설정을 저절로 폈으면(setAuto) 나갈 때 도로 접는다(2026-10-11 사용자 지정).
+    emptyKey: '', setAuto: false,
     // 스킬 목록(rnd/skills.json)은 그 칸을 처음 펼 때 읽는다. 못 읽었으면 까닭을 둔다.
     manifest: null, manifestError: '',
     // 원노트 공유 — 저장해 두는 형편(rndNote), 마지막으로 맞춘 장부의 지문(고친 것이 있는지), 도는 중인 맞추기와 그 사이 들어온 요청.
     note: normalizeNote(null), noteHash: '', noteRun: null, noteAgain: false, noteBusy: false,
+    // R&D 설정(chrome.storage 의 rndSettings, src/rnderp.js normalizeSet) — erp: rERP 집행내역을 보이는가 · unbilled/plan: 집행에 미청구·사용계획을 더하는가(승인전은 더하지 않는다 — 2026-10-11 사용자 지정)
+    // · hide: 예산 칸에서 숨긴 비목 이름들(줄만 숨고 합계에는 든다 — 2026-10-11 사용자 지정).
+    set: normalizeSet(null),
+    // rERP 집행내역 — 도는 중인 조회, 이 세션에서 저절로 잇기를 해 본 차년도, 마지막으로 받은 과제 목록(고르기용), 이벤트를 달았는지.
+    erpRun: null, erpTried: new Set(), erpRecs: null, erpBusy: false, plHost: null,
+    // 예상 비용의 화면 상태 — rerp/plan.js(bind)와 rerp/planui.js(budgetTable)가 rerp 의 패널 state 와 같은 모양으로 읽고 쓴다.
+    // data.settings.planSync 는 원노트 예상 비용 공유가 켜져 있는지, data.myNames 는 책임자 판정(과제책임자 == 내 이름)에 쓴다.
+    pl: { plans: {}, planShown: new Set(), expanded: new Set(), data: { settings: { planSync: false }, myNames: [] } },
   };
 
   const cur = () => projectOf(st.book, st.book.current.project);
   const curYear = (p) => viewYear(st.book, p, today());
+  /**
+   * 예산 정보가 없는 차년도인가(src/rnd.js hasBudget — 비목 줄에 계획·집행이 하나도 없으면) — 오늘이 든 차년도는 예외(예산을 손으로 적는 곳).
+   * 칩은 회색 점선이고, 누르면 넘어가되 지난 차년도의 기록 대신 까닭 카드와 R&D 설정(연구개발계획서 YAML 넣기)이 선다(2026-10-11 사용자 지정).
+   */
+  const yearEmpty = (p, n) => n !== currentYear(p, today()) && !hasBudget(p.years[n]);
   const curBook = (p) => yearBook(p, curYear(p));
   const label = (p) => p.alias || p.name;
 
@@ -133,16 +166,22 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     st.book.current.project = id;
     clearLogForm();
     clearChangeForm();
+    clearErpPick();
     setStatus('');
     paintAll();
     save();
+    erpAuto();
   }
 
   function paintHead() {
     const p = cur();
     const editing = st.editing != null;
     el.head.classList.toggle('hidden', !p || editing);
-    el.body.classList.toggle('hidden', !p || editing);
+    // 예산 정보가 없는 차년도를 보고 있으면(2026-10-11 사용자 지정) 상관없는 지난 차년도의 예산·참여연구자·계획·기록 칸(rdBody) 대신 까닭 카드가 서고 R&D 설정이 펴진다.
+    const empty = !!p && !editing && yearEmpty(p, curYear(p));
+    el.body.classList.toggle('hidden', !p || editing || empty);
+    el.yearEmpty.classList.toggle('hidden', !empty);
+    openSetFor(empty ? `${p.id}:${curYear(p)}` : '');
     if (!p) return;
     el.name.textContent = label(p);
     el.name.title = p.name;
@@ -159,11 +198,33 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const view = curYear(p);
     el.years.innerHTML = ys.map((y) => {
       const on = y.n === view;
-      const title = y.start ? `${dot(y.start)} ~ ${dot(y.end)}` : '연구기간 미정';
-      return `<button type="button" class="rd-year${on ? ' active' : ''}${y.n === now ? ' now' : ''}" data-year="${y.n}" aria-pressed="${on}" title="${title}">${yearLabel(y.n)}${y.n === now && y.start ? '<small>올해</small>' : ''}</button>`;
+      // 예산 정보가 없는 차년도는 회색 점선(2026-10-11 사용자 지정 — 올해 차년도는 예외, 예산을 손으로 적는 곳). 눌러서 넘어갈 수는 있고, 보고 있어도 점선은 그대로.
+      const off = yearEmpty(p, y.n);
+      const period = y.start ? `${dot(y.start)} ~ ${dot(y.end)}` : '연구기간 미정';
+      const title = off ? `${period} · ${NO_BUDGET}` : period;
+      return `<button type="button" class="rd-year${on ? ' active' : ''}${y.n === now ? ' now' : ''}${off ? ' off' : ''}" data-year="${y.n}" aria-pressed="${on}" title="${title}">${yearLabel(y.n)}${y.n === now && y.start ? '<small>올해</small>' : ''}</button>`;
     }).join('');
     const y = ys.find((x) => x.n === view) || ys[0];
     el.yearNote.textContent = `${yearLabel(y.n)}${y.start ? ` · ${dot(y.start)} ~ ${dot(y.end)}` : ''} · ${yearState(y, today())}`;
+    if (empty) el.yearEmpty.innerHTML = `<p><strong>${yearLabel(view)}</strong> — ${NO_BUDGET}. 아래 <strong>R&amp;D 설정</strong>의 연구개발계획서 YAML 넣기에 이 차년도의 KR_&lt;과제&gt;.yaml 을 넣으면 예산·참여연구자·연구개발 계획이 서고 기록 칸이 열립니다.</p>`;
+  }
+
+  /**
+   * 예산 정보가 없는 차년도로 들어오면(key 는 과제:차년도) R&D 설정을 편다 — 이미 펴 두었으면 그대로. 나가면(key 가 빈 글) 저절로 편 것만 도로 접는다.
+   * 같은 자리를 다시 그릴 때는 아무것도 하지 않는다 — 사람이 그 사이 접은 것을 다시 펴지 않으려고.
+   */
+  function openSetFor(key) {
+    if (key === st.emptyKey) return;
+    st.emptyKey = key;
+    if (key) {
+      if (!el.setBox.open) {
+        el.setBox.open = true;
+        st.setAuto = true;
+      }
+    } else if (st.setAuto) {
+      st.setAuto = false;
+      el.setBox.open = false;
+    }
   }
 
   /** 별칭이 없는 과제에 머리의 칸에서 별칭을 정한다 — 다른 과제의 별칭과 겹치면 안 된다. */
@@ -191,9 +252,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     st.book.current.year[p.id] = n;
     clearLogForm();
     clearChangeForm();
+    clearErpPick();
+    // 예산 정보가 없는 차년도(2026-10-11 사용자 지정)도 넘어간다 — 기록 칸 대신 까닭 카드와 R&D 설정이 선다(paintHead). 상태 줄에는 따로 적지 않는다(카드와 같은 말이 두 번 보여서).
     setStatus('');
     paintAll();
     save();
+    erpAuto();
   }
 
   /* ---------------------------------------------------------- 과제 폼 */
@@ -288,52 +352,131 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /* ---------------------------------------------------------- 예산 */
 
   const left = (r) => (r.plan != null || r.used != null ? (r.plan || 0) - (r.used || 0) : null);
-  const rate = (r) => (r.plan > 0 ? Math.round(((r.used || 0) / r.plan) * 100) : 0);
 
-  function rowHtml(r) {
+  /**
+   * 줄 아래 막대 — 계획 대비 몫을 색으로 이어 붙인다(2026-10-11 사용자 지정 — 미청구·사용계획은 각기 다른 색): base 파랑(승인액 · 손으로 적은 집행) → plan 주황(사용계획 = 예상 비용) → unbilled 보라(미청구 — 연구활동비 줄과 합계 줄).
+   * 계획을 넘는 몫부터는 빨강(over)이고 100% 에서 잘린다. 첫 몫(base)은 0 이어도 그린다 — 줄마다 .rd-bar 하나는 늘 있다(검사와 refreshRow 가 기댄다). 계획이 없으면 모두 0%.
+   * @param {number|null} plan 계획(원) @param {{ k:string, v:number }[]} parts 차례대로 이어 붙일 몫(원)
+   */
+  function barsHtml(plan, parts) {
+    const pctOf = (v) => (plan > 0 ? Math.min(100, (v / plan) * 100) : 0);
+    const fix = (n) => String(Math.round(n * 100) / 100);
+    let at = 0;
+    return parts.map(({ k, v }, i) => {
+      if (!(v > 0) && i) return '';
+      const from = pctOf(at);
+      at += v > 0 ? v : 0;
+      const to = pctOf(at);
+      return `<i class="rd-bar ${k}${plan > 0 && at > plan ? ' over' : ''}" style="left:${fix(from)}%;width:${fix(to - from)}%"></i>`;
+    }).join('');
+  }
+  /** 한 줄의 막대 몫 — rERP 와 맞춰진 줄(집행 = 승인액 + 사용계획 + 미청구)은 사용계획(erpPlan)·미청구(erpUnbilled — 연구활동비 줄, src/rnderp.js applySnapshot)를 따로, 아니면 집행 하나. 차례는 base · plan · unbilled 로 고정(paintSum 이 [1]·[2] 로 읽는다). */
+  const rowParts = (r) => {
+    const on = !!r.erpKey && st.set.erp;
+    const plan = on ? r.erpPlan || 0 : 0;
+    const ub = on ? r.erpUnbilled || 0 : 0;
+    return [{ k: 'base', v: (r.used || 0) - plan - ub }, { k: 'plan', v: plan }, { k: 'unbilled', v: ub }];
+  };
+  const rowBars = (r) => barsHtml(r.plan, rowParts(r));
+
+  /** 예산 줄 — 금액은 천원(2026-10-11 사용자 지정). rERP 와 맞춰진 비목(erpKey)의 집행은 rERP 승인액이라 읽기 전용. x 는 미청구 몫(extrasOf — 툴팁의 건수). */
+  function rowHtml(r, x = null) {
     const l = left(r);
     const name = escapeHtml(r.item || '비목');
-    return `<div class="rd-brow" role="row" data-row="${r.id}">`
+    const locked = !!r.erpKey && st.set.erp;
+    const ub = locked ? r.erpUnbilled || 0 : 0;
+    const erpUsed = locked ? ` readonly title="rERP 승인액 ${comma((r.used || 0) - (r.erpPlan || 0) - ub)}원${r.erpPlan ? ` + 사용계획 ${comma(r.erpPlan)}원` : ''}${ub ? ` + 미청구 ${comma(ub)}원(과제카드 ${x?.count || 0}건 — 청구 전이라 이 줄에 더합니다)` : ''} — 집행내역에서 받은 값이라 손으로 못 고칩니다 (rERP 집행내역의 끊기를 누르거나 R&D 설정에서 끄면 다시 적을 수 있습니다)"` : '';
+    return `<div class="rd-brow${locked ? ' erp' : ''}" role="row" data-row="${r.id}">`
       + `<input type="text" data-k="item" value="${escapeHtml(r.item)}" placeholder="비목" aria-label="비목" autocomplete="off" />`
-      + `<input type="text" data-k="plan" value="${r.plan == null ? '' : comma(r.plan)}" placeholder="0" inputmode="numeric" aria-label="${name} 계획" autocomplete="off" />`
-      + `<input type="text" data-k="used" value="${r.used == null ? '' : comma(r.used)}" placeholder="0" inputmode="numeric" aria-label="${name} 집행" autocomplete="off" />`
-      + `<span class="rd-left${l < 0 ? ' over' : ''}" data-left title="잔액">${l == null ? '' : comma(l)}</span>`
+      + `<input type="text" data-k="plan" value="${r.plan == null ? '' : thousand(r.plan)}" placeholder="0" inputmode="numeric" aria-label="${name} 계획(천원)" autocomplete="off" />`
+      + `<input type="text" data-k="used" value="${r.used == null ? '' : thousand(r.used)}" placeholder="0" inputmode="numeric" aria-label="${name} 집행(천원)" autocomplete="off"${erpUsed} />`
+      + `<span class="rd-left${l < 0 ? ' over' : ''}" data-left title="잔액(천원)">${l == null ? '' : thousand(l)}</span>`
       + `<button type="button" class="rd-brow-del" data-del="${r.id}" title="이 비목 빼기" aria-label="${name} 빼기">×</button>`
-      + `<i class="rd-bar${rate(r) > 100 ? ' over' : ''}" style="width:${Math.min(100, rate(r))}%" aria-hidden="true"></i>`
+      + `<span class="rd-bars" aria-hidden="true">${rowBars(r)}</span>`
       + '</div>';
   }
 
+  /** 미청구(과제카드)는 연구활동비 줄에 든다(src/rnderp.js UNBILLED_ITEM). rERP 와 맞춰진 연구활동비 줄이 없을 때만 합계 바로 위 보조 줄로 — 예산 칸 위 "집행에 더하기"에서 켰을 때. 합계 줄 막대의 보라 몫이 이것이다(범례는 보라 체크 상자). */
+  function extraRowHtml(x) {
+    return `<div class="rd-brow rd-brow-extra" role="row" title="이 과제 카드로 썼지만 아직 청구하지 않은 금액 — rERP 와 맞춰진 연구활동비 줄이 없어 합계에서만 뺍니다 (예산 칸 위 '집행에 더하기'의 미청구 — 합계 줄 막대의 보라 몫)">`
+      + `<span class="rd-extra-name">미청구 · 과제카드 ${x.count}건</span><span></span><span class="rd-extra-used">${thousand(x.unbilled)}</span><span class="rd-left over">${thousand(-x.unbilled)}</span><span></span></div>`;
+  }
+
+  /** R&D 설정에서 숨긴 비목(rndSettings.hide)이 이 차년도에 있으면 합계 위에 한 줄로 — 줄만 숨고 합계에는 든다. */
+  const hiddenNoteHtml = (hid) => (hid.length
+    ? `<div class="rd-hidden-note" title="R&D 설정의 '예산 칸에 보일 비목'에서 끈 비목 — 줄만 숨고 합계·표 복사에는 듭니다">숨긴 비목 ${hid.length} · ${hid.map((r) => escapeHtml(r.item)).join('·')} — 합계에는 듭니다 (R&D 설정)</div>`
+    : '');
+
+  /** 장부에 더하는 과제 단위 몫(미청구) — 설정이 켜져 있고 스냅샷이 있을 때만. */
+  const extrasOf = (b) => (st.set.erp ? erpExtras(b.erp?.snap, st.set) : { unbilled: 0, count: 0 });
+
+  /**
+   * 미청구 몫의 자리(2026-10-12 사용자 지정 — "미청구를 체크하면 연구활동비 줄에 반영"): rERP 와 맞춰진 연구활동비 줄(src/rnderp.js UNBILLED_ITEM)에 들었으면 inRow(그 줄의 used 에 이미 든 몫),
+   * 그 줄이 없으면 loose(합계 위 보조 줄 — 합계에만 더한다). 둘 중 하나만 0 이 아니다. count 는 과제카드 건수.
+   */
+  const unbilledPlace = (b) => {
+    const x = extrasOf(b);
+    const inRow = b.budget.reduce((a, r) => a + rowParts(r)[2].v, 0);
+    return { count: x.count, inRow, loose: inRow > 0 ? 0 : x.unbilled };
+  };
+
+  /**
+   * rERP 스냅샷을 장부 줄에 — 집행 = 승인액 + (설정) 사용계획(그 비목 키의 예상 비용, rerp/plan.js) + (설정) 미청구(연구활동비 줄에). 승인전(청구했지만 결재 전)은 더하지 않는다(2026-10-11 사용자 지정 — rERP 집행비율에는 rerp 식대로 든다). 바뀐 줄 수를 돌려준다.
+   * 설정에서 rERP 를 껐거나 스냅샷이 없으면 아무것도 안 한다(줄은 그대로).
+   */
+  function applyErp(b) {
+    const e = b.erp;
+    if (!st.set.erp || !e?.snap?.budget) return 0;
+    const planned = st.set.plan ? (key) => PLAN.sumOf(PLAN.listOf(st.pl.plans, e.prjNo, key)) : null;
+    return applySnapshot(b.budget, e.snap, { planned, unbilled: extrasOf(b).unbilled });
+  }
+
+  /** 설정(R&D 설정의 "예산 칸에 보일 비목")에서 숨긴 줄은 그리지 않는다 — 합계·표 복사·요약에는 그대로 든다(2026-10-11 사용자 지정). */
   function paintBudget() {
     const p = cur();
     if (!p) return;
     const b = curBook(p);
-    el.budget.innerHTML = b.budget.map(rowHtml).join('');
+    applyErp(b);
+    const x = extrasOf(b);
+    const u = unbilledPlace(b);
+    const hid = b.budget.filter((r) => isHidden(st.set, r.item));
+    el.budget.innerHTML = b.budget.filter((r) => !hid.includes(r)).map((r) => rowHtml(r, x)).join('') + hiddenNoteHtml(hid) + (u.loose ? extraRowHtml({ unbilled: u.loose, count: u.count }) : '');
     paintSum(b);
     st.snap = b.budget.map((r) => ({ ...r }));
   }
 
+  /** 합계 줄 — 금액과, 그 아래 막대(승인액 파랑 → 사용계획 주황 → 미청구 보라 — 전체 계획 대비). 막대는 마지막 빈 칸 안에 두어 칸 수(다섯)는 그대로다. */
   function paintSum(b) {
     const sum = budgetTotals(b.budget);
-    const any = b.budget.some((r) => r.plan != null || r.used != null);
+    const u = unbilledPlace(b);
+    if (u.loose) {   // 연구활동비 줄에 못 넣은 미청구만 여기서 더한다(줄에 든 몫은 budgetTotals 에 이미 들어 있다)
+      sum.used += u.loose;
+      sum.left -= u.loose;
+      sum.rate = sum.plan > 0 ? Math.round((sum.used / sum.plan) * 100) : null;
+    }
+    const any = b.budget.some((r) => r.plan != null || r.used != null) || u.loose > 0;
+    const planned = b.budget.reduce((a, r) => a + rowParts(r)[1].v, 0);
+    const unbilled = u.inRow + u.loose;
+    const bars = barsHtml(sum.plan, [{ k: 'base', v: sum.used - planned - unbilled }, { k: 'plan', v: planned }, { k: 'unbilled', v: unbilled }]);
     el.budgetSum.innerHTML = any
-      ? `<span>합계</span><span>${comma(sum.plan)}</span><span>${comma(sum.used)}</span><span class="rd-left${sum.left < 0 ? ' over' : ''}">${comma(sum.left)}</span><span></span>`
+      ? `<span>합계</span><span>${thousand(sum.plan)}</span><span>${thousand(sum.used)}</span><span class="rd-left${sum.left < 0 ? ' over' : ''}">${thousand(sum.left)}</span><span><span class="rd-bars" aria-hidden="true">${bars}</span></span>`
       : '';
-    el.budgetState.textContent = any ? `계획 ${shortWon(sum.plan)} · 집행 ${shortWon(sum.used)}${sum.rate == null ? '' : ` (${sum.rate}%)`}` : '적은 것 없음';
+    // 칸 머리 — 장부의 계획·집행과, rERP 로 이어졌으면(설정에서 켜 둔 동안) 그 집행비율(미청구·승인전 반영)이나 못 받은 까닭.
+    const head = st.set.erp ? erpHead(b.erp) : '';
+    el.budgetState.textContent = `${any ? `계획 ${shortWon(sum.plan)} · 집행 ${shortWon(sum.used)}${sum.rate == null ? '' : ` (${sum.rate}%)`}` : '적은 것 없음'}${head ? ` · ${head}` : ''}`;
   }
 
   /** 한 줄의 금액을 다시 적는다 — 줄을 통째로 다시 그리면 Tab 으로 옮겨 가던 초점이 사라진다. */
   function refreshRow(rowEl, r) {
     for (const k of ['plan', 'used']) {
       const input = rowEl.querySelector(`[data-k="${k}"]`);
-      if (input && document.activeElement !== input) input.value = r[k] == null ? '' : comma(r[k]);
+      if (input && document.activeElement !== input) input.value = r[k] == null ? '' : thousand(r[k]);
     }
     const l = left(r);
     const span = rowEl.querySelector('[data-left]');
-    span.textContent = l == null ? '' : comma(l);
+    span.textContent = l == null ? '' : thousand(l);
     span.classList.toggle('over', l < 0);
-    const bar = rowEl.querySelector('.rd-bar');
-    bar.style.width = `${Math.min(100, rate(r))}%`;
-    bar.classList.toggle('over', rate(r) > 100);
+    rowEl.querySelector('.rd-bars').innerHTML = rowBars(r);
   }
 
   function rowOf(e) {
@@ -351,21 +494,26 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     save();
   }
 
-  /** 금액은 다 적고(change) 읽는다 — 적는 중의 "1,5" 를 읽으면 틀린다. */
+  /** 금액은 다 적고(change) 읽는다 — 적는 중의 "1,5" 를 읽으면 틀린다. 칸은 천원이라 숫자만 적으면 천원, 만·억·원을 붙이면 그 단위(amountOfThousand). */
   function onBudgetChange(e) {
     const hit = rowOf(e);
     if (!hit || !['plan', 'used'].includes(hit.node.dataset.k)) return;
     const { node, rowEl, p, r } = hit;
     const k = node.dataset.k;
-    const v = amountOf(node.value);
+    if (k === 'used' && r.erpKey && st.set.erp) {
+      node.value = r.used == null ? '' : thousand(r.used);
+      setStatus('이 비목의 집행은 rERP 승인액입니다 — 손으로 적으려면 rERP 집행내역의 끊기를 누르거나 R&D 설정에서 rERP 집행내역을 끄세요.', 'error');
+      return;
+    }
+    const v = amountOfThousand(node.value);
     if (node.value.trim() && v == null) {
-      setStatus(`금액을 읽지 못했습니다 — "${node.value}". 1,500,000 처럼 숫자로, 또는 150만 · 1.5억 처럼 적으세요.`, 'error');
-      node.value = r[k] == null ? '' : comma(r[k]);
+      setStatus(`금액을 읽지 못했습니다 — "${node.value}". 천원 단위 숫자로(31,425 = 31,425,000원), 또는 150만 · 1.5억 · 500,000원 처럼 단위를 붙여 적으세요.`, 'error');
+      node.value = r[k] == null ? '' : thousand(r[k]);
       return;
     }
     if (r[k] === v) return;
     r[k] = v;
-    node.value = v == null ? '' : comma(v);
+    node.value = v == null ? '' : thousand(v);
     commitBudget(p, rowEl, r);
   }
 
@@ -388,15 +536,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     save();
   }
 
-  function addBudgetRow() {
-    const p = cur();
-    if (!p) return;
-    curBook(p).budget.push({ id: newId(), item: '', plan: null, used: null });
-    paintBudget();
-    save();
-    el.budget.querySelector('.rd-brow:last-child [data-k="item"]')?.focus();
-  }
-
+  // 비목 더하기 단추는 2026-10-11 사용자 지정으로 뺐다 — 비목은 연구개발계획서 YAML(src/rnd.js BUDGET_ITEMS 여섯 비목)에서 오고, 줄의 × 로만 뺀다.
   function onBudgetClick(e) {
     const btn = e.target instanceof HTMLElement ? e.target.closest('[data-del]') : null;
     const p = cur();
@@ -687,7 +827,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     logEvent('rnd', ok, `R&D 요약 복사: ${label(p)} ${yearLabel(curYear(p))}`);
   }
 
-  const copyBudget = () => { const p = cur(); if (p) copyWith(el.budgetCopy, budgetTsv(curBook(p).budget), '예산 표'); };
+  /** 예산 표 복사 — 미청구를 켰으면 그 보조 줄도 한 줄로. */
+  const copyBudget = () => {
+    const p = cur();
+    if (!p) return;
+    const b = curBook(p);
+    const u = unbilledPlace(b);   // 연구활동비 줄에 든 미청구는 그 줄의 집행에 이미 들어 있고, 못 넣은 것만 따로 한 줄
+    copyWith(el.budgetCopy, budgetTsv(u.loose ? [...b.budget, { id: 'unbilled', item: `미청구(과제카드 ${u.count}건)`, plan: null, used: u.loose }] : b.budget), '예산 표');
+  };
   const copyLogs = () => { const p = cur(); const notes = p ? noteLogs(curBook(p)) : []; if (p) copyWith(el.logsCopy, logLines(notes).join('\n'), `진행 기록 ${notes.length}건`); };
   const copyFile = (btn, key, what) => { const p = cur(); const l = p ? fileLog(curBook(p), key) : null; if (l) copyWith(btn, entryText(l), what); };
   const copyChanges = () => { const p = cur(); if (p) copyWith(el.changesCopy, changeLines(curBook(p).changes).join('\n'), `변경이력 ${curBook(p).changes.length}건`); };
@@ -925,10 +1072,415 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     copyWith(el.skillGuide, skillGuide(m, { today: today() }), '스킬 쓰는 법');
   }
 
-  /* ---------------------------------------------------------- 원노트 공유(선택) */
+  /* ---------------------------------------------------------- rERP 집행내역 (kr_ext_rerp 에서 옮긴 rerp/ 로 — 2026-10-11 사용자 지정) */
+  // 차년도를 rERP 과제에 이어 두면(src/rnderp.js linkOf — 과제번호로 저절로, 못 고르면 목록에서) 비목별 잔액·미청구 카드를 받아(fetchSnapshot) 장부에 스냅샷으로 두고,
+  // kr_ext_rerp 의 과제집행비율 표(rerp/planui.js budgetTable — 예산·예산잔액·집행비율·예상 비용 ＋·미청구·승인전·합계)를 그대로 그린다.
+  // 맞춰진 비목의 집행 칸은 rERP 승인액이 된다(applySnapshot). 살아 있는 조회는 오늘이 든 차년도만, 10분마다(ERP_TTL_MS). 로그인이 풀렸으면 eClass SSO 를 한 번 하고 다시 받는다.
+
+  const yearOf = (p) => { const n = curYear(p); const ys = yearsOf(p); return ys.find((y) => y.n === n) || ys[0]; };
+  const erpTriedKey = (p) => `${p.id}:${curYear(p)}`;
+  const myName = () => String(me() || '').trim();
+  const sameName = (a, b) => !!a && !!b && String(a).replace(/\s/g, '') === String(b).replace(/\s/g, '');
+  const setErpMsg = (msg, error = false) => { el.erpMsg.textContent = msg; el.erpMsg.classList.toggle('error', !!error); };
+  const clearErpPick = () => { el.erpPick.classList.add('hidden'); setErpMsg(''); };
+  /** rERP 가 못 받은 까닭을 사람 말로 — 로그인은 src/net.js 와 같은 "로그인이 필요합니다" 말투. */
+  const erpMessage = (err) => (err?.kind === 'eclass-login' ? '로그인이 필요합니다. eclass 에 로그인한 뒤 ↻ 를 누르세요.'
+    : err?.kind === 'login' ? '로그인이 필요합니다. rERP 세션이 풀렸습니다 — eclass 에 로그인돼 있으면 ↻ 로 다시 받습니다.'
+    : `rERP 에서 받지 못했습니다 — ${String(err?.message || err)}`);
+  /** rERP 가 "로그인 필요"로 답하면 eClass SSO 를 한 번 하고 다시 한다(rerp background.js rndAutoLogin 과 같은 흐름). */
+  async function withLogin(fn) {
+    try { return await fn(); } catch (err) { if (err?.kind !== 'login') throw err; await erp.ssoLogin(); return fn(); }
+  }
+
+  /**
+   * 장부에서 rERP 로 이어진 차년도들 — 원노트 예상 비용 동기화의 문맥(과제명·내 과제·내 이름).
+   * 책임 과제(leadPrjNos)는 늘 비운다 — 여기서는 페이지를 만들지 않는다(보기만, 2026-10-11 사용자 지정). 페이지는 rerp 확장에서 책임자가 만든다.
+   */
+  function erpContext() {
+    const names = {};
+    const mine = new Set();
+    for (const p of st.book.projects) {
+      for (const y of Object.values(p.years)) {
+        const e = y.erp;
+        if (!e?.prjNo) continue;
+        names[e.prjNo] = e.prjNm || p.name;
+        mine.add(e.prjNo);
+      }
+    }
+    return { names, myPrjNos: [...mine], leadPrjNos: [], who: myName() };
+  }
+
+  // 원노트 예상 비용 동기화 배선(rerp background.js 의 planSync 와 같은 것, rerp/plussync.js) — 설정은 원노트 칸의 rndNote.plus, 과제 문맥은 장부, 클립보드는 copyText.
+  const plus = createPlusSync({
+    settings: () => ({ ...st.note.plus, enabled: st.note.plus.on }),
+    context: erpContext, copyText, fetch: mcpFetch,
+    version: (globalThis.chrome?.runtime?.getManifest?.() || {}).version || '0',
+  });
+  // rerp/plan.js 가 백그라운드에 보내던 요청(planSync · planExport · planBind …)을 같은 창의 배선으로. 끝나면 상태 글·표를 다시 그린다.
+  PLAN.send = (msg) => plus.send(msg).then((r) => { if (msg?.type !== 'planSyncQueue') afterPlanSync(r); return r; });
+
+  /** 동기화가 끝나면 — 결과(rerp 와 같은 저장 키 planSyncState · plusPlanPages)를 화면 상태에 들이고 원노트 칸·표를 다시 그린다. */
+  async function afterPlanSync(r) {
+    if (!r || r.skipped === 'off') return;
+    try {
+      // 받은 예상 비용(plannedExpenses)도 다시 읽는다 — rerp/plan.js 는 storage.onChanged 로 받지만 검사에는 그 알림이 없다.
+      const s = await chrome.storage.local.get([PLAN.SKEY, PLAN.PKEY, PLAN.KEY]);
+      st.pl.planSync = s?.[PLAN.SKEY] || st.pl.planSync;
+      st.pl.planPages = s?.[PLAN.PKEY] || st.pl.planPages;
+      st.pl.plans = s?.[PLAN.KEY] || st.pl.plans;
+    } catch { /* 저장소를 못 읽어도 결과는 r 에 있다 */ }
+    if (!r.skipped) {
+      const q = st.note.plus;
+      q.error = r.ok ? '' : (r.error || '맞추지 못했습니다');
+      // 이어진 과제 가운데 페이지가 아직 없는 것 — 여기서는 만들지 않으니 rerp 확장에서 만들어야 한다고 알린다.
+      const missing = erpContext().myPrjNos.filter((no) => !r.pages?.[no]?.pageId);
+      q.last = r.ok ? `맞춤 ${when(r.at)} · 과제 ${Object.keys(r.pages || {}).length}개 · 항목 ${r.count || 0}건${missing.length ? ` · 페이지 없음 ${missing.length}개(rerp 확장에서 만듭니다)` : ''}${r.sectionWarn ? ` · ${r.sectionWarn.error}` : ''}` : q.last;
+      if (r.kind === 'notebook') plusNotebookPick(r.notebooks || []);
+      saveNote();
+      logEvent('rnd', !!r.ok, `R&D 예상 비용 원노트 맞춤(${r.reason || ''}): ${r.ok ? `과제 ${Object.keys(r.pages || {}).length}개 · 항목 ${r.count || 0}건` : q.error}`);
+    }
+    paintPlus();
+    paintNote();
+    drawErp();
+  }
+
+  function paintErp() {
+    const p = cur();
+    if (!p) return;
+    // R&D 설정에서 꺼 두면 칸을 통째로 숨긴다(이어 둔 과제·스냅샷은 장부에 그대로).
+    el.erp.classList.toggle('hidden', !st.set.erp);
+    if (!st.set.erp) return;
+    const b = curBook(p);
+    const y = yearOf(p);
+    const e = b.erp || null;
+    const live = isLive(y, today());
+    el.erp.classList.toggle('busy', st.erpBusy);
+    el.erpLink.textContent = e ? 'rERP 잇기 바꾸기' : 'rERP 과제 잇기';
+    el.erpLink.disabled = st.erpBusy;
+    el.erpUnlink.classList.toggle('hidden', !e);
+    el.erpRefresh.disabled = !e || st.erpBusy;
+    el.erpRefresh.title = !e ? '먼저 rERP 과제를 이으세요' : live ? 'rERP 에서 지금 다시 받기 (열 때와 10분마다 저절로 받습니다)' : '지난 차년도 — 마지막 조회를 그대로 둡니다. 누르면 지금 상태로 다시 받습니다';
+    if (e) {
+      const at = e.snap?.at ? `조회 ${erpClock(e.snap.at)}` : '아직 못 받음';
+      el.erpInfo.innerHTML = `<b>${escapeHtml(e.prjNo)}</b>${e.anl ? ` ${e.anl}연차` : ''}${e.prjNm ? ` · ${escapeHtml(e.prjNm)}` : ''} · ${at}${live ? '' : ' · 지난 차년도'}`;
+      el.erpInfo.title = `${e.prjNo}${e.prjNm ? ` ${e.prjNm}` : ''}${e.rspr ? ` · 책임자 ${e.rspr}` : ''}${e.stDt ? ` · ${dot(e.stDt)} ~ ${dot(e.endDt)}` : ''} · ${e.auto ? '과제번호로 저절로 이음' : '목록에서 고름'}${e.snap?.std === '20' ? ' · 본예산 기준' : ''}`;
+      // 접힌 한 줄의 형편(2026-10-11 사용자 지정) — 과제명은 빼고 과제번호·연차·조회 시각만. 집행비율은 예산 칸 머리에 이미 있다.
+      el.erpState.textContent = `${e.prjNo}${e.anl ? ` ${e.anl}연차` : ''} · ${at}${live ? '' : ' · 지난 차년도'}`;
+    } else {
+      el.erpInfo.textContent = p.code ? `과제번호 ${p.code} 로 rERP 과제를 찾습니다` : '과제번호가 없어 rERP 진행 과제 목록에서 고릅니다';
+      el.erpInfo.title = '';
+      el.erpState.textContent = '잇지 않음';
+    }
+    // 표는 rerp 의 것 그대로 — p 는 rerp 패널의 과제(prjNo·rspr·budget·budgetError), s 는 설정(planSync·quickPicks), state 는 예상 비용 화면 상태.
+    el.erpTable.innerHTML = e
+      ? budgetTable({ prjNo: e.prjNo, rspr: e.rspr, budget: e.snap?.budget || null, budgetError: e.snap?.budget ? '' : (e.error?.message || ''), unbilledShared: 0 }, { planSync: st.note.plus.on, quickPicks: [] }, st.pl)
+      : '';
+    // 보기만(2026-10-11 사용자 지정) — 예상 비용을 적고 고치고 페이지를 만드는 것은 rerp 확장(eClass 홈)에서 한다. 여기서는 ＋·✎·×·수량 −/＋·저장·내보내기를 걷어 내고
+    // 눈(펼치기)·가져오기(⬇ 동료가 보낸 페이지 링크 묶기)·열기(↗)만 둔다. 원노트 동기화로 받은 것이 표와 장부(사용계획)에 보인다.
+    for (const node of el.erpTable.querySelectorAll('[data-act="plan-open"], .krext-plan-acts, [data-act="plan-qty"], [data-act="plan-persist"], [data-act="plan-export"]')) node.remove();
+    namePlanRows(el.erpTable);
+  }
+
+  /**
+   * 비목별 "↳ 예상 반영" 줄(rerp 원본대로 항목 줄보다 먼저, 비목 줄 바로 아래 — 2026-10-11 사용자 지정, kr_ext_rerp lib/render.js 에서 옮김)에 비목 이름을 앞에 붙인다 —
+   * `연구활동비` → `↳ 연구활동비 예상 반영 1건 · 150,000원` → `↳ 회의비 …`. 이 패널만의 모양이라 rerp/planui.js 는 그대로 두고(rerp/CLAUDE.md) 그린 표만 손본다. 합계 아래의 예상 반영 줄은 rerp 와 같이 그대로.
+   */
+  function namePlanRows(table) {
+    for (const tr of table.querySelectorAll('tbody tr.krext-bgt-proj')) {
+      const head = tr.previousElementSibling;
+      if (!head || /\bkrext-bgt-(plan|form|proj)\b/.test(head.className || '')) continue;
+      const nm = head.querySelector('.krext-bgt-nm')?.cloneNode(true);
+      for (const n of nm?.querySelectorAll('.krext-tag, button') || []) n.remove();
+      const name = String(nm?.textContent || '').replace(/\s+/g, ' ').trim();
+      const cell = tr.querySelector('.krext-bgt-nm');
+      if (name && cell) cell.innerHTML = cell.innerHTML.replace('예상 반영', `${escapeHtml(name)} 예상 반영`);
+    }
+  }
+
+  /** 탭을 열 때·과제나 차년도를 고를 때 — 이어져 있으면 신선하지 않을 때 다시 받고, 아니면 올해 차년도에 한해 이 세션에서 한 번 저절로 잇는다. */
+  function erpAuto() {
+    const p = cur();
+    if (!p || !st.set.erp) return;
+    const b = curBook(p);
+    if (b.erp) {
+      refreshErp({ reason: '열 때' });
+      return;
+    }
+    if ((p.code || p.name) && !st.erpTried.has(erpTriedKey(p)) && isLive(yearOf(p), today())) linkErp({ manual: false });
+  }
+
+  /**
+   * 이 차년도를 rERP 과제에 잇는다 — rERP 과제 목록(과제번호×연차 행)에서 과제번호(없으면 과제명)의 행들을 찾아 차년도에 맞는 행을 고른다(pickYearRec).
+   * 못 고르면 진행 과제 드롭다운(이름이 비슷한 것 ★ 먼저)을 세운다. 이으면 바로 받는다.
+   */
+  async function linkErp({ manual = false } = {}) {
+    const p = cur();
+    if (!p || st.erpBusy) return;
+    const b = curBook(p);
+    const y = yearOf(p);
+    st.erpTried.add(erpTriedKey(p));
+    st.erpBusy = true;
+    paintErp();
+    setErpMsg('rERP 과제 목록을 받는 중…');
+    try {
+      const got = await withLogin(() => erp.fetchProjectRecs(erp.settingsOf()));
+      if (!got.recs.length && got.firstErr) throw got.firstErr;
+      st.erpRecs = got.recs;
+      const rows = projectRecs(got.recs, { code: p.code, name: p.name });
+      const rec = pickYearRec(rows, y);
+      if (rec) {
+        b.erp = linkOf(rec, { auto: !manual, now: Date.now() });
+        clearErpPick();
+        logEvent('rnd', true, `R&D rERP 잇기: ${label(p)} ${yearLabel(y.n)} → ${rec.prjNo}${rec.anl ? ` ${rec.anl}연차` : ''}`);
+        save();
+        st.erpBusy = false;
+        paintErp();
+        await refreshErp({ force: true, reason: '잇기' });
+        return;
+      }
+      const list = candidates(got.recs, { name: p.name });
+      if (!list.length) {
+        setErpMsg('rERP 진행 과제 목록이 비어 있습니다.', true);
+        return;
+      }
+      el.erpSelect.innerHTML = `<option value="">rERP 과제 고르기 — ${list.length}개</option>`
+        + list.map((c) => `<option value="${escapeHtml(c.prjNo)}">${c.like ? '★ ' : ''}${escapeHtml(c.prjNo)} · ${escapeHtml(c.prjNm)}${c.rspr ? ` (${escapeHtml(c.rspr)})` : ''}</option>`).join('');
+      el.erpPick.classList.remove('hidden');
+      setErpMsg(rows.length
+        ? `rERP 에 ${p.code || p.name} 의 연차 행이 여럿이라 ${yearLabel(y.n)}에 맞는 것을 못 골랐습니다 — 목록에서 고르세요.`
+        : `rERP 진행 과제에서 ${p.code ? `과제번호 ${p.code}` : `과제명 "${p.name}"`} 을 못 찾았습니다 — 목록에서 고르세요(이름이 비슷한 것 ★ 먼저).`);
+      if (manual) el.erpSelect.focus();
+    } catch (err) {
+      setErpMsg(erpMessage(err), true);
+      logEvent('rnd', false, `R&D rERP 잇기 실패: ${String(err?.message || err)}`);
+    } finally {
+      st.erpBusy = false;
+      paintErp();
+    }
+  }
+
+  /** 드롭다운에서 고른 과제로 잇는다 — 그 과제번호의 연차 행 가운데 차년도에 맞는 것, 없으면 마지막 연차. */
+  async function pickErp() {
+    const p = cur();
+    const prjNo = el.erpSelect.value;
+    if (!p) return;
+    if (!prjNo) {
+      setErpMsg('rERP 과제를 고르세요.', true);
+      return;
+    }
+    const b = curBook(p);
+    const y = yearOf(p);
+    const rows = projectRecs(st.erpRecs || [], { code: prjNo });
+    const rec = pickYearRec(rows, y) || rows[rows.length - 1];
+    if (!rec) return;
+    b.erp = linkOf(rec, { auto: false, now: Date.now() });
+    clearErpPick();
+    logEvent('rnd', true, `R&D rERP 잇기(고름): ${label(p)} ${yearLabel(y.n)} → ${rec.prjNo}${rec.anl ? ` ${rec.anl}연차` : ''}`);
+    save();
+    paintErp();
+    await refreshErp({ force: true, reason: '고름' });
+  }
+
+  /** 끊는다(두 번) — 스냅샷도 버리고 맞춰진 비목의 집행은 다시 손으로 적는다(값은 남긴다). */
+  function unlinkErp() {
+    const p = cur();
+    if (!p) return;
+    const b = curBook(p);
+    if (!b.erp || !confirmTwice(el.erpUnlink, '정말 끊기')) return;
+    const was = b.erp.prjNo;
+    delete b.erp;
+    for (const r of b.budget) delete r.erpKey;
+    clearErpPick();
+    logEvent('rnd', true, `R&D rERP 끊음: ${label(p)} ${yearLabel(curYear(p))} (${was})`);
+    paintBudget();
+    paintErp();
+    save();
+    setStatus('rERP 연결을 끊었습니다 — 집행은 다시 손으로 적습니다.');
+  }
+
+  /**
+   * rERP 에서 집행내역을 받아 스냅샷으로 두고 장부 줄에 넣는다. force 가 아니면 오늘이 든 차년도가 아니거나(지난 차년도는 마지막 조회 그대로) 10분 안이면 건너뛴다.
+   * 한 번에 하나만 돈다. 던지지 않는다 — 까닭은 칸에 보인다.
+   */
+  function refreshErp({ force = false, reason = '' } = {}) {
+    const p = cur();
+    if (!p || !st.set.erp) return Promise.resolve(false);
+    const b = curBook(p);
+    const e = b.erp;
+    const y = yearOf(p);
+    if (!e) return Promise.resolve(false);
+    if (!force && (!isLive(y, today()) || isFresh(e.snap))) return Promise.resolve(false);
+    if (st.erpRun) return st.erpRun;
+    st.erpRun = (async () => {
+      st.erpBusy = true;
+      paintErp();
+      let ok = false;
+      try {
+        const snap = await fetchSnapshot(erp, e.prjNo, { year: y, today: today(), now: Date.now() });
+        e.snap = snap;
+        e.error = null;
+        paintBudget();   // 스냅샷을 장부 줄에(applyErp) 넣고 다시 그린다
+        setErpMsg(snap.error || '');
+        logEvent('rnd', true, `R&D rERP 집행내역 받음(${reason}): ${e.prjNo} · 집행비율 ${snap.budget.rateAll}% · 미청구 ${snap.cards.count}건`);
+        ok = true;
+      } catch (err) {
+        e.error = { kind: err?.kind || 'error', message: String(err?.message || err) };
+        setErpMsg(erpMessage(err), true);
+        logEvent('rnd', false, `R&D rERP 집행내역 실패(${reason}): ${String(err?.message || err)}`);
+      } finally {
+        st.erpBusy = false;
+        st.erpRun = null;
+        save();
+        paintSum(b);
+        paintErp();
+      }
+      return ok;
+    })();
+    return st.erpRun;
+  }
+
+  /* ---------------------------------------------------------- R&D 설정 (접힌 한 줄 — rERP 집행내역 켜기/끄기 · 그 안에 원노트 공유·YAML 넣기·스킬) + 예산 칸 위 "집행에 더하기" */
+
+  /** 설정 줄의 머리 글 — `rERP 켬 · 원노트 꺼짐 · 비목 1 숨김` — 과 체크들. 예산 칸 위 "집행에 더하기"(2026-10-11 사용자 지정으로 설정에서 옮김)는 rERP 를 껐으면 잠그고 숨긴다. */
+  function paintSet() {
+    el.erpOn.checked = st.set.erp;
+    el.incUnbilled.checked = st.set.unbilled;
+    el.incPlan.checked = st.set.plan;
+    for (const node of [el.incUnbilled, el.incPlan]) node.disabled = !st.set.erp;
+    el.incRow.classList.toggle('hidden', !st.set.erp);
+    paintItems();
+    const n = st.note;
+    const note = !n.on && !n.plus.on ? '원노트 꺼짐' : `원노트 ${[n.on ? '과제 정보' : '', n.plus.on ? '예상 비용' : ''].filter(Boolean).join('·')}`;
+    // 공문 설정의 형편 줄처럼 한 줄에 들어가게 짧게(2026-10-11) — 긴 것은 CSS 가 줄임표로 자른다.
+    el.setState.textContent = `rERP ${st.set.erp ? '켬' : '끔'} · ${note}${st.set.hide.length ? ` · 비목 ${st.set.hide.length} 숨김` : ''}`;
+  }
+
+  /**
+   * "예산 칸에 보일 비목" 체크에 늘어설 이름들 — 계획서의 여섯 비목(src/rnd.js BUDGET_ITEMS) 차례로, 그 뒤에 장부 어느 차년도에든 있는 다른 비목, 그 뒤에 장부엔 없지만 설정에 남은 숨긴 이름(다시 켤 수 있게).
+   * 같은 이름(nameKey)은 한 번만.
+   */
+  function itemNames() {
+    const names = [];
+    const seen = new Set();
+    const add = (name) => { const k = nameKey(name); if (k && !seen.has(k)) { seen.add(k); names.push(name); } };
+    for (const name of BUDGET_ITEMS) add(name);
+    for (const p of st.book.projects) for (const y of Object.values(p.years || {})) for (const r of y?.budget || []) add(r.item);
+    for (const h of st.set.hide) add(h);
+    return names;
+  }
+  /** R&D 설정의 "예산 칸에 보일 비목"(2026-10-11 사용자 지정) — 체크가 꺼진 것이 숨긴 비목(rndSettings.hide). */
+  function paintItems() {
+    el.items.innerHTML = itemNames().map((name) => `<label><input type="checkbox" data-item="${escapeHtml(name)}"${isHidden(st.set, name) ? '' : ' checked'} /><span>${escapeHtml(name)}</span></label>`).join('');
+  }
+  /** 비목 체크를 바꾸면 — 끈 이름을 설정에 두고 예산 줄을 다시 그린다(합계는 그대로). */
+  function onItemsToggle() {
+    st.set.hide = [...el.items.querySelectorAll('input[data-item]')].filter((node) => !node.checked).map((node) => node.dataset.item);
+    saveSet();
+    logEvent('rnd', true, `R&D 설정: 예산 칸에 숨긴 비목 — ${st.set.hide.join('·') || '없음(모두 보임)'}`);
+    if (cur()) paintBudget();
+    paintSet();
+  }
+
+  const saveSet = () => chrome.storage.local.set({ [SET_KEY]: st.set });
+
+  /** rERP 집행내역 켜기/끄기 — 끄면 칸이 숨고 집행 칸은 다시 손으로 적는다(이어 둔 것은 남는다). 켜면 바로 잇기·받기로 이어진다. */
+  function onErpToggle() {
+    st.set.erp = el.erpOn.checked;
+    saveSet();
+    logEvent('rnd', true, `R&D 설정: rERP 집행내역 ${st.set.erp ? '켬' : '끔'}`);
+    if (cur()) {
+      paintBudget();
+      paintErp();
+    }
+    paintSet();
+    if (st.set.erp) erpAuto();
+  }
+
+  /** 예산 칸 위 "집행에 더하기"(미청구·사용계획)를 바꾸면 장부 줄·합계를 다시 셈한다. */
+  function onIncludeToggle() {
+    st.set.unbilled = el.incUnbilled.checked;
+    st.set.plan = el.incPlan.checked;
+    saveSet();
+    logEvent('rnd', true, `R&D 예산 집행에 더하기: ${includeNames(st.set).join('·') || '승인액만'}`);
+    if (cur()) paintBudget();
+    paintSet();
+  }
+
+  /** 예상 비용을 고친 뒤(rerp/plan.js 의 draw) — 사용계획을 집행에 더하는 설정이면 장부 줄도 다시 셈하고, rERP 표를 다시 그린다. */
+  function drawErp() {
+    const p = cur();
+    if (p && st.set.plan && applyErp(curBook(p))) paintBudget();
+    paintErp();
+  }
+
+  /* ---------------------------------------------------------- 원노트 공유(선택) — 과제 정보(src/rndnote.js) · 예상 비용(rerp/plussync.js) */
 
   const saveNote = () => chrome.storage.local.set({ [NOTE_KEY]: st.note });
   const when = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+  /** 예상 비용 공유 줄 — 켜짐·섹션 이름·노트북 고르기·마지막 결과. rerp/planui.js 가 읽는 화면 상태(planSync·myNames)도 여기서 맞춘다. */
+  function paintPlus() {
+    const q = st.note.plus;
+    el.plusOn.checked = q.on;
+    el.plusRow.classList.toggle('hidden', !q.on);
+    if (document.activeElement !== el.plusSection) el.plusSection.value = q.sectionName || 'RERP';
+    el.plusMsg.textContent = q.on ? (q.error || q.last) : '';
+    el.plusMsg.classList.toggle('error', !!(q.on && q.error));
+    st.pl.data.settings.planSync = q.on;
+    st.pl.data.myNames = [myName()].filter(Boolean);
+  }
+
+  /** 섹션을 둘 노트북을 고르게 한다 — RERP 섹션이 없거나 여러 노트북에 있을 때(rerp 팝업과 같은 흐름). */
+  function plusNotebookPick(notebooks) {
+    el.plusNotebook.innerHTML = `<option value="">(${st.note.plus.sectionName || 'RERP'} 섹션을 둘 노트북 고르기)</option>`
+      + notebooks.map((n) => `<option value="${escapeHtml(n.id)}"${n.id === st.note.plus.notebookId ? ' selected' : ''}>${escapeHtml(n.name || n.id)}</option>`).join('');
+    el.plusNotebook.classList.remove('hidden');
+  }
+
+  async function onPlusToggle() {
+    const q = st.note.plus;
+    q.on = el.plusOn.checked;
+    q.error = '';
+    if (!q.on) q.last = '';
+    saveNote();
+    paintPlus();
+    paintNote();
+    paintErp();
+    logEvent('rnd', true, `R&D 예상 비용 원노트 공유 ${q.on ? '켬' : '끔'}`);
+    if (q.on) await findPlusSection();
+  }
+
+  /** 섹션 이름(기본 RERP)으로 섹션을 찾고 없으면 고른 노트북에 만든 뒤 바로 맞춘다. 노트북을 골라야 하면 드롭다운이 선다. */
+  async function findPlusSection() {
+    const q = st.note.plus;
+    q.sectionName = el.plusSection.value.trim() || 'RERP';
+    if (el.plusNotebook.value) {
+      q.notebookId = el.plusNotebook.value;
+      q.notebookLabel = el.plusNotebook.selectedOptions[0]?.textContent || '';
+    }
+    q.error = '';
+    q.last = `${q.sectionName} 섹션을 찾는 중…`;
+    saveNote();
+    paintPlus();
+    const r = await plus.plusResolveSection();
+    if (r.ok) {
+      el.plusNotebook.classList.add('hidden');
+      q.last = `${r.section.name} 섹션: ${r.section.notebook || r.section.label}${r.section.created ? ' (새로 만듦)' : ''} · 맞추는 중…`;
+      saveNote();
+      paintPlus();
+      afterPlanSync(await plus.planSync('manual', {}));
+      return;
+    }
+    if (r.kind === 'notebook') {
+      plusNotebookPick(r.notebooks || []);
+      q.last = `${r.error} — 고른 뒤 다시 '섹션 찾기/만들기'`;
+    } else {
+      q.error = r.error || '섹션을 찾지 못했습니다';
+    }
+    saveNote();
+    paintPlus();
+    paintNote();
+  }
 
   function paintNote() {
     const n = st.note;
@@ -941,12 +1493,17 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.noteSection.value = n.sectionId;
     el.noteSection.disabled = !n.on || busy;
     el.noteSections.disabled = !n.on || busy;
-    el.noteSync.disabled = !n.on || !n.sectionId || busy;
+    // 지금 맞추기는 과제 정보(섹션을 골랐을 때)나 예상 비용(켰을 때) 어느 쪽이든 할 일이 있으면 된다.
+    el.noteSync.disabled = busy || !((n.on && n.sectionId) || n.plus.on);
     el.noteOpen.classList.toggle('hidden', !n.on || !n.webUrl);
     if (n.webUrl) el.noteOpen.href = n.webUrl;
-    el.noteState.textContent = !n.on ? '꺼짐' : busy ? '맞추는 중…' : n.error ? '못 맞춤' : !n.sectionId ? '섹션을 고르세요' : n.at ? `맞춤 ${when(n.at)}` : '켜짐';
+    const info = !n.on ? '' : busy ? '맞추는 중…' : n.error ? '못 맞춤' : !n.sectionId ? '섹션을 고르세요' : n.at ? `맞춤 ${when(n.at)}` : '켜짐';
+    const q = n.plus;
+    const plusInfo = !q.on ? '' : `예상 비용 ${q.error ? '못 맞춤' : /^맞춤/.test(q.last) ? q.last.split(' · ')[0] : '켜짐'}`;
+    el.noteState.textContent = [info, plusInfo].filter(Boolean).join(' · ') || '꺼짐';
     el.noteMsg.textContent = n.on ? n.error || n.last : '';
     el.noteMsg.classList.toggle('error', !!n.error);
+    paintSet();
   }
 
   async function onNoteToggle() {
@@ -1099,8 +1656,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   function paintAll() {
     paintProjects();
     paintHead();
+    paintItems();   // 장부에 새 비목이 들어왔을 수 있다(YAML·JSON 들이기) — 설정의 비목 체크도 맞춘다
     if (!cur()) return;
     paintBudget();
+    paintErp();
     paintFiles();
     paintLogs();
     paintChanges();
@@ -1136,7 +1695,6 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.budget.addEventListener('input', onBudgetInput);
     el.budget.addEventListener('change', onBudgetChange);
     el.budget.addEventListener('click', onBudgetClick);
-    el.budgetAdd.addEventListener('click', addBudgetRow);
     el.logAdd.addEventListener('click', addLog);
     el.logCancel.addEventListener('click', () => { clearLogForm(); paintLogs(); });
     el.logTitle.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addLog(); } });
@@ -1159,6 +1717,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     });
     el.importGm.addEventListener('click', () => importGongmun());
     el.skillBox.addEventListener('toggle', () => { if (el.skillBox.open) loadManifest(); });
+    // 예산 정보가 없는 차년도에서 저절로 편 R&D 설정을 사람이 접었으면 그것으로 끝 — 그 뒤 손으로 다시 편 것은 다른 차년도로 가도 접지 않는다.
+    el.setBox.addEventListener('toggle', () => { if (!el.setBox.open) st.setAuto = false; });
     el.skillZip.addEventListener('click', saveSkillZip);
     el.skillGuide.addEventListener('click', copySkillGuide);
     el.yaml.addEventListener('change', () => {
@@ -1172,15 +1732,31 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.noteOn.addEventListener('change', onNoteToggle);
     el.noteSection.addEventListener('change', onNoteSection);
     el.noteSections.addEventListener('click', loadSections);
-    el.noteSync.addEventListener('click', () => noteSync('지금 맞추기'));
+    // 지금 맞추기 — 과제 정보와 예상 비용 둘 다(켜진 것만).
+    el.noteSync.addEventListener('click', () => {
+      if (st.note.on && st.note.sectionId) noteSync('지금 맞추기');
+      if (st.note.plus.on) plus.planSync('manual', {}).then(afterPlanSync);
+    });
+    el.plusOn.addEventListener('change', onPlusToggle);
+    el.plusFind.addEventListener('click', findPlusSection);
+    el.plusSection.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); findPlusSection(); } });
+    el.erpRefresh.addEventListener('click', () => refreshErp({ force: true, reason: '↻' }));
+    el.erpLink.addEventListener('click', () => linkErp({ manual: true }));
+    el.erpUnlink.addEventListener('click', unlinkErp);
+    el.erpPickOk.addEventListener('click', pickErp);
+    el.erpSelect.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); pickErp(); } });
+    el.erpOn.addEventListener('change', onErpToggle);
+    for (const node of [el.incUnbilled, el.incPlan]) node.addEventListener('change', onIncludeToggle);
+    el.items.addEventListener('change', onItemsToggle);
   }
 
   async function show() {
     el.root.classList.remove('hidden');
     if (!st.loaded) {
-      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, NOTE_KEY]);
+      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, NOTE_KEY, SET_KEY]);
       st.book = normalizeBook(saved?.[BOOK_KEY]);
       st.note = normalizeNote(saved?.[NOTE_KEY]);
+      st.set = normalizeSet(saved?.[SET_KEY]);
       st.loaded = true;
       clearLogForm();
       clearChangeForm();
@@ -1194,18 +1770,34 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
           save();
         }
       }
+      // 예상 비용(rerp/plan.js 의 plannedExpenses — rerp 와 같은 저장 키)을 읽는다.
+      st.pl.plans = await PLAN.load();
+      st.pl.planWho = myName();
     }
+    // 집행내역 표에 ＋·줄·폼·아이콘의 이벤트(rerp/plan.js bind)를 단다 — 이 패널이 표 요소를 가진 동안 한 번. 다른 패널 인스턴스(검사)가 같은 화면을 썼으면
+    // 그 리스너가 남지 않게 요소를 새것으로 바꿔 끼우고 다시 단다.
+    const host = $('rdErpTable');
+    if (host && host !== st.plHost) {
+      const fresh = host.cloneNode(false);
+      host.replaceWith(fresh);
+      el.erpTable = fresh;
+      st.plHost = fresh;
+      PLAN.bind(fresh, st.pl, drawErp);
+    }
+    paintPlus();
     paintAll();
     paintNote();
     // 원노트 공유가 켜져 있으면 열 때 맞춘다 — 다른 기기에서 고친 과제 정보를 받는다(막 맞췄으면 건너뛴다). 기다리지 않는다.
     if (st.note.on && st.note.sectionId && Date.now() - st.note.at > NOTE_OPEN_MS) noteSync('열 때');
+    // rERP — 이어져 있으면 신선하지 않을 때 다시 받고, 아니면 올해 차년도를 이 세션에서 한 번 저절로 잇는다. 기다리지 않는다.
+    erpAuto();
   }
 
   function hide() {
     el.root.classList.add('hidden');
   }
 
-  return { wire, show, hide, book: () => st.book, skills: loadManifest, note: () => st.note, noteSync };
+  return { wire, show, hide, book: () => st.book, skills: loadManifest, note: () => st.note, noteSync, erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set };
 }
 
 async function defaultCopy(text) {
