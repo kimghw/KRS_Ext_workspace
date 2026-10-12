@@ -1023,9 +1023,10 @@ button.danger:hover { filter: brightness(1.08); }
 
 .gongmun { margin-bottom: 18px; }
 .gongmun .gm-kinds { margin-bottom: 12px; }
+/* 다섯 단추(구매·교육·출장·외부활동·HELP)가 같은 폭으로 줄을 나눈다(2026-10-12 사용자 지정: "메뉴 사이즈 동일하게") — flex-basis 0 이라 글자 길이에 따르지 않는다. */
 .gongmun .gm-kind-row { display: flex; gap: 3px; }
 .gongmun .gm-kind {
-  flex: 1 0 auto; gap: 4px; min-height: 32px; padding: 4px 2px; border: 1px solid var(--line); border-radius: 9px;
+  flex: 1 1 0; min-width: 0; gap: 4px; min-height: 32px; padding: 4px 2px; border: 1px solid var(--line); border-radius: 9px;
   background: var(--surface); font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap;
 }
 .gongmun .gm-kind small { font-size: 10px; font-weight: 600; color: var(--faint); }
@@ -1197,6 +1198,12 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .gongmun .gm-proj-info b { color: var(--fg); font-weight: 600; }
 .gongmun .gm-proj-info .gm-miss { opacity: .7; font-style: italic; }
 .gongmun .gm-proj-info button { margin-left: auto; }
+/* 예산 줄 — 과제 기본 내용 아래, 같은 연한 바탕. 이번 비용을 R&D 과제의 예산(rERP 잔액)과 견준 한 줄(src/gmbudget.js). 모자라면 한도 알림(.gm-limit)과 같은 붉은 틀, 견줄 예산이 없으면 흐리게. */
+.gongmun .gm-budget { margin: 6px 0 0; padding: 7px 10px; border: 1px solid transparent; border-radius: 10px; background: var(--surface-soft); font-size: 12px; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
+.gongmun .gm-budget b { color: var(--fg); font-weight: 600; }
+.gongmun .gm-budget.short { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
+.gongmun .gm-budget.short b { color: inherit; }
+.gongmun .gm-budget.hint { opacity: .75; font-style: italic; }
 
 .gongmun .gm-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 12px; }
 .gongmun .gm-fields:empty { display: none; }
@@ -1246,6 +1253,16 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .gongmun .gm-set-checks { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 13px; color: var(--muted); }
 .gongmun .gm-set-checks label { display: inline-flex; align-items: center; gap: 5px; }
 .gongmun .gm-set-checks input { width: auto; min-height: 0; margin: 0; }
+/* 공문 작성 · 공문 보기 — 같은 폭의 두 단추 한 줄(2026-10-12 사용자 지정: 우측에 공문 보기). 상태 줄은 쓰는 중(…)·다 씀(✓)·안 됨(✕)을 단추 바로 아래에 적는다. */
+.gongmun .gm-write-row { display: flex; gap: 6px; margin-top: 12px; }
+.gongmun .gm-write-row button { flex: 1 1 0; min-width: 0; min-height: 40px; margin-top: 0; }
+.gongmun .gm-write-state { margin: 8px 0 0; padding-left: 20px; position: relative; font-size: 12.5px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.gongmun .gm-write-state::before { position: absolute; left: 2px; top: 0; width: 14px; text-align: center; font-weight: 700; }
+.gongmun .gm-write-state.busy::before { content: "…"; color: var(--faint); }
+.gongmun .gm-write-state.ok { color: var(--fg); }
+.gongmun .gm-write-state.ok::before { content: "✓"; color: var(--pick); }
+.gongmun .gm-write-state.bad { color: var(--danger); }
+.gongmun .gm-write-state.bad::before { content: "✕"; color: var(--danger); }
 .gongmun .gm-write-log { margin: 10px 0 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.6; }
 .gongmun .gm-write-log li { position: relative; padding: 3px 0 3px 20px; color: var(--muted); overflow-wrap: anywhere; }
 .gongmun .gm-write-log li b { margin-right: 5px; color: var(--fg); font-weight: 600; }
@@ -1254,8 +1271,7 @@ body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .gongmun .gm-write-log li.bad::before { content: "✕"; color: var(--danger); }
 .gongmun .gm-write-log li.bad { color: var(--danger); }
 .gongmun .gm-write-log li.busy::before { content: "…"; color: var(--faint); }
-.gongmun .gm-write-log li.gm-write-show { padding-left: 0; margin-top: 6px; }
-.gongmun .gm-write-log li.gm-write-show::before { content: none; }
+.gongmun .gm-write-log li.skip::before { content: "–"; color: var(--faint); }
 
 /* 양식·공문 설정 — 접어 두는 칸. 설정의 접는 줄과 같은 모양이다. */
 .gongmun .gm-box { margin-bottom: 10px; padding: 0 14px; border-radius: 14px; }

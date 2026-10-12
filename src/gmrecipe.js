@@ -626,7 +626,7 @@ export const RECIPE = {
       "title": "출장품의",
       "rule_key": "출장",
       "amount_field": "cost",
-      "document_setting": "연구품의",
+      "document_setting": "출장품의",
       "limit": null,
       "account": "연구활동비(국내여비)",
       "fields": [
@@ -784,7 +784,7 @@ export const RECIPE = {
       "title": "외부활동 허가 신청서",
       "rule_key": "외부활동",
       "amount_field": null,
-      "document_setting": "연구품의",
+      "document_setting": "외부활동",
       "limit": null,
       "account": "",
       "fields": [
@@ -1039,10 +1039,16 @@ export const RECIPE = {
       "emergency": false,
       "approving_open": false,
       "drm": false,
-      "tag": ""
+      "tag": "{과제별명}"
     },
     "profiles": {
-      "연구품의": {}
+      "연구품의": {},
+      "출장품의": {
+        "tag": "출장"
+      },
+      "외부활동": {
+        "tag": "외부활동"
+      }
     },
     "teams": {
       "수소전기추진연구팀": "8100",

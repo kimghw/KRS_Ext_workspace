@@ -1,10 +1,12 @@
 // 공문 탭의 화면. 무엇을 어떤 틀에 넣을지·결재선·한도는 src/gongmun.js 가, 문서 읽기는 src/llm.js 의 gongmunSmart 가 한다.
 // 여기는 그 둘을 화면에 잇기만 한다.
 //
-// 'eclass 에 공문 작성' 은 새 공문 창을 열어 과제(Job Id)·제목·차수·본문·문서설정·결재선(위임전결)을 넣는다(src/gmwrite.js — 2026-10-08 사용자 지정:
-// "공문에서 열기가 아니라 공문을 작성해야지"). 첨부·임시저장·상신은 창에서 사람이 한다. 제목·본문 복사 단추는 뺐다(같은 날 — 창에 바로 넣는다).
+// '공문 작성' 은 새 공문 창을 열어 과제(Job Id)·제목·차수·본문·문서설정·결재선(위임전결)·첨부(읽은 문서를 문서마다 PDF 로 묶어 파일첨부에)를 넣는다
+// (src/gmwrite.js — 2026-10-08 사용자 지정: "공문에서 열기가 아니라 공문을 작성해야지" · 2026-10-12: "공문에 첨부파일이 들어가 있지 않음"). 임시저장·상신은
+// 창에서 사람이 한다 — 오른쪽의 '공문 보기' 가 그 창을 앞으로 가져오고 단추 아래 상태 줄이 쓰는 중·다 씀을 말한다(같은 날 사용자 지정: "작성 중인지 완료인지
+// 알 수가 없음 … 우측에 공문 완료 시 공문 보기 버튼"). 제목·본문 복사 단추는 뺐다(10-08 — 창에 바로 넣는다).
 //
-//   갈래(구매·교육·출장) → 과제 고르기(갈래 아래의 별칭 칩) → 문서 넣기(캡처 붙여넣기·끌어다 놓기·고르기·보고 있는 탭 통째로 캡처·웹페이지의 부분 골라 캡처) → 읽은 칸 고치기 → 문서설정·위임전결 → eclass 에 공문 작성
+//   갈래(구매·교육·출장) → 과제 고르기(갈래 아래의 별칭 칩) → 문서 넣기(캡처 붙여넣기·끌어다 놓기·고르기·보고 있는 탭 통째로 캡처·웹페이지의 부분 골라 캡처) → 읽은 칸 고치기 → 문서설정·위임전결 → 공문 작성(첨부까지) → 공문 보기로 창을 열어 임시저장·상신
 //
 // 양식(eclass 양식·제목 틀·본문 틀)과 공문 설정(부서·부서장·소장·본부장·문서번호 부서·참조자·과제 — R&D 탭에 과제가 있으면 그 과제들)은 이 탭 아래의 접힌 칸에서 고친다.
 // 갈래·틀·칸·위임전결·문서설정의 원본은 레시피(recipes/gongmun)다.
@@ -21,6 +23,9 @@ import { HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, BOXES, normalizeHi
 import { SEARCH_KEY, AGENT_KIND, DIRS, DIR_LABEL, DIR_BOXES, DIR_TITLE, CUSTOM, parseQuery, periodOf, filterRows, sameRead, normalizeSearch } from './src/gmsearch.js';
 import { writeGongmun, showTab } from './src/gmwrite.js';
 import { BOOK_KEY, normalizeBook, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
+import { SET_KEY as RND_SET_KEY } from './src/rnderp.js';
+import { budgetCheck, budgetText, budgetTitle, itemOf } from './src/gmbudget.js';
+import PLAN from './rerp/plan.js';
 import { gongmunSmart, gongmunReasonSmart } from './src/llm.js';
 import { readSlots } from './src/pagecap.js';
 import { cutBoxes, cutDrop, cutName, cutQuote, CUT_PAD, PAD_STEP, MAX_PAD } from './src/quotecut.js';
@@ -67,12 +72,13 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     // 읽은 내용 탭(readView) — 읽은 칸(moreFields — 펼쳐 두는 칸이 아닌 것)·품목·오린 견적서. 비교작성이면 고른 탭 오른쪽에 나란히 선다.
     draft: $('gmDraft'), readView: $('gmReadView'), moreFields: $('gmMoreFields'), compare: $('gmCompare'),
     agent: $('gmAgent'), agentInput: $('gmAgentInput'), agentGo: $('gmAgentGo'), agentLog: $('gmAgentLog'),
-    source: $('gmSource'), cut: $('gmCut'), items: $('gmItems'), limit: $('gmLimit'), projects: $('gmProjects'), projInfo: $('gmProjInfo'),
+    source: $('gmSource'), cut: $('gmCut'), items: $('gmItems'), limit: $('gmLimit'), projects: $('gmProjects'), projInfo: $('gmProjInfo'), budget: $('gmBudget'),
     fields: $('gmFields'), line: $('gmLine'), need: $('gmNeed'), reset: $('gmReset'),
     workspace: $('gmWorkspace'), workspaceBody: $('gmWorkspaceBody'), workspaceToggle: $('gmWorkspaceToggle'), workspaceFoldLabel: $('gmWorkspaceFoldLabel'),
     viewTabs: $('gmViewTabs'), viewDraft: $('gmViewDraft'), viewDoc: $('gmViewDoc'), viewRead: $('gmViewRead'),
     doc: $('gmDoc'), formName: $('gmFormName'), title: $('gmTitle'), body: $('gmBody'), edited: $('gmEdited'), regen: $('gmRegen'),
-    write: $('gmWrite'), writeLog: $('gmWriteLog'), savePdf: $('gmSavePdf'), steps: $('gmSteps'),
+    // 공문 작성·공문 보기 단추 한 줄과 그 아래 상태 줄(쓰는 중·다 씀) — 2026-10-12 사용자 지정("작성 중인지 완료인지 알 수가 없음").
+    write: $('gmWrite'), showDoc: $('gmShowDoc'), writeState: $('gmWriteState'), writeLog: $('gmWriteLog'), savePdf: $('gmSavePdf'), steps: $('gmSteps'),
     setBox: $('gmSetBox'), setState: $('gmSetState'), rank: $('gmRank'), rankWhy: $('gmRankWhy'), retention: $('gmRetention'), docNoOne: $('gmDocNoOne'),
     receiver: $('gmReceiver'), scope: $('gmScope'), emergency: $('gmEmergency'), approvingOpen: $('gmApprovingOpen'), drm: $('gmDrm'), tag: $('gmTag'), setReset: $('gmSetReset'),
     tplBox: $('gmTplBox'), tplState: $('gmTplState'), tplForm: $('gmTplForm'), tplFormId: $('gmTplFormId'),
@@ -91,13 +97,16 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const pick = createWebPick(webcap);
   const PICK_KEY = 'gongmun';
   const st = {
-    kind: 'purchase', loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null,
+    // writing 은 뒤 탭에 쓰는 중, lastTab 은 연 공문 창의 탭, writeDone 은 끝난 작성의 결과({ ok, docId, bad(안 된 단계 이름) } — 쓰기 전·쓰는 중은 null).
+    kind: 'purchase', loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null,
     preset: normalizePreset(null),
     // projects 는 저장된(이름이 있는) 과제, rows 는 공문 설정 칸에 펼쳐 둔 줄(아직 이름을 적지 않은 줄도 있다).
     projects: [], rows: [],
     // 초안에서 고르는 과제는 R&D 탭의 과제다(rndBook — src/gongmun.js 의 rndProjects, 2026-10-08 사용자 지정). book 은 탭을 열 때마다 다시 읽는다.
     // R&D 탭에 과제가 없으면 공문 설정의 과제를 고른다. extra 는 R&D 과제마다 공문 설정에서 적은 개요·계정이다(normalizeRndExtra).
     book: null, rnd: [], extra: {},
+    // R&D 설정(rndSettings 원본 — rERP 를 켰는지, 집행에 미청구·사용계획을 더하는지)과 예상 비용(plannedExpenses) — 예산 줄(src/gmbudget.js)이 R&D 탭과 같은 잔액을 내게. 장부와 함께 읽는다(loadBook).
+    rndSet: null, plans: {},
     // 갈래마다 고친 양식만 담는다(src/gongmun.js 의 templatePatch).
     templates: {},
     // 갈래마다 쓰고 있는 것 — { draft, source, notes, project(과제명), title·body(직접 고쳤으면 그 글, 아니면 null), files(읽은 파일 — 저장하지 않는다),
@@ -350,7 +359,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const btn = e.target instanceof Element ? e.target.closest('[data-gm-view]') : null;
     if (!btn || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    const tabs = [el.viewDraft, el.viewDoc, el.viewRead].filter((t) => !t.disabled);
+    // 탭 차례는 공문 · 작성 내용 · 읽은 내용(2026-10-12 사용자 지정: "공문/작성내용/읽은 내용 순으로").
+    const tabs = [el.viewDoc, el.viewDraft, el.viewRead].filter((t) => !t.disabled);
     const i = tabs.indexOf(btn);
     const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs.at(-1)
       : tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
@@ -360,10 +370,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /* ---------------------------------------------------------- 갈래 */
 
-  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(공문 검색 — 비교작성 탭에는 없다). 에이전트가 켜져 있으면 갈래에는 불이 없다. */
+  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(단추 글자는 HELP — 2026-10-12 사용자 지정, 공문 검색 — 비교작성 탭에는 없다). 에이전트가 켜져 있으면 갈래에는 불이 없다. */
   function paintKinds() {
     const agent = st.compareTab ? '' : `<button type="button" class="gm-kind gm-kind-agent${agentOn() ? ' active' : ''}" data-kind="${AGENT_KIND}" aria-pressed="${agentOn()}"`
-      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>에이전트</button>';
+      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>HELP</button>';
     el.kinds.innerHTML = `<div class="gm-kind-row">${KIND_ORDER.map((k) => {
       const on = k === st.kind && !agentOn();
       return `<button type="button" class="gm-kind${on ? ' active' : ''}" data-kind="${k}" aria-pressed="${on}" title="${escapeHtml(KINDS[k].title)}">${escapeHtml(KINDS[k].label)}</button>`;
@@ -1123,8 +1133,39 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.line.innerHTML = lineHtml(approvalLine(lineCtx(w)), { needLead: !!p && !String(p.lead || '').trim() });
     const left = needs(st.kind, w.draft, { preset: st.preset, project: projectOf(w), projects: choices(), rank: w.rank || '', setting: w.setting || {} });
     el.need.textContent = left.length ? `남은 것: ${left.join(' · ')}` : '';
+    paintBudget(w, p, lim);
     paintFeeSum();
     paintDoc(blocked);
+  }
+
+  /**
+   * 과제 기본 내용 아래의 예산 줄(2026-10-12 사용자 지정: "구매 또는 공문 작성 시 비용을 R&D 의 연구활동비나 비용을 비교해서 예산이 남아 있는지 … rerp 기능이 연동이 되어 있다면") —
+   * 이번 비용(한도와 같은 합계 칸 — 구매 합계·교육 수강료·출장 예상경비, 원화일 때)을 고른 R&D 과제의 올해 차년도 예산과 견준다(src/gmbudget.js budgetCheck — rERP 집행내역의 그 비목
+   * 잔액, 없으면 장부의 계획 − 집행). 비목은 계정 칸(초안 → 과제의 계정 → 갈래 기본값)에서 고른다. 금액이 드는 갈래(계정이 있는 구매·교육·출장)에서 R&D 탭의 과제를 골랐을 때만 보이고,
+   * 모자라면 붉게(short) — 작성은 막지 않는다. 견줄 예산이 없으면(rERP 를 잇지 않았고 계획도 없음) 흐리게(hint) 어디서 넣는지 말한다. 금액마다 다시 그린다(paintLive).
+   */
+  function paintBudget(w, p, lim) {
+    const rid = p?.rnd?.id;
+    const on = !!KINDS[st.kind].account && !!rid && !!st.book;
+    el.budget.classList.toggle('hidden', !on);
+    if (!on) {
+      el.budget.innerHTML = '';
+      el.budget.title = '';
+      el.budget.classList.remove('short', 'hint');
+      return;
+    }
+    const amount = w.draft?.currency && w.draft.currency !== 'KRW' ? null : lim.amount;
+    const account = String(w.draft?.account || '').trim() || p.account || KINDS[st.kind].account;
+    const c = budgetCheck(st.book, rid, { amount, account, today: today(), set: st.rndSet, plans: st.plans });
+    el.budget.classList.toggle('short', c?.state === 'short');
+    el.budget.classList.toggle('hint', !c);
+    if (!c) {
+      el.budget.textContent = `R&D 예산 정보 없음 — R&D 탭에서 rERP 집행내역을 잇거나 예산 칸에 계획을 적으면 ${itemOf(account)} 잔액과 견줍니다`;
+      el.budget.title = '';
+      return;
+    }
+    el.budget.innerHTML = escapeHtml(budgetText(c)).replace(/(\d[\d,]*원)/g, '<b>$1</b>');
+    el.budget.title = budgetTitle(c);
   }
 
   /**
@@ -1550,9 +1591,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   const opt = (value, label, on) => `<option value="${escapeHtml(value)}"${on ? ' selected' : ''}>${escapeHtml(label)}</option>`;
 
-  /** 문서설정·위임전결 칸 — 레시피의 기본값에 이 공문에서 바꾼 것(w.setting·w.rank)을 얹어 보인다. */
+  /** 문서설정·위임전결 칸 — 레시피의 기본값(검색 키워드는 고른 과제의 별명, 출장·외부활동은 갈래 이름)에 이 공문에서 바꾼 것(w.setting·w.rank)을 얹어 보인다. */
   function paintSet(w) {
-    const s = docSettingOf(st.kind, st.preset, w.setting);
+    const s = docSettingOf(st.kind, st.preset, w.setting, { project: projectOf(w) });
     const d = delegationOf(st.kind, w.draft, { rank: w.rank || '' });
     el.rank.innerHTML = opt('', `규정대로 — ${d?.auto || RANKS[0]} 전결`, !w.rank) + RANKS.map((r) => opt(r, `${r} 전결`, w.rank === r)).join('');
     el.rankWhy.textContent = d ? `${d.label} · ${d.basis || '금액 무관'} → ${d.auto} 전결${d.unknown ? '(금액을 몰라 맨 아래 구간)' : ''} — ${d.source}` : '';
@@ -1574,7 +1615,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   function onSetInput() {
     const w = cur();
     if (!w) return;
-    const base = docSettingOf(st.kind, st.preset, {});
+    const base = docSettingOf(st.kind, st.preset, {}, { project: projectOf(w) });
     const now = settingPatch({
       retention: el.retention.value, docNo: el.docNoOne.value, receiver: el.receiver.value, scope: el.scope.value,
       emergency: el.emergency.checked, approvingOpen: el.approvingOpen.checked, drm: el.drm.checked, tag: el.tag.value,
@@ -1594,19 +1635,20 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintLive();
   }
 
-  /** 'eclass 에 공문 작성' 이 넣는 것과, 그 뒤 창에서 사람이 할 일(첨부·임시저장·상신). */
+  /** '공문 작성' 이 넣는 것(첨부까지)과, 그 뒤 창에서 사람이 할 일(임시저장·상신). */
   function stepsHtml(w, tpl) {
     const p = projectOf(w);
     const k = KINDS[st.kind];
     const known = FORMS.some((f) => f.id === tpl.form);
     // 첨부는 본문의 ※ 첨부와 같은 문서들이다(교육 안내문·교육 내용 …) — 읽은 것이 없으면 갈래의 기본 문서.
-    const docs = [...new Set((w.draft.attach || []).map((a) => a.label).filter(Boolean))].join(' · ') || k.doc;
+    const groups = pdfGroups(w);
+    const docs = groups.length ? groups.map((g) => g.label).join(' · ') : [...new Set((w.draft.attach || []).map((a) => a.label).filter(Boolean))].join(' · ') || k.doc;
     const list = [
-      known ? `<b>공문 작성</b> ${escapeHtml(formLabel(tpl.form))} — ${p ? `과제 ${escapeHtml(p.alias || p.name)} · ` : ''}제목 · 본문 · 문서설정 · 결재선을 창에 넣습니다`
+      known ? `<b>공문 작성</b> ${escapeHtml(formLabel(tpl.form))} — ${p ? `과제 ${escapeHtml(p.alias || p.name)} · ` : ''}제목 · 본문 · 문서설정 · 결재선${groups.length ? ' · 첨부를' : '을'} 창에 넣습니다`
         : `<b>새 공문 열기</b> ${escapeHtml(formLabel(tpl.form))} — 칸 지도가 없는 양식이라 창만 엽니다`,
       `<b>결재선</b> ${escapeHtml(lineText(approvalLine(lineCtx(w))))}`,
-      ...(docs ? [`<b>첨부</b> ${escapeHtml(docs)}${w.files?.length ? ' — 아래 PDF 저장으로 받은 파일을 창의 파일첨부로' : ''}`] : []),
-      '<b>임시저장</b> 창에서 확인한 뒤 상신',
+      ...(docs ? [`<b>첨부</b> ${escapeHtml(docs)}${groups.length ? ' — 읽은 문서를 문서마다 PDF 로 묶어 창의 파일첨부에 올립니다' : ' — 넣은 문서가 없어 창의 파일첨부로 넣습니다'}`] : []),
+      '<b>임시저장</b> 공문 보기로 창을 열어 확인한 뒤 상신',
     ];
     return list.map((x) => `<li>${x}</li>`).join('');
   }
@@ -1630,55 +1672,119 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintLive();
   }
 
-  /** 작성 기록 한 줄 — 됐다 · 안 됐다 · 하는 중. */
-  const stepLi = (x) => `<li class="${x.ok === true ? 'ok' : x.ok === false ? 'bad' : 'busy'}"><b>${escapeHtml(x.label)}</b>${x.detail ? ` ${escapeHtml(x.detail)}` : ''}</li>`;
+  /** 작성 기록 한 줄 — 됐다 · 안 됐다 · 건너뜀(첨부할 파일이 없음) · 하는 중. */
+  const stepLi = (x) => `<li class="${x.ok === true ? 'ok' : x.ok === false ? 'bad' : x.ok === 'skip' ? 'skip' : 'busy'}"><b>${escapeHtml(x.label)}</b>${x.detail ? ` ${escapeHtml(x.detail)}` : ''}</li>`;
+
+  /** 첨부할 PDF — 첨부 목록의 문서마다 하나(src/pdf.js 의 buildPdf). 공문 작성이 창의 파일첨부에 올리고, 첨부 PDF 저장이 내려받는다. */
+  async function attachPdfs(w) {
+    const groups = pdfGroups(w);
+    if (!groups.length) return [];
+    const { buildPdf } = await import('./src/pdf.js');
+    const out = [];
+    for (const g of groups) {
+      const { bytes } = await buildPdf(g.files, { title: `${el.title.value} — ${g.label}` });
+      out.push({ label: g.label, name: attachName(st.kind, w.draft, today(), g.label), bytes });
+    }
+    return out;
+  }
+
+  /** 바이트를 base64 로 — 페이지 함수에 넘기는 인자는 JSON 이라 글로 보낸다(32K 씩 — 인자 펼치기 한도). */
+  function toBase64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
 
   /**
-   * 새 공문 창을 뒤 탭으로 열고 과제·제목·차수·본문·문서설정·결재선을 넣는다(src/gmwrite.js — 2026-10-08 사용자 지정 "공문작성은 백그라운드에서").
-   * 패널은 그대로 두고 작성 기록만 쌓으며, 끝나면 기록 끝의 '창 보기'로 그 탭을 앞으로 가져온다. 임시저장·상신은 창에서 사람이 한다.
+   * 공문 작성·공문 보기 단추와 그 아래 상태 줄 — 쓰기 전 · 쓰는 중(지금 단계) · 다 씀(안 된 단계가 있으면 그것) · 못 씀 · 창이 닫힘.
+   * 공문 보기는 창이 열리면 눌 수 있고, 다 쓰면 으뜸 단추가 된다(다음 할 일이 창에서 임시저장·상신이라서).
+   */
+  function paintWrite(now = '') {
+    const busy = st.writing;
+    const has = st.lastTab != null;
+    const done = busy ? null : st.writeDone;
+    const next = !!(done && has && !done.closed);
+    el.write.disabled = busy;
+    el.write.textContent = busy ? '공문 작성 중…' : '공문 작성';
+    el.write.classList.toggle('primary', !next);
+    el.write.classList.toggle('ghost', next);
+    el.showDoc.disabled = !has;
+    el.showDoc.classList.toggle('primary', next);
+    el.showDoc.classList.toggle('ghost', !next);
+    el.showDoc.title = has ? '작성한 공문 창을 앞으로 가져옵니다' : '공문 작성이 창을 열면 누를 수 있습니다';
+    let text = '';
+    let cls = '';
+    if (busy) [text, cls] = [`작성 중 — ${now || '뒤 탭에서 쓰고 있습니다'}`, 'busy'];
+    else if (!done) [text, cls] = ['', ''];
+    else if (done.closed) [text, cls] = ['공문 창이 닫혔습니다 — 다시 작성하세요', 'bad'];
+    else if (done.why) [text, cls] = [`작성 실패 — ${done.why}`, 'bad'];
+    else if (done.ok) [text, cls] = [`작성 완료${done.docId ? ` — 문서 ${done.docId}` : ''} · 공문 보기로 창을 열어 임시저장 뒤 상신하세요`, 'ok'];
+    else [text, cls] = [`작성 끝 — 안 된 것: ${done.bad.join(' · ')} · 공문 보기로 창을 열어 확인하세요`, 'bad'];
+    el.writeState.className = `gm-write-state${cls ? ` ${cls}` : ''}${text ? '' : ' hidden'}`;
+    el.writeState.textContent = text;
+  }
+
+  /**
+   * 새 공문 창을 뒤 탭으로 열고 과제·제목·차수·본문·문서설정·결재선·첨부를 넣는다(src/gmwrite.js — 2026-10-08 사용자 지정 "공문작성은 백그라운드에서").
+   * 패널은 그대로 두고 작성 기록과 상태 줄만 바뀌며, 창이 열리면 오른쪽 '공문 보기'로 그 탭을 앞으로 가져온다. 임시저장·상신은 창에서 사람이 한다.
+   * 첨부는 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶어(첨부 PDF 저장과 같은 파일) 창의 파일첨부에 올린다.
    */
   async function writeDoc() {
     const w = cur();
     if (!w || st.writing) return undefined;
-    const kind = st.kind;
     const plan = writePlan(st.kind, {
       title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, setting: w.setting, rank: w.rank,
     }, ctxOf(w));
     if (!plan.values.title) return setStatus('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.', 'error');
     st.writing = true;
-    el.write.disabled = true;
-    el.write.textContent = '공문 작성 중…';
+    st.lastTab = null;
+    st.writeDone = null;
+    paintWrite('첨부 PDF 를 만드는 중…');
     el.writeLog.classList.remove('hidden');
     el.writeLog.innerHTML = '';
     const shown = new Map();
-    const paintStep = (x) => { shown.set(x.key, x); el.writeLog.innerHTML = [...shown.values()].map(stepLi).join(''); };
+    const paintStep = (x) => {
+      shown.set(x.key, x);
+      el.writeLog.innerHTML = [...shown.values()].map(stepLi).join('');
+      if (x.ok === null) paintWrite(`${x.label}${x.detail ? ` · ${x.detail}` : ''}`);
+    };
     setStatus('뒤 탭에서 공문을 쓰는 중입니다 — 다른 일을 하셔도 됩니다.');
+    // 첨부 — 못 묶으면(그림이 깨짐 등) 첨부 없이 쓰고 그렇다고 말한다.
+    let files = [];
     try {
-      const res = await writeGongmun(plan, { onStep: paintStep });
+      files = (await attachPdfs(w)).map((p) => ({ name: p.name, type: 'application/pdf', base64: toBase64(p.bytes) }));
+    } catch (err) {
+      setStatus(`첨부 PDF 를 만들지 못해 첨부 없이 씁니다 — ${err.message}`, 'error');
+    }
+    try {
+      const res = await writeGongmun(plan, { onStep: paintStep, files, onTab: (id) => { st.lastTab = id; paintWrite('새 공문 창을 여는 중…'); } });
       const bad = res.steps.filter((x) => x.ok === false);
       st.lastTab = res.tabId;
-      if (res.tabId != null) el.writeLog.insertAdjacentHTML('beforeend', '<li class="gm-write-show"><button type="button" class="ghost small" data-act="show-tab">창 보기</button></li>');
-      setStatus(bad.length ? `뒤 탭에 공문을 썼습니다 — ${bad.map((x) => x.label).join('·')}은(는) 창 보기로 열어 확인하세요.`
-        : '뒤 탭에 공문을 썼습니다 — 창 보기로 열어 확인하고 첨부·임시저장 뒤 상신하세요.', bad.length ? 'error' : '');
+      st.writeDone = { ok: !bad.length, docId: res.docId || '', bad: bad.map((x) => x.label) };
+      setStatus(bad.length ? `뒤 탭에 공문을 썼습니다 — ${bad.map((x) => x.label).join('·')}은(는) 공문 보기로 열어 확인하세요.`
+        : `뒤 탭에 공문을 썼습니다${files.length ? '(첨부까지)' : ''} — 공문 보기로 열어 확인하고 임시저장 뒤 상신하세요.`, bad.length ? 'error' : '');
       // 쓴 공문은 창에서 임시저장·상신해야 기안함에 선다 — 읽어 둔 이력을 묵은 것으로 두어 다음에 펴면 다시 읽는다.
       if (st.hist.at) st.hist.at = 1;
-      logEvent('gongmun', !bad.length, `공문 작성 · ${KINDS[st.kind].title} · ${plan.values.title}${res.docId ? ` · ${res.docId}` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}`);
+      logEvent('gongmun', !bad.length, `공문 작성 · ${KINDS[st.kind].title} · ${plan.values.title}${res.docId ? ` · ${res.docId}` : ''}${files.length ? ` · 첨부 ${files.length}개` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}`);
     } catch (err) {
+      st.writeDone = { ok: false, docId: '', bad: [], why: err.message };
       setStatus(`공문을 쓰지 못했습니다 — ${err.message}`, 'error');
       logEvent('gongmun', false, `공문 작성 실패 · ${KINDS[st.kind].title} · ${err.message}`);
     } finally {
       st.writing = false;
-      el.write.disabled = false;
-      el.write.textContent = 'eclass 에 공문 작성';
+      paintWrite();
     }
     return undefined;
   }
 
-  /** 작성 기록의 '창 보기' — 작성한 공문 탭을 앞으로. 닫았으면 그렇다고 말한다. */
-  async function onWriteLogClick(e) {
-    const btn = e.target instanceof Element ? e.target.closest('[data-act="show-tab"]') : null;
-    if (!btn || st.lastTab == null) return;
-    if (!(await showTab(st.lastTab))) setStatus('공문 창이 닫혔습니다 — 다시 작성하세요.', 'error');
+  /** '공문 보기' — 작성한 공문 창을 앞으로. 닫았으면 그렇다고 말하고 단추를 잠근다. */
+  async function onShowDoc() {
+    if (st.lastTab == null) return;
+    if (await showTab(st.lastTab)) return;
+    st.lastTab = null;
+    st.writeDone = { ...(st.writeDone || { ok: false, docId: '', bad: [] }), closed: true };
+    setStatus('공문 창이 닫혔습니다 — 다시 작성하세요.', 'error');
+    paintWrite();
   }
 
   /** 읽은 문서를 PDF 하나로 묶어 내려받는다 — 전자결재 첨부로 쓴다(원본 ea_approval 도 견적서를 PDF 로 바꿔 붙인다). */
@@ -1702,21 +1808,19 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   /** 첨부할 문서를 문서마다 PDF 하나로 묶어 내려받는다 — 교육 견적서·교육 내용이 따로 한 파일씩이다(전자결재 첨부 칸은 다섯 개). */
   async function savePdf() {
     const w = cur();
-    const groups = pdfGroups(w);
-    if (!groups.length) return;
+    if (!pdfGroups(w).length) return;
     el.savePdf.disabled = true;
     try {
-      const { buildPdf } = await import('./src/pdf.js');
-      for (const g of groups) {
-        const { bytes } = await buildPdf(g.files, { title: `${el.title.value} — ${g.label}` });
-        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const pdfs = await attachPdfs(w);
+      for (const p of pdfs) {
+        const url = URL.createObjectURL(new Blob([p.bytes], { type: 'application/pdf' }));
         try {
-          await chrome.downloads.download({ url, filename: attachName(st.kind, w.draft, today(), g.label), saveAs: false });
+          await chrome.downloads.download({ url, filename: p.name, saveAs: false });
         } finally {
           setTimeout(() => URL.revokeObjectURL(url), 60_000);
         }
       }
-      flash(el.savePdf, groups.length > 1 ? `${groups.length}개 저장됨 ✓` : '저장됨 ✓');
+      flash(el.savePdf, pdfs.length > 1 ? `${pdfs.length}개 저장됨 ✓` : '저장됨 ✓');
     } catch (err) {
       setStatus(err.message, 'error');
     } finally {
@@ -2007,7 +2111,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.body.addEventListener('input', onDocInput);
     el.regen.addEventListener('click', regen);
     el.write.addEventListener('click', writeDoc);
-    el.writeLog.addEventListener('click', onWriteLogClick);
+    el.showDoc.addEventListener('click', onShowDoc);
     for (const node of [el.rank, el.retention, el.docNoOne, el.receiver, el.scope, el.emergency, el.approvingOpen, el.drm, el.tag]) {
       node.addEventListener(node.tagName === 'SELECT' || node.type === 'checkbox' ? 'change' : 'input', onSetInput);
     }
@@ -2077,9 +2181,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /** R&D 탭의 장부(rndBook)를 읽어 초안에서 고를 과제로 — 탭을 열 때마다(R&D 탭에서 과제·연구 내용을 고치고 돌아온다). */
   async function loadBook() {
-    const saved = await chrome.storage.local.get([BOOK_KEY]);
+    const saved = await chrome.storage.local.get([BOOK_KEY, RND_SET_KEY, PLAN.KEY]);
     st.book = normalizeBook(saved?.[BOOK_KEY]);
     st.rnd = rndProjects(st.book, st.projects, today(), st.extra);
+    st.rndSet = saved?.[RND_SET_KEY] && typeof saved[RND_SET_KEY] === 'object' ? saved[RND_SET_KEY] : null;
+    st.plans = saved?.[PLAN.KEY] && typeof saved[PLAN.KEY] === 'object' ? saved[PLAN.KEY] : {};
   }
 
   function hide() {

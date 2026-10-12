@@ -6,7 +6,7 @@ label: 출장
 title: 출장품의
 rule_key: 출장               # 국내 팀장 · 해외 본부장 — 구분은 아래 division 칸
 amount_field: cost
-document_setting: 연구품의
+document_setting: 출장품의    # registries/settings.yaml — 문서설정은 연구품의와 같고 검색 키워드만 '출장'
 limit: null
 account: 연구활동비(국내여비)
 

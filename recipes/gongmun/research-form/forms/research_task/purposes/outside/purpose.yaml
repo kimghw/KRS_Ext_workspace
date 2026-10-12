@@ -7,7 +7,7 @@ label: 외부활동
 title: 외부활동 허가 신청서
 rule_key: 외부활동
 amount_field: null
-document_setting: 연구품의
+document_setting: 외부활동    # registries/settings.yaml — 문서설정은 연구품의와 같고 검색 키워드만 '외부활동'
 limit: null
 account: ''
 

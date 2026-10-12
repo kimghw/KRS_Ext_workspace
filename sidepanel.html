@@ -121,7 +121,7 @@
         <div id="gmPick" class="gm-pick-row" role="radiogroup" aria-label="연결 과제"></div>
       </div>
       <!-- 에이전트 — 공문 검색(2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 '에이전트' 하나 추가해서 공문검색할 수 있는 기능 추가해줘, 받은공문, 보낸 공문").
-           갈래 줄의 '에이전트'를 누르면 작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨고 이 카드만 선다(sidepanel.css 의 .gongmun.agent).
+           갈래 줄 맨 끝의 'HELP'(에이전트 — 2026-10-12 사용자 지정) 단추를 누르면 작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨고 이 카드만 선다(sidepanel.css 의 .gongmun.agent).
            말로 적으면(예: 지난달 받은 출장 공문) 방향(받은 — 결재함 · 보낸 — 기안함)·기간·찾을 말로 풀어(src/gmsearch.js, 규칙 풀이 — Claude 를 부르지 않는다)
            전자결재 문서함을 제목 검색으로 읽고(src/gmlist.js) 공문 이력과 같은 카드로 보인다. 받은 공문·보낸 공문과 기간은 단추로도 고른다.
            찾은 것은 이 브라우저(chrome.storage 의 gongmunSearch)에 남아 다시 열어도 바로 보인다. gongmunpanel.js 가 그린다. -->
@@ -177,9 +177,10 @@
            "비교작성은 사이드패널이 아니라 크롬 탭에"). 사이드패널 안에서는 두 칸으로 나누지 않는다. -->
       <div id="gmWorkspace" class="gm-workspace card hidden">
         <div class="gm-workspace-head">
-          <div id="gmViewTabs" class="gm-view-tabs" role="tablist" aria-label="작성 내용·공문·읽은 내용">
-            <button type="button" id="gmViewDraft" class="gm-view-tab active" data-gm-view="draft" role="tab" aria-selected="true" aria-controls="gmDraft" tabindex="0">작성 내용</button>
+          <!-- 탭 차례는 공문 · 작성 내용 · 읽은 내용(2026-10-12 사용자 지정: "공문/작성내용/읽은 내용 순으로"). 처음 고른 탭은 작성 내용이다(공문은 초안이 서야 열린다). -->
+          <div id="gmViewTabs" class="gm-view-tabs" role="tablist" aria-label="공문·작성 내용·읽은 내용">
             <button type="button" id="gmViewDoc" class="gm-view-tab" data-gm-view="doc" role="tab" aria-selected="false" aria-controls="gmDoc" tabindex="-1" disabled>공문</button>
+            <button type="button" id="gmViewDraft" class="gm-view-tab active" data-gm-view="draft" role="tab" aria-selected="true" aria-controls="gmDraft" tabindex="0">작성 내용</button>
             <button type="button" id="gmViewRead" class="gm-view-tab" data-gm-view="read" role="tab" aria-selected="false" aria-controls="gmReadView" tabindex="-1">읽은 내용</button>
           </div>
           <button type="button" id="gmCompare" class="ghost small gm-compare" title="크롬 탭에 넓게 열어 작성 내용(공문)을 왼쪽, 읽은 내용을 오른쪽에 두고 비교하며 씁니다"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7.5" height="16" rx="1.5"/><rect x="13.5" y="4" width="7.5" height="16" rx="1.5"/></svg>비교작성</button>
@@ -193,6 +194,9 @@
             <div id="gmProjects" class="gm-projects" role="radiogroup" aria-label="과제"></div>
             <!-- 고른 과제의 기본 내용(별명·번호·연구기간·연구 내용) — 제목·과제 개요에 들어가고, 연구 내용은 사유의 근거다. -->
             <p id="gmProjInfo" class="gm-proj-info hidden"></p>
+            <!-- 예산 줄(2026-10-12 사용자 지정: "구매 또는 공문 작성 시 비용을 R&D 의 연구활동비나 비용을 비교해서 예산이 남아 있는지") — 이번 비용(합계·수강료·예상경비)을 고른 R&D 과제의
+                 올해 차년도 예산(rERP 집행내역의 그 비목 잔액, 없으면 장부의 계획 − 집행)과 견준다(src/gmbudget.js). 모자라면 붉게(short) — 작성은 막지 않는다. 금액이 드는 갈래에서 R&D 과제를 골랐을 때만. -->
+            <p id="gmBudget" class="gm-budget hidden" role="status"></p>
             <div id="gmFields" class="gm-fields"></div>
             <!-- 외부활동의 사례비 누계(2026-10-11 사용자 지정: "지금까지 받은 금액 … 추가로 받는 금액 … 합계를 여기서") — 지금까지 받은 금액(eclass 에서 읽은 올해
                  외부강의등 신고서의 당해 연도 사례금 누적 합계) + 이번 사례비(읽은 칸의 사례비) = 합계. 이력은 아래 공문 이력 칸(gmHistBox, src/gmlist.js). -->
@@ -240,12 +244,18 @@
                   <label><input type="checkbox" id="gmDrm" /> DRM</label>
                 </div>
                 <label for="gmTag" class="gm-label">검색 키워드</label>
-                <input type="text" id="gmTag" autocomplete="off" />
+                <input type="text" id="gmTag" autocomplete="off" placeholder="고른 과제의 별명 (출장·외부활동은 갈래 이름)" />
                 <div class="gm-actions"><button type="button" id="gmSetReset" class="ghost small">기본값으로</button></div>
               </div>
             </details>
-            <!-- 새 공문 창을 열고 과제(Job Id)·제목·차수·본문·문서설정·결재선을 넣는다(src/gmwrite.js). 임시저장·상신은 창에서 사람이 한다. -->
-            <button type="button" id="gmWrite" class="primary wide">eclass 에 공문 작성</button>
+            <!-- 공문 작성 — 새 공문 창을 뒤 탭으로 열고 과제(Job Id)·제목·차수·본문·문서설정·결재선·첨부(읽은 문서를 묶은 PDF)를 넣는다(src/gmwrite.js). 임시저장·상신은
+                 창에서 사람이 한다. 공문 보기 — 그 창을 앞으로(창이 열리면 누를 수 있고 다 쓰면 으뜸 단추). 아래 상태 줄이 쓰는 중·다 씀·안 된 것을 말한다
+                 (2026-10-12 사용자 지정: "공문 작성 중인지 완료인지 알 수가 없음 … 우측에 공문 완료 시 공문 보기 버튼"). -->
+            <div class="gm-write-row">
+              <button type="button" id="gmWrite" class="primary">공문 작성</button>
+              <button type="button" id="gmShowDoc" class="ghost" disabled title="공문 작성이 창을 열면 누를 수 있습니다">공문 보기</button>
+            </div>
+            <p id="gmWriteState" class="gm-write-state hidden" role="status"></p>
             <ol id="gmWriteLog" class="gm-write-log hidden" aria-live="polite"></ol>
             <button type="button" id="gmSavePdf" class="ghost wide hidden">견적서 PDF 저장 (첨부용)</button>
             <ol id="gmSteps" class="gm-steps-list"></ol>

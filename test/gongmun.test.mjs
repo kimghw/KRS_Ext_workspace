@@ -703,7 +703,7 @@ console.log('레시피(recipes/gongmun) — 위임전결·문서설정·쓸 것'
       ['소장(공문 설정 — 위임전결)']);
     assert.deepEqual(approvalLine({ ...CTX, kind: 'purchase', draft: { total: 1 } }).steps, approvalLine(CTX).steps, '부서장 전결은 예전 결재선과 같다');
   });
-  t('문서설정 — 보존 10년 · 기안 팀 채번(부서 이름으로) · 내부결재 · 결재선 공개, 이 공문에서 바꾼 것이 이긴다', () => {
+  t('문서설정 — 보존 10년 · 기안 팀 채번(부서 이름으로) · 내부결재 · 결재선 공개 · 검색 키워드(과제 별명·출장·외부활동), 이 공문에서 바꾼 것이 이긴다', () => {
     const s = docSettingOf('purchase', PRESET);
     assert.deepEqual(pick(s, ['profile', 'retention', 'retentionText', 'docNo', 'docNoFrom', 'receiver', 'scope', 'scopeCode', 'emergency']),
       { profile: '연구품의', retention: '120', retentionText: '10년', docNo: '8100', docNoFrom: '부서(수소전기추진연구팀)', receiver: '내부결재', scope: '결재선', scopeCode: 'YNN', emergency: false });
@@ -712,6 +712,15 @@ console.log('레시피(recipes/gongmun) — 위임전결·문서설정·쓸 것'
     assert.deepEqual(pick(mine, ['retention', 'docNo', 'docNoFrom', 'scopeCode', 'emergency', 'receiver', 'tag']),
       { retention: '36', docNo: '7200', docNoFrom: '공문 설정', scopeCode: 'NNY', emergency: true, receiver: '내부결재', tag: '장비' }, '모르는 수신처는 버린다');
     assert.equal(docSettingOf('purchase', { dept: '모르는팀' }).docNo, '');
+    // 검색 키워드(2026-10-12 사용자 지정: "연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장")
+    assert.equal(docSettingOf('purchase', PRESET, {}, { project: FULL }).tag, '차단기 과제', '구매·교육은 고른 과제의 별명');
+    assert.equal(docSettingOf('edu', PRESET, {}, { project: PROJECT }).tag, '', '별명이 없으면 빈 칸');
+    assert.equal(docSettingOf('edu', PRESET).tag, '', '과제를 고르지 않아도 빈 칸');
+    assert.deepEqual(pick(docSettingOf('trip', PRESET, {}, { project: FULL }), ['profile', 'tag', 'retention', 'docNo', 'receiver']),
+      { profile: '출장품의', tag: '출장', retention: '120', docNo: '8100', receiver: '내부결재' }, '출장은 별명이 있어도 출장 — 나머지는 연구품의와 같다');
+    assert.deepEqual(pick(docSettingOf('outside', PRESET, {}, { project: FULL }), ['profile', 'tag']), { profile: '외부활동', tag: '외부활동' });
+    assert.equal(docSettingOf('trip', PRESET, { tag: '학회' }, { project: FULL }).tag, '학회', '칸에서 고친 것이 이긴다');
+    assert.equal(settingText(docSettingOf('edu', PRESET, {}, { project: FULL })), '보존 10년 · Doc No. 8100 · 수신 내부결재 · 공개 결재선 · 키워드 차단기 과제');
     assert.deepEqual(needs('purchase', { gist: 'x', total: 1, use: 'u', reason: 'r' }, { preset: { ...PRESET, dept: '모르는팀' }, project: FULL, projects: [FULL] }), ['문서번호 부서(공문 설정)']);
   });
   t('쓸 것(writePlan) — 폼의 칸 지도·값·문서설정·결재선을 한데, 줄표는 바꾸고 제목은 99자', () => {
@@ -727,6 +736,7 @@ console.log('레시피(recipes/gongmun) — 위임전결·문서설정·쓸 것'
     assert.equal(plan.values.html, '<div>1. 사유 - 시험</div><div><br></div><div style="text-align:center;">------------ 아   래 ------------</div>');
     assert.deepEqual([plan.values.degree, plan.values.job], ['1', { name: FULL.name, code: FULL.code }]);
     assert.equal(plan.setting.docNo, '8100');
+    assert.equal(plan.setting.tag, '차단기 과제', '검색 키워드는 고른 과제의 별명');
     assert.deepEqual(plan.line, { approvers: ['노길태'], agree: ['박기도'], refs: ['홍길동', '이몽룡'], missing: [], rank: '팀장', team: '수소전기추진연구팀' });
     const other = writePlan('purchase', { title: 't', body: 'b', form: 'KR_Something' }, { preset: PRESET });
     assert.deepEqual([other.known, other.fields], [false, {}], '칸 지도가 없는 양식은 열기만 한다');

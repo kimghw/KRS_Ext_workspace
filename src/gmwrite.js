@@ -2,7 +2,7 @@
 // 무엇을 쓸지는 src/gongmun.js 의 writePlan 이 정하고, 칸의 자리는 레시피(recipes/gongmun 의 fieldmap)다. 2026-10-08 사용자 지정:
 // "공문에서 열기가 아니라 공문을 작성해야지. job-id 는 과제에 맞게 잘 선택하고. 문서설정, 위임전결도 같이 입력" · "공문작성은 백그라운드에서".
 //
-// 백그라운드 — 새 공문 창은 뒤 탭으로 열고 끝나도 앞으로 가져오지 않는다(작성 기록의 '창 보기'로 간다). 문서설정·결재선은 원래 팝업 창이지만
+// 백그라운드 — 새 공문 창은 뒤 탭으로 열고 끝나도 앞으로 가져오지 않는다(패널의 '공문 보기'로 간다). 문서설정·결재선·첨부는 원래 팝업 창이지만
 // 사용자 앞에 창이 뜨지 않게 그 공문 창의 툴바 문서 안 숨은 틀(iframe)에서 연다 — 팝업일 때 opener 였던 툴바를 숨은 틀의 opener 로 잇는다.
 // 기다리기는 페이지가 아니라 이 쪽(패널)이 한다: 크롬은 뒤 탭의 타이머를 늦추고(숨은 지 5분이 넘으면 1분에 한 번 — 2026-10-08 실측으로
 // 결재선이 멈췄다), 페이지 함수는 한 번에 한 동작만 하고 곧바로 돌아온다. 포스트백·목록 받기 같은 네트워크는 늦춰지지 않는다.
@@ -21,6 +21,12 @@
 //     사람은 이름 검색(포스트백)으로 찾고, 고른 사람은 RadTreeView1_ClientState 의 selectedNodes 로 포스트백에 실린다(2026-10-09 새 창 실측 — 작성기 전체가 합의·참조까지 dry 로 여섯 단계 다 됨, 저장과 둘째 합의자의 추가/변경 창은 아직). 창을 오래 두면(하룻밤) 서버 쪽
 //     문서 맥락이 사라져 기안자 줄이 이름 없이 '[]' 로, 조직도는 뿌리 한 줄로 뜬다(2026-10-09 실측 — 새로 연 창은 기안자와 조직도 195줄이 있다).
 //     그런 창에는 넣지 않고 창을 닫고 다시 작성하라고 적는다.
+//   · 첨부 — 툴바의 ShowAttachFile 이 열 주소(DialogBoxReturn → dialogs/AttachFileUpload.aspx)를 숨은 틀로 연다(2026-10-12 사용자 지정: "공문에 첨부파일이
+//     들어가 있지 않음"). 화면은 Telerik RadUpload 다섯 칸(G_UploadControlClientIDs — 칸마다 파일 하나, DRM 켬이 기본)을 multipart 폼으로 보내는 것이라
+//     파일 칸(getFileInputs()[0])에 DataTransfer 로 File 을 넣고 화면의 검사(formCheck — 금지 확장자·중복·다섯 개 한도)를 지나 확인(lbtnConfirm 의
+//     __doPostBack — 틀이 POST 응답으로 다시 뜬다)한 뒤 '첨부된 파일 확인' 목록(tblUploadedFile 의 hfFileName)에 보낸 이름이 다 있으면 됐다. 끝에 창의
+//     닫기(WinClose)가 하던 대로 툴바의 AttachCallback(0)을 불러 의견·첨부 틀(frameDocOther)을 다시 읽게 하고 숨은 틀을 지운다. 올린 뒤 화면은
+//     opener 를 부르지 않는다(reloadParent 호출은 주석). 2026-10-12 CDP 로 읽은 화면(HER-2026-000641)이다 — 실제로 올려 본 것은 아직 없다.
 // 임시저장(lbtnGianSave)·상신(lbtnGianReport)·미리보기(lbtnGianPreview — 안에서 저장한다)는 누르지 않는다. 확인하고 올리는 것은 사람이다.
 
 const FRAME_WAIT_MS = 45000;
@@ -36,6 +42,7 @@ export const STEPS = [
   { key: 'body', label: '본문' },
   { key: 'setting', label: '문서설정' },
   { key: 'line', label: '결재선(위임전결)' },
+  { key: 'attach', label: '첨부' },
 ];
 
 /* ------------------------------------------------------------ 페이지 안에서 도는 함수(MAIN world — 그대로 직렬화되니 바깥 이름을 쓰지 않는다) */
@@ -189,6 +196,14 @@ function pageDialog(op, arg) {
     const x = inner(adopt(frameOf('line'), 'line'), (y) => y.document.getElementById('txtName') && typeof y.$find === 'function'
       && y.$find('RadTreeView1') && y.$find('RadTreeView2'));
     if (x) quiet(x, 'line');
+    return x;
+  };
+  // 파일첨부 화면 — 겉틀(DialogBoxReturn)의 iframeMain 안이다. RadUpload 칸이 다 서고(파일 입력이 있음) 화면의 검사 함수가 있어야 뜬 것이다.
+  const attachWin = () => {
+    const x = inner(adopt(frameOf('attach'), 'attach'), (y) => typeof y.formCheck === 'function' && typeof y.$find === 'function'
+      && Array.isArray(y.G_UploadControlClientIDs) && y.G_UploadControlClientIDs.length
+      && y.G_UploadControlClientIDs.every((id) => { const u = y.$find(id); return u && u.getFileInputs().length; }));
+    if (x) quiet(x, 'attach');
     return x;
   };
   const text = (x) => { try { return (x.document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160); } catch (e) { return ''; } };
@@ -399,6 +414,89 @@ function pageDialog(op, arg) {
     case 'line:close':
       restore('line');
       return { ok: true };
+
+    case 'attach:open': {
+      restore('attach');
+      const url = capture(() => window.ShowAttachFile());
+      if (!url) return { ok: false, why: '파일첨부 화면 주소를 얻지 못했습니다' };
+      frameFor(window, url, 'attach');
+      return { ok: true };
+    }
+    case 'attach:ready': {
+      const x = attachWin();
+      return { ready: !!x, slots: x ? x.G_UploadControlClientIDs.length : 0 };
+    }
+    case 'attach:fill': {
+      // 파일마다 RadUpload 칸 하나 — 파일 입력에 DataTransfer 로 File 을 넣는다(크롬은 files 를 이렇게 넣을 수 있다). 화면은 입력의 value(C:\fakepath\이름)로 이름을 읽는다.
+      const x = attachWin();
+      if (!x) return { ok: false, why: '파일첨부 화면이 없습니다' };
+      const ids = x.G_UploadControlClientIDs;
+      const list = Array.isArray(arg) ? arg : [];
+      if (!list.length) return { ok: false, why: '넣을 파일이 없습니다' };
+      if (list.length > ids.length) return { ok: false, why: `파일첨부 칸은 ${ids.length}개입니다 — ${list.length}개는 넣을 수 없습니다` };
+      const names = [];
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i];
+        const input = x.$find(ids[i]).getFileInputs()[0];
+        if (!input) return { ok: false, why: `파일 칸 ${i + 1}이 없습니다` };
+        let file;
+        try {
+          const bin = x.atob(f.base64 || '');
+          const bytes = new x.Uint8Array(bin.length);
+          for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+          file = new x.File([bytes], f.name, { type: f.type || 'application/pdf' });
+          const dt = new x.DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          input.dispatchEvent(new x.Event('change', { bubbles: true }));
+        } catch (e) {
+          return { ok: false, why: `${f.name} 을(를) 파일 칸에 넣지 못했습니다 (${e && e.message})` };
+        }
+        const got = input.files && input.files[0];
+        if (!got || got.name !== f.name || !got.size) return { ok: false, why: `${f.name} 을(를) 파일 칸에 넣었는데 칸이 비어 있습니다` };
+        names.push(f.name);
+      }
+      return { ok: true, names };
+    }
+    case 'attach:check': {
+      // 화면의 검사만 — 통과하면 전송 중 표시(bIsSubmitted)를 되돌려 확인이 다시 검사할 수 있게 한다. 알림은 받아 적힌다.
+      const x = attachWin();
+      if (!x) return { ok: false, why: '파일첨부 화면이 없습니다' };
+      const before = S.said.length;
+      let pass = false;
+      try { pass = x.formCheck(true) === true; } catch (e) { pass = false; }
+      x.bIsSubmitted = false;
+      const said = S.said.slice(before).join(' · ');
+      return pass ? { ok: true } : { ok: false, why: said || '파일첨부 화면의 검사를 지나지 못했습니다' };
+    }
+    case 'attach:confirm': {
+      // 확인(lbtnConfirm)이 하던 대로 — 검사를 지나면 __doPostBack 으로 multipart 폼을 보낸다. 틀이 POST 응답으로 다시 뜨니 이 문서에 표를 남겨 새 문서와 가른다.
+      const x = attachWin();
+      if (!x) return { ok: false, why: '파일첨부 화면이 없습니다' };
+      const before = S.said.length;
+      x.document.documentElement.setAttribute('data-krsws-sent', '1');
+      fire(x, 'ctl00_ContentPlaceHolder1_lbtnConfirm', "if (formCheck(true)) __doPostBack('ctl00$ContentPlaceHolder1$lbtnConfirm', '')");
+      if (x.bIsSubmitted !== true) return { ok: false, why: S.said.slice(before).join(' · ') || '파일첨부 화면의 검사를 지나지 못했습니다' };
+      return { ok: true };
+    }
+    case 'attach:done': {
+      // 다시 뜬 화면의 '첨부된 파일 확인' 목록 — 숨은 칸(hfFileName)의 이름과 표의 글.
+      const x = attachWin();
+      if (!x) return { done: false, said: lastSaid() };
+      const d = x.document;
+      if (d.documentElement.hasAttribute('data-krsws-sent')) return { done: false, said: lastSaid() };
+      const table = d.getElementById('ctl00_ContentPlaceHolder1_tblUploadedFile');
+      const uploaded = table ? [...table.querySelectorAll('input[type="hidden"]')].filter((i) => /hfFileName/i.test(i.id || i.name || '')).map((i) => i.value) : [];
+      const text = table ? (table.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 600) : '';
+      const msg = ((d.getElementById('ctl00_ContentPlaceHolder1_lblMessage') || {}).innerText || '').trim();
+      return { done: true, uploaded, text, msg, said: lastSaid() };
+    }
+    case 'attach:close': {
+      // 창의 닫기(WinClose)가 하던 대로 — 툴바의 AttachCallback(0) 이 의견·첨부 틀을 다시 읽게 한다(안 올렸어도 해가 없다).
+      try { if (typeof window.AttachCallback === 'function') window.AttachCallback(0); } catch (e) { /* 틀이 아직 없음 */ }
+      restore('attach');
+      return { ok: true };
+    }
     default:
       return { ok: false, why: `모르는 동작 ${op}` };
   }
@@ -418,13 +516,17 @@ export const turnDegree = (turn) => {
 /**
  * 공문을 쓴다. 새 공문 창을 뒤 탭으로 열고, 레시피의 칸 지도대로 차례로 넣는다. 한 단계가 안 돼도 다음 단계는 해 본다(본문이 안 들어가도
  * 결재선은 넣을 수 있다) — 무엇이 됐고 무엇이 안 됐는지를 단계마다 돌려준다. 칸 지도가 없는 양식은 창만 연다.
- * dry 면 문서설정·결재선은 넣어 보고 다시 읽기만 하고 확인·저장하지 않는다(원본 러너의 --dry). 창의 다른 칸은 넣는다(저장은 안 된 채).
+ * dry 면 문서설정·결재선은 넣어 보고 다시 읽기만 하고 확인·저장하지 않고, 첨부는 파일 칸에 넣고 검사만 하고 올리지 않는다(원본 러너의 --dry).
+ * 창의 다른 칸은 넣는다(저장은 안 된 채).
  * @param {object} plan src/gongmun.js 의 writePlan
- * @param {{onStep?: (step: {key:string, label:string, ok:boolean|null, detail:string}) => void, api?: object, dry?: boolean, tabId?: number}} [opts]
+ * @param {{onStep?: (step: {key:string, label:string, ok:boolean|'skip'|null, detail:string}) => void, onTab?: (tabId: number) => void,
+ *   files?: {name:string, type?:string, base64:string}[], api?: object, dry?: boolean, tabId?: number}} [opts]
+ *   files 는 창의 파일첨부에 올릴 파일(첨부 목록의 문서마다 PDF 하나 — 다섯 개까지). 없으면 첨부 단계는 건너뛴다(skip).
+ *   onTab 은 새 공문 창을 열자마자 그 탭 번호를 알린다(패널의 '공문 보기' 가 쓰는 중에도 창을 열 수 있게).
  *   tabId 를 주면 새 창을 열지 않고 그 탭(이미 열린 새 공문 창)에 쓴다 — 실제 브라우저 검사용.
  * @returns {Promise<{tabId:number|null, docId:string, steps: object[]}>}
  */
-export async function writeGongmun(plan, { onStep = () => {}, api = globalThis.chrome, dry = false, tabId: given = null } = {}) {
+export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, files = [], api = globalThis.chrome, dry = false, tabId: given = null } = {}) {
   const steps = [];
   const label = (key) => STEPS.find((s) => s.key === key)?.label || key;
   const report = (key, ok, detail = '') => {
@@ -452,6 +554,7 @@ export async function writeGongmun(plan, { onStep = () => {}, api = globalThis.c
     tabId = tab?.id ?? null;
   }
   if (tabId == null) return { tabId, docId: '', steps: [report('open', false, '창을 열지 못했습니다')] };
+  try { onTab(tabId); } catch { /* 패널 쪽 그리기 오류는 작성을 막지 않는다 */ }
   if (!plan.known) {
     report('open', true, `칸 지도가 없는 양식(${plan.form})이라 창만 열었습니다`);
     return { tabId, docId: '', steps };
@@ -647,6 +750,52 @@ export async function writeGongmun(plan, { onStep = () => {}, api = globalThis.c
     if (done) report('line', !!done.ok, done.ok ? `${done.dry ? '시험 — 저장 안 함 · ' : ''}전결 ${ln.rank} · ${done.shown.join(' → ')}` : done.why);
   }
 
+  // 첨부 — 첨부 목록의 문서마다 묶은 PDF 를 창의 파일첨부(툴바가 여는 화면 — 숨은 틀)에 올린다. 파일이 없으면 건너뛴다(창의 파일첨부로).
+  const sent = (files || []).filter((f) => f && f.name && f.base64).slice(0, 5);
+  if (!sent.length) report('attach', 'skip', '넣은 문서가 없습니다 — 창의 파일첨부로 넣으세요');
+  else {
+    report('attach', null, `${sent.map((f) => f.name).join(' · ')} 올리는 중…`);
+    const names = sent.map((f) => f.name);
+    const done = await guard('attach', () => tidy('attach', async () => {
+      const opened = await dialog('attach:open');
+      if (!opened?.ok) return opened || { ok: false, why: '파일첨부를 열지 못했습니다' };
+      if (!(await until(() => dialog('attach:ready'), (r) => r.ready, 30000)).ready) {
+        await dialog('attach:close');
+        return { ok: false, why: '파일첨부 화면이 뜨지 않았습니다 — 창의 파일첨부로 넣어 주세요' };
+      }
+      const fill = await dialog('attach:fill', sent.map((f) => ({ name: f.name, type: f.type || 'application/pdf', base64: f.base64 })));
+      if (!fill?.ok) {
+        await dialog('attach:close');
+        return { ok: false, why: `${fill?.why || '파일을 넣지 못했습니다'} — 창의 파일첨부로 넣어 주세요` };
+      }
+      const check = await dialog('attach:check');
+      if (!check?.ok) {
+        await dialog('attach:close');
+        return { ok: false, why: `${check?.why || '파일첨부 화면의 검사를 지나지 못했습니다'} — 창의 파일첨부로 넣어 주세요` };
+      }
+      if (dry) {
+        await dialog('attach:close');
+        return { ok: true, dry: true, names };
+      }
+      const confirm = await dialog('attach:confirm');
+      if (!confirm?.ok) {
+        await dialog('attach:close');
+        return { ok: false, why: `${confirm?.why || '올리지 못했습니다'} — 창의 파일첨부로 넣어 주세요` };
+      }
+      const up = await until(() => dialog('attach:done'), (r) => r.done, 60000);
+      await dialog('attach:close');
+      if (!up.done) return { ok: false, why: `첨부가 끝나지 않았습니다${up.said ? ` (${up.said})` : ''} — 창의 파일첨부를 확인하세요` };
+      const listed = (n) => (up.uploaded || []).includes(n) || (up.text || '').includes(n);
+      const missing = names.filter((n) => !listed(n));
+      if (missing.length) {
+        const why = up.msg || up.said || '';
+        return { ok: false, why: `${missing.join('·')} 이(가) 첨부된 파일 목록에 없습니다${why ? ` (${why})` : ''} — 창의 파일첨부를 확인하세요` };
+      }
+      return { ok: true, names };
+    }));
+    if (done) report('attach', !!done.ok, done.ok ? `${done.dry ? '시험 — 올리지 않음 · ' : ''}${done.names.join(' · ')}` : done.why);
+  }
+
   // 화면을 오간 뒤 본문이 살아 있는지 — 사라졌으면 한 번 다시 넣는다(ApprovalInPrinciple 의 reverify_planned).
   if (plan.fields.body && steps.find((s) => s.key === 'body')?.ok) {
     const still = await run(tabId, form, pageBody, [{ control, text: v.body, check: true }]).catch(() => null);
@@ -658,7 +807,7 @@ export async function writeGongmun(plan, { onStep = () => {}, api = globalThis.c
   return { tabId, docId, steps };
 }
 
-/** 작성한 공문 창을 앞으로 — 작성 기록의 '창 보기'. 닫혔으면 false. */
+/** 작성한 공문 창을 앞으로 — 패널의 '공문 보기'. 닫혔으면 false. */
 export async function showTab(tabId, api = globalThis.chrome) {
   try {
     const tab = await api.tabs.update(tabId, { active: true });

@@ -783,12 +783,6 @@ export function settingPatch(raw) {
 }
 
 /**
- * 문서설정 — 레시피의 defaults < 갈래의 프로파일(purpose.yaml 의 document_setting) < 이 공문에서 바꾼 것(override). 문서번호(Doc No.)는
- * 기안 팀 채번이다 — 공문 설정의 문서번호 부서, 비면 부서 이름으로 teams 표에서 찾는다(부서 칸에 '연구본부 …' 처럼 앞말이 붙어도 찾는다).
- * @returns {{profile:string, retention:string, retentionText:string, docNo:string, docNoFrom:string, receiver:string, scope:string, scopeCode:string,
- *   emergency:boolean, approvingOpen:boolean, drm:boolean, tag:string}}
- */
-/**
  * 공문 설정의 부서에서 팀 이름 — 레시피 settings.yaml 의 teams 표에 있는 팀('연구본부 수소전기추진연구팀' 처럼 앞말이 붙어도 찾는다), 없으면 부서 칸의 마지막 말.
  * 문서설정의 Doc No. 찾기와, 결재선 조직도에서 이름이 같은 사람을 가르는 기준('이름[팀]' 의 팀)이 같이 쓴다.
  */
@@ -821,7 +815,17 @@ export function docNoCandidates(dept = '', docNo = '') {
   return { state: one ? 'one' : matches.length ? 'many' : 'none', code: one?.code || '', name: one?.name || '', matches, all };
 }
 
-export function docSettingOf(kind, preset = {}, override = {}) {
+/**
+ * 문서설정 — 레시피의 defaults < 갈래의 프로파일(purpose.yaml 의 document_setting) < 이 공문에서 바꾼 것(override). 문서번호(Doc No.)는
+ * 기안 팀 채번이다 — 공문 설정의 문서번호 부서, 비면 부서 이름으로 teams 표에서 찾는다(부서 칸에 '연구본부 …' 처럼 앞말이 붙어도 찾는다).
+ * 검색 키워드(tag)는 레시피 글의 {과제별명} 자리를 고른 과제(ctx.project)의 별명으로 바꾼다 — 별명이 없거나 과제를 고르지 않았으면 빈 칸.
+ * 출장·외부활동은 프로파일(출장품의·외부활동)이 '출장'·'외부활동' 으로 둔다(2026-10-12 사용자 지정: "연구개발 별칭이 있다면 그걸 넣어줘,
+ * 외부활동이면 외부활동, 출장이면 출장"). 패널은 과제를 바꿀 때마다 다시 셈하고, 칸에서 고친 것(override.tag)만 이 공문에 남긴다.
+ * @param {{project?:object|null}} [ctx] 고른 과제(alias 가 별명)
+ * @returns {{profile:string, retention:string, retentionText:string, docNo:string, docNoFrom:string, receiver:string, scope:string, scopeCode:string,
+ *   emergency:boolean, approvingOpen:boolean, drm:boolean, tag:string}}
+ */
+export function docSettingOf(kind, preset = {}, override = {}, { project = null } = {}) {
   const S = RECIPE.settings;
   const profile = RECIPE.purposes[kind]?.document_setting || Object.keys(S.profiles)[0];
   const base = { ...S.defaults, ...(S.profiles[profile] || {}) };
@@ -829,9 +833,10 @@ export function docSettingOf(kind, preset = {}, override = {}) {
   const team = Object.keys(S.teams || {}).find((t) => keyOf(pre.dept).includes(keyOf(t)));
   const auto = base.doc_no === 'team' ? (pre.docNo || (team ? String(S.teams[team]) : '')) : String(base.doc_no || '');
   const o = settingPatch(override);
+  const tag = String(base.tag || '').split('{과제별명}').join(String(project?.alias || '').trim()).trim().slice(0, 60);
   const out = {
     profile, retention: String(base.retention), docNo: auto, receiver: base.receiver, scope: base.scope,
-    emergency: !!base.emergency, approvingOpen: !!base.approving_open, drm: !!base.drm, tag: String(base.tag || ''), ...o,
+    emergency: !!base.emergency, approvingOpen: !!base.approving_open, drm: !!base.drm, tag, ...o,
   };
   out.docNoFrom = o.docNo ? '이 공문' : pre.docNo ? '공문 설정' : team ? `부서(${team})` : '';
   out.retentionText = S.options.retention[out.retention] || out.retention;
@@ -839,9 +844,9 @@ export function docSettingOf(kind, preset = {}, override = {}) {
   return out;
 }
 
-/** 문서설정을 한 줄로 — 보존 10년 · Doc No. 8100 · 수신 내부결재 · 공개 결재선 */
+/** 문서설정을 한 줄로 — 보존 10년 · Doc No. 8100 · 수신 내부결재 · 공개 결재선 · 키워드 차단기 과제(검색 키워드는 있을 때만) */
 export function settingText(s) {
-  const flags = [s.emergency ? '긴급' : '', s.approvingOpen ? '진행공개' : '', s.drm ? 'DRM' : ''].filter(Boolean);
+  const flags = [s.emergency ? '긴급' : '', s.approvingOpen ? '진행공개' : '', s.drm ? 'DRM' : '', s.tag ? `키워드 ${s.tag}` : ''].filter(Boolean);
   return [`보존 ${s.retentionText}`, `Doc No. ${s.docNo || '없음'}`, `수신 ${s.receiver}`, `공개 ${s.scope}`, ...flags].join(' · ');
 }
 
@@ -1055,7 +1060,7 @@ export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFA
       recipient: '', reference: '', degree: degreeOf(project),
       job: { name: project?.name || '', code: project?.code || '' },
     },
-    setting: docSettingOf(kind, ctx.preset, setting),
+    setting: docSettingOf(kind, ctx.preset, setting, { project }),
     line: {
       approvers: line.steps.filter((s) => s.role === '결재').map((s) => s.name),
       agree: line.steps.filter((s) => s.role === '합의').map((s) => s.name),
