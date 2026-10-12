@@ -201,12 +201,17 @@
             <!-- 외부활동의 사례비 누계(2026-10-11 사용자 지정: "지금까지 받은 금액 … 추가로 받는 금액 … 합계를 여기서") — 지금까지 받은 금액(eclass 에서 읽은 올해
                  외부강의등 신고서의 당해 연도 사례금 누적 합계) + 이번 사례비(읽은 칸의 사례비) = 합계. 이력은 아래 공문 이력 칸(gmHistBox, src/gmlist.js). -->
             <div id="gmFeeSum" class="gm-proj-info gm-fee-sum hidden" role="status"></div>
-            <!-- 에이전트 — 고른 과제의 연구 내용을 보고 용도·사유를 쓰고, 여기 적은 말대로 고쳐 쓴다(src/llm.js 의 gongmunReasonSmart). -->
+            <!-- 에이전트 — 고른 과제의 연구 내용을 보고 용도·사유를 쓰고, 여기 적은 말대로 고쳐 쓴다(src/llm.js 의 gongmunReasonSmart).
+                 여러 줄 작성 칸(.ask-composer, 2026-10-12 사용자 지정: "에이전트 부분 채팅입력창 개선") — 글칸이 카드 폭을 다 쓰고 적는 대로 자라며(gongmunpanel.js 의 growAgent),
+                 아래 줄에 반짝이 · Enter 안내 · 보내기. 한 줄 칸(근태의 말로 채우기·공문 검색)은 그대로 .ask-bar 한 줄이다. -->
             <div id="gmAgent" class="gm-chat gm-agent">
-              <div class="ask-bar">
-                <span class="sparkle-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/><path d="m20 2 .7 1.3L22 4l-1.3.7L20 6l-.7-1.3L18 4l1.3-.7L20 2Z"/></svg></span>
-                <textarea id="gmAgentInput" rows="1" aria-label="에이전트에게 — 용도·사유 고쳐 쓰기" title="고른 과제의 연구 내용(R&amp;D 탭의 연구개발 계획·진행 기록)을 보고 용도·사유를 고쳐 씁니다. 예) 사유를 시험 장비 검증 쪽으로 다시 써 줘 · 용도를 더 짧게" placeholder="에이전트에게 — 예) 사유를 시험 장비 검증 쪽으로" spellcheck="false"></textarea>
-                <button id="gmAgentGo" class="primary" aria-label="에이전트에게 보내기">보내기 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+              <div class="ask-bar ask-composer">
+                <textarea id="gmAgentInput" rows="1" aria-label="에이전트에게 — 용도·사유 고쳐 쓰기" title="고른 과제의 연구 내용(R&amp;D 탭의 연구개발 계획·진행 기록)을 보고 용도·사유를 고쳐 씁니다. 예) 사유를 시험 장비 검증 쪽으로 다시 써 줘 · 용도를 더 짧게" placeholder="에이전트에게 — 예) 사유를 시험 장비 검증 쪽으로 다시 써 줘" spellcheck="false"></textarea>
+                <div class="ask-composer-foot">
+                  <span class="sparkle-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/><path d="m20 2 .7 1.3L22 4l-1.3.7L20 6l-.7-1.3L18 4l1.3-.7L20 2Z"/></svg></span>
+                  <span class="ask-composer-hint" aria-hidden="true">Enter 보내기 · Shift+Enter 줄바꿈</span>
+                  <button id="gmAgentGo" class="primary" aria-label="에이전트에게 보내기">보내기 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+                </div>
               </div>
               <ul id="gmAgentLog" class="gm-chat-log" aria-live="polite"></ul>
             </div>

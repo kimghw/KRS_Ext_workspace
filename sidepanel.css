@@ -219,7 +219,21 @@ button.pk-del:hover { color: var(--danger); }
 /* 닿을 길이 없을 때. 말로 찾기(.ask)는 잠기고, 근태의 말로 채우기(.at-chat)는 규칙으로 읽히니 열어 두되 같은 회색 낯으로 내린다. */
 .ask.off .ask-bar button, .at-chat.off .ask-bar button { background: var(--surface-soft); color: var(--muted); opacity: 1; }
 .ask.off .ask-bar input:disabled { color: var(--faint); cursor: not-allowed; }
-.ask.off .sparkle-icon, .at-chat.off .sparkle-icon { color: var(--faint); opacity: .55; }
+.ask.off .sparkle-icon, .at-chat.off .sparkle-icon, .gm-agent.off .sparkle-icon { color: var(--faint); opacity: .55; }
+/* 여러 줄 작성 칸(공문 작성 내용 탭의 에이전트 칸 — sidepanel.html 의 #gmAgent, 2026-10-12 사용자 지정: "에이전트 부분 채팅입력창 개선"). 한 줄 .ask-bar 를 세로로 세워
+   글칸이 카드 폭을 다 쓰고(이전에는 textarea 에 input 의 flex 가 없어 브라우저 기본 폭으로 좁았다) 적는 대로 자란다(gongmunpanel.js 의 growAgent — 160px 까지,
+   그 뒤로는 안에서 내린다). 테두리·초점 고리는 칸 전체에 두고 textarea 는 민낯으로. 아래 줄은 반짝이 · Enter 안내 · 보내기. 닿을 길이 없으면(.off) 같은 회색 낯. */
+.ask-bar.ask-composer { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); transition: border-color .16s ease, box-shadow .16s ease; }
+.ask-bar.ask-composer:focus-within { border-color: var(--pick); box-shadow: 0 0 0 3px var(--pick-soft); }
+.ask-bar.ask-composer textarea { display: block; width: 100%; min-height: 34px; max-height: 160px; margin: 0; padding: 5px 2px; border: 0; border-radius: 0; background: transparent; font: inherit; font-size: 14px; line-height: 1.55; color: inherit; resize: none; overflow-y: auto; scrollbar-width: thin; }
+.ask-bar.ask-composer textarea:focus { outline: none; }
+.ask-bar.ask-composer textarea::placeholder { color: var(--faint); }
+.ask-composer-foot { display: flex; align-items: center; gap: 8px; }
+.ask-composer-hint { flex: 1; min-width: 0; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gm-agent.off .ask-composer button { background: var(--line); color: var(--muted); opacity: 1; }
+/* 주고받은 말(gmAgentLog) — 근태의 .at-chat-log 와 같이 글머리표 없이 말풍선(.gm-say)만. 전에는 규칙이 없어 ul 기본 글머리표·들여쓰기가 붙었다. */
+.gm-chat-log { list-style: none; margin: 0; padding: 0; }
+.gm-chat-log:not(:empty) { margin-top: 9px; }
 /* Claude 에 닿을 길이 없을 때 말 칸(말로 찾기·말로 채우기) 아래에 내는 줄 — 한마디와 연결 지침 복사 버튼. */
 .cli-help { display: flex; align-items: center; gap: 8px; margin: 9px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .cli-help span { flex: 1; min-width: 0; }
@@ -1155,9 +1169,8 @@ body.compare-tab .gongmun .gm-evidence:has(.status:empty):has(.gm-limit.hidden) 
 body.compare-tab .gongmun .gm-evidence-body { margin-top: 0; }
 body.compare-tab .gongmun .gm-draft, body.compare-tab .gongmun .gm-doc, body.compare-tab .gongmun .gm-read-view { padding: 16px 22px 18px; }
 body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
-body.compare-tab .gongmun .gm-agent .ask-bar textarea { flex: 1; }
 .gongmun .gm-label small { margin-left: 4px; color: var(--faint); font-size: 11px; }
-/* 에이전트 칸 — 위의 채팅 칸과 같은 모양을 카드 안에 둔다. */
+/* 에이전트 칸 — 카드 안의 여러 줄 작성 칸(.ask-composer, 위 .ask-bar 곁의 규칙). 검색 카드의 에이전트 칸은 한 줄 .ask-bar 그대로다. */
 .gongmun .gm-agent { margin: 10px 0 0; padding: 0; }
 /* 오린 견적서 — 가격과 그 둘레. 그림은 패널 폭에 맞추고 너무 길면 줄여 보인다. */
 .gongmun .gm-cut { margin: 12px 0 0; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }

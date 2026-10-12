@@ -2214,6 +2214,15 @@ console.log('공문 탭 — 구매: 읽은 문서는 읽은 내용 탭에, 작�
       ['사유를 시험 장비 검증 쪽으로 다시 써 줘', '사유를 시험 장비 검증 쪽으로 고쳤습니다']);
     assert.equal(doc.getElementById('gmAgentInput').value, '');
   });
+  t('에이전트 칸은 여러 줄 작성 칸이다 — 글칸이 위에 홀로 폭을 다 쓰고, 아래 줄에 반짝이 · Enter 안내 · 보내기(한 줄 칸인 공문 검색은 그대로)', () => {
+    const bar = doc.querySelector('#gmAgent .ask-bar');
+    assert.ok(bar.classList.contains('ask-composer'));
+    const kids = (n) => [...n.children].map((c) => c.tagName + (c.id ? '#' + c.id : '') + (c.className ? '.' + c.className : ''));
+    assert.deepEqual(kids(bar), ['TEXTAREA#gmAgentInput', 'DIV.ask-composer-foot']);
+    assert.deepEqual(kids(bar.lastElementChild), ['SPAN.sparkle-icon', 'SPAN.ask-composer-hint', 'BUTTON#gmAgentGo.primary']);
+    assert.match(bar.querySelector('.ask-composer-hint').textContent, /^Enter 보내기 · Shift\+Enter 줄바꿈$/);
+    assert.ok(!doc.querySelector('#gmSearch .ask-bar').classList.contains('ask-composer'), '검색 카드의 에이전트 칸은 한 줄 .ask-bar 그대로');
+  });
 
   doc.getElementById('gmViewDraft').click();
   type(field('total'), '1,200,000');
