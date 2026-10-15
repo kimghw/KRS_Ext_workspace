@@ -137,6 +137,7 @@ console.log('회의실 모드로 시작');
   t('회의실 탭 클릭', () => assert.ok(wired.get('tabRoom')?.has('click')));
   t('차량 탭 클릭', () => assert.ok(wired.get('tabCar')?.has('click')));
   t('내 예약 탭 클릭', () => assert.ok(wired.get('tabMine')?.has('click')));
+  t('메일 탭 클릭', () => assert.ok(wired.get('tabMail')?.has('click')));
   t('내 예약 목록 클릭', () => assert.ok(wired.get('mineList')?.has('click')));
   t('기간 선택', () => assert.ok(wired.get('spanDays')?.has('change')));
   t('내 이름 입력', () => assert.ok(wired.get('myName')?.has('change')));
@@ -457,6 +458,7 @@ console.log('내 예약 모드로 시작 (조기 return 회귀 방지)');
   const doc = window.document;
   t('회의실 탭 클릭', () => assert.ok(wired.get('tabRoom')?.has('click')));
   t('내 예약 탭 클릭', () => assert.ok(wired.get('tabMine')?.has('click')));
+  t('메일 탭 클릭', () => assert.ok(wired.get('tabMail')?.has('click')));
   t('내 예약 목록 클릭', () => assert.ok(wired.get('mineList')?.has('click')));
   t('기간 선택', () => assert.ok(wired.get('spanDays')?.has('change')));
   t('새로고침 클릭', () => assert.ok(wired.get('refresh')?.has('click')));
@@ -1385,7 +1387,7 @@ console.log('공문 탭');
   doc.querySelector('#gmKinds [data-kind="outside"]').click();
   t('외부활동도 같은 문서 넣는 곳 — 요청 공문을 넣으라고 하고, 양식은 외부강의등 신고서(제목도 그대로)', () => {
     assert.ok(!doc.getElementById('gmIntake').classList.contains('hidden'));
-    assert.equal(doc.getElementById('gmDropLead').textContent, '외부강의 등 요청 공문·메일(강의·자문·심사·발표 의뢰)을 넣으세요');
+    assert.equal(doc.getElementById('gmDropLead').textContent, '요청 공문·메일을 넣으세요', '구매·교육처럼 한 줄(2026-10-15)');
     assert.ok(doc.getElementById('gmDraft').classList.contains('hidden'));
     assert.equal(doc.getElementById('gmTplForm').value, 'KR_Outside_Lecture_Report');
     assert.deepEqual([...doc.querySelectorAll('#gmTplForm option')].map((o) => o.value), ['KR_EA_Research_Task', 'KR_Outside_Lecture_Report', 'KR_EA_Form2', '']);
@@ -2630,13 +2632,190 @@ console.log('공문 탭 — 부분 골라 캡처(2026-10-08 "탭이 아니라 �
   Object.assign(globalThis, { OffscreenCanvas: kept.canvas, createImageBitmap: kept.bitmap, File: kept.file });
 }
 
+console.log('공문 탭 — 원본 첨부(2026-10-15 사용자 지정: "첨부는 파일 자체로 관리하지만 ocr 해서 이것도 필요한 내용으로 넣는 거지"): 그림·PDF 가 아닌 파일은 파일 그대로 첨부하고 글자를 뽑아 함께 읽는다');
+{
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  const { buildZip } = await import('../src/zip.js');
+  // 워드 문서(docx) — 압축 안 한 ZIP 에 본문 XML 하나. 글자 뽑기(src/officetext.js)가 본문을 _rels/.rels 로 찾는다.
+  const DOCX = buildZip([
+    { name: '[Content_Types].xml', data: '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+    { name: '_rels/.rels', data: '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+    { name: 'word/document.xml', data: '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>교육 계획서</w:t></w:r></w:p><w:p><w:r><w:t>전력변환 설계 실무 3일 과정 &amp; 실습</w:t></w:r></w:p></w:body></w:document>' },
+  ], { date: new Date(2026, 9, 15) });
+  const HWP = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 1, 2, 3, 4]);
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    if (!String(url).includes('api.anthropic.com')) throw new Error('offline');
+    const body = JSON.parse(init.body);
+    const props = Object.keys(body.output_config.format.schema.properties);
+    const content = body.messages[0].content;
+    asked.push({ props, input: JSON.stringify(content), images: Array.isArray(content) ? content.filter((c) => c.type === 'image').length : 0 });
+    let record;
+    if (props.includes('parts')) {
+      record = { docType: 'quote', provider: '한국전력기술교육원', course: '전력변환 설계 실무', from: '2026-10-12', to: '2026-10-14', fee: 450000, summary: '교육 견적서 450,000원', purpose: '설계 역량 강화', parts: [{ file: '교육견적.png', kind: 'quote' }] };
+    } else if (props.includes('reason')) {
+      record = { reason: '과제의 MVDC 전력변환 설계 역량 확보에 필요함', purpose: '전력변환 회로 설계 역량 강화' };
+    } else {
+      throw new Error(`모르는 작업: ${props}`);
+    }
+    return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(record) }] }) };
+  };
+  const saved = {
+    mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', about: '', content: 'MVDC 선내 전력망용 전력변환기 설계·시험', account: '' }],
+  };
+  const { window, calls } = await boot(saved, { fetchImpl });
+  const doc = window.document;
+  globalThis.URL.createObjectURL = () => 'blob:gongmun-test';
+  globalThis.URL.revokeObjectURL = () => {};
+  const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+  await settle();
+  doc.getElementById('gmEvidenceToggle').click();
+  const ev = new window.Event('drop', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: { types: ['Files'], files: [
+    new window.File([PNG], '교육견적.png', { type: 'image/png' }),
+    new window.File([DOCX], '교육계획서.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }),
+    new window.File([HWP], '참가신청서.hwp', { type: '' }),
+  ] } });
+  doc.getElementById('gmIntake').dispatchEvent(ev);
+  for (let i = 0; i < 40 && !asked.some((a) => a.props.includes('reason')); i++) await settle(50);
+  t('그림은 읽기에 파일째 가고, 워드 문서는 글자를 뽑아 붙여 넣은 글처럼 같이 간다 — 한글 옛 형식(hwp)은 글자 없이 첨부로만', () => {
+    const read = asked.find((a) => a.props.includes('parts'));
+    assert.ok(read, `읽기를 부르지 않았다 — ${doc.getElementById('gmStatus').textContent}`);
+    assert.equal(read.images, 1);
+    assert.match(read.input, /첨부한 문서 1장\(파일 이름: 교육견적\.png\)/);
+    assert.match(read.input, /\[첨부 파일 글자 — 교육계획서\.docx\]\\n교육 계획서\\n전력변환 설계 실무 3일 과정 & 실습/);
+    assert.ok(!/참가신청서/.test(read.input), 'hwp 는 읽기에 가지 않는다');
+    assert.match(doc.getElementById('gmSource').textContent, /hwp\(한글 옛 형식\) 파일은 글자를 뽑지 못해 첨부로만 넣습니다/);
+  });
+  t('첨부 목록 — 읽기가 가린 견적서는 교육 견적서, 원본 첨부는 파일 이름 그대로 한 줄씩(갈래의 기본 문서로 묶이지 않는다)', () => {
+    assert.match(doc.getElementById('gmSource').textContent, /첨부 · 교육 견적서 · 교육계획서 · 참가신청서/);
+    assert.match(doc.getElementById('gmBody').value, /※ 첨 부\n {4}1\. 교육 견적서 1부\.\n {4}2\. 교육 내용 1부\.\n {4}3\. 교육계획서 1부\.\n {4}4\. 참가신청서 1부\.  끝\.$/);
+  });
+  doc.getElementById('gmSavePdf').click();
+  await settle(400);
+  t('첨부 PDF 저장은 묶는 문서만 — 원본 첨부는 PDF 로 바꾸지 않는다', () => {
+    assert.deepEqual(calls.downloads.map((d) => d.filename.replace(/_\d{4}-\d{2}-\d{2}/, '')), ['교육견적서_한국전력기술교육원.pdf']);
+  });
+
+  // 공문 작성 — 묶은 PDF 뒤에 원본 첨부를 파일 그대로(이름·종류·바이트) 창의 파일첨부에 올린다.
+  const tree = { line: [{ name: '김거화', role: '결재' }], refs: [] };
+  let picked = '';
+  let sentFiles = [];
+  const keep = { create: window.chrome.tabs.create, update: window.chrome.tabs.update, exec: window.chrome.scripting.executeScript };
+  window.chrome.tabs.create = async () => ({ id: 79 });
+  window.chrome.tabs.update = async () => { throw new Error('No tab with id: 79.'); };
+  window.chrome.scripting.executeScript = async ({ func, args = [] }) => {
+    if (func.name === 'pageProbe') return [{ frameId: 0, result: { toolbar: true, ready: true } }, { frameId: 3, result: { form: true, ready: true, docId: 'HER-2026-000702' } }];
+    if (func.name === 'pageJob') return [{ result: { ok: true, id: 'RND00202026', dash: 'RND-20-2026', name: 'MVDC 차단기 개발', turn: '1 / 0' } }];
+    if (func.name === 'pageFill') return [{ result: args[0].map((f) => ({ key: f.key, ok: true, value: f.value })) }];
+    if (func.name === 'pageBody') return [{ result: { ready: true, ok: true, length: 300 } }];
+    const [op, value] = args;
+    if (op.endsWith(':ready')) return [{ result: { ready: true, drafter: '김거화[수소전기추진연구팀]' } }];
+    if (op === 'setting:fill') return [{ result: { ok: true, picked: { receiver: value.receiver, retention: value.retention, docNo: value.docNo } } }];
+    if (op === 'line:pick') picked = value;
+    if (op === 'line:press') {
+      const person = { name: picked, role: value === 'btnAPP' ? '결재' : value === 'btnAGR' ? '합의' : '참조' };
+      if (value === 'btnREF') tree.refs.push(person); else if (value === 'btnAGR') tree.line.splice(1, 0, person); else tree.line.push(person);
+    }
+    if (op === 'line:pup') return [{ result: { pup: false } }];
+    if (op === 'line:tree') return [{ result: tree }];
+    if (op === 'attach:fill') { sentFiles = value; return [{ result: { ok: true, names: value.map((f) => f.name) } }]; }
+    if (op === 'attach:done') return [{ result: { done: true, uploaded: sentFiles.map((f) => f.name), text: '', msg: '' } }];
+    if (op.endsWith(':done')) return [{ result: { done: true } }];
+    return [{ result: { ok: true } }];
+  };
+  doc.getElementById('gmWrite').click();
+  for (let i = 0; i < 100 && doc.getElementById('gmWrite').disabled; i++) await settle(100);
+  t('공문 작성 — 교육 견적서 PDF 뒤에 교육계획서.docx·참가신청서.hwp 를 파일 그대로 올린다', () => {
+    assert.deepEqual(sentFiles.map((f) => f.name.replace(/_\d{4}-\d{2}-\d{2}/, '')), ['교육견적서_한국전력기술교육원.pdf', '교육계획서.docx', '참가신청서.hwp']);
+    assert.equal(sentFiles[1].type, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    assert.equal(sentFiles[2].type, 'application/octet-stream', '종류를 모르는 파일');
+    assert.deepEqual([...Buffer.from(sentFiles[1].base64, 'base64')], [...DOCX], '원본 바이트 그대로');
+    assert.deepEqual([...Buffer.from(sentFiles[2].base64, 'base64')], [...HWP]);
+    const li = [...doc.querySelectorAll('#gmWriteLog li')].find((x) => x.textContent.startsWith('첨부'));
+    assert.equal(li.className, 'ok');
+    assert.match(li.textContent, /교육계획서\.docx · 참가신청서\.hwp$/);
+    assert.match(doc.getElementById('gmStatus').textContent, /^뒤 탭에 공문을 썼습니다\(첨부까지\)/);
+  });
+  Object.assign(window.chrome.tabs, { create: keep.create, update: keep.update });
+  window.chrome.scripting.executeScript = keep.exec;
+}
+
+console.log('공문 탭 — 메일 첨부 끌어 넣기(2026-10-15 사용자 지정: "메일에서 첨부 파일 목록을 인식하고 드래그 해서 갖어올 수도 있나"): Outlook 첨부 카드를 놓으면 그 메일 탭에서 파일을 받아 원본 첨부로');
+{
+  const { buildZip } = await import('../src/zip.js');
+  const DOCX = buildZip([
+    { name: '_rels/.rels', data: '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+    { name: 'word/document.xml', data: '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>진도점검 회의 발표자료 양식</w:t></w:r></w:p><w:p><w:r><w:t>교육명: 전력변환 설계 실무</w:t></w:r></w:p></w:body></w:document>' },
+  ], { date: new Date(2026, 9, 15) });
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    if (!String(url).includes('api.anthropic.com')) throw new Error('offline');
+    const body = JSON.parse(init.body);
+    const props = Object.keys(body.output_config.format.schema.properties);
+    asked.push({ props, input: JSON.stringify(body.messages[0].content) });
+    const record = props.includes('parts')
+      ? { docType: 'course', provider: '한국전력기술교육원', course: '전력변환 설계 실무', fee: 450000, summary: '교육 안내 450,000원', parts: [] }
+      : { reason: '과제의 MVDC 전력변환 설계 역량 확보에 필요함', purpose: '전력변환 회로 설계 역량 강화' };
+    return { ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(record) }] }) };
+  };
+  const saved = {
+    mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', about: '', content: 'MVDC 전력변환기 설계', account: '' }],
+  };
+  const { window } = await boot(saved, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+  // 가짜 크롬 — 이 창(7)의 앞 탭(21)은 Outlook 메일이다. 첨부는 그 탭의 페이지 세계(MAIN)에서 mailFetch 로 받는다.
+  const ran = [];
+  Object.assign(window.chrome, { windows: { getCurrent: async () => ({ id: 7 }) }, permissions: { contains: async () => true, request: async () => true } });
+  window.chrome.tabs.query = async (q) => (q.active && q.windowId === 7 ? [{ id: 21, windowId: 7, active: true, url: 'https://outlook.cloud.microsoft/mail/inbox/id/AAQk', title: '메일 - Outlook' }] : []);
+  window.chrome.scripting.executeScript = async ({ target, world, func, args }) => {
+    ran.push({ tab: target.tabId, world, func: func.name, args });
+    if (func.name !== 'mailFetch') throw new Error(`모르는 함수 ${func.name}`);
+    return [{ result: args[0].map((a) => ({ name: a.name, type: 'application/octet-stream', size: DOCX.length, base64: Buffer.from(DOCX).toString('base64') })) }];
+  };
+  const keepFile = globalThis.File;
+  globalThis.File = window.File;   // 받은 File 을 이 창의 FileReader 가 읽을 수 있어야 한다
+  await settle();
+  doc.getElementById('gmEvidenceToggle').click();
+  const card = JSON.stringify({ itemType: 'attachment', attachmentFiles: [{ attachmentItemId: 'AAkAL-1', name: '[진도점검] 발표자료 양식.docx', size: 227305, ContentType: 'application/octet-stream' }] });
+  const dragEv = (type) => {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { types: ['attachment'], files: [], dropEffect: 'none', getData: (k) => (type === 'drop' && k === 'attachment' ? card : '') } });
+    return ev;
+  };
+  const over = dragEv('dragover');
+  doc.getElementById('gmIntake').dispatchEvent(over);
+  t('Outlook 첨부 카드를 끌고 오면(파일이 아니라 attachment 형식) 넣는 곳이 받는다고 짙어진다', () => {
+    assert.ok(over.defaultPrevented);
+    assert.equal(over.dataTransfer.dropEffect, 'copy');
+    assert.ok(doc.getElementById('gmIntake').classList.contains('over'));
+  });
+  doc.getElementById('gmIntake').dispatchEvent(dragEv('drop'));
+  for (let i = 0; i < 60 && !asked.some((a) => a.props.includes('reason')); i++) await settle(50);
+  t('놓으면 앞 탭(Outlook)의 페이지 세계에서 그 첨부 하나만 받고, 원본 그대로 첨부 목록에 넣고 글자를 뽑아 읽는다', () => {
+    assert.deepEqual(ran.map((r) => [r.tab, r.world, r.func, r.args[0].map((a) => a.name)]), [[21, 'MAIN', 'mailFetch', ['[진도점검] 발표자료 양식.docx']]]);
+    const read = asked.find((a) => a.props.includes('parts'));
+    assert.ok(read, `읽기를 부르지 않았다 — ${doc.getElementById('gmStatus').textContent}`);
+    assert.match(read.input, /\[첨부 파일 글자 — \[진도점검\] 발표자료 양식\.docx\]\\n진도점검 회의 발표자료 양식\\n교육명: 전력변환 설계 실무/);
+    assert.match(doc.getElementById('gmSource').textContent, /\[진도점검\] 발표자료 양식\.docx/);
+    assert.match(doc.getElementById('gmSource').textContent, /첨부 · \[진도점검\] 발표자료 양식/);
+    assert.equal(doc.querySelector('#gongmun [data-key="course"]').value, '전력변환 설계 실무');
+  });
+  globalThis.File = keepFile;
+}
+
 console.log('근태 탭');
 {
   const { wired, window } = await boot({ mode: 'room' });
   const doc = window.document;
   t('근태가 탭 가운데 맨 앞에 있고 공문·R&D 가 그 옆이다', () => {
     const tabs = [...doc.querySelectorAll('nav.tabs .tab')].map((b) => b.textContent);
-    assert.deepEqual(tabs, ['근태', '공문', 'R&D', '회의실', '차량', '현황']);
+    assert.deepEqual(tabs, ['근태', '공문', 'R&D', '메일', '회의실', '차량', '현황']);
   });
   t('근태 탭 클릭', () => assert.ok(wired.get('tabAttend')?.has('click')));
   t('회의실 탭에서는 근태 화면이 숨어 있다', () => {
@@ -3824,6 +4003,43 @@ console.log('공문 탭 — 직급을 읽기 전에 저장한 외부강의등 �
     assert.equal(doc.querySelector('#gongmun [data-key="rank"]').value, '책임연구원');
     assert.equal(doc.querySelector('#gongmun [data-key="yearTotal"]').value, '300,000');
     assert.equal(store.gongmunHist.reports[B.id].rank, '책임연구원');
+  });
+  await settle(500);
+}
+
+console.log('공문 탭 — 전자결재가 0건을 돌려주면(세션이 사용자를 잃음) 읽어 둔 이력을 지우지 않는다(2026-10-15)');
+{
+  const { listPage } = await import('./fixtures/gmlist-fixture.mjs');
+  const { blankDraft } = await import('../src/gongmun.js');
+  const Y = String(new Date().getFullYear());
+  const B = { id: `HER-${Y}-000266`, form: 'KR_Outside_Lecture_Report', formName: '외부강의등 신고서', title: '외부강의등 신고서', name: '김거화', dept: '수소전기추진연구팀', date: `${Y}-01-02`, status: '발송', flow: '7' };
+  let posts = 0;
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    if (/\/RealEANet\/AppBoard\/DocList(Finished|Requested|Rejected|Temp)\.aspx/.test(u)) {
+      if (init.method === 'POST') posts++;
+      const html = listPage({ rows: [], count: 0 });
+      return { ok: true, status: 200, type: 'basic', url: u, headers: { get: () => 'text/html; charset=utf-8' }, arrayBuffer: async () => new TextEncoder().encode(html).buffer };
+    }
+    throw new Error('offline');
+  };
+  const at = Date.now() - 11 * 60 * 1000;   // 10분이 지나 펴면 다시 읽는다
+  const { window, store } = await boot({
+    mode: 'gongmun', gongmunKind: 'outside', myName: '김거화', gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
+    gongmunHist: { at, from: `${Y}-01-01`, to: `${Y}-12-31`, span: 'y0', rows: [B], reports: { [B.id]: { rank: '책임연구원', contactTel: '', org: '더브릿지전략컨설팅', fee: 200000, yearTotal: 200000, from: `${Y}-01-02` } }, notes: [] },
+    gongmunDraft: { outside: { draft: { ...blankDraft('outside'), from: `${Y}-11-05`, fee: 100000 }, source: { label: '직접 입력' }, notes: [], touched: [] } },
+  }, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  doc.getElementById('gmHistRefresh').click();
+  for (let i = 0; i < 60 && posts < 4; i++) await settle(50);
+  await settle(500);
+  t('같은 기간에 읽어 둔 문서가 있는데 0건이 오면 읽어 둔 것을 두고 세션이 풀렸을 수 있다고 말한다 — 당해 연도 누적도 지난 값으로 남는다', () => {
+    assert.equal(posts, 4, '네 함을 다시 읽었다');
+    assert.deepEqual(store.gongmunHist.rows.map((r) => r.id), [B.id]);
+    assert.equal(store.gongmunHist.at, at, '읽은 때를 새로 적지 않아 다음에 다시 읽는다');
+    assert.match(doc.getElementById('gmHistNote').textContent, /전자결재 세션이 풀렸을 수 있습니다/);
+    assert.equal(doc.querySelector('#gongmun [data-key="yearTotal"]').value, '300,000', '지금까지 200,000 + 이번 100,000');
   });
   await settle(500);
 }

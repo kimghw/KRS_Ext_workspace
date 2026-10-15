@@ -20,6 +20,9 @@ KRS WORKSPACE 의 R&D 탭이 쓰려고 **그대로 옮겨 온 것**이다(2026-1
 | `plussync.js` | `background.js` 562~708행 + `onMessage` 의 `plan*`·`plus*` 갈래 (+ `settings.js` 의 `plus` 기본값) | 확장 Plus 배선 | `planSync`(한 번에 하나·1분 안 건너뜀·RERP 섹션·책임자만 생성)·`queuePlanSync`(4초 모음)·`plusProbe`·`plusNotebooks`·`planExport`(링크+ID 복사)·`planBind`(동료 링크 묶기)·`plusResolveSection`·`send`(메시지 switch) |
 | `plan.css` | `lib/panel.css` | 과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·원노트 아이콘 규칙만 | 클래스 이름 `krext-*` 그대로. 어두운 화면 덮어쓰기는 `sidepanel.css` 의 `.rnd .rd-erp` 절 |
 | `test/rerp.test.mjs` | `tests/plan-sync.test.js` | ESM 으로 | plansync·onenote·mcp 의 순수 함수와 `run`(가짜 OneNote) 그대로 + `erp.js`(흉내 fetch)·`plussync.js`(가짜 MCP 서버) |
+| `research.js` | `lib/research.js` | 전부 (2026-10-14) | 연구개발계획서 기록: `KR_<과제>.yaml` 스냅샷 → 그 차년도 기록(`readSnapshot` — 개발목표·개발내용·성능목표·결과물·일정·연구활동비 세부사용계획·비목 예산·참여연구자, 원), 판 차례(`put`), 글·절(`textOf`·`sections`), `researchPlans` 저장 |
+| `researchsync.js` | `lib/research-sync.js` | 전부 (2026-10-14) | 연구내용 원노트 공유: 「[연구내용] 과제명」 페이지 블록 직렬화·해석(`serialize`·`parse`), 올리기(`publish` — R&D 탭의 연구내용 올리기), 받기(`pull` — rerp), 링크 글(`linkText`) |
+| `test/rerp-research.test.mjs` | `tests/research.test.js` | ESM 으로 | 위 둘의 검사 그대로(가짜 OneNote) — `help-server/classify.js` 검사는 뺌(이 저장소에 없음) |
 
 옮기지 않은 것: rerp 의 패널 틀·카드미청구 보기·참여율·급여·미승인·청구서 입력 도우미·청구 준비·RCMS·Help Chat·콘텐츠 스크립트·팝업·옵션 페이지.
 
@@ -33,6 +36,7 @@ KRS WORKSPACE 의 R&D 탭이 쓰려고 **그대로 옮겨 온 것**이다(2026-1
 | `erp.js` | `KRX_SETTINGS.load()` 대신 `DEFAULTS`(rerp 의 `adv`·제외 비목·조회 기간 기본값) + `settingsOf(over)` · `withPending()` 추가 | 설정 페이지가 없다 |
 | `plussync.js` | 함수 묶음 → `createPlusSync(deps)`. `KRX_SETTINGS.load().plus` → `deps.settings()`, 과제명·내 과제·책임 과제·내 이름(패널 캐시·`projectList`·`rndUser`·참여인력) → `deps.context()`, 오프스크린 클립보드 → `deps.copyText`, `KRX_MCP.open(url, { … fetch: deps.fetch })` | 사이드패널에는 설정 페이지·캐시·오프스크린 문서가 없다. 저장 키(`plusSection`·`plusPlanPages`·`planSyncState`)는 그대로 |
 | `planui.js` | `deepLink`·`projectLink` 를 같이 옮김(원본 190·217행). WORKSPACE 에는 `#krext=` 를 읽는 `rnd-hook.js` 가 없어 링크는 rERP 메인만 연다 | 표 안의 "자금현황에서 확인" 링크 |
+| `researchsync.js` | 머리에 `import KRX_RESEARCH from './research.js'; const g = { KRX_RESEARCH };` shim (원본은 전역 `g.KRX_RESEARCH`) | `serialize` 가 `sections`·`infoOf` 를 쓴다 |
 
 ## 상호운용 규약 — 바꾸지 않는다
 
@@ -42,6 +46,7 @@ KRS WORKSPACE 의 R&D 탭이 쓰려고 **그대로 옮겨 온 것**이다(2026-1
 | 페이지 | 섹션 이름 기본 `RERP`(대소문자 무시, 없으면 고른 노트북에 만듦) · 과제마다 한 장 `[예상 비용] {과제번호} {과제명}` · 과제번호로 찾는다 · **과제 책임자만 만든다** |
 | 블록 | `<table data-id="krx-plan">` 하나 — 제목 줄 · 머리글 · 줄 · 기계용 칸 `krxplan1:` + base64 UTF-8 JSON `{ v:1, at, by, items[], del{} }` · 있던 표는 `include_ids` 로 읽은 생성 id 로 통째로 replace |
 | 병합 | id 별 ts 큰 쪽(같으면 로컬) · 묘비가 항목 ts 이상이면 삭제, 항목이 더 새로우면 묘비 폐기 · 90일 지난 묘비 버림 |
+| 연구내용 (2026-10-14) | 기록 `chrome.storage.local.researchPlans = { [과제명 키#차년도]: 기록 }`(같은 판 이상만 덮음) · 페이지 과제마다 한 장 `[연구내용] {과제명}`(올리는 쪽 = WORKSPACE, 섹션은 RERP) · 블록 `<table data-id="krx-research">` — 차년도마다 절 줄 · 기계용 칸 `krxres1:` + base64 UTF-8 JSON `{ v:1, at, by, name, code, recs[] }` · 받는 쪽(rerp)은 링크(웹 링크 + `[연구내용 페이지 ID] 1-…`)로 찾아 `researchPages` 에 기억하고 다시 받는다. 원노트에는 WORKSPACE 만 쓴다 |
 | 집행비율 | 비목 `승인액÷예산액`(둘 다 양수일 때, 소수 2자리 절사) · 과제 `(승인액 + 미청구 + 승인전)÷예산액` · 잔액 `BAL_AMT − 미청구`(승인전은 이미 차감) · 제외 비목 인건비·연구수당·간접비 |
 
 그래서 **eClass 홈의 rerp 패널에서 적은 예상 비용이 WORKSPACE 의 R&D 탭에 그대로 오고, 거꾸로도 온다**(같은 PC 면 저장소까지 같고, 다른 PC 면 원노트 페이지에서 만난다).

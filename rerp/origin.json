@@ -87,6 +87,30 @@
       "how": "ESM 으로 옮기고 erp.js·plussync.js 검사를 보탬",
       "sha1": "e9794f23acddec48a1e14569ffb313f52904ae2c",
       "bytes": 23214
+    },
+    {
+      "from": "lib/research.js",
+      "to": "rerp/research.js",
+      "how": "그대로 (IIFE → export)",
+      "sha1": "f622c403c5f568f926789fd27ba4644f252aedea",
+      "bytes": 18861,
+      "portedAt": "2026-10-14"
+    },
+    {
+      "from": "lib/research-sync.js",
+      "to": "rerp/researchsync.js",
+      "how": "그대로 (IIFE → export, g.KRX_RESEARCH 는 shim)",
+      "sha1": "97244fdbe7727d956e35d72f6bbe5db079f1a5e0",
+      "bytes": 9432,
+      "portedAt": "2026-10-14"
+    },
+    {
+      "from": "tests/research.test.js",
+      "to": "test/rerp-research.test.mjs",
+      "how": "ESM 으로 (help-server/classify.js 검사는 뺌)",
+      "sha1": "bf8d34d56d70d0a82aea008cb17aee5035f2e58c",
+      "bytes": 19578,
+      "portedAt": "2026-10-14"
     }
   ]
 }

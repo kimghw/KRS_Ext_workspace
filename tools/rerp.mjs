@@ -30,6 +30,10 @@ export const MAP = [
   { from: 'background.js', to: 'rerp/plussync.js', how: '확장 Plus 배선(planSync·queuePlanSync·plusProbe·plusNotebooks·planExport·planBind·plusResolveSection·onMessage 갈래) — 설정·과제 문맥·클립보드는 deps' },
   { from: 'lib/panel.css', to: 'rerp/plan.css', how: '과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·원노트 아이콘 규칙만' },
   { from: 'tests/plan-sync.test.js', to: 'test/rerp.test.mjs', how: 'ESM 으로 옮기고 erp.js·plussync.js 검사를 보탬' },
+  // 연구내용 원노트 공유(2026-10-14) — 연구개발계획서 기록과 「[연구내용] 과제명」 페이지(R&D 탭의 연구내용 올리기 → rerp 가 링크로 받음)
+  { from: 'lib/research.js', to: 'rerp/research.js', how: '그대로 (IIFE → export)' },
+  { from: 'lib/research-sync.js', to: 'rerp/researchsync.js', how: '그대로 (IIFE → export, g.KRX_RESEARCH 는 shim)' },
+  { from: 'tests/research.test.js', to: 'test/rerp-research.test.mjs', how: 'ESM 으로 (help-server/classify.js 검사는 뺌)' },
 ];
 
 const sha1 = (file) => crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');

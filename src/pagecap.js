@@ -5,6 +5,18 @@
 //     (captureTabParts → captureParts → capturePart). eClass 포털처럼 본문이 틀(iframe) 안에서 따로 내려가는 화면은 틀 안을 내려가며 찍는다.
 // 여러 탭을 차례로 앞에 두고 찍는 길(captureMany)은 보고 있는 탭 하나를 찍을 때도 그대로 쓴다(탭 목록에서 고르던 때의 것 — 2026-10-08 앞서).
 //
+// 2026-10-15 사용자 지정: "첨부파일을 열면 내용이 팝업으로 뜨는데 그 부분도 일부 또는 전체 캡쳐할 수 있나?" — 세 갈래를 더했다.
+//   · 페이지 위에 뜬 큰 팝업(새 Outlook 의 첨부 미리보기 대화상자 같은 것 — role=dialog·aria-modal·<dialog open>·modal 이름, 창의 35% 이상)이
+//     있으면 "전체"는 뒤의 페이지가 아니라 그 팝업 안을 찍는다(captureWhole → modalProbe → capturePart). 팝업이 틀(iframe)이면 틀 안을,
+//     아니면 팝업의 스크롤 칸을 내려가며 찍는다.
+//   · 틀 문서가 내려가지 않고 안쪽 칸이 내려가는 미리보기(Word·PDF 보기)는 그 칸(scrollerInfo — 틀 안의 가장 큰 스크롤 칸)을 내린다.
+//     PowerPoint 읽기 보기처럼 한 장씩 넘기는 화면은 넘기지 않고 보이는 장만 찍고 paged 로 알린다.
+//   · 첨부를 따로 띄운 팝업 창(window.open — chrome 창 type 'popup')을 방금 보다가 패널을 눌렀으면 그 창을 찍는다(watchWindows → frontTab).
+// 같은 날 사용자 지정: "전체 하면 메일이랑 첨부를 같이 가져오고.. 첨부는 파일 자체로 관리하지만 ocr 해서 이것도 필요한 내용으로 넣는 거지.
+// 부분으로 첨부파일 클릭하면 첨부파일만 가져오고." — 메일인지·첨부는 무엇인지는 src/mailgrab.js 가 보고(webpick.js 가 잇는다), 여기는
+// 그 자리를 낸다: captureFront 의 plain(팝업이 없을 때 먼저 불러 보는 길), startPick 의 before(막을 씌우기 전에 첨부 칸에 표시),
+// pagePick 의 첨부 칸 고르기(data-krs-attach → attach), 표시 떼기(unmarkPage·clearMarks).
+//
 // chrome.tabs.captureVisibleTab 은 보이는 만큼만 찍는다. 그래서 탭 안에서 한 화면씩 내려가며 찍고(초당 두 장 제한 — SHOT_GAP_MS), 찍은 것을
 // 한 장으로 이어 A4 비율(가로 : 세로 = 210 : 297)로 자른다 — 그 장들이 공문 읽기(src/llm.js 의 gongmunSmart)에 가고, 그대로 첨부 PDF
 // (src/pdf.js 의 buildPdf — 한 장에 한 쪽)가 된다. 같이 그 화면의 글자(innerText)도 가져온다 — 화면의 글자는 OCR 보다 정확하다.
@@ -12,8 +24,8 @@
 //
 // 여기는 두 층이다. capturePage(탭 하나)·captureMany(고른 탭들)·capturePart(고른 부분 하나)·captureParts 는 찍는 차례(탭에서 돌릴 함수·
 // 찍기·잇기·탭 바꾸기를 밖에서 받는다 — 테스트가 갈아 끼운다)이고, captureFront·startPick·captureTabParts·captureTabs 가 chrome API 를
-// 그 자리에 꽂는다. pageInfo·pageStep·pageDone·pagePick·pickCancel·frameProbe·partInfo·partStep·partDone 은 chrome.scripting 이
-// **글자 그대로** 탭에 옮겨 돌리는 함수다 — 바깥 변수를 쓰면 안 된다.
+// 그 자리에 꽂는다. pageInfo·pageStep·pageDone·pagePick·pickCancel·frameProbe·frameKids·partInfo·partStep·partDone·modalProbe·
+// scrollerInfo·scrollerStep·scrollerDone·unmarkPage 는 chrome.scripting 이 **글자 그대로** 탭에 옮겨 돌리는 함수다 — 바깥 변수를 쓰면 안 된다.
 
 /** 한 번에 찍는 화면 수의 한도 — 끝없이 이어지는 화면(무한 스크롤)을 끝까지 쫓지 않는다. */
 export const MAX_SHOTS = 30;
@@ -29,6 +41,8 @@ export const TEXT_MAX = 18000;
 const TEXT_HEAD = 300;
 /** 앞에 둔 탭이 다 읽힐 때까지 기다리는 한도 — 잠든 탭(discarded)은 앞에 두면 다시 읽는다. */
 const READY_MS = 15000;
+/** 팝업 창을 "방금 보던 창"으로 치는 한도 — 그 창에서 패널로 넘어온 지 이만큼 안이면 그 창을 찍는다(2026-10-15). */
+export const POPUP_RECENT_MS = 60000;
 
 /* ------------------------------------------------------------ 탭 안에서 도는 함수 */
 
@@ -90,9 +104,14 @@ export function pageDone(y) {
  * 다시 누르면 뺀다 — 여러 개 고를 수 있다. ↑ 는 한 겹 큰 칸, ↓ 는 다시 작은 칸이다. 막이 위에 있어 틀 안을 눌러도 틀 자체가 골라진다.
  * 위쪽 띠의 캡처(Enter)를 누르면 고른 차례대로 요소에 data-krs-cap="번호" 를 달고 그 목록을, 취소(Esc)면 null 을 준다 —
  * executeScript 는 이 약속이 풀릴 때까지 기다린다. 막은 shadow DOM 이라 페이지의 CSS 와 섞이지 않는다.
- * @returns {Promise<{n: number, tag: string, title: string, frame: {href: string|null, src: string, name: string, w: number, h: number}|null}[]|null>}
+ * 2026-10-15 사용자 지정: "부분으로 첨부파일 클릭하면 첨부파일만 가져오고" — 메일 읽기(src/mailgrab.js 의 probeTab)가 첨부 칸에 단
+ * data-krs-attach="열쇠" 칸은 작아도 고를 수 있고(그 안을 가리켜도 그 칸), 띠의 이름은 "첨부 파일 · 이름"(names — 열쇠별 이름)이다.
+ * 고른 첨부 칸은 data-krs-cap 을 달지 않고 attach(열쇠)로 준다 — 찍지 않고 파일 자체를 가져온다.
+ * @param {Object<string, string>|null} [names] 첨부 열쇠별 파일 이름
+ * @returns {Promise<{n: number, tag: string, title: string, frame: {href: string|null, src: string, name: string, w: number, h: number}|null,
+ *   attach?: string}[]|null>}
  */
-export function pagePick() {
+export function pagePick(names = null) {
   window.__krsPick?.cancel();
   return new Promise((resolve) => {
     const MIN_W = 120;
@@ -100,6 +119,11 @@ export function pagePick() {
     const FRAME = /^(IFRAME|FRAME|EMBED|OBJECT|CANVAS|VIDEO|IMG)$/i;
     const BLOCK = /^(TABLE|SECTION|ARTICLE|MAIN|ASIDE|FORM|FIELDSET|FIGURE|DIALOG)$/;
     const NAMED = /(^|[\s_-])(card|panel|box|portlet|widget|module|frame|section|article|content|container|board|modal|dialog)/i;
+    const ATTACH = 'data-krs-attach';
+    const isAttach = (el) => el instanceof Element && el.hasAttribute(ATTACH);
+    /** 첨부 칸의 파일 이름 — 메일 읽기가 준 이름, 없으면 칸의 title·aria-label·첫 줄. */
+    const attachName = (el) => String((names && names[el.getAttribute(ATTACH)]) || el.getAttribute('title') || el.getAttribute('aria-label')
+      || String(el.innerText ?? el.textContent ?? '').trim().split('\n')[0] || '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const host = document.createElement('div');
     host.setAttribute('data-krs-pick', '');
     host.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483647;';
@@ -146,6 +170,7 @@ export function pagePick() {
     /** 프레임으로 볼 것 — 틀·그림, 큰 덩어리 태그, 스크롤 상자, 테두리(세 면 이상)·그림자·둘레와 다른 바탕색, 카드·패널 같은 이름. */
     function isFrame(el) {
       if (!(el instanceof Element) || el === document.documentElement || el === document.body) return false;
+      if (isAttach(el)) return true;   // 첨부 파일 칸 — 작아도 고른다
       const r = el.getBoundingClientRect();
       if (r.width < MIN_W || r.height < MIN_H) return false;
       if (FRAME.test(el.tagName)) return true;
@@ -165,11 +190,13 @@ export function pagePick() {
       const cls = typeof el.className === 'string' ? el.className : el.getAttribute('class') || '';
       return NAMED.test(cls) || NAMED.test(el.id || '');
     }
-    /** 그 자리의 프레임들 — 안쪽부터 바깥으로. 프레임이 없으면 넉넉한 크기의 가장 안쪽 요소 하나. */
+    /** 그 자리의 프레임들 — 안쪽부터 바깥으로(첨부 칸 안이면 그 칸이 맨 앞 — 칸 안의 그림 따위는 빼고). 프레임이 없으면 넉넉한 크기의 가장 안쪽 요소 하나. */
     function chainAt(x, y) {
       const hit = document.elementsFromPoint(x, y).find((e) => e !== host);
-      const out = [];
+      let out = [];
       for (let e = hit; e && e !== document.documentElement; e = e.parentElement) if (isFrame(e)) out.push(e);
+      const card = hit instanceof Element ? hit.closest(`[${ATTACH}]`) : null;
+      if (card) out = [card, ...out.filter((e) => e !== card && !card.contains(e))];
       for (let e = hit; !out.length && e && e !== document.documentElement && e !== document.body; e = e.parentElement) {
         const r = e.getBoundingClientRect();
         if (r.width >= MIN_W && r.height >= MIN_H) out.push(e);
@@ -188,7 +215,8 @@ export function pagePick() {
       if (!el) return;
       const r = place(hover, el);
       tag.classList.toggle('in', r.top < 26);
-      tag.textContent = `${chosen.includes(el) ? '누르면 빼기' : '누르면 고르기'} · ${kindOf(el)} ${Math.round(r.width)}×${Math.round(r.height)}`
+      const what = isAttach(el) ? `첨부 파일 · ${attachName(el) || '이름 없음'}` : `${kindOf(el)} ${Math.round(r.width)}×${Math.round(r.height)}`;
+      tag.textContent = `${chosen.includes(el) ? '누르면 빼기' : '누르면 고르기'} · ${what}`
         + `${level < chain.length - 1 ? ' · ↑ 더 큰 칸' : ''}${level > 0 ? ' · ↓ 작은 칸' : ''}`;
     }
     function paintMarks() {
@@ -259,8 +287,11 @@ export function pagePick() {
       host.remove();
       delete window.__krsPick;
       if (!list?.length) return resolve(null);
-      for (const old of document.querySelectorAll('[data-krs-cap]')) old.removeAttribute('data-krs-cap');
+      for (const old of document.querySelectorAll('[data-krs-cap]')) {
+        if (old.getAttribute('data-krs-cap') !== 'mail') old.removeAttribute('data-krs-cap');   // 메일 본문 표시는 메일 읽기의 것
+      }
       return resolve(list.map((el, i) => {
+        if (isAttach(el)) return { n: i + 1, tag: el.tagName.toLowerCase(), title: attachName(el), frame: null, attach: el.getAttribute(ATTACH) };
         el.setAttribute('data-krs-cap', String(i + 1));
         const isFrameEl = /^(IFRAME|FRAME)$/.test(el.tagName);
         let href = null;
@@ -295,9 +326,40 @@ export function pickCancel() {
   return true;
 }
 
-/** 틀마다 주소·이름·크기 — 고른 틀(iframe)이 어느 frameId 인지 맞춘다(matchFrame). child 는 맨 위 문서 바로 아래의 틀이다. */
+/**
+ * 틀마다 주소·이름·크기 — 고른 틀(iframe)이 어느 frameId 인지 맞춘다(matchFrame·frameTarget). child 는 맨 위 문서 바로 아래의 틀이다.
+ * depth 는 맨 위 문서에서 몇 겹 아래인지(window.parent 를 거슬러 센다 — 다른 사이트의 틀이어도 parent·top 은 보인다),
+ * scrolls 는 그 틀 안이 내려가는지(문서가 내려가거나, 틀 창의 30% 이상인 스크롤 칸이 있거나 — 2026-10-15: 틀 안의 틀이 내려가는 미리보기).
+ */
 export function frameProbe() {
-  return { href: location.href, name: window.name, w: window.innerWidth, h: window.innerHeight, child: window !== window.top && window.parent === window.top };
+  let depth = 0;
+  try {
+    for (let w = window; w !== w.top && depth < 20; w = w.parent) depth++;
+  } catch {
+    depth = -1;
+  }
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const se = document.scrollingElement || document.documentElement;
+  let scrolls = !!se && se.scrollHeight > se.clientHeight + 4;
+  if (!scrolls && document.body) {
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el.clientHeight < 40 || el.scrollHeight <= el.clientHeight + 4 || el.clientWidth * el.clientHeight < vw * vh * 0.3) continue;
+      if (/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) {
+        scrolls = true;
+        break;
+      }
+    }
+  }
+  return { href: location.href, name: window.name, w: vw, h: vh, child: window !== window.top && window.parent === window.top, depth, scrolls };
+}
+
+/** 이 문서 안의 틀(iframe·frame)들의 안쪽 자리(창 기준 x·y, 안쪽 크기 w·h) — 틀 안의 틀을 찍을 때 그 틀이 바깥 틀의 어디에 있는지 맞춘다. */
+export function frameKids() {
+  return [...document.querySelectorAll('iframe, frame')].map((f) => {
+    const r = f.getBoundingClientRect();
+    return { x: r.left + f.clientLeft, y: r.top + f.clientTop, w: f.clientWidth, h: f.clientHeight };
+  });
 }
 
 /**
@@ -368,13 +430,23 @@ export function partStep(n, rel, inner) {
   }
   if (rel != null) {
     if (sc) save(sc);
-    if (!keep.placed) {
-      keep.placed = true;
-      el.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' });
+    // 떠 있는 칸(position: fixed 안 — 대화상자·첨부 미리보기, 2026-10-15)은 창을 내려도 움직이지 않는다 — 창은 그대로 둔다.
+    let pinned = false;
+    for (let p = sc ? null : el; p && p !== html; p = p.parentElement) {
+      if (getComputedStyle(p).position === 'fixed') {
+        pinned = true;
+        break;
+      }
     }
-    const d = el.getBoundingClientRect().top - view().top + rel;
-    if (sc) sc.scrollTop += d;
-    else window.scrollBy(0, d);
+    if (!pinned) {
+      if (!keep.placed) {
+        keep.placed = true;
+        el.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' });
+      }
+      const d = el.getBoundingClientRect().top - view().top + rel;
+      if (sc) sc.scrollTop += d;
+      else window.scrollBy(0, d);
+    }
   }
   if (inner != null) {
     save(el);
@@ -398,6 +470,256 @@ export function partDone(n) {
     delete window.__krsCap;
   }
   document.querySelector(`[data-krs-cap="${n}"]`)?.removeAttribute('data-krs-cap');
+}
+
+/**
+ * 페이지 위에 뜬 큰 팝업을 찾는다(2026-10-15 사용자 지정: "첨부파일을 열면 내용이 팝업으로 뜨는데 그 부분도 … 캡쳐할 수 있나?").
+ * 후보는 <dialog open>·role=dialog·role=alertdialog·aria-modal=true 와, modal·popup·layer-popup·lightbox 같은 이름의 떠 있는 칸
+ * (자기나 조상이 position: fixed·absolute)이다. 창 전체를 덮는 반투명 겉칸(Bootstrap 의 .modal)이면 그 안의 불투명한 상자를 팝업으로 본다.
+ * 보이고(display·visibility·opacity) 창의 35% 이상을 덮고, 그 자리를 눌렀을 때 맨 위에 있는 것 가운데 가장 위(z-index·나중 것)를 고른다.
+ * 그 팝업이 틀(iframe)로 거의 차 있으면(60% 이상) 그 틀을, 아니면 팝업의 스크롤 칸을, 그것도 없으면 팝업 자체를 찍을 것으로 삼아
+ * data-krs-cap="popup" 을 단다(partInfo·partStep·partDone 이 그대로 쓴다). 팝업이 없으면 null — 아무것도 달지 않는다.
+ * label 은 파일 이름 꼴의 제목이나 문서 보기 틀이 있으면 "첨부 미리보기 창", 아니면 "팝업"이다.
+ * @returns {{n: string, kind: 'frame'|'box'|'plain', label: string, title: string, cover: number,
+ *   frame: {href: string|null, src: string, name: string, w: number, h: number}|null}|null}
+ */
+export function modalProbe() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const VIEW = vw * vh;
+  if (!(VIEW > 0) || !document.body) return null;
+  for (const old of document.querySelectorAll('[data-krs-cap="popup"]')) old.removeAttribute('data-krs-cap');
+  const STRONG = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+  const NAMED = /(^|[\s_-])(modal|popup|pop-?layer|layer-?pop(up)?|lightbox|ui-dialog|dialog)([\s_-]|$)/i;
+  const NOT = /(^|[\s_-])(backdrop|overlay|mask|dim|bg|open|close|btn|button|header|footer|title|body|trigger|toggle|icon)([\s_-]|$)/i;
+  const FRAMES = /^(IFRAME|FRAME)$/;
+  const SOLID = /^(IFRAME|FRAME|IMG|VIDEO|CANVAS|EMBED|OBJECT)$/;
+  const FILE = /[^\s\\/:*?"<>|]+\.(pdf|hwpx?|docx?|xlsx?|pptx?|txt|csv|rtf|odt|ods|odp|jpe?g|png|gif|bmp|tiff?|zip|eml|msg)$/i;
+  const VIEWER = /officeapps|viewer|preview|attach|docview|pdf/i;
+  const clsOf = (el) => (typeof el.className === 'string' ? el.className : el.getAttribute('class') || '');
+  const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    const x = Math.max(r.left, 0);
+    const y = Math.max(r.top, 0);
+    const w = Math.max(0, Math.min(r.left + r.width, vw) - x);
+    const h = Math.max(0, Math.min(r.top + r.height, vh) - y);
+    return { x, y, w, h, cover: (w * h) / VIEW };
+  };
+  const alpha = (c) => {
+    if (!c || c === 'transparent') return 0;
+    const m = String(c).match(/rgba?\(([^)]*)\)/);
+    if (!m) return 1;
+    const p = m[1].split(/[\s,/]+/).filter(Boolean);
+    return p.length > 3 ? parseFloat(p[3]) : 1;
+  };
+  const shown = (el) => {
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') return false;
+    for (let p = el; p && p !== document.documentElement; p = p.parentElement) {
+      const o = parseFloat(getComputedStyle(p).opacity);
+      if (o < 0.05) return false;
+    }
+    return true;
+  };
+  const floating = (el) => {
+    if (el.tagName === 'DIALOG') return true;
+    for (let p = el; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const pos = getComputedStyle(p).position;
+      if (pos === 'fixed' || pos === 'absolute') return true;
+    }
+    return false;
+  };
+  const scrolls = (el) => el.scrollHeight > el.clientHeight + 4 && el.clientHeight >= 40 && /(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY);
+  /** 창을 다 덮는 반투명 겉칸이면 그 안의 불투명한 상자(그림자·틀·그림도) 가운데 가장 큰 것 — 없으면 그 칸 자체. */
+  const surface = (el) => {
+    const b = box(el);
+    if (b.cover < 0.95 || alpha(getComputedStyle(el).backgroundColor) >= 0.9) return [el, b];
+    let best = null;
+    const walk = [...el.children];
+    for (let n = 0; walk.length && n < 800; n++) {
+      const d = walk.shift();
+      const db = box(d);
+      const cs = getComputedStyle(d);
+      if (db.cover < 0.95 && db.cover > 0.01 && (alpha(cs.backgroundColor) >= 0.9 || (cs.boxShadow && cs.boxShadow !== 'none') || SOLID.test(d.tagName))) {
+        if (!best || db.cover > best[1].cover) best = [d, db];
+        continue;   // 상자를 찾으면 그 안은 더 보지 않는다
+      }
+      walk.push(...d.children);
+    }
+    return best || [el, b];
+  };
+  const cands = new Set(document.querySelectorAll(STRONG));
+  for (const el of document.body.querySelectorAll('[class]')) {
+    const c = clsOf(el);
+    if (NAMED.test(c) && !NOT.test(c)) cands.add(el);
+  }
+  // 빈 칸(글자도 그림·틀도 없는 투명한 덮개)은 팝업이 아니다.
+  const filled = (s) => SOLID.test(s.tagName) || !!clean(s.textContent) || !!s.querySelector('iframe, frame, img, video, canvas, embed, object, svg');
+  const found = new Map();
+  for (const el of cands) {
+    if (el.closest('[data-krs-pick]') || !floating(el) || !shown(el)) continue;
+    const [s, b] = surface(el);
+    if (b.cover >= 0.35 && shown(s) && filled(s)) found.set(s, b);
+  }
+  // 겹친 것은 바깥 것 하나(modal-content 안의 modal-body 를 따로 세지 않는다).
+  const list = [...found.keys()].filter((s) => ![...found.keys()].some((o) => o !== s && o.contains(s)));
+  const zOf = (el) => {
+    let modal = false;
+    try {
+      modal = el.matches(':modal') || !!el.closest('dialog:modal');
+    } catch {
+      modal = false;
+    }
+    if (modal) return Infinity;
+    let z = 0;
+    for (let p = el; p && p !== document.documentElement; p = p.parentElement) {
+      const v = parseInt(getComputedStyle(p).zIndex, 10);
+      if (Number.isFinite(v)) z = Math.max(z, v);
+    }
+    return z;
+  };
+  /** 그 자리를 눌렀을 때 맨 위에 있는 횟수 — 가운데와 네 귀 안쪽(25%·75%) 다섯 곳. 다른 팝업에 가려진 것은 0 이다. */
+  const hits = (s) => {
+    if (typeof document.elementFromPoint !== 'function') return 1;
+    const b = found.get(s);
+    let n = 0;
+    for (const [fx, fy] of [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
+      const hit = document.elementFromPoint(b.x + b.w * fx, b.y + b.h * fy);
+      if (hit && (hit === s || s.contains(hit))) n++;
+    }
+    return n;
+  };
+  const ranked = list.map((s) => ({ s, n: hits(s), z: zOf(s) })).filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n || b.z - a.z || (a.s.compareDocumentPosition(b.s) & 4 ? 1 : -1));
+  const top = ranked[0]?.s;
+  if (!top) return null;
+  const sb = found.get(top);
+  // 찍을 것 — 팝업을 거의 채운 틀, 팝업의 스크롤 칸(자기 또는 팝업의 절반 이상인 안쪽 칸), 아니면 팝업 자체.
+  let target = top;
+  let kind = 'plain';
+  const area = (el) => { const b = box(el); return b.w * b.h; };
+  const whole = Math.max(1, sb.w * sb.h);
+  const frames = FRAMES.test(top.tagName) ? [top] : [...top.querySelectorAll('iframe, frame')].filter(shown);
+  const big = frames.map((f) => [f, area(f)]).sort((a, b) => b[1] - a[1])[0];
+  if (big && big[1] >= whole * 0.6) {
+    target = big[0];
+    kind = 'frame';
+  } else if (scrolls(top)) {
+    kind = 'box';
+  } else {
+    const inner = [...top.querySelectorAll('*')].filter((el) => scrolls(el) && shown(el)).map((el) => [el, area(el)]).sort((a, b) => b[1] - a[1])[0];
+    if (inner && inner[1] >= whole * 0.5) {
+      target = inner[0];
+      kind = 'box';
+    }
+  }
+  // 제목 — 파일 이름 꼴(첨부 미리보기의 띠)이 먼저, 그다음 aria 이름·머리글·첫 줄.
+  const lines = String(top.innerText ?? top.textContent ?? '').split('\n').map(clean).filter(Boolean);
+  let file = '';
+  for (const e of [top, ...top.querySelectorAll('[title]')]) {
+    const v = clean(e.getAttribute('title'));
+    if (v && v.length <= 200 && FILE.test(v)) {
+      file = v;
+      break;
+    }
+  }
+  if (!file) file = lines.find((l) => l.length <= 200 && FILE.test(l)) || '';
+  const named = (top.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
+    .map((id) => document.getElementById(id)).filter(Boolean).map((e) => clean(e.innerText ?? e.textContent)).join(' ');
+  const head = top.querySelector('h1, h2, h3, h4, [role="heading"]');
+  const title = (file || named || clean(top.getAttribute('aria-label')) || clean(head && (head.innerText ?? head.textContent)) || lines[0] || '').slice(0, 60);
+  let frame = null;
+  if (kind === 'frame') {
+    let href = null;
+    try {
+      href = target.contentWindow.location.href;
+    } catch {
+      href = null;   // 다른 사이트의 틀 — 주소를 못 본다
+    }
+    frame = { href, src: target.getAttribute('src') || '', name: target.name || '', w: target.clientWidth, h: target.clientHeight };
+  }
+  const viewer = !!file || (frame && VIEWER.test(`${frame.src} ${frame.href || ''}`));
+  target.setAttribute('data-krs-cap', 'popup');
+  return { n: 'popup', kind, label: viewer ? '첨부 미리보기 창' : '팝업', title, cover: Math.round(sb.cover * 100) / 100, frame };
+}
+
+/**
+ * 틀 안이 어떻게 내려가는지(2026-10-15 — 첨부 미리보기 틀). doc 은 문서 자체가 정말 내려가면 그 높이(scrollingElement — body 만 큰 것은
+ * 내려가지 않는다), box 는 문서가 내려가지 않을 때 보이는 가장 큰 스크롤 칸(틀 창의 30% 이상 — Word·PDF 보기의 본문 칸)의 틀 창 안 자리와
+ * 높이, paged 는 둘 다 없고 슬라이드처럼 한 장씩 넘기는 화면(PowerPoint 읽기 보기)인지다. 찾은 칸과 그 자리는 window.__krsScroll 에
+ * 두었다가 scrollerDone 이 되돌린다.
+ * @returns {{doc: {scrollHeight: number, clientHeight: number}|null, box: {x: number, y: number, w: number, h: number, scrollTop: number,
+ *   scrollHeight: number, clientHeight: number}|null, paged: boolean}}
+ */
+export function scrollerInfo() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const se = document.scrollingElement || document.documentElement;
+  if (se && se.scrollHeight > se.clientHeight + 4) return { doc: { scrollHeight: se.scrollHeight, clientHeight: se.clientHeight }, box: null, paged: false };
+  let best = null;
+  for (const el of document.body ? document.body.querySelectorAll('*') : []) {
+    if (el.clientHeight < 40 || el.scrollHeight <= el.clientHeight + 4) continue;
+    const cs = getComputedStyle(el);
+    if (!/(auto|scroll|overlay)/.test(cs.overflowY) || cs.visibility === 'hidden') continue;
+    const r = el.getBoundingClientRect();
+    const top = r.top + el.clientTop;
+    const left = r.left + el.clientLeft;
+    const x = Math.max(left, 0);
+    const y = Math.max(top, 0);
+    const w = Math.min(left + el.clientWidth, vw) - x;
+    const h = Math.min(top + el.clientHeight, vh) - y;
+    if (w < 40 || h < 40 || w * h < vw * vh * 0.3) continue;
+    if (!best || w * h > best.w * best.h) best = { el, x, y, w, h };
+  }
+  if (best) {
+    const el = best.el;
+    if (!window.__krsScroll || window.__krsScroll.el !== el) window.__krsScroll = { el, top: el.scrollTop, sb: el.style.scrollBehavior };
+    return { doc: null, box: { x: best.x, y: best.y, w: best.w, h: best.h, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }, paged: false };
+  }
+  const clsOf = (e) => (typeof e.className === 'string' ? e.className : e.getAttribute('class') || '');
+  const SLIDE = /(^|[\s_.-])slide/i;
+  const big = (e) => {
+    const r = e.getBoundingClientRect();
+    return r.width * r.height >= vw * vh * 0.3;
+  };
+  const slides = [...document.querySelectorAll('[aria-roledescription], [id*="lide" i], [class*="lide" i]')]
+    .some((e) => (/slide|슬라이드/i.test(e.getAttribute('aria-roledescription') || '') || SLIDE.test(e.id || '') || SLIDE.test(clsOf(e))) && big(e));
+  const flip = [...document.querySelectorAll('[aria-label], [title]')]
+    .some((e) => /(다음|이전)\s*슬라이드|(next|previous|prev)\s*slide/i.test(`${e.getAttribute('aria-label') || ''} ${e.getAttribute('title') || ''}`));
+  return { doc: null, box: null, paged: /PowerPoint(Frame|View)|[?&]PowerPointView=/i.test(location.href) || slides || flip };
+}
+
+/** 찾은 스크롤 칸(scrollerInfo)을 y 로 내린다 — 실제로 선 자리를 돌려준다(끝에서는 덜 내려간다). 칸이 없으면 null. */
+export function scrollerStep(y) {
+  const keep = window.__krsScroll;
+  if (!keep) return null;
+  keep.el.style.scrollBehavior = 'auto';
+  keep.el.scrollTop = y;
+  return keep.el.scrollTop;
+}
+
+/** 스크롤 칸을 다 찍었다 — 칸 안 자리와 스크롤 방식을 되돌린다. */
+export function scrollerDone() {
+  const keep = window.__krsScroll;
+  if (!keep) return;
+  keep.el.scrollTop = keep.top;
+  keep.el.style.scrollBehavior = keep.sb;
+  delete window.__krsScroll;
+}
+
+/** 메일 읽기가 단 표시를 뗀다 — 첨부 칸(data-krs-attach)과 메일 본문(data-krs-cap="mail"), 남은 팝업 표시(popup)도(2026-10-15). 뗀 수. */
+export function unmarkPage() {
+  let n = 0;
+  for (const el of document.querySelectorAll('[data-krs-attach]')) {
+    el.removeAttribute('data-krs-attach');
+    n++;
+  }
+  for (const el of document.querySelectorAll('[data-krs-cap="mail"], [data-krs-cap="popup"]')) {
+    el.removeAttribute('data-krs-cap');
+    n++;
+  }
+  return n;
 }
 
 /* ------------------------------------------------------------ 순수 셈 */
@@ -586,12 +908,14 @@ export async function capturePage({ tab, exec, shoot, wait = sleep, stitch = sti
  * 고른 탭들을 차례로 앞에 두고(activate) 통째로 찍는다 — captureVisibleTab 은 앞에 있는 탭만 찍는다. 다 찍으면(실패해도) 처음 보던 탭을
  * 다시 앞에 둔다(back). 한 탭이 실패해도 나머지는 찍고 까닭을 failed 에 남긴다 — 하나도 못 찍으면 던진다.
  * 장 번호는 사이트마다 이어 간다(같은 사이트의 두 탭이 같은 이름을 내지 않게). 화면 글자의 한도는 탭 수로 나눈다.
+ * 탭마다 큰 팝업이 떠 있으면 그 팝업 안을 찍는다(captureWhole — 2026-10-15). frameIn 은 그 탭의 틀을 맞추는 길(frameFinder)이다(없으면
+ * 팝업의 틀은 보이는 만큼만 찍는다).
  * @param {{tabs: {id: number, url: string, title?: string}[], activate: (tab: object) => Promise<void>, back: () => Promise<void>,
- *   execIn: (tab: object) => Function, shoot: () => Promise<string>, wait?: Function, stitch?: Function, today?: string,
- *   onProgress?: (done: number, total: number, nth: number, of: number) => void}} deps
- * @returns {Promise<{pages: object[], failed: {title: string, why: string}[]}>} pages 는 찍은 탭마다 capturePage 의 결과(고른 차례)
+ *   execIn: (tab: object) => Function, frameIn?: ((tab: object) => Function)|null, shoot: () => Promise<string>, wait?: Function, stitch?: Function,
+ *   today?: string, onProgress?: (done: number, total: number, nth: number, of: number) => void, onTarget?: Function}} deps
+ * @returns {Promise<{pages: object[], failed: {title: string, why: string}[]}>} pages 는 찍은 탭마다 captureWhole(capturePage) 의 결과(고른 차례)
  */
-export async function captureMany({ tabs, activate, back, execIn, shoot, wait = sleep, stitch = stitchTiles, today = '', onProgress = () => {} }) {
+export async function captureMany({ tabs, activate, back, execIn, frameIn = null, shoot, wait = sleep, stitch = stitchTiles, today = '', onProgress = () => {}, onTarget = () => {} }) {
   const list = tabs || [];
   if (!list.length) throw new Error('캡처할 웹페이지를 고르세요.');
   const textMax = list.length > 1 ? Math.floor(TEXT_MAX / list.length) - TEXT_HEAD : TEXT_MAX;
@@ -603,8 +927,8 @@ export async function captureMany({ tabs, activate, back, execIn, shoot, wait = 
       const host = hostOf(tab.url);
       try {
         await activate(tab);
-        const got = await capturePage({
-          tab, exec: execIn(tab), shoot, wait, stitch, today, seq: next[host] || 1, textMax,
+        const got = await captureWhole({
+          tab, exec: execIn(tab), frameOf: frameIn ? frameIn(tab) : null, shoot, wait, stitch, today, seq: next[host] || 1, textMax, onTarget,
           onProgress: (done, total) => onProgress(done, total, i + 1, list.length),
         });
         next[host] = (next[host] || 1) + got.files.length;
@@ -629,20 +953,31 @@ export async function captureMany({ tabs, activate, back, execIn, shoot, wait = 
  *  · 아니면 — 그 부분이 든 스크롤 칸(창, 또는 안쪽 상자)을 내리며 그 부분의 머리부터 끝까지 찍는다(한 화면보다 짧으면 한 번).
  * 그 부분을 품지도 그 안에 있지도 않은 고정 띠는 첫 장부터 숨긴다. 다 찍으면(실패해도) 자리와 숨긴 것을 되돌린다.
  * 글자는 그 부분의 글자다(틀이면 틀 안의 글자 — 다른 사이트의 틀이어도 frame 으로 읽는다).
- * @param {{part: {n: number, title?: string}, exec: Function, frame?: Function|null, shoot: () => Promise<string>, wait?: Function,
+ * 2026-10-15(첨부 미리보기 틀): 틀 문서가 거의 내려가지 않으면 틀 안을 다시 본다(scrollerInfo) — 문서가 정말 내려가면 위와 같이, 안쪽의
+ * 큰 스크롤 칸(Word·PDF 보기의 본문 칸)이 내려가면 그 칸을 내리며 그 칸만 오리고(scrollerStep — 끝에 scrollerDone 이 되돌린다), 둘 다 없고
+ * 슬라이드처럼 한 장씩 넘기는 화면이면 넘기지 않고 보이는 만큼 찍어 paged 로 알린다. frame.at 이 있으면 frame 은 고른 틀 안의 더 깊은
+ * 틀이고 at 은 그 틀이 고른 틀의 안쪽에서 놓인 자리다(frameTarget·frameFinder).
+ * @param {{part: {n: number|string, title?: string}, exec: Function, frame?: Function|null, shoot: () => Promise<string>, wait?: Function,
  *   stitch?: Function, today?: string, seq?: number, textMax?: number, onProgress?: (done: number, total: number) => void}} deps
  *   exec 는 탭의 맨 위 문서에서, frame 은 고른 틀 안에서 함수를 돌린다(틀을 못 맞췄으면 null — 틀이 보이는 만큼만 찍는다)
- * @returns {Promise<{files: File[], text: string, title: string, url: string, host: string, shots: number, tiles: number, cut: boolean, part: number}>}
+ * @returns {Promise<{files: File[], text: string, title: string, url: string, host: string, shots: number, tiles: number, cut: boolean, part: number, paged: boolean}>}
  */
 export async function capturePart({ part, exec, frame = null, shoot, wait = sleep, stitch = stitchTiles, today = '', seq = 1, textMax = TEXT_MAX, onProgress = () => {} }) {
   const lost = () => new Error('고른 부분을 찾지 못했습니다 — 페이지가 바뀌었으면 다시 고르세요.');
   const info = await exec(partInfo, [part.n]);
   if (!info || !Number.isFinite(info.vw) || !Number.isFinite(info.vh)) throw lost();
   const inFrame = info.frame && frame ? await Promise.resolve().then(() => frame(pageInfo, [])).catch(() => null) : null;
+  // 틀 문서가 (거의 — 10% 안) 내려가지 않으면 틀 안을 다시 본다. pageInfo 의 높이는 body 의 넘친 높이까지 보아(PowerPoint 보기는 18px)
+  // 정말 내려가는지는 scrollerInfo 가 가린다. 그것도 못 돌리면 pageInfo 의 높이대로 한다.
+  const slight = !!inFrame && Number.isFinite(inFrame.viewportHeight) && inFrame.scrollHeight <= inFrame.viewportHeight + Math.max(4, inFrame.viewportHeight * 0.1);
+  const look = slight ? await Promise.resolve().then(() => frame(scrollerInfo, [])).catch(() => null) : null;
+  const docFull = !inFrame ? 0 : look ? look.doc?.scrollHeight || 0 : inFrame.scrollHeight > inFrame.viewportHeight + 4 ? inFrame.scrollHeight : 0;
+  const scroller = (inFrame && !docFull && look?.box) || null;
   const shots = [];
   let width = 0;
   let plan = null;
   let total = 0;   // 이어 붙일 높이 — shotPlan 은 한 화면보다 짧아도 한 화면 높이를 주니 부분의 높이로 줄인다
+  let paged = false;
   const snap = async (i) => {
     await wait(SHOT_GAP_MS);
     onProgress(i + 1, plan.steps.length);
@@ -654,22 +989,34 @@ export async function capturePart({ part, exec, frame = null, shoot, wait = slee
     if (!head) throw lost();
     // 보이는 칸 — 창과, 그 부분이 든 스크롤 칸이 겹치는 곳(partStep 이 준다).
     const clip = head.clip || { top: 0, left: 0, bottom: info.vh, right: info.vw };
-    const inner = inFrame && inFrame.scrollHeight > inFrame.viewportHeight + 4 ? 'frame' : info.box ? 'box' : '';
+    const inner = docFull ? 'frame' : scroller ? 'scroller' : info.box ? 'box' : '';
     if (inner) {
-      // 테두리 안쪽에서 보이는 칸이 한 화면이다.
-      const left = head.left + info.edge.left;
-      const top = head.top + info.edge.top;
-      const x = Math.max(left, clip.left);
-      const y = Math.max(top, clip.top);
-      const w = Math.min(left + info.edge.w, clip.right) - x;
-      const h = Math.min(top + info.edge.h, clip.bottom) - y;
+      // 테두리 안쪽에서 보이는 칸이 한 화면이다 — 틀 안의 더 깊은 틀이면 그 틀의 창, 스크롤 칸이면 틀 창 안의 그 칸.
+      const at = inFrame && frame.at && Number.isFinite(frame.at.x) && Number.isFinite(frame.at.y) ? frame.at : null;
+      const left = head.left + info.edge.left + (at ? at.x : 0);
+      const top = head.top + info.edge.top + (at ? at.y : 0);
+      const fw = at && inFrame.viewportWidth > 0 ? inFrame.viewportWidth : info.edge.w;
+      const fh = at && inFrame.viewportHeight > 0 ? inFrame.viewportHeight : info.edge.h;
+      const sx = scroller ? left + scroller.x : left;
+      const sy0 = scroller ? top + scroller.y : top;
+      const x = Math.max(sx, left, clip.left);
+      const y = Math.max(sy0, top, clip.top);
+      const w = Math.min(scroller ? sx + scroller.w : left + fw, left + fw, clip.right) - x;
+      const h = Math.min(scroller ? sy0 + scroller.h : top + fh, top + fh, clip.bottom) - y;
       if (w < 1 || h < 1) throw new Error('고른 부분이 화면에 보이지 않습니다.');
-      const full = inner === 'frame' ? inFrame.scrollHeight : info.box.scrollHeight;
+      // 스크롤 칸이 틀 창 밖으로 넘쳐 덜 보이면, 끝까지 내려도 보이는 칸 아래는 닿지 않는다 — 닿는 데까지.
+      const full = inner === 'frame' ? docFull : inner === 'scroller' ? scroller.scrollHeight - Math.max(0, scroller.clientHeight - h) : info.box.scrollHeight;
       plan = shotPlan({ scrollHeight: full, viewportHeight: h });
       total = Math.min(plan.height, full);
+      let prev = null;
       for (const [i, sy] of plan.steps.entries()) {
-        const at = inner === 'frame' ? await frame(pageStep, [sy, i > 0]) : (await exec(partStep, [part.n, null, sy]))?.inner;
-        shots.push({ dataUrl: await snap(i), y: Number.isFinite(at) ? at : sy, h, crop: { x, y, w, h } });
+        const got = inner === 'frame' ? await frame(pageStep, [sy, i > 0])
+          : inner === 'scroller' ? await frame(scrollerStep, [sy])
+            : (await exec(partStep, [part.n, null, sy]))?.inner;
+        const pos = Number.isFinite(got) ? got : sy;
+        if (prev != null && pos === prev) continue;   // 더 내려가지 않았다(끝·스크롤이 막힘) — 같은 자리를 또 찍지 않는다
+        prev = pos;
+        shots.push({ dataUrl: await snap(i), y: pos, h, crop: { x, y, w, h } });
       }
       width = w;
     } else {
@@ -690,17 +1037,55 @@ export async function capturePart({ part, exec, frame = null, shoot, wait = slee
         if (bottom - top < 1) continue;
         shots.push({ dataUrl: await snap(i), y: top - at.top, h: bottom - top, crop: { x, y: top, w: width, h: bottom - top } });
       }
+      // 틀 안이 내려가지 않고 슬라이드처럼 한 장씩 넘기는 화면(PowerPoint 읽기 보기) — 넘기지 않고 보이는 장만 찍었다.
+      paged = !!(inFrame && look?.paged);
     }
   } finally {
+    if (scroller) await Promise.resolve().then(() => frame(scrollerDone, [])).catch(() => {});
     if (inFrame) await Promise.resolve().then(() => frame(pageDone, [inFrame.scrollY || 0])).catch(() => {});
     await Promise.resolve().then(() => exec(partDone, [part.n])).catch(() => {});
   }
+  // 덜 내려가 찍은 데가 모자라면(스크롤이 막힘·떠 있는 팝업) 찍은 데까지만 잇는다 — 아래에 빈 흰 칸을 붙이지 않는다.
+  if (shots.length) total = Math.min(total, Math.max(...shots.map((s) => s.y + s.h)));
   const blobs = await stitch({ shots, viewportWidth: info.vw, width, totalHeight: total, tileHeight: Math.round(width * A4_RATIO) });
   const url = info.url || '';
   const host = hostOf(url);
   const files = blobs.map((b, i) => new File([b], tileName(host, today, seq + i), { type: 'image/png' }));
   const text = normalizeText(inFrame?.text || info.text, { title: [info.title, part.title].filter(Boolean).join(' — '), url: inFrame?.url || url, max: textMax });
-  return { files, text, title: part.title || info.title || '', url, host, shots: shots.length, tiles: files.length, cut: plan.cut, part: part.n };
+  return { files, text, title: part.title || info.title || '', url, host, shots: shots.length, tiles: files.length, cut: plan.cut, part: part.n, paged };
+}
+
+/**
+ * "전체" — 탭 하나를 통째로 찍되, 페이지 위에 큰 팝업(첨부 미리보기 같은 대화상자)이 떠 있으면 뒤의 페이지 대신 그 팝업 안을 찍는다
+ * (2026-10-15 사용자 지정: "첨부파일을 열면 내용이 팝업으로 뜨는데 그 부분도 일부 또는 전체 캡쳐할 수 있나?"). modalProbe 가 찍을 것에
+ * data-krs-cap="popup" 을 달면 고른 부분을 찍는 길(capturePart)로 찍는다 — 틀이면 frameOf 로 그 틀을 맞춰 틀 안을, 아니면 팝업의
+ * 스크롤 칸을 내린다. 팝업이 없으면(또는 못 보면) capturePage 그대로다. 찾은 팝업은 onTarget({where}) 로 먼저 알린다.
+ * 결과는 capturePage 의 것에 popup(팝업의 종류 — "첨부 미리보기 창"·"팝업")·where(찍은 곳 — 「제목」까지)·paged 가 붙는다.
+ * 탭이 팝업 창의 것(frontTab 의 popup)이면 where·fromPopup 이 붙는다.
+ * @param {{tab: {url?: string, popup?: boolean, where?: string}, exec: Function, frameOf?: Function|null, onTarget?: Function}} deps
+ *   나머지(shoot·wait·stitch·today·seq·textMax·onProgress)는 capturePage·capturePart 와 같다
+ */
+export async function captureWhole({ tab, exec, frameOf = null, onTarget = () => {}, ...rest }) {
+  const can = capturable(tab?.url);
+  if (!can.ok) throw new Error(can.why);
+  const pop = await Promise.resolve().then(() => exec(modalProbe, [])).catch(() => null);
+  if (!pop || pop.n == null) {
+    const got = await capturePage({ tab, exec, ...rest });
+    return tab.popup ? { ...got, where: tab.where || '팝업 창', fromPopup: true } : got;
+  }
+  const label = pop.label || '팝업';
+  const where = `${tab.popup && tab.where ? `${tab.where}의 ` : ''}${label}${pop.title ? `「${pop.title}」` : ''}`;
+  onTarget({ where, popup: label, title: pop.title || '' });
+  let got;
+  try {
+    const frame = pop.frame && frameOf ? await Promise.resolve().then(() => frameOf(pop.frame)).catch(() => null) : null;
+    got = await capturePart({ part: { n: pop.n, title: pop.title || label }, exec, frame: frame || null, ...rest });
+  } finally {
+    await Promise.resolve().then(() => exec(partDone, [pop.n])).catch(() => {});   // 찾은 것을 찍지 못했어도 표시는 뗀다
+  }
+  const page = { ...got, title: pop.title || got.title, popup: label, where, ...(tab.popup ? { fromPopup: true } : {}) };
+  delete page.part;   // 고른 부분이 아니다 — "부분 1" 로 적지 않는다
+  return page;
 }
 
 /**
@@ -732,23 +1117,74 @@ export async function captureParts({ parts, exec, frameOf = async () => null, sh
 }
 
 /**
- * 고른 틀이 어느 frameId 인지 — frameProbe 를 모든 틀에 돌린 결과에서 맨 위 문서 바로 아래의 틀만 본다. 주소(같은 사이트면 지금 주소)·
- * 이름·src·크기 차례로, 하나로 좁혀지는 것을 쓴다. 틀이 하나뿐이면 그것이다. 못 맞추면 null.
+ * 고른 틀이 어느 frameId 인지 — frameProbe 를 모든 틀에 돌린 결과에서 맨 위 문서 바로 아래의 틀(child, 또는 depth 1)만 본다. 주소(같은 사이트면
+ * 지금 주소)·이름·src·크기 차례로, 하나로 좁혀지는 것을 쓴다(여럿이면 그 가운데 크기가 맞는 하나). about:blank 같은 주소는 틀마다 같아
+ * 견주지 않는다(2026-10-15 — 새 Outlook 의 첨부 미리보기 틀은 src 가 about:blank 이고 안은 다른 사이트다). 틀이 하나뿐이면 그것이다. 못 맞추면 null.
  */
 export function matchFrame(frames, want) {
   if (!want) return null;
-  const kids = (frames || []).filter((f) => f && f.frameId !== 0 && f.child);
+  const kids = (frames || []).filter((f) => f && f.frameId !== 0 && (f.child || f.depth === 1));
+  const real = (u) => !!u && !/^(about:|javascript:|data:)/i.test(u);
+  const sized = (f) => want.w > 0 && want.h > 0 && Math.abs(f.w - want.w) <= 1 && Math.abs(f.h - want.h) <= 1;
   const tries = [
-    (f) => !!want.href && f.href === want.href,
+    (f) => real(want.href) && f.href === want.href,
     (f) => !!want.name && f.name === want.name,
-    (f) => !!want.src && f.href === want.src,
-    (f) => Math.abs(f.w - want.w) <= 1 && Math.abs(f.h - want.h) <= 1,
+    (f) => real(want.src) && f.href === want.src,
+    sized,
   ];
   for (const ok of tries) {
     const hit = kids.filter(ok);
     if (hit.length === 1) return hit[0].frameId;
+    const fit = hit.length > 1 ? hit.filter(sized) : [];
+    if (fit.length === 1) return fit[0].frameId;
   }
   return kids.length === 1 ? kids[0].frameId : null;
+}
+
+/**
+ * 고른 틀과, 그 대신 찍을 더 깊은 틀(2026-10-15). matchFrame 으로 맞춘 틀이 안 내려가는데(scrolls === false) 그보다 깊은 틀 가운데
+ * 그 틀을 90% 이상 채우고 내려가는 것이 있으면 그 틀을 deep 으로 준다 — 바깥 틀은 껍데기이고 문서는 안쪽 틀에서 내려가는 미리보기.
+ * 어느 틀이 어느 틀 안인지는 frameProbe 만으로 모른다(webNavigation 권한 없이) — 깊이와 크기로 고른다. 못 맞추면 null.
+ * @returns {{id: number, deep: {id: number, w: number, h: number}|null}|null}
+ */
+export function frameTarget(frames, want) {
+  const id = matchFrame(frames, want);
+  if (id == null) return null;
+  const list = (frames || []).filter((f) => f && f.frameId !== 0);
+  const top = list.find((f) => f.frameId === id);
+  if (!top || top.scrolls !== false) return { id, deep: null };
+  const depth = Number.isFinite(top.depth) && top.depth > 0 ? top.depth : 1;
+  const area = top.w * top.h;
+  const deep = list.filter((f) => f.frameId !== id && Number.isFinite(f.depth) && f.depth > depth && f.scrolls
+    && f.w <= top.w + 1 && f.h <= top.h + 1 && f.w * f.h >= area * 0.9)
+    .sort((a, b) => a.depth - b.depth || b.w * b.h - a.w * a.h)[0];
+  return { id, deep: deep ? { id: deep.frameId, w: deep.w, h: deep.h } : null };
+}
+
+/**
+ * 방금 보던 팝업 창의 후보(2026-10-15). log 는 창이 앞에 선 차례({id, at, tab?} — watchWindows 가 적는다, 오래된 것부터)다.
+ * 끝의 패널 창(panelId)·크롬 밖(-1) 기록을 패널로 돌아온 것으로 보고, 그 앞에서 패널 창이 앞을 내준 뒤 앞에 섰던 창들을 최근 것부터 준다 —
+ * 그 창이 앞을 내준 지 within 안인 것만. 패널로 돌아온 뒤 패널 창에서 탭을 바꿨으면(tab) 사용자는 그 창을 보고 있다 — 없다.
+ * 창이 팝업인지·열려 있는지는 부른 곳(frontTab)이 본다.
+ * @returns {number[]}
+ */
+export function popupCandidates(log, panelId, now, within = POPUP_RECENT_MS) {
+  const list = (log || []).filter((e) => e && Number.isFinite(e.id));
+  let end = list.length;
+  while (end > 0 && (list[end - 1].id === panelId || list[end - 1].id < 0)) {
+    if (list[end - 1].tab && list[end - 1].id === panelId) return [];
+    end--;
+  }
+  let start = end;
+  while (start > 0 && list[start - 1].id !== panelId) start--;
+  const out = [];
+  for (let i = end - 1; i >= start; i--) {
+    const e = list[i];
+    if (e.id < 0 || out.includes(e.id)) continue;
+    const lost = i + 1 < list.length ? list[i + 1].at : now;
+    if (now - lost <= within) out.push(e.id);
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------ chrome 에 꽂기 */
@@ -766,15 +1202,50 @@ async function ensureSites() {
   if (!ok) throw new Error('웹페이지를 캡처하려면 사이트 접근 권한이 필요합니다 — 다시 누르고 허용해 주세요.');
 }
 
-function needApi() {
-  if (typeof chrome === 'undefined' || !chrome.tabs?.captureVisibleTab || !chrome.scripting?.executeScript) {
+function needApi(api = globalThis.chrome) {
+  if (!api || !api.tabs?.captureVisibleTab || !api.scripting?.executeScript) {
     throw new Error('이 브라우저에서는 웹페이지를 캡처할 수 없습니다.');
   }
 }
 
-/** 탭을 앞에 두고 다 읽힐 때까지 기다린다 — 잠든 탭은 앞에 두면 다시 읽는다. 그려질 틈은 찍기 전의 SHOT_GAP_MS 가 준다. */
-async function bringUp(tabId) {
+/** 창이 앞에 선 차례 — watchWindows 가 적고 frontTab 이 읽는다(패널 하나에 하나). 오래된 것은 버린다. */
+const WATCH = { on: false, log: [] };
+const WATCH_KEEP = 30;
+
+/**
+ * 창이 앞에 서는 것을 적기 시작한다(2026-10-15 — 첨부를 따로 띄운 팝업 창을 방금 보다가 패널의 단추를 누르면 그 창을 찍으려고).
+ * 패널의 캡처 단추(webpick.js 의 createWebPick)가 부른다 — 두 번째부터는 아무것도 하지 않는다. chrome.windows.onFocusChanged(창이 앞에
+ * 섬 — 크롬 밖이면 -1)와 chrome.tabs.onActivated(그 창에서 탭을 바꿈 — tab)를 적는다. chrome.windows 가 없으면(테스트·다른 브라우저)
+ * 아무것도 하지 않는다.
+ * @param {{api?: object, now?: () => number, into?: {on: boolean, log: object[]}}} [deps] 테스트가 갈아 끼운다
+ * @returns {{on: boolean, log: {id: number, at: number, tab?: boolean}[]}}
+ */
+export function watchWindows({ api = globalThis.chrome, now = () => Date.now(), into = WATCH } = {}) {
+  if (into.on || typeof api?.windows?.onFocusChanged?.addListener !== 'function') return into;
+  into.on = true;
+  const note = (id, tab) => {
+    if (!Number.isFinite(id)) return;
+    into.log.push(tab ? { id, at: now(), tab: true } : { id, at: now() });
+    if (into.log.length > WATCH_KEEP) into.log.splice(0, into.log.length - WATCH_KEEP);
+  };
+  api.windows.onFocusChanged.addListener((id) => note(id, false));
+  if (typeof api.tabs?.onActivated?.addListener === 'function') api.tabs.onActivated.addListener((e) => note(e?.windowId, true));
+  return into;
+}
+
+/** 창을 앞에 둔다 — 팝업 창이 패널 창 뒤에 가려 있으면 찍히지도 고를 수도 없다. 못 해도 넘어간다. */
+async function focusWindow(id, api = globalThis.chrome) {
+  if (id == null || typeof api?.windows?.update !== 'function') return;
+  await Promise.resolve().then(() => api.windows.update(id, { focused: true })).catch(() => {});
+}
+
+/**
+ * 탭을 앞에 두고 다 읽힐 때까지 기다린다 — 잠든 탭은 앞에 두면 다시 읽는다. 그려질 틈은 찍기 전의 SHOT_GAP_MS 가 준다.
+ * windowId 를 주면(팝업 창의 탭) 그 창부터 앞에 둔다.
+ */
+async function bringUp(tabId, windowId = null) {
   const gone = () => new Error('탭이 닫혔습니다 — 다시 골라 주세요.');
+  if (windowId != null) await focusWindow(windowId);
   await chrome.tabs.update(tabId, { active: true }).catch(() => { throw gone(); });
   for (let t = 0; t < READY_MS; t += 200) {
     const now = await chrome.tabs.get(tabId).catch(() => null);
@@ -785,75 +1256,165 @@ async function bringUp(tabId) {
 }
 
 /**
+ * 탭 하나의 틀을 맞추는 길 — 고른 틀(pagePick·modalProbe 의 frame)을 받아 그 틀 안에서 함수를 돌리는 함수를 준다(못 맞추면 null).
+ * 모든 틀에 frameProbe 를 돌려 frameTarget 으로 고르고, 더 깊은 틀(deep)을 찍을 때는 바깥 틀에서 frameKids 로 그 틀의 자리를 맞춰
+ * 함수의 at 에 단다(capturePart 가 그만큼 비켜 오린다 — 자리를 못 맞추면 바깥 틀 그대로). scripting 은 테스트가 갈아 끼운다.
+ */
+export function frameFinder({ tabId, scripting = globalThis.chrome?.scripting } = {}) {
+  const run = async (func, args = [], frameId = null) => (await scripting.executeScript({
+    target: frameId == null ? { tabId } : { tabId, frameIds: [frameId] }, func, args,
+  }))?.[0]?.result;
+  return async (want) => {
+    const all = await Promise.resolve().then(() => scripting.executeScript({ target: { tabId, allFrames: true }, func: frameProbe })).catch(() => []);
+    const hit = frameTarget((all || []).map((r) => ({ frameId: r.frameId, ...(r.result || {}) })), want);
+    if (!hit) return null;
+    const into = (id) => (func, args = []) => run(func, args, id);
+    if (hit.deep) {
+      const kids = await Promise.resolve().then(() => run(frameKids, [], hit.id)).catch(() => null);
+      const fit = (Array.isArray(kids) ? kids : []).filter((k) => Math.abs(k.w - hit.deep.w) <= 1 && Math.abs(k.h - hit.deep.h) <= 1);
+      if (fit.length === 1) return Object.assign(into(hit.deep.id), { at: { x: fit[0].x, y: fit[0].y } });
+    }
+    return into(hit.id);
+  };
+}
+
+/**
  * 탭들을 통째로 찍는다 — 지금은 보고 있는 탭 하나(captureFront)다. 권한은 사용자 동작(단추 누름) 안에서 먼저 묻는다.
- * 찍는 동안 그 탭들이 차례로 앞에 나왔다가, 끝나면 누르기 전에 보던 탭으로 돌아온다.
- * @param {{id: number, url: string, title?: string}[]} tabs
- * @param {{today?: string, onProgress?: Function}} [opts]
+ * 찍는 동안 그 탭들이 차례로 앞에 나왔다가, 끝나면 누르기 전에 보던 탭으로 돌아온다. 팝업 창의 탭(frontTab 의 popup)이면 그 창을 앞에 두고
+ * 그 창을 찍은 뒤 패널 창을 다시 앞에 둔다(2026-10-15). 탭에 큰 팝업이 떠 있으면 그 안을 찍는다(captureWhole).
+ * @param {{id: number, url: string, title?: string, windowId?: number, popup?: boolean}[]} tabs
+ * @param {{today?: string, onProgress?: Function, onTarget?: Function}} [opts]
  */
 export async function captureTabs(tabs, opts = {}) {
   needApi();
   await ensureSites();
   const win = await chrome.windows.getCurrent();
-  const [front] = await chrome.tabs.query({ active: true, windowId: win.id });
+  const list = tabs || [];
+  // 창마다 누르기 전에 앞에 있던 탭 — 끝나면 그 탭으로 돌아온다.
+  const fronts = [];
+  for (const w of new Set(list.map((t) => t.windowId ?? win.id))) {
+    const [f] = await chrome.tabs.query({ active: true, windowId: w });
+    if (f) fronts.push(f.id);
+  }
+  let cur = null;
   return captureMany({
     tabs,
-    activate: (tab) => bringUp(tab.id),
-    back: () => (front ? chrome.tabs.update(front.id, { active: true }) : undefined),
+    activate: async (tab) => {
+      cur = tab;
+      await bringUp(tab.id, tab.popup ? tab.windowId : null);
+    },
+    back: async () => {
+      for (const id of fronts) await Promise.resolve().then(() => chrome.tabs.update(id, { active: true })).catch(() => {});
+      if (list.some((t) => t.popup)) await focusWindow(win.id);
+    },
     execIn: (tab) => async (func, args = []) => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }))?.[0]?.result,
-    shoot: () => chrome.tabs.captureVisibleTab(win.id, { format: 'png' }),
+    frameIn: (tab) => frameFinder({ tabId: tab.id }),
+    shoot: () => chrome.tabs.captureVisibleTab(cur?.windowId ?? win.id, { format: 'png' }),
     ...opts,
   });
 }
 
-/** 보고 있는 탭(이 창의 앞 탭) — 찍을 수 없는 화면(브라우저 안쪽 화면·파일)이면 까닭을 던진다. */
-export async function frontTab() {
-  needApi();
-  const win = await chrome.windows.getCurrent();
-  const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
+/**
+ * 보고 있는 탭 — 이 창(패널이 붙은 창)의 앞 탭. 다만 방금 보던 팝업 창(chrome 창 type 'popup' — 첨부·문서 보기를 따로 띄운 창)이 있으면
+ * 그 창의 탭이다(2026-10-15): watchWindows 가 적은 차례에서 패널 창이 앞을 내준 뒤 앞에 섰던 창 가운데, 그 창에서 패널로 넘어온 지
+ * POPUP_RECENT_MS 안이고(popupCandidates) 아직 열려 있고(최소화하지 않은) 찍을 수 있는 웹페이지를 띄운 팝업 창 — 최근 것부터.
+ * 그 탭에는 popup·where(팝업 창「제목」)·home(패널 창)이 붙는다. 찍을 수 없는 화면(브라우저 안쪽 화면·파일)이면 까닭을 던진다.
+ * @param {{api?: object, log?: object[], now?: number, within?: number}} [deps] 테스트가 갈아 끼운다
+ */
+export async function frontTab({ api = globalThis.chrome, log = WATCH.log, now = Date.now(), within = POPUP_RECENT_MS } = {}) {
+  needApi(api);
+  const win = await api.windows.getCurrent();
+  if (typeof api.windows.get === 'function') {
+    for (const id of popupCandidates(log, win.id, now, within)) {
+      const w = await Promise.resolve().then(() => api.windows.get(id, { populate: true })).catch(() => null);
+      if (!w || w.type !== 'popup' || w.state === 'minimized') continue;
+      const tab = (w.tabs || []).find((x) => x.active) || (w.tabs || [])[0];
+      if (!tab || !capturable(tab.url).ok) continue;
+      const title = String(tab.title || '').trim() || hostOf(tab.url);
+      return { id: tab.id, url: tab.url, title, host: hostOf(tab.url), active: true, windowId: w.id, popup: true, where: `팝업 창「${title.slice(0, 40)}」`, home: win.id };
+    }
+  }
+  const [tab] = await api.tabs.query({ active: true, windowId: win.id });
   const can = capturable(tab?.url);
   if (!can.ok) throw new Error(can.why);
   return { id: tab.id, url: tab.url, title: String(tab.title || '').trim() || hostOf(tab.url), host: hostOf(tab.url), active: true, windowId: win.id };
 }
 
-/** 보고 있는 탭을 위에서 아래까지 통째로 찍는다 — "보고 있는 탭" 단추. 권한은 단추 누름 안에서 먼저 묻는다. */
+/** 탭에 큰 팝업(첨부 미리보기 창 같은 것)이 떠 있는가 — modalProbe 를 돌려 보고 단 표시는 바로 뗀다. 못 보면 false. */
+async function popupOpen(tab) {
+  const run = (func, args = []) => chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }).then((r) => r?.[0]?.result);
+  const pop = await Promise.resolve().then(() => run(modalProbe)).catch(() => null);
+  if (pop?.n != null) await Promise.resolve().then(() => run(partDone, [pop.n])).catch(() => {});
+  return !!pop?.n;
+}
+
+/** 메일 읽기가 단 표시(첨부 칸·메일 본문)를 그 탭의 모든 틀에서 뗀다(unmarkPage). 못 해도 넘어간다. */
+export async function clearMarks(tab) {
+  if (tab?.id == null || typeof globalThis.chrome?.scripting?.executeScript !== 'function') return;
+  await Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: unmarkPage })).catch(() => {});
+}
+
+/**
+ * 보고 있는 탭을 위에서 아래까지 통째로 찍는다 — "전체" 단추. 권한은 단추 누름 안에서 먼저 묻는다. 방금 보던 팝업 창을 찍으면
+ * 찍기 전에 onTarget({where: '팝업 창「제목」'}) 로 알린다(탭에 뜬 팝업을 찾으면 captureWhole 이 또 알린다).
+ * plain 을 주면(2026-10-15 — 메일이면 본문과 첨부를 함께 가져오기, webpick.js) 탭에 큰 팝업이 없을 때 그 탭으로 먼저 불러 보고, 무엇을
+ * 돌려주면 그것을 그대로 돌려준다(null 이면 여느 때처럼 통째로 찍는다). 팝업이 떠 있으면 plain 은 부르지 않는다 — 팝업 안을 찍는다.
+ * @param {{today?: string, onProgress?: Function, onTarget?: Function, plain?: ((tab: object) => Promise<object|null>)|null}} [opts]
+ */
 export async function captureFront(opts = {}) {
   needApi();
   await ensureSites();
-  return captureTabs([await frontTab()], opts);
+  const tab = await frontTab();
+  if (tab.popup) await Promise.resolve().then(() => opts.onTarget?.({ where: tab.where, tab })).catch(() => {});
+  if (typeof opts.plain === 'function' && !(await popupOpen(tab))) {
+    const alt = await opts.plain(tab);
+    if (alt) return alt;
+  }
+  const { plain, ...rest } = opts;
+  return captureTabs([tab], rest);
 }
 
 /**
  * 보고 있는 탭 위에 고르기 막을 씌운다(pagePick) — "부분 골라 캡처" 단추. done 은 사용자가 페이지의 캡처를 누르면 고른 부분들로,
- * 취소하면 null 로 풀린다. cancel 은 패널의 "고르기 취소"다(페이지의 막을 걷는다).
- * @returns {Promise<{tab: object, done: Promise<object[]|null>, cancel: () => Promise<void>}>}
+ * 취소하면 null 로 풀린다. cancel 은 패널의 "고르기 취소"다(페이지의 막을 걷는다). 방금 보던 팝업 창이면(frontTab) 그 창을 앞에 두고
+ * 그 창에서 고르게 한다(2026-10-15 — 패널 창 뒤에 가려 있으면 막이 보이지 않는다).
+ * before 를 주면(2026-10-15 — 메일 읽기의 probeTab) 막을 씌우기 전에 그 탭으로 불러, 돌려준 attachments({key, name}) 의 이름을 막에 넘긴다 —
+ * 첨부 칸(data-krs-attach)을 "첨부 파일 · 이름" 으로 고르게. 그 결과는 probe 로 준다(실패하면 null).
+ * @param {{before?: ((tab: object) => Promise<{attachments?: {key: string, name: string}[]}|null>)|null}} [opts]
+ * @returns {Promise<{tab: object, done: Promise<object[]|null>, cancel: () => Promise<void>, probe: object|null}>}
  */
-export async function startPick() {
+export async function startPick({ before = null } = {}) {
   needApi();
   await ensureSites();
   const tab = await frontTab();
-  const done = chrome.scripting.executeScript({ target: { tabId: tab.id }, func: pagePick })
+  if (tab.popup) await focusWindow(tab.windowId);
+  const probe = typeof before === 'function' ? await Promise.resolve().then(() => before(tab)).catch(() => null) : null;
+  const names = Array.isArray(probe?.attachments) && probe.attachments.length
+    ? Object.fromEntries(probe.attachments.filter((a) => a && a.key != null).map((a) => [String(a.key), String(a.name || '')])) : null;
+  const done = chrome.scripting.executeScript({ target: { tabId: tab.id }, func: pagePick, ...(names ? { args: [names] } : {}) })
     .then((r) => r?.[0]?.result || null, (e) => { throw new Error(`페이지에서 고르지 못했습니다 — ${e?.message || e}`); });
   const cancel = () => chrome.scripting.executeScript({ target: { tabId: tab.id }, func: pickCancel }).then(() => {}, () => {});
-  return { tab, done, cancel };
+  return { tab, done, cancel, probe: probe || null };
 }
 
 /**
  * 고른 부분들을 찍는다(captureParts) — 고른 탭을 앞에 두고(고르는 사이에 탭을 바꿨을 수 있다) 부분마다 찍는다.
- * 고른 틀은 모든 틀에 frameProbe 를 돌려 frameId 를 맞추고(matchFrame), 그 틀 안에서 pageInfo·pageStep·pageDone 을 돌린다.
+ * 고른 틀은 모든 틀에 frameProbe 를 돌려 frameId 를 맞추고(frameFinder — matchFrame·frameTarget), 그 틀 안에서 pageInfo·pageStep·pageDone
+ * (틀 안의 스크롤 칸이면 scrollerInfo·scrollerStep·scrollerDone)을 돌린다. 팝업 창의 탭이면 찍은 뒤 패널 창을 다시 앞에 두고, 장마다
+ * where(팝업 창「제목」)·fromPopup 을 단다(2026-10-15).
  */
 export async function captureTabParts(tab, parts, opts = {}) {
   needApi();
-  await bringUp(tab.id);
-  const run = async (func, args = [], frameId = null) => (await chrome.scripting.executeScript({
-    target: frameId == null ? { tabId: tab.id } : { tabId: tab.id, frameIds: [frameId] }, func, args,
-  }))?.[0]?.result;
-  const frameOf = async (want) => {
-    const all = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: frameProbe }).catch(() => []);
-    const id = matchFrame((all || []).map((r) => ({ frameId: r.frameId, ...(r.result || {}) })), want);
-    return id == null ? null : (func, args = []) => run(func, args, id);
-  };
-  return captureParts({
-    parts, exec: (func, args = []) => run(func, args), frameOf,
-    shoot: () => chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }), ...opts,
-  });
+  await bringUp(tab.id, tab.popup ? tab.windowId : null);
+  const run = async (func, args = []) => (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }))?.[0]?.result;
+  try {
+    const got = await captureParts({
+      parts, exec: (func, args = []) => run(func, args), frameOf: frameFinder({ tabId: tab.id }),
+      shoot: () => chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }), ...opts,
+    });
+    if (tab.popup) for (const p of got.pages) Object.assign(p, { where: tab.where || '팝업 창', fromPopup: true });
+    return got;
+  } finally {
+    if (tab.popup) await focusWindow(tab.home);
+  }
 }

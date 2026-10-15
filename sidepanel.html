@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="sidepanel.css" />
   <!-- R&D 탭의 rERP 집행내역·예상 비용 표 — kr_ext_rerp 에서 옮긴 모양(rerp/plan.css, 클래스 krext-*). 어두운 화면 덮어쓰기는 sidepanel.css 의 .rd-erp 절. -->
   <link rel="stylesheet" href="rerp/plan.css" />
+  <link rel="stylesheet" href="mailtrack/panel.css" />
 </head>
 <body>
   <main class="app">
@@ -34,12 +35,16 @@
         <button id="refresh" class="icon refresh" type="button" title="새로고침" aria-label="새로고침">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4v6h-6M20 10a8 8 0 1 0-1.5 7"/></svg>
         </button>
+        <button id="settingsShortcut" class="icon settings-shortcut" type="button" title="설정 열기" aria-label="설정 열기" aria-controls="settingsBox" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
       </div>
     </header>
     <nav class="tabs" role="tablist" aria-label="근태·예약 종류">
       <button id="tabAttend" class="tab" role="tab" aria-selected="false">근태</button>
       <button id="tabGongmun" class="tab" role="tab" aria-selected="false" title="공문 작성 — 견적서·교육 안내문을 넣으면 전자결재 품의(제목·본문·결재선)를 만듭니다">공문</button>
       <button id="tabRnd" class="tab" role="tab" aria-selected="false" title="R&amp;D 과제 — 과제마다 올해(차년도)의 예산·참여연구자·연구개발 계획·변경이력을 적어 둡니다">R&amp;D</button>
+      <button id="tabMail" class="tab" role="tab" aria-selected="false" title="메일 수신 — 내가 보낸 메일을 등록해 두고 받는 사람 조직(도메인)마다 회신이 왔는지 세며, 회신 본문·첨부를 한곳에 모으고 양식(xlsx·docx) 회신을 하나로 합칩니다">메일</button>
       <button id="tabRoom" class="tab active" role="tab" aria-selected="true">회의실</button>
       <button id="tabCar" class="tab" role="tab" aria-selected="false">차량</button>
       <button id="tabMine" class="tab" role="tab" aria-selected="false" title="WORKSPACE 현황 — 내 회의실·차량 예약과 근태(출장·휴가 …)를 한 목록으로 봅니다">현황</button>
@@ -545,6 +550,16 @@
             <button type="button" id="rdNoteSync" class="primary small">지금 맞추기</button>
             <a id="rdNoteOpen" class="rd-note-open hidden" target="_blank" rel="noopener">원노트에서 열기</a>
           </div>
+          <!-- 연구내용 공유(2026-10-14 사용자 지정 — "workplace 에 기입한 것을 rerp 에 원노트 주소 링크만 공유하면 동기화") — 보고 있는 과제의 연구개발계획서 기록(YAML 을 넣을 때 남긴 것,
+               rerp/research.js)을 「[연구내용] 과제명」 페이지(예상 비용과 같은 섹션, rerp/researchsync.js)에 올리고 링크를 복사한다. 계획서를 다시 넣으면 페이지도 저절로 고친다. rndpanel.js shareResearch. -->
+          <p class="rd-note-how"><strong>연구내용</strong>을 kr_ext_rerp 로 — 보고 있는 과제의 연구개발계획서(개발목표·개발내용·성능목표·연구활동비 세부사용계획·참여연구자)를 원노트 페이지 「[연구내용] 과제명」(예상 비용과 같은 섹션)에 올리고 링크를 복사합니다.
+            rerp 확장 설정의 <strong>연구개발계획서</strong> 칸에 붙여 넣으면 받아 가고, 여기서 계획서 YAML 을 다시 넣으면 페이지도 저절로 고쳐져 rerp 가 맞춥니다.</p>
+          <div class="rd-actions">
+            <button type="button" id="rdResShare" class="ghost small">연구내용 올리기</button>
+            <button type="button" id="rdResCopy" class="ghost small" disabled title="올린 페이지의 링크(웹 링크 + 페이지 ID)를 복사합니다 — rerp 설정의 연구개발계획서 칸에 붙여 넣으세요">링크 복사</button>
+            <a id="rdResOpen" class="rd-note-open hidden" target="_blank" rel="noopener">원노트에서 열기</a>
+          </div>
+          <p id="rdResMsg" class="rd-note-msg" role="status"></p>
         </div>
       </details>
       <!-- 연구개발계획서 YAML 넣기 — 맨 아래(2026-10-08 사용자 지정). RND 폴더의 KR_<과제>.yaml(스냅샷)과 history/*.yaml(개정 레지스트리·예산 이력·참여연구원 이력).
@@ -573,6 +588,8 @@
         </div>
       </details>
     </section>
+    <!-- 메일 탭(mailtrack/) — 화면은 mailtrack/panel.js 가 이 안에 만든다. 다른 탭에서는 통째로 숨는다. -->
+    <section id="mail" class="mail hidden" aria-label="메일 수신 추적"></section>
     <section class="controls card" aria-label="조회 날짜와 시간">
       <div class="date-bar">
         <label class="date-display" title="날짜 선택">

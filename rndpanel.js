@@ -20,7 +20,12 @@ import { SET_KEY, normalizeSet, includeNames, isHidden, nameKey, projectRecs, pi
 import ERP from './rerp/erp.js';
 import PLAN from './rerp/plan.js';
 import { budgetTable } from './rerp/planui.js';
-import { createPlusSync } from './rerp/plussync.js';
+import { createPlusSync, PLUS_DEFAULTS } from './rerp/plussync.js';
+// 연구내용 원노트 공유(2026-10-14) — rerp 의 연구개발계획서 기록(research)과 「[연구내용] 과제명」 페이지(researchsync), MCP·OneNote 손잡이.
+import RS from './rerp/research.js';
+import RSY from './rerp/researchsync.js';
+import KRX_MCP from './rerp/mcp.js';
+import KRX_ONENOTE from './rerp/onenote.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
 import { kindOf, applyYaml, KIND_ORDER, revOf } from './src/rndyaml.js';
 import { MANIFEST_PATH, checkManifest, skillGuide, bundleSkills, zipName, kb } from './src/rndskills.js';
@@ -75,6 +80,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     erp: $('rdErp'), erpState: $('rdErpState'), erpInfo: $('rdErpInfo'), erpRefresh: $('rdErpRefresh'), erpLink: $('rdErpLink'), erpUnlink: $('rdErpUnlink'),
     erpPick: $('rdErpPick'), erpSelect: $('rdErpSelect'), erpPickOk: $('rdErpPickOk'), erpMsg: $('rdErpMsg'), erpTable: $('rdErpTable'),
     plusOn: $('rdPlusOn'), plusRow: $('rdPlusRow'), plusSection: $('rdPlusSection'), plusNotebook: $('rdPlusNotebook'), plusFind: $('rdPlusFind'), plusMsg: $('rdPlusMsg'),
+    // 원노트 칸의 연구내용 공유(2026-10-14) — 올리기 · 링크 복사 · 열기 · 알림 줄.
+    resShare: $('rdResShare'), resCopy: $('rdResCopy'), resOpen: $('rdResOpen'), resMsg: $('rdResMsg'),
     // 예산 칸 맨 위 줄 — 집행에 더할 것(미청구·사용계획 — 승인전 체크는 2026-10-11 사용자 지정으로 뺐다). 2026-10-11 사용자 지정으로 R&D 설정에서 옮겼다(값은 여전히 rndSettings).
     incRow: $('rdIncRow'), incUnbilled: $('rdIncUnbilled'), incPlan: $('rdIncPlan'),
     // R&D 설정(접힌 한 줄) — rERP 집행내역 켜기/끄기 · 예산 칸에 보일 비목(items — 2026-10-11 사용자 지정). 원노트 공유·YAML 넣기·스킬 칸도 이 안에 있다.
@@ -98,6 +105,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // 예상 비용의 화면 상태 — rerp/plan.js(bind)와 rerp/planui.js(budgetTable)가 rerp 의 패널 state 와 같은 모양으로 읽고 쓴다.
     // data.settings.planSync 는 원노트 예상 비용 공유가 켜져 있는지, data.myNames 는 책임자 판정(과제책임자 == 내 이름)에 쓴다.
     pl: { plans: {}, planShown: new Set(), expanded: new Set(), data: { settings: { planSync: false }, myNames: [] } },
+    // 연구내용 공유 — 과제(과제명 키)마다 올린 페이지(chrome.storage 의 researchShare), 도는 중인가, 알림 줄(resFor 과제의 것만 보인다).
+    resShare: {}, resBusy: false, resMsg: '', resError: false, resFor: '',
   };
 
   const cur = () => projectOf(st.book, st.book.current.project);
@@ -935,6 +944,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   async function intakeTexts(texts) {
     el.intake.setAttribute('aria-busy', 'true');
     const lines = [];
+    let resAfter = [];   // 연구내용 페이지를 다시 올릴 과제 (원노트에 올린 적이 있는 것만)
     try {
       const { parse } = await loadYaml();
       const docs = [];
@@ -958,6 +968,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
         lines.push(`${res.label}${d.name ? `(${d.name})` : ''}: ${res.summary}`);
         logEvent('rnd', true, `R&D YAML 넣음 — ${res.label}: ${res.summary}`, { file: d.name });
       }
+      // 스냅샷은 연구내용 공유에 쓸 모양(rerp/research.js 기록 — 개발목표·개발내용·연구활동비 세부사용계획 …)으로도 남기고, 이미 원노트에 올린 과제면 그 페이지를 고친다.
+      const recs = docs.filter((d) => d.kind === 'snapshot').map((d) => { try { return RS.readSnapshot(d.obj, { text: d.text, file: d.name }); } catch { return null; } }).filter(Boolean);
+      if (recs.length) resAfter = await storeResearch(recs);
       setStatus(lines.join(' / '));
     } catch (err) {
       setStatus(`${lines.length ? `${lines.join(' / ')} / ` : ''}${err.message}`, 'error');
@@ -973,6 +986,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       }
       // 넣는 칸은 맨 아래라 알림 줄(머리 아래)이 화면 밖일 수 있다 — 결과가 보이게 끌어온다.
       el.status.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      for (const p of resAfter) shareResearch(p, { auto: true });   // 기다리지 않는다
     }
   }
 
@@ -1651,12 +1665,93 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     return st.noteRun;
   }
 
+  /* ---------------------------------------------------------- 연구내용 원노트 공유 */
+
+  // 2026-10-14 사용자 지정 — "workplace 에 기입한 것을 rerp 에 원노트 주소 링크만 공유하면 동기화". 연구개발계획서 YAML 을 넣을 때 rerp 와 같은 기록(rerp/research.js —
+  // chrome.storage 의 researchPlans, 과제명#차년도)으로도 남기고, 원노트 칸의 "연구내용 올리기"가 보고 있는 과제의 기록들을 「[연구내용] 과제명」 페이지 한 장(rerp/researchsync.js —
+  // 표 하나 + krxres1: base64 JSON)에 올린 뒤 링크(웹 링크 + 페이지 ID)를 복사한다. kr_ext_rerp 설정의 연구개발계획서 칸에 그 링크를 붙여 넣으면 받아 가고(rerp background.js researchPull),
+  // 그 뒤로 여기서 계획서를 다시 넣으면 페이지를 저절로 고쳐 rerp 가 다음 받기 때 맞춘다. 섹션은 예상 비용과 같은 RERP(rerp/plussync.js plusResolveSection — 원노트 칸의 섹션 이름·노트북),
+  // 그 섹션을 못 정하면(노트북을 골라야 함) 과제 정보 섹션. 올린 페이지는 chrome.storage 의 researchShare = { [과제명 키]: { pageId, webUrl, title, name, at } }.
+  const RES_SHARE_KEY = 'researchShare';
+  const resKey = (p) => RS.normName(p?.name);
+  const codeKey = (s) => String(s || '').replace(/\s/g, '').toLowerCase();
+
+  /** 이 과제의 연구개발계획서 기록들(차년도 차례) — 과제명이나 과제번호가 같은 것. */
+  async function researchOf(p) {
+    const map = await RS.load();
+    const k = resKey(p), code = codeKey(p.code);
+    return Object.values(map).filter((r) => r && (RS.normName(r.name) === k || (code && codeKey(r.code) === code))).sort((a, b) => a.n - b.n);
+  }
+
+  /** YAML 에서 읽은 기록들을 저장하고, 원노트에 올린 적이 있는 과제들을 돌려준다(다시 올릴 것). 더 오래된 판은 RS.put 이 건너뛴다. */
+  async function storeResearch(recs) {
+    const map = await RS.load();
+    const touched = new Set();
+    for (const rec of recs) if (RS.put(map, rec).state !== 'older') touched.add(RS.normName(rec.name));
+    await RS.save(map);
+    return st.book.projects.filter((p) => touched.has(resKey(p)) && st.resShare[resKey(p)]?.pageId);
+  }
+
+  /** 보고 있는 과제(또는 p)의 연구내용을 원노트에 올린다. auto 면(계획서를 다시 넣은 뒤) 링크를 복사하지 않는다. 던지지 않는다 — 까닭은 알림 줄에. */
+  async function shareResearch(p, { auto = false } = {}) {
+    if (!p || st.resBusy) return false;
+    Object.assign(st, { resBusy: true, resError: false, resFor: resKey(p), resMsg: '원노트에 올리는 중…' });
+    paintRes();
+    let client = null, ok = false;
+    try {
+      const recs = await researchOf(p);
+      if (!recs.length) throw new Error('이 과제의 연구개발계획서 기록이 없습니다 — 아래 연구개발계획서 YAML 넣기에 KR_<과제>.yaml 을 넣으세요(이 기능 전에 넣은 것은 다시 한 번)');
+      const sec = await plus.plusResolveSection();
+      const sectionId = sec?.ok ? sec.section.id : st.note.sectionId;
+      if (!sectionId && !st.resShare[resKey(p)]?.pageId) {
+        throw new Error(sec?.kind === 'notebook' ? `${sec.error} — 위 예상 비용 칸의 섹션 찾기/만들기에서 노트북을 고르거나 과제 정보 섹션을 고르세요` : (sec?.error || 'OneNote MCP 서버에 닿지 않습니다'));
+      }
+      client = await KRX_MCP.open(PLUS_DEFAULTS.onenoteMcpUrl, { clientName: 'krs-workspace', fetch: mcpFetch });
+      const page = await RSY.publish({ client, onenote: KRX_ONENOTE, sectionId, page: st.resShare[resKey(p)] || null, name: p.name, code: p.code, recs, by: myName(), now: Date.now() });
+      st.resShare[resKey(p)] = { pageId: page.pageId, webUrl: page.webUrl, title: page.title, name: p.name, at: Date.now() };
+      await chrome.storage.local.set({ [RES_SHARE_KEY]: st.resShare });
+      st.resMsg = `${page.created ? '만들었습니다' : '고쳤습니다'} — 「${page.title}」 · 차년도 ${recs.length}개`;
+      if (!auto) st.resMsg += (await copyText(RSY.linkText(page))) ? ' · 링크를 복사했습니다 — kr_ext_rerp 확장 설정의 연구개발계획서 칸에 붙여 넣으세요' : ' · 링크 복사를 누르세요';
+      logEvent('rnd', true, `R&D 연구내용 원노트 ${auto ? '다시 ' : ''}올림(${label(p)}): ${page.title} · 차년도 ${recs.length}개`);
+      ok = true;
+    } catch (err) {
+      Object.assign(st, { resError: true, resMsg: `연구내용을 올리지 못했습니다 — ${String(err?.message || err)}` });
+      logEvent('rnd', false, `R&D 연구내용 원노트 올리기 실패(${label(p)}): ${String(err?.message || err)}`);
+    } finally {
+      if (client) { try { await client.close(); } catch { /* 이미 닫힘 */ } }
+      st.resBusy = false;
+      paintRes();
+    }
+    return ok;
+  }
+
+  async function copyResLink() {
+    const sh = cur() ? st.resShare[resKey(cur())] : null;
+    if (!sh?.pageId) return;
+    const ok = await copyText(RSY.linkText(sh));
+    flash(el.resCopy, ok ? '복사함' : '못 복사함');
+  }
+
+  function paintRes() {
+    const p = cur();
+    const sh = p ? st.resShare[resKey(p)] : null;
+    if (st.resFor !== resKey(p) && !st.resBusy) Object.assign(st, { resFor: resKey(p), resMsg: '', resError: false });   // 다른 과제로 가면 지난 알림은 지운다
+    el.resShare.disabled = st.resBusy || !p;
+    el.resShare.textContent = st.resBusy ? '올리는 중…' : sh ? '연구내용 다시 올리기' : '연구내용 올리기';
+    el.resCopy.disabled = st.resBusy || !sh?.pageId;
+    el.resOpen.classList.toggle('hidden', !sh?.webUrl);
+    if (sh?.webUrl) el.resOpen.href = sh.webUrl;
+    el.resMsg.textContent = st.resMsg || (sh ? `「${sh.title}」 · 올림 ${when(sh.at)} — 링크 복사로 rerp 에 보냅니다` : p ? '' : '과제를 고르세요');
+    el.resMsg.classList.toggle('error', !!st.resError);
+  }
+
   /* ---------------------------------------------------------- 그리기·배선 */
 
   function paintAll() {
     paintProjects();
     paintHead();
     paintItems();   // 장부에 새 비목이 들어왔을 수 있다(YAML·JSON 들이기) — 설정의 비목 체크도 맞춘다
+    paintRes();     // 원노트 칸의 연구내용 공유는 보고 있는 과제의 것
     if (!cur()) return;
     paintBudget();
     paintErp();
@@ -1740,6 +1835,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.plusOn.addEventListener('change', onPlusToggle);
     el.plusFind.addEventListener('click', findPlusSection);
     el.plusSection.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); findPlusSection(); } });
+    el.resShare.addEventListener('click', () => shareResearch(cur()));
+    el.resCopy.addEventListener('click', copyResLink);
     el.erpRefresh.addEventListener('click', () => refreshErp({ force: true, reason: '↻' }));
     el.erpLink.addEventListener('click', () => linkErp({ manual: true }));
     el.erpUnlink.addEventListener('click', unlinkErp);
@@ -1753,10 +1850,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   async function show() {
     el.root.classList.remove('hidden');
     if (!st.loaded) {
-      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, NOTE_KEY, SET_KEY]);
+      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, NOTE_KEY, SET_KEY, RES_SHARE_KEY]);
       st.book = normalizeBook(saved?.[BOOK_KEY]);
       st.note = normalizeNote(saved?.[NOTE_KEY]);
       st.set = normalizeSet(saved?.[SET_KEY]);
+      const share = saved?.[RES_SHARE_KEY];
+      st.resShare = share && typeof share === 'object' && !Array.isArray(share) ? share : {};
       st.loaded = true;
       clearLogForm();
       clearChangeForm();

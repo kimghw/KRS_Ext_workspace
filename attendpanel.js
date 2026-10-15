@@ -253,7 +253,9 @@ export function createAttendPanel({
   });
   // 출장 카드의 증빙 넣는 곳(사후정산 칸·여비증빙 송부 칸) 아래의 웹페이지 캡처 단추 둘(보고 있는 탭 · 부분 골라 캡처) — 공문 탭의 것과
   // 같은 단추다(webpick.js, 2026-10-08 사용자 지정: "여기도 웹페이지 카피 공문처럼 하게해줘.. 2개 동일한 기능으로"). webcap 은 테스트가 갈아 끼운다.
-  const webPick = createWebPick(webcap);
+  // 메일 읽기(전체 = 메일 본문과 첨부, 부분 = 첨부 파일 하나 — 2026-10-15)는 공문 탭에만 둔다. 증빙은 찍은 페이지만 받으니(pagePdfs)
+  // 여기서는 메일도 여느 웹페이지처럼 찍는다(mail: null).
+  const webPick = createWebPick({ mail: null, ...webcap });
   /** 웹페이지 캡처 단추 둘. where 는 'after'(사후정산 칸)·'send'(여비증빙 송부 칸) — 한 카드에 둘이 같이 서도 "고르기 취소"는 누른 곳에만 선다. */
   const capHtml = (docNo, where, locked) => `<div class="at-cap" data-cap="${where}">${pickButton({ picking: webPick.picking(`${docNo}:${where}`), disabled: locked })}</div>`;
 

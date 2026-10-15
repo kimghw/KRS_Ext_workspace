@@ -33,10 +33,22 @@ import { budgetCheck, budgetText, budgetTitle, itemOf } from './src/gmbudget.js'
 import PLAN from './rerp/plan.js';
 import { gongmunSmart, gongmunReasonSmart } from './src/llm.js';
 import { readSlots } from './src/pagecap.js';
+import { dropReady, parseDrop, grabDropped } from './src/mailgrab.js';
 import { cutBoxes, cutDrop, cutName, cutQuote, CUT_PAD, PAD_STEP, MAX_PAD } from './src/quotecut.js';
 import { createWebPick, pickButton } from './webpick.js';
 
 const FILE_LIMIT = 10 * 1024 * 1024;
+/**
+ * 원본 첨부의 한도 — 메일 첨부처럼 파일 자체로 두었다가 공문 창의 파일첨부에 그대로 올리는 파일(2026-10-15 사용자 지정: "첨부는 파일 자체로
+ * 관리하지만 ocr 해서 이것도 필요한 내용으로 넣는 거지"). Outlook 첨부는 25MB 까지 온다. 읽기에 보내는 그림·PDF 는 FILE_LIMIT 그대로다.
+ */
+const ORIGINAL_LIMIT = 25 * 1024 * 1024;
+/** 공문 창의 파일첨부 칸 수(src/gmwrite.js — RadUpload 다섯 칸). 묶은 PDF 가 먼저 들고 원본 첨부가 뒤에 든다. */
+const ATTACH_SLOTS = 5;
+/** 원본 첨부에서 뽑은 글자의 몫 — 읽기 입력은 18000자에서 잘린다(src/llm.js 의 gongmunInput). 파일 하나가 가져가는 몫의 아래·위. */
+const TEXT_ROOM = 18000;
+const OFFICE_MIN = 1500;
+const OFFICE_MAX = 8000;
 /** 한 번에 읽는 장 수. 로컬 CLI 다리는 여섯 장까지 받는다(native/host.mjs). 웹페이지 캡처의 그 밖의 장은 첨부에만 넣는다. */
 const MAX_FILES = 5;
 const SAVE_WAIT_MS = 400;
@@ -433,6 +445,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const docs = (w?.draft.attach || []).filter((a) => a.files?.length);
     el.evidenceCount.textContent = !w ? '' : docs.length ? `첨부 ${docs.length}종` : w.source?.label === '직접 입력' ? '직접 입력' : '문서 읽음';
     el.dropLead.textContent = st.capturing ? '캡처하는 중…' : st.busy ? '읽는 중…' : w ? moreLead(st.kind, w.draft.attach) : k.ask;
+    el.dropLead.title = el.dropLead.textContent;   // 한 줄로 잘렸을 때 다 보이게(sidepanel.css)
     el.file.disabled = st.busy || st.capturing;
     el.capture.innerHTML = pickButton({ picking: pick.picking(PICK_KEY), disabled: st.busy || st.capturing });
     el.manual.disabled = st.busy;
@@ -473,6 +486,49 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /** 읽기에 보내는 파일인가 — 웹페이지 캡처의 뒷장(자리가 모자라 첨부에만 넣는 장)은 보내지 않는다. */
   const readable = (f) => !f.attachOnly;
+  /** 읽기가 파일째 보는 꼴인가 — 그림·PDF. 그 밖(한글·워드·파워포인트·엑셀 …)은 원본 첨부로 받고 글자를 뽑아 준다. */
+  const viewable = (f) => /^image\//.test(f.type || '') || f.type === 'application/pdf';
+  /** 원본 첨부의 첨부 목록 이름 — 파일 이름에서 확장자를 뗀 것(본문 첨부 줄의 "1. 발표자료 양식 1부."). */
+  const originalLabel = (name) => String(name || '').replace(/\.[^.]+$/, '').trim() || String(name || '첨부');
+
+  /**
+   * 초안의 첨부 목록 — 읽기가 가린 종류대로 묶고(attachWithCut), 원본 첨부 가운데 읽기가 가리지 못한 것(글자만 준 파워포인트·한글 등)은
+   * 파일 이름 그대로 한 줄씩 붙인다 — 갈래의 기본 문서(견적서 등)로 묶이지 않게. 원본 첨부는 묶은 PDF 에 들지 않고 그대로 올라간다(attachFiles).
+   */
+  function attachOf(kind, files, parts, cut) {
+    const known = new Set((parts || []).map((p) => p?.file));
+    const loose = (files || []).filter((f) => f.original && !known.has(f.name));
+    const list = attachWithCut(kind, parts, (files || []).filter((f) => !loose.includes(f)).map((f) => f.name), cut);
+    return [...list, ...loose.map((f) => ({ label: originalLabel(f.name), files: [f.name], original: true }))];
+  }
+
+  /**
+   * 원본 첨부(워드·파워포인트·엑셀·한글 문서 hwpx)의 글자를 뽑는다(src/officetext.js) — 파일은 그대로 두고 글자만 읽기에 붙여 넣은 글처럼 준다.
+   * 옛 형식(hwp·doc·ppt·xls)이나 깨진 파일은 글자 없이 첨부로만 두고 notes 에 까닭을 적는다.
+   * @returns {Promise<string>} 붙일 글(없으면 '')
+   */
+  async function officeTextOf(file, name, max, notes) {
+    let mod;
+    try {
+      mod = await import('./src/officetext.js');
+    } catch {
+      return '';
+    }
+    if (!mod.officeKind(name, file.type)) {
+      const note = mod.unsupportedNote?.(name);
+      if (note) notes.push(note);
+      return '';
+    }
+    try {
+      const got = await mod.officeText(new Uint8Array(await file.arrayBuffer()), name, { max });
+      if (!got?.text?.trim()) return '';
+      if (got.cut) notes.push(`${name} 의 글자가 길어 앞부분만 읽었습니다 — 파일은 그대로 첨부합니다`);
+      return mod.officeTextBlock(name, got);
+    } catch (err) {
+      notes.push(`${name} 의 글자를 뽑지 못했습니다 — 첨부로만 넣습니다(${err.message})`);
+      return '';
+    }
+  }
 
   /** 넣은 파일을 한 줄로 — 웹페이지 캡처의 장들은 묶어 "화면캡처_inflearn.com_2026-10-08 7장" 으로 적는다. */
   function filesLine(files) {
@@ -500,21 +556,30 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
    * capture 는 웹페이지를 통째로 캡처한 장들을 넣을 때다(captureTab) — 장 수가 정해져 오지 않으니 읽기에는 남은 자리만큼만 보내고
    * 나머지 장은 첨부(PDF)에만 넣는다(attachOnly). 탭을 여럿 찍었으면 탭마다 첫 장부터 돌아가며 자리를 나눈다(readSlots).
    * 한 탭의 장들은 한 묶음(group)이라 읽기가 가린 종류를 뒷장도 이어 받는다(spreadParts). 화면 글자(text)는 붙여 넣은 글과 같은 자리로 간다.
-   * @param {{files?: File[], text?: string, capture?: {groups: string[], counts: number[], notes?: string[]}|null}} input
-   *   capture.groups 는 장마다 묶음, counts 는 탭마다 장 수(찍은 차례), notes 는 읽은 내용에 덧붙일 말(너무 길어 잘린 페이지·못 찍은 탭)
+   *
+   * originals 는 원본 첨부다(2026-10-15 사용자 지정: "전체 하면 메일이랑 첨부를 같이 가져오고.. 첨부는 파일 자체로 관리하지만 ocr 해서 이것도
+   * 필요한 내용으로 넣는 거지") — 메일 첨부(webpick.js 의 shoot 이 files 로 준다)와, 끌어 넣은 그림·PDF 아닌 파일(한글·워드·파워포인트·엑셀)이다.
+   * 파일은 그대로 두었다가(original) 공문 작성 때 묶은 PDF 뒤에 그대로 올린다(writeDoc). 그림·PDF 면 남은 자리만큼 읽기에도 보내고, 문서 파일이면
+   * 글자를 뽑아 붙여 넣은 글과 같이 준다(officeTextOf) — 묶은 PDF 에는 들지 않는다(attachFiles).
+   * @param {{files?: File[], text?: string, capture?: {groups: string[], counts: number[], notes?: string[]}|null, originals?: File[], notes?: string[]}} input
+   *   capture.groups 는 장마다 묶음, counts 는 탭마다 장 수(찍은 차례), notes 는 읽은 내용에 덧붙일 말(너무 길어 잘린 페이지·못 찍은 탭·못 가져온 첨부)
    */
-  async function intake({ files = [], text = '', capture = null }) {
+  async function intake({ files = [], text = '', capture = null, originals = [], notes: told = [] }) {
     const kind = st.kind;
     const k = KINDS[kind];
     if (st.busy) return;
+    if (!capture) {
+      originals = [...files.filter((f) => !viewable(f)), ...originals];
+      files = files.filter(viewable);
+    }
     const prev = st.work[kind] || null;
     const kept = prev?.files || [];
     const room = Math.max(MAX_FILES - kept.filter(readable).length, 0);
-    if (files.length && room <= 0 && !capture) return setStatus(`파일은 ${MAX_FILES}장까지 넣습니다 — 새로 시작하려면 읽은 내용의 비우기를 누르세요.`, 'error');
+    if (files.length && room <= 0 && !capture && !originals.length) return setStatus(`파일은 ${MAX_FILES}장까지 넣습니다 — 새로 시작하려면 읽은 내용의 비우기를 누르세요.`, 'error');
     const slots = capture ? readSlots(capture.counts, room) : [];
     const picked = [];
     for (const [i, f] of (capture ? files : files.slice(0, room)).entries()) {
-      if (!/^image\//.test(f.type) && f.type !== 'application/pdf') return setStatus(`그림·PDF 만 읽습니다 — ${f.name}`, 'error');
+      if (!viewable(f)) return setStatus(`그림·PDF 만 읽습니다 — ${f.name}`, 'error');
       if (f.size > FILE_LIMIT) return setStatus(`파일이 너무 큽니다(${Math.round(f.size / 1048576)}MB) — 10MB 이하로 넣어 주세요.`, 'error');
       try {
         const named = namedPaste(f, [...kept, ...picked].map((x) => x.name));
@@ -526,16 +591,55 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         return setStatus(err.message, 'error');
       }
     }
-    if (!picked.length && !text.trim()) return undefined;
+    // 원본 첨부 — 그림·PDF 는 남은 자리만큼 읽기에도 보내고, 문서 파일은 글자를 뽑는다. 글자의 몫은 붙여 넣은 글이 쓰고 남은 만큼을 나눈다.
+    const fileNotes = [...(capture?.notes || []), ...told];
+    const offices = [];
+    let left = Math.max(room - picked.filter(readable).length, 0);
+    const docs = originals.filter((f) => !viewable(f)).length;
+    const share = docs ? Math.min(OFFICE_MAX, Math.max(OFFICE_MIN, Math.floor((TEXT_ROOM - (prev?.text || '').length - text.length) / docs))) : 0;
+    for (const f of originals) {
+      if (f.size > ORIGINAL_LIMIT) {
+        fileNotes.push(`${f.name} 은(는) 너무 커서(${Math.round(f.size / 1048576)}MB) 넣지 않았습니다 — 첨부는 25MB 까지입니다`);
+        continue;
+      }
+      try {
+        const named = namedPaste(f, [...kept, ...picked].map((x) => x.name));
+        const see = viewable(f) && f.size <= FILE_LIMIT && left > 0;
+        if (see) left--;
+        picked.push({ name: named.name, type: f.type || 'application/octet-stream', size: f.size, dataUrl: await readFile(named), original: true, ...(see ? {} : { attachOnly: true }) });
+        if (!viewable(f)) offices.push(await officeTextOf(f, named.name, share, fileNotes));
+        else if (!see) fileNotes.push(`${named.name} 은(는) 읽기 자리(${MAX_FILES}장)가 모자라 첨부로만 넣습니다`);
+      } catch (err) {
+        fileNotes.push(`${f.name} 을(를) 넣지 못했습니다 — ${err.message}`);
+      }
+    }
+    text = [text, ...offices].filter((s) => s && s.trim()).join('\n\n');
+    if (!picked.length && !text.trim()) {
+      if (fileNotes.length) setStatus(fileNotes.join(' · '), 'error');
+      return undefined;
+    }
     const all = [...kept, ...picked];
     const toRead = all.filter(readable);
     const allText = [prev?.text || '', text].filter((s) => s.trim()).join('\n\n');
-    const held = picked.filter((f) => f.attachOnly).length;
+    // 읽을 것이 없는 원본 첨부만 더 넣었으면(글자를 못 뽑는 hwp 등) 다시 읽지 않고 첨부 목록에만 붙인다. 쓰던 초안이 없으면 읽을 것이 없다고 말한다.
+    if (!toRead.length && !allText.trim()) {
+      if (!prev) return setStatus(`읽을 내용이 없습니다 — ${picked.map((f) => f.name).join(', ')} 은(는) 글자를 읽지 못하는 파일입니다. 요청 메일이나 문서를 함께 넣어 주세요.`, 'error');
+      Object.assign(prev, { files: all, source: { ...prev.source, from: filesLine(all) }, notes: [...(prev.notes || []), ...fileNotes] });
+      prev.draft.attach = attachOf(kind, all, prev.parts, prev.cut);
+      saveWork();
+      if (kind === st.kind) paintDraft();
+      paintIntake();
+      return setStatus(`첨부로 넣었습니다 — ${picked.map((f) => f.name).join(', ')}`);
+    }
+    const held = picked.filter((f) => f.attachOnly && !f.original).length;
+    const shots = picked.filter((f) => !f.original).length;
+    const added = picked.filter((f) => f.original).length;
     // 탭을 여럿 찍었으면 읽는 장은 탭마다 앞쪽에서 고른다(readSlots) — "앞 n장" 이 아니다.
     const front = capture?.counts?.length > 1 ? '페이지마다 앞쪽부터 ' : '앞 ';
-    const extra = capture
-      ? (held ? ` · 캡처 ${picked.length}장 가운데 ${front}${picked.length - held}장과 화면 글자를 읽고, 나머지는 첨부에만 넣습니다` : ' · 화면 글자도 함께 읽습니다')
-      : files.length > room ? ` · ${MAX_FILES}장까지만 넣습니다` : '';
+    const extra = (capture && shots
+      ? (held ? ` · 캡처 ${shots}장 가운데 ${front}${shots - held}장과 화면 글자를 읽고, 나머지는 첨부에만 넣습니다` : ' · 화면 글자도 함께 읽습니다')
+      : files.length > room ? ` · ${MAX_FILES}장까지만 넣습니다` : '')
+      + (added ? ` · 첨부 파일 ${added}개는 파일 그대로 첨부합니다` : '');
     st.busy = true;
     revealEvidence();
     paintView();
@@ -554,10 +658,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       const cut = CUT_KINDS.has(kind)
         ? await makeCut(all, cutBoxes(rec.quoteArea, all, rec.parts), { kind, parts: rec.parts, on: prev?.cut?.on ?? true, notes: cutNotes }) : null;
       const { draft: fresh, notes } = fromRecord(kind, rec, { me: me(), files: all.map((f) => f.name), cut });
+      // 원본 첨부 가운데 읽기가 가리지 못한 것은 파일 이름으로 한 줄씩(attachOf).
+      if (all.some((f) => f.original)) fresh.attach = attachOf(kind, all, rec.parts, cut);
       notes.push(...cutNotes);
       if (kind === 'purchase' && rec.docType === 'course') notes.push('교육 안내문으로 보입니다 — 교육 품의라면 교육 갈래에 다시 넣어 주세요');
-      if (capture?.notes) notes.push(...capture.notes);
-      if (held) notes.push(`캡처 ${picked.length}장 가운데 ${front}${picked.length - held}장만 읽었습니다 — 나머지 ${held}장은 첨부 PDF 에만 들어갑니다`);
+      notes.push(...fileNotes);
+      if (held) notes.push(`캡처 ${shots}장 가운데 ${front}${shots - held}장만 읽었습니다 — 나머지 ${held}장은 첨부 PDF 에만 들어갑니다`);
       if (got.note) notes.push(got.note);
       // 읽은 문서의 머리 — 문서 종류(레시피 reading.yaml 의 docType names) · 누구의 것(attach_rules.yaml 의 who — 구매처·교육기관·출장지·요청 기관) · 견적일.
       const what = [DOC_NAMES[rec.docType] || '문서', whoOf(kind, fresh), fresh.quoteDate].filter(Boolean).join(' · ');
@@ -635,12 +741,18 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       paintIntake();
     }
     if (!got) return;
-    const { pages, notes } = got;
+    // 메일이면(webpick.js → src/mailgrab.js) 본문을 찍은 장과 함께 첨부 파일(files — 원본)과 메일 글(text — 제목·보낸 사람·본문)이 온다
+    // (2026-10-15 사용자 지정: "전체 하면 메일이랑 첨부를 같이 가져오고 … 부분으로 첨부파일 클릭하면 첨부파일만 가져오고"). 메일 글이 오면
+    // 본문 장의 화면 글자는 그것과 겹치니 메일 글을 쓴다. 첨부는 원본 첨부로 넣는다(intake 의 originals).
+    const { pages = [], notes = [], files: originals = [], text: told = '' } = got;
     const id = `cap${Date.now()}`;
+    const shots = pages.filter((p) => p.files.length);
     return intake({
-      files: pages.flatMap((p) => p.files),
-      text: pages.map((p) => p.text).filter(Boolean).join('\n\n'),
-      capture: { groups: pages.flatMap((p, i) => p.files.map(() => `${id}_${i}`)), counts: pages.map((p) => p.files.length), notes },
+      files: shots.flatMap((p) => p.files),
+      text: told || pages.map((p) => p.text).filter(Boolean).join('\n\n'),
+      capture: shots.length ? { groups: shots.flatMap((p, i) => p.files.map(() => `${id}_${i}`)), counts: shots.map((p) => p.files.length), notes } : null,
+      originals,
+      notes: shots.length ? [] : notes,
     });
   }
 
@@ -786,7 +898,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
    * 이 탭은 어디에 놓아도 문서 넣는 곳으로 받는다.
    */
   function onDrag(e) {
-    if (!hasFiles(e)) return;
+    if (!hasFiles(e) && !dropReady(e.dataTransfer?.types)) return;
     e.preventDefault();
     e.stopPropagation();
     // 비교작성 탭은 문서를 읽지 않는다(읽은 파일은 사이드패널에만 있다) — 놓아도 받지 않는다. 에이전트(공문 검색)에서도 넣을 곳이 없다.
@@ -800,12 +912,44 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   }
 
   function onDrop(e) {
-    if (!hasFiles(e)) return;
+    const mail = !hasFiles(e) && dropReady(e.dataTransfer?.types);
+    if (!hasFiles(e) && !mail) return;
     e.preventDefault();
     e.stopPropagation();
     el.intake.classList.remove('over');
     if (st.compareTab || agentOn()) return;
+    // 끌어 놓은 것은 이 처리기 안에서만 읽힌다 — await 앞에서 읽어 둔다(parseDrop).
+    if (mail) return void dropMail(parseDrop(e.dataTransfer));
     intake({ files: [...e.dataTransfer.files] });
+  }
+
+  /**
+   * 메일 첨부를 끌어 놓았을 때(2026-10-15 사용자 지정: "메일에서 첨부 파일 목록을 인식하고 드래그 해서 갖어올 수도 있나") — Outlook 첨부
+   * 카드면 그 메일 탭에서 그 파일을, 내려받기 링크면 그 주소의 파일을 가져와(src/mailgrab.js 의 grabDropped) 원본 첨부로 넣는다(intake 의
+   * originals — 파일 그대로 첨부하고, 그림·PDF 는 읽고 문서 파일은 글자를 뽑는다). Outlook 카드가 다른 출처(메일 탭 → 패널)로 건너올 때
+   * 첨부 정보가 실리는지는 아직 실제로 끌어 보지 못했다 — 실리지 않으면 알아보지 못했다고 말하고 캡처 단추를 권한다.
+   */
+  async function dropMail(drop) {
+    if (st.busy || st.capturing) return undefined;
+    if (!drop) return setStatus('끌어 놓은 것에서 첨부를 알아보지 못했습니다 — 메일을 연 탭에서 캡처의 전체(메일과 첨부)나 부분(첨부 파일 누르기)으로 가져오세요.', 'error');
+    st.capturing = true;
+    paintIntake();
+    setStatus(drop.kind === 'outlook' ? `끌어 온 첨부 파일 ${drop.items.length}개를 메일에서 가져오는 중입니다…` : '끌어 온 링크의 파일을 가져오는 중입니다…');
+    let got = null;
+    try {
+      got = await grabDropped(drop, { onStatus: (text) => { if (text) setStatus(text); } });
+      logEvent('gongmun', !!got.files.length, `첨부 끌어 넣기 · ${got.files.map((f) => f.name).join(', ') || '없음'}${got.failed.length ? ` · 못 가져옴 ${got.failed.length}개` : ''}`);
+    } catch (err) {
+      setStatus(err.message, 'error');
+      logEvent('gongmun', false, `첨부 끌어 넣기 실패 · ${err.message}`);
+    } finally {
+      st.capturing = false;
+      paintIntake();
+    }
+    if (!got) return undefined;
+    const notes = got.failed.map((f) => `가져오지 못한 첨부 파일 — ${f.name}: ${f.why}`);
+    if (!got.files.length) return setStatus(notes.join(' · ') || '가져온 첨부 파일이 없습니다.', 'error');
+    return intake({ originals: got.files, notes });
   }
 
   /**
@@ -941,7 +1085,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     } else {
       w.cut.on = btn.dataset.cut === 'on';
     }
-    w.draft.attach = attachWithCut(kind, w.parts, (w.files || []).map((f) => f.name), w.cut);
+    w.draft.attach = attachOf(kind, w.files || [], w.parts, w.cut);
     saveWork();
     if (st.kind === kind) {
       paintSource();
@@ -1277,11 +1421,18 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     try {
       const got = fresh ? { rows: st.hist.rows, notes: [] }
         : await listMine({ from, to: now, onBox: (box) => { st.hist.step = `${BOXES[box].label} 읽는 중…`; paintHistState(); } });
-      st.hist.rows = got.rows;
-      if (!fresh) {
-        st.hist.notes = got.notes;
-        st.hist.from = from;
-        st.hist.to = now;
+      // 전자결재 세션이 사용자를 잃으면(포털 로그인은 살아 있어 로그인 화면이 아님) 기안함이 문서 0건으로 뜬다(2026-10-15 실측 — 미결함은 "페이지를 로드중
+      // 오류"). 같은 기간에 읽어 둔 문서가 있는데 하나도 안 오면 그것이라 보고 읽어 둔 것을 둔다 — 지우면 사례비 누계와 새 신고서의 당해 연도 누적이 틀린다.
+      const lost = !fresh && !got.rows.length && st.hist.rows.some((r) => !r.date || (r.date >= from && r.date <= now));
+      if (lost) {
+        st.hist.notes = ['전자결재가 문서를 하나도 돌려주지 않았습니다 — 전자결재 세션이 풀렸을 수 있습니다. eclass 에서 전자결재를 한 번 연 뒤 새로고침하세요(읽어 둔 것을 그대로 보입니다).'];
+      } else {
+        st.hist.rows = got.rows;
+        if (!fresh) {
+          st.hist.notes = got.notes;
+          st.hist.from = from;
+          st.hist.to = now;
+        }
       }
       const todo = staleReports();
       for (const [i, r] of todo.entries()) {
@@ -1293,10 +1444,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
           st.hist.notes.push(`${r.id} 본문을 읽지 못했습니다 — ${err.message}`);
         }
       }
-      if (!fresh) st.hist.at = Date.now();
+      // 세션이 풀린 것으로 보이면 읽은 때를 새로 적지 않는다 — 다음에 펴면 다시 읽는다.
+      if (!fresh && !lost) st.hist.at = Date.now();
       saveHist();
-      logEvent('gongmun', true, fresh ? `외부강의등 신고서 본문 ${todo.length}건 다시 읽음(직급·담당 연락처)`
-        : `공문 이력 읽음 · ${st.hist.rows.length}건 · ${from}부터${got.notes.length ? ` · ${got.notes.join(' / ')}` : ''}`);
+      logEvent('gongmun', !lost, lost ? `공문 이력 — 전자결재가 0건을 돌려줘 읽어 둔 ${st.hist.rows.length}건을 둠(세션이 풀렸을 수 있음) · ${from}부터`
+        : fresh ? `외부강의등 신고서 본문 ${todo.length}건 다시 읽음(직급·담당 연락처)`
+          : `공문 이력 읽음 · ${st.hist.rows.length}건 · ${from}부터${got.notes.length ? ` · ${got.notes.join(' / ')}` : ''}`);
     } catch (err) {
       st.hist.error = err.message;
       logEvent('gongmun', false, `공문 이력 읽기 실패 · ${err.message}`);
@@ -1823,13 +1976,18 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     } catch (err) {
       setStatus(`첨부 PDF 를 만들지 못해 첨부 없이 씁니다 — ${err.message}`, 'error');
     }
+    // 원본 첨부(메일 첨부 등)는 묶은 PDF 뒤에 파일 그대로 — 창의 파일첨부는 다섯 칸이라 넘치는 것은 빼고 그렇다고 말한다.
+    const originals = originalFiles(w);
+    const over = Math.max(files.length + originals.length - ATTACH_SLOTS, 0);
+    files = [...files, ...originals].slice(0, ATTACH_SLOTS);
+    const left = over ? ` · 첨부 칸(${ATTACH_SLOTS}개)이 모자라 ${over}개는 넣지 못했습니다 — 창의 파일첨부에서 바꿔 넣으세요` : '';
     try {
       const res = await writeGongmun(plan, { onStep: paintStep, files, onTab: (id) => { st.lastTab = id; paintWrite('새 공문 창을 여는 중…'); } });
       const bad = res.steps.filter((x) => x.ok === false);
       st.lastTab = res.tabId;
       st.writeDone = { ok: !bad.length, docId: res.docId || '', bad: bad.map((x) => x.label) };
-      setStatus(bad.length ? `뒤 탭에 공문을 썼습니다 — ${bad.map((x) => x.label).join('·')}은(는) 공문 보기로 열어 확인하세요.`
-        : `뒤 탭에 공문을 썼습니다${files.length ? '(첨부까지)' : ''} — 공문 보기로 열어 확인하고 임시저장 뒤 상신하세요.`, bad.length ? 'error' : '');
+      setStatus((bad.length ? `뒤 탭에 공문을 썼습니다 — ${bad.map((x) => x.label).join('·')}은(는) 공문 보기로 열어 확인하세요.`
+        : `뒤 탭에 공문을 썼습니다${files.length ? '(첨부까지)' : ''} — 공문 보기로 열어 확인하고 임시저장 뒤 상신하세요.`) + left, bad.length || over ? 'error' : '');
       // 쓴 공문은 창에서 임시저장·상신해야 기안함에 선다 — 읽어 둔 이력을 묵은 것으로 두어 다음에 펴면 다시 읽는다.
       if (st.hist.at) st.hist.at = 1;
       logEvent('gongmun', !bad.length, `공문 작성 · ${KINDS[st.kind].title} · ${plan.values.title}${res.docId ? ` · ${res.docId}` : ''}${files.length ? ` · 첨부 ${files.length}개` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}`);
@@ -1857,9 +2015,20 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   /** 읽은 문서를 PDF 하나로 묶어 내려받는다 — 전자결재 첨부로 쓴다(원본 ea_approval 도 견적서를 PDF 로 바꿔 붙인다). */
   /** 첨부할 파일 — 견적서를 오렸으면(cut) 오린 그림이 앞에 오고, 오려 낸 화면의 장(cut.drop)은 빠진다. */
   function attachFiles(w) {
-    const files = w?.files || [];
+    // 원본 첨부(메일 첨부·문서 파일)는 묶지 않고 파일 그대로 올린다(writeDoc 의 originalFiles).
+    const files = (w?.files || []).filter((f) => !f.original);
     const c = w?.cut;
     return c?.on ? [c.file, ...files.filter((f) => !c.drop.includes(f.name))] : files;
+  }
+
+  /**
+   * 파일 그대로 올릴 원본 첨부 — 메일 첨부·끌어 넣은 문서 파일(intake 의 originals). 이름은 넣을 때 정한 그대로(같은 이름이면 _2),
+   * 바이트는 넣을 때 읽어 둔 dataUrl 이다. 공문 창의 파일첨부가 금지 확장자·크기를 다시 본다(src/gmwrite.js 의 formCheck).
+   * @returns {{name: string, type: string, base64: string}[]}
+   */
+  function originalFiles(w) {
+    return (w?.files || []).filter((f) => f.original && f.dataUrl)
+      .map((f) => ({ name: f.name, type: f.type || 'application/octet-stream', base64: String(f.dataUrl).slice(String(f.dataUrl).indexOf(',') + 1) }));
   }
 
   /** 첨부 목록의 문서마다 묶을 파일. 어느 묶음에도 없는 파일은 갈래의 기본 문서로 묶는다. */

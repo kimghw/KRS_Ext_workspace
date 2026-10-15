@@ -39,6 +39,7 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .app-header button.icon { position: relative; width: 34px; height: 34px; min-height: 34px; padding: 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: none; color: var(--muted); }
 .app-header button.icon svg { width: 18px; height: 18px; stroke-width: 1.8; }
 .app-header button.icon:hover:not(:disabled) { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
+.app-header .settings-shortcut[aria-expanded="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 .app-header button:focus-visible, .home-toggle input:focus-visible { outline-width: 2px; outline-offset: 2px; }
 .head-tools { display: flex; flex: none; align-items: center; gap: 7px; margin-left: auto; }
 /* 네이티브 체크박스라 키보드·저장 동작은 그대로이고, 집 아이콘 옆의 작은 스위치로 표시한다. */
@@ -1106,6 +1107,9 @@ button.danger:hover { filter: brightness(1.08); }
 .gongmun .gm-drop:has(input[type="file"]:focus-visible) { outline: 2px solid var(--pick); outline-offset: 2px; }
 .gongmun .gm-drop-lead { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--pick); font-size: 14px; font-weight: 650; word-break: keep-all; overflow-wrap: anywhere; }
 .gongmun .gm-drop-lead svg { width: 17px; height: 17px; }
+/* 문서 넣기 전 상자의 머리말은 갈래마다 한 줄 — 길어도 접혀 아이콘이 떨어지지 않게 자른다(2026-10-15 사용자 지정: "구매랑 교육 부분이랑 동일하게"). */
+.gongmun .gm-intake:not(.compact) .gm-drop-lead svg { flex: none; }
+.gongmun .gm-intake:not(.compact) #gmDropLead { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gongmun .gm-drop-how { color: var(--muted); font-size: 12px; word-break: keep-all; }
 .gongmun .gm-intake[aria-busy="true"] .gm-drop { opacity: .65; cursor: progress; }
 .gongmun .gm-intake.off .gm-drop { border-color: var(--line); background: var(--surface-soft); }

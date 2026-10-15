@@ -1,0 +1,267 @@
+﻿/* 회신 추적. 공용 테마 변수를 써서 밝은 화면과 어두운 화면에 함께 대응한다. */
+.tabs:has(#tabMail) .tab { font-size: 14px; padding: 8px 1px; }
+
+.mail { min-width: 0; margin-bottom: 18px; font-size: 13px; line-height: 1.55; }
+.mail button { min-height: 34px; border-radius: 9px; font-size: 12px; font-weight: 550; white-space: nowrap; }
+.mail button.small { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.mail button:focus-visible, .mail input:focus-visible, .mail select:focus-visible, .mail summary:focus-visible { outline: 2px solid var(--pick); outline-offset: 3px; }
+.mail button.primary { font-weight: 650; }
+.mail button > svg { width: 16px; height: 16px; }
+.mail select { max-width: 100%; min-height: 36px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }
+.mail input[aria-invalid="true"] { border-color: var(--danger) !important; }
+.mail .card { border-radius: 16px; box-shadow: var(--shadow); }
+.mail .mt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.mail .mt-none { margin: 4px 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.mail button.armed { background: var(--danger); color: #fff; }
+.mail button.armed:hover:not(:disabled) { background: var(--danger); color: #fff; filter: brightness(1.08); }
+.mail[aria-busy="true"] .mt-list { opacity: .75; }
+
+/* 머리: 제목과 주요 작업, 추적 건수, 연결 정보 순서. */
+.mail .mt-head { margin-bottom: 12px; padding: 15px 14px 12px; }
+.mail .mt-head-top, .mail .mt-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mail .mt-heading { min-width: 0; }
+.mail .mt-heading h2, .mail h2.mt-heading { margin: 0; color: var(--fg); font-size: 18px; font-weight: 720; line-height: 1.35; letter-spacing: -.45px; }
+.mail .mt-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.mail .mt-head-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.mail .mt-head-tools button { min-height: 36px; }
+.mail .mt-head-tools .mt-refresh { background: var(--surface-soft); }
+.mail .mt-head-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.mail .mt-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.mail .mt-summary-open, .mail .mt-summary-done { display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.mail .mt-summary-open strong, .mail .mt-summary-done strong { color: var(--fg); font-size: 16px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.mail .mt-summary-open { border-color: color-mix(in srgb, var(--pick) 14%, var(--line)); background: var(--pick-soft); color: var(--pick); }
+.mail .mt-summary-open strong { color: var(--pick); }
+.mail .mt-connection { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.mail .mt-stamp { flex: 1 1 180px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.mail .mt-state { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 25px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.mail .mt-state::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.mail .mt-state[data-state="checking"]::before { background: var(--pick); animation: mtPulse .8s ease-in-out infinite alternate; }
+.mail .mt-state[data-state="ok"] { border-color: color-mix(in srgb, var(--free-line) 65%, var(--line)); background: color-mix(in srgb, var(--free) 46%, var(--surface)); color: var(--fg); }
+.mail .mt-state[data-state="ok"]::before { background: color-mix(in srgb, var(--free-line) 40%, var(--fg)); }
+.mail .mt-state[data-state="offline"], .mail .mt-state[data-state="error"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
+.mail .mt-state[data-state="offline"]::before, .mail .mt-state[data-state="error"]::before { background: var(--danger); }
+.mail .mt-state[data-state="auth"], .mail .mt-state[data-state="notool"] { color: var(--fg); background: color-mix(in srgb, var(--unknown) 15%, var(--surface)); border-color: color-mix(in srgb, var(--unknown) 50%, var(--line)); }
+.mail .mt-state[data-state="auth"]::before, .mail .mt-state[data-state="notool"]::before { background: var(--unknown); }
+.mail .mt-auth { color: var(--pick); background: var(--pick-soft); font-weight: 650; }
+.mail .mt-refresh.spin { color: var(--pick); }
+.mail .mt-refresh.spin svg { animation: mtRotate .9s linear infinite; }
+.mail .mt-msg { margin: 0 0 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); font-size: 12px; }
+.mail .mt-msg.error { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); color: var(--danger); background: color-mix(in srgb, var(--danger) 5%, var(--surface)); }
+.mail .mt-msg:empty { display: none; }
+@keyframes mtPulse { to { opacity: .3; } }
+@keyframes mtRotate { to { transform: rotate(360deg); } }
+
+/* 보낸 메일 등록. */
+.mail .mt-reg { margin-bottom: 12px; padding: 14px; border-color: color-mix(in srgb, var(--pick) 25%, var(--line)); }
+.mail .mt-reg[aria-busy="true"] .mt-reg-list { opacity: .6; pointer-events: none; }
+.mail .mt-reg-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.mail .mt-reg-head strong { font-size: 15px; font-weight: 650; }
+.mail .mt-inline { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.mail .mt-reg-q { width: 100%; min-height: 38px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); font-size: 13px; }
+.mail .mt-reg-list { list-style: none; display: flex; flex-direction: column; gap: 7px; max-height: 360px; margin: 10px 0 0; padding: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.mail .mt-reg-list:empty { display: none; }
+.mail .mt-reg-row label { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; }
+.mail .mt-reg-row label:hover { border-color: color-mix(in srgb, var(--pick) 45%, var(--line)); background: var(--surface-soft); }
+.mail .mt-reg-row:has(input:checked) label { border-color: var(--pick); background: var(--pick-soft); }
+.mail .mt-reg-row.registered label { cursor: default; opacity: .6; }
+.mail .mt-reg-row input { flex: none; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--pick); }
+.mail .mt-reg-text { flex: 1; min-width: 0; }
+.mail .mt-reg-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.mail .mt-reg-subj { flex-basis: 100%; color: var(--fg); font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.mail .mt-reg-date { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mail .mt-reg-prev { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mail .mt-reg-msg { margin: 8px 0 0; font-size: 12px; }
+.mail .mt-reg-msg:empty { display: none; }
+.mail .mt-note { display: block; margin-top: 4px; color: var(--muted); }
+
+/* 추적 목록. */
+.mail .mt-list { list-style: none; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; }
+.mail .mt-list > li { min-width: 0; }
+.mail .mt-item { display: block; width: 100%; min-height: 0; padding: 14px; text-align: left; white-space: normal; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); box-shadow: var(--shadow); }
+.mail .mt-item:hover { background: var(--surface); border-color: color-mix(in srgb, var(--pick) 48%, var(--line)); box-shadow: 0 3px 12px color-mix(in srgb, var(--pick) 8%, transparent); }
+.mail .mt-item:active:not(:disabled) { transform: scale(.995); }
+.mail .mt-item.closed { opacity: .68; }
+.mail .mt-item-top { display: flex; align-items: flex-start; gap: 10px; }
+.mail .mt-subj { flex: 1; min-width: 0; color: var(--fg); font-size: 15px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mail .mt-badge { flex: none; padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--pick) 25%, var(--line)); border-radius: 8px; background: var(--pick-soft); color: var(--pick); font-size: 12px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums; }
+.mail .mt-badge.done { background: color-mix(in srgb, var(--free) 65%, var(--surface)); border-color: var(--free-line); color: var(--fg); }
+.mail .mt-item-meta { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.mail .mt-keys { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.mail .mt-key { display: inline-block; max-width: 100%; padding: 2px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.mail .mt-key.done { background: color-mix(in srgb, var(--free) 48%, var(--surface)); border-color: color-mix(in srgb, var(--free-line) 65%, var(--line)); color: var(--fg); }
+.mail .mt-key.excluded { border-style: dashed; color: var(--muted); text-decoration: line-through; }
+.mail .mt-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; padding: 28px 20px; color: var(--muted); font-size: 13px; line-height: 1.7; text-align: center; }
+.mail .mt-empty strong { color: var(--fg); font-size: 15px; font-weight: 650; }
+.mail .mt-empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 4px; border: 1px solid color-mix(in srgb, var(--pick) 14%, var(--line)); border-radius: 14px; background: var(--pick-soft); color: var(--pick); }
+.mail .mt-empty-icon svg { width: 24px; height: 24px; }
+
+/* 회신 종류와 양식 표시. */
+.mail .mt-chip { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+.mail .mt-chip.reply { background: color-mix(in srgb, var(--free) 55%, var(--surface)); border-color: var(--free-line); color: var(--fg); }
+.mail .mt-chip.counted { border-color: color-mix(in srgb, var(--pick) 25%, var(--line)); background: var(--pick-soft); color: var(--pick); }
+.mail .mt-chip.candidate { background: var(--pick-soft); border-color: color-mix(in srgb, var(--pick) 35%, var(--line)); color: var(--pick); }
+.mail .mt-chip.auto { background: color-mix(in srgb, var(--unknown) 15%, var(--surface)); border-color: color-mix(in srgb, var(--unknown) 45%, var(--line)); color: var(--fg); }
+.mail .mt-chip.ndr { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); color: var(--danger); }
+.mail .mt-chip.off { border-style: dashed; color: var(--muted); }
+.mail .mt-chip.tpl { background: var(--pick-soft); border-color: color-mix(in srgb, var(--pick) 20%, var(--line)); color: var(--pick); }
+/* 회신 확인 — 확인 필요(눈에 띄게) · 수락(완료와 같은 초록) · 거부(점선·붉게). 머리·목록의 "확인 필요 n" 도 같은 색. */
+.mail .mt-chip.pending { background: color-mix(in srgb, var(--unknown) 22%, var(--surface)); border-color: color-mix(in srgb, var(--unknown) 60%, var(--line)); color: var(--fg); font-weight: 600; }
+.mail .mt-chip.accepted { background: color-mix(in srgb, var(--free) 55%, var(--surface)); border-color: var(--free-line); color: var(--fg); }
+.mail .mt-chip.rejected { border-style: dashed; border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); color: var(--danger); }
+.mail .mt-summary-pending, .mail .mt-pending { color: color-mix(in srgb, var(--unknown) 65%, var(--fg)); }
+
+/* 상세: 제목, 수신 정보, 진행률. */
+.mail .mt-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mail .mt-back { align-self: flex-start; margin: -2px 0 -3px; padding-left: 2px; color: var(--muted); }
+.mail .mt-overview { overflow: hidden; }
+.mail .mt-header { padding: 17px 16px 15px; }
+.mail .mt-header-label { display: block; margin: 0 0 7px; color: var(--muted); font-size: 12px; font-weight: 550; }
+.mail .mt-title { margin: 0 0 14px; color: var(--fg); font-size: 20px; font-weight: 720; line-height: 1.45; letter-spacing: -.45px; overflow-wrap: anywhere; }
+.mail .mt-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; margin: 0; font-size: 12px; }
+.mail .mt-meta dt { color: var(--muted); white-space: nowrap; }
+.mail .mt-meta dd { min-width: 0; margin: 0; color: var(--fg); overflow-wrap: anywhere; }
+.mail .mt-web { margin-top: 12px; }
+.mail button.mt-web { padding: 5px 0; color: var(--pick); }
+.mail .mt-progress-area { padding: 12px 16px 15px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--pick-soft) 34%, var(--surface)); }
+.mail .mt-progress-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 10px; margin-bottom: 9px; }
+.mail .mt-progress-label { color: var(--muted); font-size: 12px; font-weight: 550; }
+.mail .mt-status { margin: 0; color: var(--pick); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mail .mt-status.done { color: var(--fg); }
+.mail .mt-progress { display: block; width: 100%; height: 6px; overflow: hidden; border: 0; border-radius: 999px; background: var(--line); color: var(--pick); accent-color: var(--pick); appearance: none; }
+.mail .mt-progress::-webkit-progress-bar { border-radius: 999px; background: var(--line); }
+.mail .mt-progress::-webkit-progress-value { border-radius: 999px; background: var(--pick); }
+.mail .mt-progress::-moz-progress-bar { border-radius: 999px; background: var(--pick); }
+.mail .mt-progress.done { color: color-mix(in srgb, var(--free-line) 75%, var(--fg)); accent-color: color-mix(in srgb, var(--free-line) 75%, var(--fg)); }
+.mail .mt-progress.done::-webkit-progress-value { background: color-mix(in srgb, var(--free-line) 75%, var(--fg)); }
+.mail .mt-progress.done::-moz-progress-bar { background: color-mix(in srgb, var(--free-line) 75%, var(--fg)); }
+.mail .mt-sec { min-width: 0; padding: 14px; }
+.mail .mt-sec-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.mail .mt-h { margin: 0 0 12px; color: var(--fg); font-size: 14px; font-weight: 700; line-height: 1.5; }
+.mail .mt-sec-head .mt-h { margin: 0; }
+.mail .mt-section-note { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mail .mt-sec-head .count { min-width: 22px; height: 21px; margin-left: 5px; border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-size: 12px; }
+
+/* 표의 데이터 구조를 유지하면서 각 받을 곳을 카드형 행으로 표시한다. */
+.mail table.mt-expect { display: block; width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.mail .mt-expect thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.mail .mt-expect tbody { display: grid; gap: 9px; width: 100%; }
+.mail .mt-expect tr.mt-exp { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "org state" "addr addr" "actions actions"; align-items: start; gap: 7px 10px; padding: 11px 12px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.mail .mt-expect tr.mt-exp.done { border-color: color-mix(in srgb, var(--free-line) 55%, var(--line)); background: color-mix(in srgb, var(--free) 13%, var(--surface)); }
+.mail .mt-expect tr.mt-exp.excluded { border-style: dashed; }
+.mail .mt-expect th, .mail .mt-expect td { min-width: 0; padding: 0; border: 0; text-align: left; vertical-align: top; font-weight: 400; }
+.mail .mt-expect .mt-expect-org, .mail .mt-expect .mt-exp > th { grid-area: org; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mail .mt-expect .mt-expect-org .mt-key, .mail .mt-expect .mt-exp > th .mt-key { padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-size: 13px; font-weight: 650; line-height: 22px; white-space: normal; overflow-wrap: anywhere; }
+.mail .mt-expect .mt-addrs { grid-area: addr; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.mail .mt-expect .mt-state-cell { grid-area: state; justify-self: end; padding: 1px 7px; border: 1px solid color-mix(in srgb, var(--pick) 20%, var(--line)); border-radius: 6px; background: var(--pick-soft); color: var(--pick); font-size: 12px; font-weight: 550; line-height: 20px; white-space: nowrap; }
+.mail .mt-expect .done .mt-state-cell { border-color: var(--free-line); background: var(--free); color: var(--fg); }
+.mail .mt-expect .excluded .mt-state-cell { border-color: var(--line); background: var(--surface); color: var(--muted); }
+.mail .mt-expect .mt-btns { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }
+.mail .mt-expect .mt-btns button { min-height: 30px; margin: 0; padding: 4px 8px; font-size: 12px; }
+.mail .mt-expect .mt-btns button[data-state="done"] { background: var(--pick-soft); color: var(--pick); }
+.mail .mt-who { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.mail .mt-manual { display: inline-block; padding: 0 4px; border: 1px dotted var(--muted); border-radius: 4px; color: var(--muted); font-size: 12px; line-height: 18px; }
+
+/* 본문과 파일. */
+.mail .mt-body { max-height: 360px; margin: 10px 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); color: var(--fg); font-family: inherit; font-size: 13px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mail .mt-atts { list-style: none; display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; }
+.mail .mt-att { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 7px 9px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); font-size: 12px; }
+.mail .mt-file-icon { display: grid; place-items: center; align-self: start; width: 34px; height: 38px; border: 1px solid color-mix(in srgb, var(--pick) 15%, var(--line)); border-radius: 8px; background: var(--surface); color: var(--pick); }
+.mail .mt-file-icon svg { width: 19px; height: 22px; }
+.mail .mt-file-icon[data-kind="xlsx"] { background: color-mix(in srgb, var(--free) 40%, var(--surface)); color: color-mix(in srgb, var(--free-line) 35%, var(--fg)); }
+.mail .mt-file-icon[data-kind="pptx"] { background: color-mix(in srgb, var(--unknown) 14%, var(--surface)); color: color-mix(in srgb, var(--unknown) 65%, var(--fg)); }
+.mail .mt-file-icon[data-kind="pdf"] { background: color-mix(in srgb, var(--danger) 7%, var(--surface)); color: var(--danger); }
+.mail .mt-att-info { min-width: 0; }
+.mail .mt-att-name { display: block; min-width: 0; color: var(--fg); font-size: 12px; font-weight: 550; line-height: 1.55; overflow-wrap: anywhere; }
+.mail .mt-att-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; margin-top: 3px; }
+.mail .mt-att-size { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mail .mt-att > button { min-height: 32px; margin: 0; padding: 5px 8px; border: 1px solid var(--line); background: var(--surface); color: var(--pick); font-size: 12px; }
+.mail .mt-att > button:hover { border-color: color-mix(in srgb, var(--pick) 35%, var(--line)); background: var(--pick-soft); }
+.mail .mt-att-off { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mail .mt-path { grid-column: 1 / -1; color: var(--muted); font: 12px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; }
+.mail .mt-path + button { grid-column: 2 / -1; justify-self: end; }
+
+/* 회신: 보낸 사람, 날짜, 분류, 본문 작업 순서. */
+.mail .mt-replies { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mail .mt-reply { min-width: 0; padding: 13px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+.mail .mt-reply:first-child { padding-top: 1px; border-top: 0; }
+.mail .mt-reply.candidate { border-top-style: dashed; }
+/* 확인 필요는 왼쪽 띠로 눈에 띄게, 거부한 회신은 흐리게. */
+.mail .mt-reply.pending { box-shadow: inset 3px 0 0 var(--unknown); padding-left: 10px; }
+.mail .mt-reply.rejected { opacity: .72; }
+.mail .mt-reply.rejected .mt-reply-subj { color: var(--muted); }
+.mail .mt-check.mt-rejected .mt-att-name { color: var(--faint); text-decoration: line-through; }
+.mail .mt-reply-top { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 2px 9px; font-size: 13px; }
+.mail .mt-avatar { grid-row: 1 / 3; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid color-mix(in srgb, var(--pick) 13%, var(--line)); border-radius: 10px; background: var(--pick-soft); color: var(--pick); font-size: 13px; font-weight: 700; }
+.mail .mt-sender { min-width: 0; }
+.mail .mt-from { display: block; color: var(--fg); font-size: 14px; font-weight: 650; line-height: 1.45; overflow-wrap: anywhere; }
+.mail .mt-date { grid-column: 2; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: nowrap; }
+.mail .mt-reply-labels { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.mail .mt-reply-subj { margin-top: 8px; color: var(--fg); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.mail .mt-reply-meta { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.mail .mt-reply-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 10px; }
+.mail .mt-reply-acts button, .mail .mt-reply-acts select { min-height: 32px; padding: 5px 8px; font-size: 12px; }
+.mail .mt-reply-acts button[data-act="body"] { border: 1px solid color-mix(in srgb, var(--pick) 20%, var(--line)); background: var(--pick-soft); color: var(--pick); }
+.mail .mt-reply-acts button[data-act="web"] { color: var(--pick); }
+.mail .mt-reply-acts button[data-act="review"][data-state="rejected"] { border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.mail .mt-reply-acts select { max-width: 100%; min-width: 0; }
+.mail .mt-reply .mt-atts { margin-top: 10px; }
+
+/* 병합과 관리. */
+.mail .mt-merge[aria-busy="true"] .mt-merge-files { opacity: .6; pointer-events: none; }
+.mail .mt-merge-hint { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.mail .mt-merge-files { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 12px; }
+.mail .mt-merge-files label { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.mail .mt-merge-files .mt-check { margin: 0; }
+.mail .mt-merge-files label:has(input:checked) { border-color: color-mix(in srgb, var(--pick) 40%, var(--line)); background: var(--pick-soft); }
+.mail .mt-merge-files input { accent-color: var(--pick); }
+.mail .mt-src { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.mail .mt-report p { margin: 6px 0; color: var(--muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.mail .mt-foot { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-top: 0; padding: 12px 14px; }
+.mail .mt-export { width: 100%; min-height: 38px; border: 1px solid color-mix(in srgb, var(--pick) 24%, var(--line)); background: var(--pick-soft); color: var(--pick); font-weight: 650; }
+.mail .mt-export:hover { background: color-mix(in srgb, var(--pick) 13%, var(--surface)); }
+.mail .mt-zip-label { padding: 0 5px; border: 1px solid color-mix(in srgb, var(--pick) 25%, var(--line)); border-radius: 5px; font-size: 12px; font-weight: 650; line-height: 19px; }
+.mail .mt-manage { padding-top: 2px; }
+.mail .mt-manage > summary { display: flex; align-items: center; gap: 8px; min-height: 34px; color: var(--muted); font-size: 12px; font-weight: 550; cursor: pointer; list-style: none; }
+.mail .mt-manage > summary::-webkit-details-marker { display: none; }
+.mail .mt-manage > summary::after, .mail .mt-settings > summary::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: auto; margin-right: 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .15s ease; }
+.mail .mt-manage[open] > summary::after, .mail .mt-settings[open] > summary::after { transform: rotate(225deg); }
+.mail .mt-manage-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; padding-top: 8px; border-top: 1px solid var(--line); }
+.mail button.mt-remove { color: var(--danger); }
+.mail button.mt-remove:hover { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
+.mail button.mt-remove.armed { color: #fff; }
+
+/* 접힌 메일 설정. */
+.mail .mt-settings { margin-top: 12px; padding: 0 14px; }
+.mail .mt-settings > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 8px 0; color: var(--muted); font-size: 13px; font-weight: 550; cursor: pointer; list-style: none; }
+.mail .mt-settings > summary::-webkit-details-marker { display: none; }
+.mail .mt-settings > summary::after { margin-left: 0; }
+.mail .mt-set-state { min-width: 0; margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.mail .mt-set-body { padding: 2px 0 14px; border-top: 1px solid var(--line); }
+.mail .mt-set-msg:empty { display: none; }
+.mail .mt-field { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 13px; }
+.mail .mt-field > span:first-child { flex: none; width: 7.5em; color: var(--muted); font-size: 12px; }
+.mail .mt-field input, .mail .mt-field select { flex: 1; min-width: 0; }
+.mail .mt-field input:not([type="checkbox"]) { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }
+.mail .mt-check { display: flex; align-items: flex-start; gap: 9px; margin: 10px 0; font-size: 12px; line-height: 1.7; cursor: pointer; }
+.mail .mt-check input { flex: none; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--pick); }
+.mail .mt-check > span { min-width: 0; overflow-wrap: anywhere; }
+.mail .mt-check.off { cursor: default; opacity: .55; }
+
+@media (max-width: 380px) {
+  .mail .mt-head, .mail .mt-reg, .mail .mt-sec { padding-left: 12px; padding-right: 12px; }
+  .mail .mt-head-top { gap: 9px; }
+  .mail .mt-head-tools { gap: 4px; }
+  .mail .mt-head-tools button { padding-left: 8px; padding-right: 8px; }
+  .mail .mt-heading h2, .mail h2.mt-heading { font-size: 17px; }
+  .mail .mt-header { padding: 15px 13px 13px; }
+  .mail .mt-title { font-size: 19px; }
+  .mail .mt-progress-area { padding-left: 13px; padding-right: 13px; }
+  .mail .mt-field { flex-wrap: wrap; gap: 6px; }
+  .mail .mt-field > span:first-child { width: 100%; }
+  .mail .mt-att { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; padding: 8px; }
+  .mail .mt-file-icon { width: 30px; height: 35px; }
+  .mail .mt-att > button { padding-left: 6px; padding-right: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mail *, .mail *::before, .mail *::after { animation: none !important; transition: none !important; }
+}

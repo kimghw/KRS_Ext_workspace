@@ -23,7 +23,7 @@ t('origin.json 은 옮긴 파일마다 출처·지문을 적고, 옮긴 자리(r
   }
 });
 t('옮긴 모듈은 chrome 전역에 기대지 않고 Node 에서 읽힌다(사이드패널·검사 어디서나 같은 파일)', async () => {
-  for (const m of ['fmt', 'mcp', 'onenote', 'plansync', 'plan', 'planui', 'erp', 'plussync']) await import(`../rerp/${m}.js`);
+  for (const m of ['fmt', 'mcp', 'onenote', 'plansync', 'plan', 'planui', 'erp', 'plussync', 'research', 'researchsync']) await import(`../rerp/${m}.js`);
 });
 t(`원본(${source})이 옮긴 뒤로 바뀌지 않았다 — 바뀌었으면 rerp/ 에 반영하고 node tools/rerp.mjs stamp`, () => {
   const r = compare(source, origin);

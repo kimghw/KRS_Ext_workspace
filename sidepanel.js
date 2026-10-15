@@ -25,6 +25,7 @@ import { isFoldedRoom, foldLabels } from './src/roomorder.js';
 import { createAttendPanel } from './attendpanel.js';
 import { createGongmunPanel } from './gongmunpanel.js';
 import { createRndPanel } from './rndpanel.js';
+import { createMailPanel } from './mailtrack/index.js';
 import { createGitSync } from './gitsync.js';
 import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
@@ -44,7 +45,7 @@ const el = {
   stamp: $('stamp'), pickList: $('pickList'),
   ask: $('askInput'), askGo: $('askGo'), askNote: $('askNote'), askList: $('askList'),
   apiKey: $('apiKey'), apiKeyState: $('apiKeyState'), cliState: $('cliState'), cliCheck: $('cliCheck'), cliGuide: $('cliGuide'),
-  tabAttend: $('tabAttend'), tabGongmun: $('tabGongmun'), tabRnd: $('tabRnd'), tabRoom: $('tabRoom'), tabCar: $('tabCar'), tabMine: $('tabMine'), appTitle: $('appTitle'),
+  tabAttend: $('tabAttend'), tabGongmun: $('tabGongmun'), tabRnd: $('tabRnd'), tabMail: $('tabMail'), tabRoom: $('tabRoom'), tabCar: $('tabCar'), tabMine: $('tabMine'), appTitle: $('appTitle'),
   openPageInline: $('openPageInline'), scheduleTitle: $('scheduleTitle'), scheduleDate: $('scheduleDate'),
   capture: $('capture'), diagOut: $('diagOut'),
   spanDays: $('spanDays'), spanControl: document.querySelector('.span-control'),
@@ -52,7 +53,7 @@ const el = {
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
   homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
   docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'),
-  settingsBox: $('settingsBox'), logBox: $('logBox'), logCount: $('logCount'), logOut: $('logOut'),
+  settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), logBox: $('logBox'), logCount: $('logCount'), logOut: $('logOut'),
   logCopy: $('logCopy'), logSave: $('logSave'), logClear: $('logClear'),
 };
 
@@ -977,6 +978,7 @@ async function load({ force = false } = {}) {
   // 근태 탭에는 날짜 격자가 없다. 새로고침·로그인 복귀는 신청 내역을 다시 읽는 것으로 받는다. 공문 탭도 격자가 없다.
   if (isAttend()) return attend.reload();
   if (isGongmun()) return gongmun.reload();
+  if (isMail()) return mail.reload();
   const sequence = ++loadSequence;
   const date = el.date.value || todayStr();
   paintDate();
@@ -1730,8 +1732,9 @@ const isMineMode = () => state.mode === 'mine';
 const isAttend = () => state.mode === 'attend';
 const isGongmun = () => state.mode === 'gongmun';
 const isRnd = () => state.mode === 'rnd';
-/** 날짜 격자를 쓰지 않고 제 화면만 두는 탭(근태·공문·R&D). */
-const isPanelTab = () => isAttend() || isGongmun() || isRnd();
+const isMail = () => state.mode === 'mail';
+/** 날짜 격자를 쓰지 않고 제 화면만 두는 탭(근태·공문·R&D·메일). */
+const isPanelTab = () => isAttend() || isGongmun() || isRnd() || isMail();
 
 /** 근태 탭. 화면 조각은 attendpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const attend = createAttendPanel({
@@ -1766,6 +1769,12 @@ const rnd = createRndPanel({
   // 내 이름(설정) — 예상 비용 원노트 페이지는 과제책임자만 만든다(장부의 과제책임자 == 내 이름, src/rnderp.js).
   me: () => state.myName,
 });
+
+/**
+ * 메일 탭(2026-10-15 사용자 지정: "별도 폴더에 작성 … 지금 프로젝트와 가능한 분리해서") — 내가 보낸 메일의 회신을 받는 사람 조직마다 센다.
+ * 화면·장부·금고·Outlook MCP(:5001)는 모두 mailtrack/ 안에 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다(mailtrack/index.js).
+ */
+const mail = createMailPanel({ root: $('mail'), $, escapeHtml, logEvent, flash: (btn, text, ms) => flash(btn, text, ms), copyText: (text) => copyText(text) });
 
 /** 내가 넣은 예약을 며칠간 기억한다. 지난 날짜는 버린다. */
 const BOOKED_KEEP_DAYS = 30;
@@ -1831,14 +1840,15 @@ function applyMode(mode) {
   const attendTab = isAttend();
   const gongmunTab = isGongmun();
   const rndTab = isRnd();
-  const panelTab = attendTab || gongmunTab || rndTab;
-  for (const [tab, on] of [[el.tabAttend, attendTab], [el.tabGongmun, gongmunTab], [el.tabRnd, rndTab], [el.tabRoom, !car && !mineTab && !panelTab], [el.tabCar, car], [el.tabMine, mineTab]]) {
+  const mailTab = isMail();
+  const panelTab = attendTab || gongmunTab || rndTab || mailTab;
+  for (const [tab, on] of [[el.tabAttend, attendTab], [el.tabGongmun, gongmunTab], [el.tabRnd, rndTab], [el.tabMail, mailTab], [el.tabRoom, !car && !mineTab && !panelTab], [el.tabCar, car], [el.tabMine, mineTab]]) {
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
   }
 
   const pageName = car ? '차량 이용' : '회의실 예약';
-  const screenTitle = attendTab ? '근태 신청' : gongmunTab ? '공문 작성' : rndTab ? 'R&D 과제' : mineTab ? '현황' : pageName;
+  const screenTitle = attendTab ? '근태 신청' : gongmunTab ? '공문 작성' : rndTab ? 'R&D 과제' : mailTab ? '메일 수신' : mineTab ? '현황' : pageName;
   el.appTitle.textContent = screenTitle;
   const openLabel = `${pageName} 페이지를 새 탭에서 열기`;
   el.openPageInline.title = openLabel;
@@ -1875,6 +1885,7 @@ function applyMode(mode) {
   chrome.storage.local.set({ mode });
   if (!gongmunTab) gongmun.hide();
   if (!rndTab) rnd.hide();
+  if (!mailTab) mail.hide();
   if (gongmunTab) {
     attend.hide();
     return gongmun.show();
@@ -1882,6 +1893,10 @@ function applyMode(mode) {
   if (rndTab) {
     attend.hide();
     return rnd.show();
+  }
+  if (mailTab) {
+    attend.hide();
+    return mail.show();
   }
   if (attendTab) return attend.show();
   attend.hide();
@@ -2613,6 +2628,8 @@ async function init() {
   gongmun.wire();
   el.tabRnd.addEventListener('click', () => setMode('rnd'));
   rnd.wire();
+  el.tabMail.addEventListener('click', () => setMode('mail'));
+  mail.wire();
   el.tabRoom.addEventListener('click', () => setMode('room'));
   el.tabCar.addEventListener('click', () => setMode('car'));
   el.tabMine.addEventListener('click', () => setMode('mine'));
@@ -2681,6 +2698,15 @@ async function init() {
   el.capture.addEventListener('click', runCapture);
   el.logBox.addEventListener('toggle', paintLog);
   el.settingsBox.addEventListener('toggle', paintLog);   // 바깥 `설정` 을 펼쳐야 활동 로그가 보인다
+  const syncSettingsShortcut = () => el.settingsShortcut.setAttribute('aria-expanded', String(el.settingsBox.open));
+  el.settingsBox.addEventListener('toggle', syncSettingsShortcut);
+  el.settingsShortcut.addEventListener('click', () => {
+    el.settingsBox.open = true;
+    syncSettingsShortcut();
+    el.settingsBox.scrollIntoView({ block: 'start' });
+    el.settingsBox.querySelector('summary').focus({ preventScroll: true });
+  });
+  syncSettingsShortcut();
   el.logCopy.addEventListener('click', copyLog);
   el.logSave.addEventListener('click', saveLog);
   el.logClear.addEventListener('click', clearLog);
@@ -2716,7 +2742,7 @@ async function init() {
   // 홈의 WORKSPACE 카드에서 한 건을 눌러 열렸으면 저장된 모드 대신 그 날짜·종류로 간다.
   const jump = await takeHomeJump();
   const first = jump ? applyHomeJump(jump)
-    : ['car', 'mine', 'attend', 'gongmun', 'rnd'].includes(saved.mode) ? applyMode(saved.mode) : load();
+    : ['car', 'mine', 'attend', 'gongmun', 'rnd', 'mail'].includes(saved.mode) ? applyMode(saved.mode) : load();
   // 패널이 이미 열려 있을 때 홈에서 누르면 저장소 변화로 온다.
   chrome.storage.onChanged?.addListener((changes, area) => {
     if (area !== 'local') return;

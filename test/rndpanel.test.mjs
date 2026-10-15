@@ -1160,6 +1160,53 @@ await ta('비목 체크를 끄면 그 줄만 숨고(합계·표 복사는 그대
   assert.ok(logs.some((l) => /^R&D 설정: 예산 칸에 숨긴 비목 — 없음\(모두 보임\)$/.test(l.text)));
 });
 
+console.log('연구내용 원노트 공유(2026-10-14) — YAML 로 넣은 연구개발계획서를 「[연구내용] 과제명」 페이지에 올려 링크로 kr_ext_rerp 에 보낸다');
+const RSY = (await import('../rerp/researchsync.js')).default;
+const ONENOTE = (await import('../rerp/onenote.js')).default;
+await ta('YAML 을 넣을 때 rerp 와 같은 기록(researchPlans — 과제명#차년도)으로도 남는다 — 오래된 판은 건너뛴다', async () => {
+  const rec = store.researchPlans?.['시험용직류차단기개발#1'];
+  assert.ok(rec, Object.keys(store.researchPlans || {}).join());
+  assert.equal(rec.rev, 'r2', 'r2 뒤에 넣은 r0 는 기록도 건너뛰었다');
+  assert.equal(rec.code, 'RS-2026-00000001');
+  assert.ok(rec.goals.length > 0 && rec.contents.length > 0);
+  assert.equal($('rdResShare').textContent, '연구내용 올리기');
+  assert.ok($('rdResCopy').disabled);
+  assert.ok(hidden('rdResOpen'));
+});
+await ta('연구내용 올리기 — RERP 섹션에 페이지를 만들고 링크(웹 링크 + 페이지 ID)를 복사한다. rerp 의 받기(researchsync.parse)로 그대로 읽힌다', async () => {
+  const n = mcp.calls.length;
+  $('rdResShare').click();
+  await until(() => !$('rdResShare').disabled && /만들었습니다/.test($('rdResMsg').textContent));
+  const page = mcp.pages.find((p) => p.title === '[연구내용] 시험용 직류 차단기 개발');
+  assert.ok(page, mcp.pages.map((p) => p.title).join());
+  assert.equal(page.section, 'sec-rerp', '예상 비용과 같은 섹션');
+  assert.ok(mcp.calls.slice(n).includes('write_onenote:create_page'));
+  assert.equal(copied.at(-1), `${page.url}\n[연구내용 페이지 ID] ${page.id}`);
+  assert.match($('rdResMsg').textContent, /링크를 복사했습니다 — kr_ext_rerp 확장 설정의 연구개발계획서 칸에 붙여 넣으세요$/);
+  const back = RSY.parse(ONENOTE.findBlock(page.body, RSY.BLOCK).inner);
+  assert.equal(back.name, '시험용 직류 차단기 개발');
+  assert.equal(back.code, 'RS-2026-00000001');
+  assert.equal(back.by, myName);
+  assert.deepEqual(back.recs.map((r) => [r.n, r.rev]), [[1, 'r2']]);
+  assert.ok(page.body.includes('<td>개발목표</td>'), '사람이 읽는 표도 있다');
+  assert.equal($('rdResShare').textContent, '연구내용 다시 올리기');
+  assert.ok(!$('rdResCopy').disabled);
+  assert.ok(!hidden('rdResOpen'));
+  assert.equal(store.researchShare?.['시험용직류차단기개발']?.pageId, page.id);
+  assert.ok(logs.some((l) => /^R&D 연구내용 원노트 올림\(TEST\): \[연구내용\] 시험용 직류 차단기 개발 · 차년도 1개$/.test(l.text)));
+});
+await ta('계획서를 다시 넣으면 올린 페이지를 저절로 고친다(같은 페이지 · 클립보드는 그대로) — 링크 복사는 언제든', async () => {
+  const n = mcp.calls.length;
+  const before = copied.length;
+  dropFiles([new window.File([fx('snapshot_r2.yaml')], 'KR_test_r2.yaml')]);
+  await until(() => mcp.calls.slice(n).includes('write_onenote:replace') && /고쳤습니다/.test($('rdResMsg').textContent));
+  assert.equal(mcp.pages.filter((p) => p.title.startsWith('[연구내용]')).length, 1);
+  assert.equal(copied.length, before, '저절로 고칠 때는 클립보드를 건드리지 않는다');
+  $('rdResCopy').click();
+  await until(() => copied.length === before + 1);
+  assert.match(copied.at(-1), /^https:\/\/krclass-my\.sharepoint\.com\/.*\n\[연구내용 페이지 ID\] 1-b{32}!\d+-/);
+});
+
 console.log('다시 열기');
 await ta('저장된 것으로 다시 선다 — 공문 탭에서 다시 가져오지 않는다', async () => {
   await wait(500);
