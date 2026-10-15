@@ -15,6 +15,7 @@ import {
   ENABLE_KEY as HOME_ENABLE_KEY, homeEnabled,
 } from './src/home.js';
 import { ENABLE_KEY as TEAMS_ENABLE_KEY, teamsEnabled } from './src/people.js';
+import { ENABLE_KEY as QYEAR_ENABLE_KEY, riskYearEnabled } from './src/riskyear.js';
 import {
   ENABLE_KEY as CIRC_ENABLE_KEY, STATE_KEY as CIRC_STATE_KEY, circulateEnabled, stateText as circulateStateText,
 } from './src/circulate.js';
@@ -49,7 +50,7 @@ const el = {
   spanDays: $('spanDays'), spanControl: document.querySelector('.span-control'),
   mineWrap: $('mineWrap'), mineList: $('mineList'), mineEmpty: $('mineEmpty'), myName: $('myName'),
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
-  homeCard: $('homeCard'), teamsButton: $('teamsButton'), homeUncfm: $('homeUncfm'),
+  homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
   docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'),
   settingsBox: $('settingsBox'), logBox: $('logBox'), logCount: $('logCount'), logOut: $('logOut'),
   logCopy: $('logCopy'), logSave: $('logSave'), logClear: $('logClear'),
@@ -2537,7 +2538,7 @@ async function init() {
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
-      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY]);
+      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
   if (saved.spanDays != null) el.spanDays.value = saved.spanDays;
@@ -2552,6 +2553,7 @@ async function init() {
   if (gongmun.compareTab) return initCompareTab();
   el.homeCard.checked = homeEnabled(saved[HOME_ENABLE_KEY]);
   el.teamsButton.checked = teamsEnabled(saved[TEAMS_ENABLE_KEY]);
+  el.qualityYearKeep.checked = riskYearEnabled(saved[QYEAR_ENABLE_KEY]);
   el.homeUncfm.checked = unconfirmedEnabled(saved[UNCFM_ENABLE_KEY]);
   el.docCirculate.checked = circulateEnabled(saved[CIRC_ENABLE_KEY]);
   paintCirculate(saved[CIRC_STATE_KEY]);
@@ -2646,6 +2648,12 @@ async function init() {
     chrome.storage.local.set({ [TEAMS_ENABLE_KEY]: on });
     logEvent('setting', true, `인명 검색 카드 Teams 버튼 ${on ? '켬' : '끔'}`);
   });
+  // Quality 위험·기회 목록의 연도 유지. 열려 있는 목록은 저장소 변화를 듣고 곧바로 표시를 떼거나 붙인다.
+  el.qualityYearKeep.addEventListener('change', () => {
+    const on = el.qualityYearKeep.checked;
+    chrome.storage.local.set({ [QYEAR_ENABLE_KEY]: on });
+    logEvent('setting', true, `Quality 위험·기회 목록 연도 유지 ${on ? '켬' : '끔'}`);
+  });
   // 홈의 접수 미확인 공문 카드. 열려 있는 홈 탭은 저장소 변화를 듣고 곧바로 카드를 떼거나 붙인다.
   el.homeUncfm.addEventListener('change', () => {
     const on = el.homeUncfm.checked;
@@ -2717,6 +2725,7 @@ async function init() {
     // 다른 창의 패널에서 바꿨으면 이 창의 체크박스도 따라간다.
     if (HOME_ENABLE_KEY in changes) el.homeCard.checked = homeEnabled(changes[HOME_ENABLE_KEY].newValue);
     if (TEAMS_ENABLE_KEY in changes) el.teamsButton.checked = teamsEnabled(changes[TEAMS_ENABLE_KEY].newValue);
+    if (QYEAR_ENABLE_KEY in changes) el.qualityYearKeep.checked = riskYearEnabled(changes[QYEAR_ENABLE_KEY].newValue);
     if (UNCFM_ENABLE_KEY in changes) el.homeUncfm.checked = unconfirmedEnabled(changes[UNCFM_ENABLE_KEY].newValue);
     if (CIRC_ENABLE_KEY in changes) el.docCirculate.checked = circulateEnabled(changes[CIRC_ENABLE_KEY].newValue);
     // 홈 카드가 e-Class 인명에서 이름을 알아내 담았거나(src/whoami.js) 다른 창의 패널에서 바꿨다 — 이 창의 칸도 따라간다.

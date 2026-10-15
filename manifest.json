@@ -40,6 +40,12 @@
       "js": ["afterpage.js"],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": ["https://eclass.krs.co.kr/*"],
+      "js": ["riskyear.js"],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [
