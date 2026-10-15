@@ -318,6 +318,135 @@ console.log('설정 및 연결의 접수 미확인 공문 카드 체크박스');
     assert.equal(window.document.getElementById('homeUncfm').checked, false));
 }
 
+console.log('설정 및 연결의 보이는 탭');
+{
+  const { wired, window, store, calls } = await boot({ mode: 'room' });
+  const doc = window.document;
+  const group = doc.getElementById('tabPicks');
+  const boxes = [...group.querySelectorAll('input[data-tab]')];
+  const tabOf = { attend: 'tabAttend', gongmun: 'tabGongmun', rnd: 'tabRnd', mail: 'tabMail', room: 'tabRoom', car: 'tabCar', mine: 'tabMine' };
+  const hiddenNow = () => Object.entries(tabOf).filter(([, id]) => doc.getElementById(id).hidden).map(([m]) => m);
+  const pick = (mode, on) => {
+    const b = boxes.find((x) => x.dataset.tab === mode);
+    b.checked = on;
+    b.dispatchEvent(new window.Event('change', { bubbles: true }));
+    return new Promise((r) => setTimeout(r, 40));
+  };
+  t('설정 및 연결 안에 있다', () => {
+    assert.ok(group, '보이는 탭 묶음이 없다');
+    assert.match(group.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+  });
+  t('탭 줄 차례대로 일곱 개', () => assert.deepEqual(boxes.map((b) => b.dataset.tab), ['attend', 'gongmun', 'rnd', 'mail', 'room', 'car', 'mine']));
+  t('설정이 없으면 전부 켜져 있고 탭도 다 보인다', () => {
+    assert.ok(boxes.every((b) => b.checked));
+    assert.deepEqual(hiddenNow(), []);
+  });
+  t('change 리스너', () => assert.ok(wired.get('tabPicks')?.has('change')));
+
+  await pick('mail', false);
+  t('끄면 숨긴 탭만 저장되고 그 탭이 탭 줄에서 사라진다', () => {
+    assert.deepEqual(store.tabsOff, ['mail']);
+    assert.deepEqual(hiddenNow(), ['mail']);
+  });
+  t('끈 것이 활동 기록에 남는다', () =>
+    assert.ok((store.activityLog || []).some((e) => e.kind === 'setting' && /메일 탭 끔/.test(e.text))));
+  await pick('room', false);
+  t('보고 있던 탭을 끄면 보이는 첫 탭으로 옮긴다', () => {
+    assert.deepEqual(store.tabsOff, ['mail', 'room']);
+    assert.equal(store.mode, 'attend');
+    assert.ok(doc.getElementById('tabAttend').classList.contains('active'));
+    assert.deepEqual(hiddenNow(), ['mail', 'room']);
+  });
+  await pick('gongmun', false);
+  await pick('rnd', false);
+  await pick('car', false);
+  await pick('mine', false);
+  t('여섯 개까지는 끌 수 있다', () => assert.deepEqual(store.tabsOff, ['gongmun', 'rnd', 'mail', 'room', 'car', 'mine']));
+  await pick('attend', false);
+  t('마지막 하나는 끌 수 없다 — 체크박스가 돌아오고 저장도 그대로', () => {
+    assert.equal(boxes.find((b) => b.dataset.tab === 'attend').checked, true);
+    assert.deepEqual(store.tabsOff, ['gongmun', 'rnd', 'mail', 'room', 'car', 'mine']);
+    assert.deepEqual(hiddenNow(), ['gongmun', 'rnd', 'mail', 'room', 'car', 'mine']);
+    assert.match(doc.getElementById('status').textContent, /적어도 하나/);
+  });
+  await pick('mail', true);
+  t('다시 켜면 저장에서 빠지고 탭이 돌아온다', () => {
+    assert.deepEqual(store.tabsOff, ['gongmun', 'rnd', 'room', 'car', 'mine']);
+    assert.ok(!doc.getElementById('tabMail').hidden);
+    assert.ok((store.activityLog || []).some((e) => e.kind === 'setting' && /메일 탭 켬/.test(e.text)));
+  });
+  // 다른 창의 패널에서 바꿨다 — 저장소 변화로 온다. 보고 있는 근태 탭은 그대로.
+  for (const fn of calls.storageListeners) fn({ tabsOff: { newValue: ['car', 'bogus'] } }, 'local');
+  t('다른 창에서 바꾼 것을 탭 줄·체크박스가 따라간다', () => {
+    assert.deepEqual(hiddenNow(), ['car']);
+    assert.deepEqual(boxes.filter((b) => !b.checked).map((b) => b.dataset.tab), ['car']);
+    assert.ok(doc.getElementById('tabAttend').classList.contains('active'));
+  });
+  // 보고 있는 탭을 다른 창에서 껐다 — 떠날 때까지는 탭 줄에 남는다.
+  for (const fn of calls.storageListeners) fn({ tabsOff: { newValue: ['attend'] } }, 'local');
+  t('보고 있는 탭은 다른 창에서 꺼도 떠날 때까지 남는다', () => {
+    assert.deepEqual(hiddenNow(), []);
+    assert.equal(boxes.find((b) => b.dataset.tab === 'attend').checked, false);
+  });
+  doc.getElementById('tabRoom').click();
+  await new Promise((r) => setTimeout(r, 40));
+  t('다른 탭으로 옮기면 꺼 둔 탭이 사라진다', () => {
+    assert.equal(store.mode, 'room');
+    assert.deepEqual(hiddenNow(), ['attend']);
+  });
+}
+{
+  const { window, store } = await boot({ mode: 'mail', tabsOff: ['mail', 'mine'] });
+  const doc = window.document;
+  t('저장된 모드의 탭을 꺼 두었으면 보이는 첫 탭으로 열린다', () => {
+    assert.equal(store.mode, 'attend');
+    assert.ok(doc.getElementById('tabAttend').classList.contains('active'));
+    assert.ok(doc.getElementById('tabMail').hidden);
+    assert.ok(doc.getElementById('tabMine').hidden);
+    assert.ok(doc.getElementById('mail').classList.contains('hidden'), '메일 화면은 숨어 있다');
+    assert.deepEqual([...doc.querySelectorAll('#tabPicks input[data-tab]')].filter((b) => !b.checked).map((b) => b.dataset.tab), ['mail', 'mine']);
+  });
+}
+{
+  const { window, store } = await boot({ mode: 'car', tabsOff: ['attend', 'gongmun'] });
+  const doc = window.document;
+  t('저장된 모드의 탭이 보이면 그대로 열린다', () => {
+    assert.equal(store.mode, 'car');
+    assert.ok(doc.getElementById('tabCar').classList.contains('active'));
+    assert.ok(doc.getElementById('tabAttend').hidden);
+    assert.ok(doc.getElementById('tabGongmun').hidden);
+    assert.ok(!doc.getElementById('tabRoom').hidden);
+  });
+}
+{
+  const { window, store } = await boot({ mode: 'room', tabsOff: ['room'] });
+  const doc = window.document;
+  t('회의실을 꺼 두고 저장된 모드가 회의실이면 근태(보이는 첫 탭)로 열린다', () => {
+    assert.equal(store.mode, 'attend');
+    assert.ok(doc.getElementById('tabRoom').hidden);
+    assert.ok(!doc.getElementById('attend').classList.contains('hidden'));
+  });
+}
+{
+  // 꺼 둔 차량 탭으로 홈 카드가 보냈다 — 그 건을 눌렀으니 보여 주되, 떠나면 다시 숨는다.
+  const jumpDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const { window, store } = await boot({ mode: 'room', tabsOff: ['car'], homeJump: { date: jumpDate, mode: 'car', at: Date.now() } });
+  const doc = window.document;
+  t('꺼 둔 탭도 홈 카드에서 그 건을 누르면 그때만 나타난다', () => {
+    assert.equal(store.mode, 'car');
+    assert.ok(!doc.getElementById('tabCar').hidden);
+    assert.ok(doc.getElementById('tabCar').classList.contains('active'));
+    assert.equal(doc.querySelector('#tabPicks input[data-tab="car"]').checked, false, '설정은 그대로 꺼져 있다');
+    assert.deepEqual(store.tabsOff, ['car']);
+  });
+  doc.getElementById('tabRoom').click();
+  await new Promise((r) => setTimeout(r, 40));
+  t('다른 탭으로 옮기면 다시 숨는다', () => {
+    assert.equal(store.mode, 'room');
+    assert.ok(doc.getElementById('tabCar').hidden);
+  });
+}
+
 console.log('설정 및 연결의 미회람 문서 자동 열람 체크박스');
 {
   const { wired, window, store } = await boot({ mode: 'room' });

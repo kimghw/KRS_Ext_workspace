@@ -20,6 +20,7 @@ import {
   ENABLE_KEY as CIRC_ENABLE_KEY, STATE_KEY as CIRC_STATE_KEY, circulateEnabled, stateText as circulateStateText,
 } from './src/circulate.js';
 import { ENABLE_KEY as UNCFM_ENABLE_KEY, unconfirmedEnabled } from './src/unconfirmed.js';
+import { TABS_KEY, TAB_MODES, TAB_LABELS, hiddenTabs, tabShown, firstShown, toggleTab, visibleTabs, startMode } from './src/tabpick.js';
 import { fmtTime, todayStr, buildGrid, canDelete } from './src/parse.js';
 import { isFoldedRoom, foldLabels } from './src/roomorder.js';
 import { createAttendPanel } from './attendpanel.js';
@@ -52,7 +53,7 @@ const el = {
   mineWrap: $('mineWrap'), mineList: $('mineList'), mineEmpty: $('mineEmpty'), myName: $('myName'),
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
   homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
-  docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'),
+  docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'), tabPicks: $('tabPicks'),
   settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), logBox: $('logBox'), logCount: $('logCount'), logOut: $('logOut'),
   logCopy: $('logCopy'), logSave: $('logSave'), logClear: $('logClear'),
 };
@@ -60,6 +61,7 @@ const el = {
 // picks: 누적 선택. [{ room: 행번호, from: 슬롯, to: 슬롯 }]
 const state = { day: null, picks: [], drag: null, loadedAt: 0, timer: null,
   region: null, regions: [], apiKey: '', found: [], cli: false, mode: 'room', extendTarget: null,
+  tabsOff: [],   // 설정(보이는 탭)에서 끈 탭의 모드 이름 — src/tabpick.js
   // 다리 확인이 한 번이라도 끝났는지와, 닿지 않았을 때 브라우저가 댄 까닭(연결 지침에 적는다).
   cliChecked: false, cliError: '',
   justBooked: [], myName: '', mine: [], editTarget: null, carWho: null,
@@ -1825,6 +1827,19 @@ function markMine(day) {
   return day;
 }
 
+/** 탭 줄의 모드 → 버튼. 차례는 src/tabpick.js 의 TAB_MODES 와 같다. */
+const TAB_BUTTONS = { attend: el.tabAttend, gongmun: el.tabGongmun, rnd: el.tabRnd, mail: el.tabMail, room: el.tabRoom, car: el.tabCar, mine: el.tabMine };
+
+/**
+ * 설정(보이는 탭)대로 탭 줄을 그린다 — 끈 탭은 숨기되 지금 보고 있는 것이면 남긴다(src/tabpick.js 의 visibleTabs).
+ * 설정의 체크박스도 같은 값으로 맞춘다(다른 창의 패널에서 바꿨을 때).
+ */
+function paintTabs() {
+  const shown = visibleTabs(state.tabsOff, state.mode);
+  for (const mode of TAB_MODES) TAB_BUTTONS[mode].hidden = !shown.includes(mode);
+  for (const box of el.tabPicks.querySelectorAll('input[data-tab]')) box.checked = tabShown(state.tabsOff, box.dataset.tab);
+}
+
 /**
  * 탭 상태를 화면에 적용하고 다시 조회한다.
  * 같은 모드여도 그대로 진행한다 — 시작할 때 저장된 모드를 입히는 데도 쓰기 때문이다.
@@ -1846,6 +1861,7 @@ function applyMode(mode) {
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
   }
+  paintTabs();   // 끈 탭이라도 보고 있는 동안은 탭 줄에 남고, 떠나면 사라진다
 
   const pageName = car ? '차량 이용' : '회의실 예약';
   const screenTitle = attendTab ? '근태 신청' : gongmunTab ? '공문 작성' : rndTab ? 'R&D 과제' : mailTab ? '메일 수신' : mineTab ? '현황' : pageName;
@@ -2553,7 +2569,7 @@ async function init() {
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
-      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY]);
+      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
   if (saved.spanDays != null) el.spanDays.value = saved.spanDays;
@@ -2571,6 +2587,9 @@ async function init() {
   el.qualityYearKeep.checked = riskYearEnabled(saved[QYEAR_ENABLE_KEY]);
   el.homeUncfm.checked = unconfirmedEnabled(saved[UNCFM_ENABLE_KEY]);
   el.docCirculate.checked = circulateEnabled(saved[CIRC_ENABLE_KEY]);
+  // 보이는 탭. 끈 탭은 머리의 탭 줄에서 뗀다 — 어느 탭으로 열지는 아래(startMode)에서 이 값을 본다.
+  state.tabsOff = hiddenTabs(saved[TABS_KEY]);
+  paintTabs();
   paintCirculate(saved[CIRC_STATE_KEY]);
   // 오늘 훑어 둔 현황을 먼저 불러온다. 이게 있으면 아래 조회·미리 훑기가 사이트를 다시 두드리지 않는다.
   await store.restore().catch(() => {});
@@ -2683,6 +2702,23 @@ async function init() {
     chrome.storage.local.set({ [CIRC_ENABLE_KEY]: on });
     logEvent('setting', true, `DOC-Cruiser 미회람 문서 자동 열람 ${on ? '켬' : '끔'}`);
   });
+  // 보이는 탭. 끈 탭은 머리의 탭 줄에서 사라진다. 보고 있던 탭을 끄면 보이는 첫 탭으로 옮기고, 마지막 하나는 끌 수 없다(src/tabpick.js).
+  el.tabPicks.addEventListener('change', (e) => {
+    const box = e.target;
+    const mode = box?.dataset?.tab;
+    if (!mode || box.type !== 'checkbox') return;
+    const next = toggleTab(state.tabsOff, mode, box.checked);
+    if (!next) {
+      box.checked = true;
+      setStatus('탭은 적어도 하나 남겨야 합니다.', 'error');
+      return;
+    }
+    state.tabsOff = next;
+    chrome.storage.local.set({ [TABS_KEY]: next });
+    logEvent('setting', true, `${TAB_LABELS[mode]} 탭 ${box.checked ? '켬' : '끔'}`);
+    if (!box.checked && state.mode === mode) applyMode(firstShown(next));
+    else paintTabs();
+  });
   el.myName.addEventListener('change', () => {
     state.myName = el.myName.value.trim();
     chrome.storage.local.set({ myName: state.myName });
@@ -2740,9 +2776,10 @@ async function init() {
 
   // 리스너를 모두 붙인 뒤에 모드를 맞춘다. applyMode 가 조회까지 해준다.
   // 홈의 WORKSPACE 카드에서 한 건을 눌러 열렸으면 저장된 모드 대신 그 날짜·종류로 간다.
+  // 저장된 모드의 탭을 설정에서 꺼 두었으면 보이는 첫 탭으로 연다(src/tabpick.js 의 startMode).
   const jump = await takeHomeJump();
-  const first = jump ? applyHomeJump(jump)
-    : ['car', 'mine', 'attend', 'gongmun', 'rnd', 'mail'].includes(saved.mode) ? applyMode(saved.mode) : load();
+  const start = startMode(state.tabsOff, saved.mode);
+  const first = jump ? applyHomeJump(jump) : start !== 'room' ? applyMode(start) : load();
   // 패널이 이미 열려 있을 때 홈에서 누르면 저장소 변화로 온다.
   chrome.storage.onChanged?.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -2754,6 +2791,11 @@ async function init() {
     if (QYEAR_ENABLE_KEY in changes) el.qualityYearKeep.checked = riskYearEnabled(changes[QYEAR_ENABLE_KEY].newValue);
     if (UNCFM_ENABLE_KEY in changes) el.homeUncfm.checked = unconfirmedEnabled(changes[UNCFM_ENABLE_KEY].newValue);
     if (CIRC_ENABLE_KEY in changes) el.docCirculate.checked = circulateEnabled(changes[CIRC_ENABLE_KEY].newValue);
+    // 다른 창의 패널에서 보이는 탭을 바꿨다 — 이 창의 탭 줄·체크박스도 따라간다. 보고 있는 탭은 숨겨도 떠날 때까지 남는다.
+    if (TABS_KEY in changes) {
+      state.tabsOff = hiddenTabs(changes[TABS_KEY].newValue);
+      paintTabs();
+    }
     // 홈 카드가 e-Class 인명에서 이름을 알아내 담았거나(src/whoami.js) 다른 창의 패널에서 바꿨다 — 이 창의 칸도 따라간다.
     if ('myName' in changes) {
       const name = String(changes.myName.newValue || '').trim();
