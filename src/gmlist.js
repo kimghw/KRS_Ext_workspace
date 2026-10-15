@@ -202,7 +202,8 @@ export const bodyUrl = (row) => {
 
 /**
  * 외부강의등 신고서의 본문 틀(읽기 꼴)에서 칸을 읽는다. 금액은 칸 id 가 먼저고, 없으면 글("사례금 총액 : N 원")에서 찾는다.
- * @returns {{org, representative, contact, subject, place, from, to, start, end, hours, mins, batch, monthCount, fee, avgFee, yearTotal, expenses, note}}
+ * rank(신고자 직급)·contactTel(담당부서 연락처)은 새 신고서를 쓸 때 채우는 값이다(src/gongmun.js 의 outsideAuto — 2026-10-15).
+ * @returns {{rank, org, representative, contact, contactTel, subject, place, from, to, start, end, hours, mins, batch, monthCount, fee, avgFee, yearTotal, expenses, note}}
  */
 export function parseOutsideReport(html) {
   const doc = toDoc(html);
@@ -210,6 +211,7 @@ export function parseOutsideReport(html) {
   const body = text(doc.body);
   const after = (label) => num((body.match(new RegExp(`${label}\\s*:?\\s*([\\d,]+)\\s*원`)) || [])[1]);
   return {
+    rank: v('lblJickub'), contactTel: v('lblDepartmentTel').replace(/\D/g, ''),
     org: v('lblInstituteName'), representative: v('lblRepresentative'), contact: v('lblDepartment'), subject: v('lblLectureTopic'), place: v('lblPlace'),
     from: v('lblStartDate').slice(0, 10), to: v('lblEndDate').slice(0, 10), start: v('lblStartTime'), end: v('lblEndTime'),
     hours: num(v('lblLectureTextHour')), mins: num(v('lblLectureTextMin')), batch: num(v('AverageCountlbl')), monthCount: num(v('CumulativeCountlbl')),
@@ -260,6 +262,32 @@ export function outsideSummary(reports, { fee = null, today = '' } = {}) {
   const sofar = basis ? basis.yearTotal : 0;
   const mine2 = Number.isFinite(fee) ? fee : null;
   return { sofar, fee: mine2, total: sofar + (mine2 || 0), basis, year, count: mine.length };
+}
+
+const orgKey = (s) => String(s ?? '').replace(/\s+/g, '').toLowerCase();
+
+/**
+ * 새 외부강의등 신고서의 셈하는 칸 — 읽어 둔 지난 신고서로(2026-10-15 사용자 지정: "이 양식으로 공문을 작성할 수 있도록"). src/gongmun.js 의 outsideAuto 가 쓴다.
+ *   yearTotal  당해 연도 사례금 누적 합계 — outsideSummary 의 합계(올해 가장 늦은 신고서의 누적 + 이번 사례금)
+ *   monthCount 당월 누적 — 이번 활동의 달(from, 없으면 오늘)에 활동한 지난 신고서 수 + 1(이번). 지난 신고서 HER-2026-000266 은 그 달 첫 건이라 1 이었다
+ *   rank       신고자 직급 — 직급이 적힌 가장 늦은 신고서의 것
+ *   representative·contact·contactTel  같은 기관(org — 빈칸·대소문자 무시)에 낸 가장 늦은 신고서의 대표자·담당부서(담당자)·연락처
+ * @param {object[]} reports [{ id, date(기안일), ...parseOutsideReport }] — 임시보관·반려는 빼고 넘긴다
+ * @returns {{yearTotal:number, monthCount:number, rank:string, representative:string, contact:string, contactTel:string, sofar:number, basis:object|null}}
+ */
+export function outsideHistory(reports, { org = '', from = '', fee = null, today = '' } = {}) {
+  const list = (reports || []).filter((r) => r && typeof r === 'object');
+  const dateOf = (r) => r.date || r.from || '';
+  const latest = [...list].sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || String(b.id).localeCompare(String(a.id)));
+  const s = outsideSummary(list, { fee, today });
+  const month = String(DATE_RE.test(from) ? from : today).slice(0, 7);
+  const monthCount = list.filter((r) => String(r.from || r.date || '').slice(0, 7) === month).length + 1;
+  const same = orgKey(org) ? latest.find((r) => orgKey(r.org) === orgKey(org)) : null;
+  return {
+    yearTotal: s.total, monthCount, rank: latest.find((r) => String(r.rank || '').trim())?.rank || '',
+    representative: same?.representative || '', contact: same?.contact || '', contactTel: String(same?.contactTel || '').replace(/\D/g, ''),
+    sofar: s.sofar, basis: s.basis,
+  };
 }
 
 /** 저장소의 목록 줄들을 이 꼴로 — 문서번호 없는 것·줄이 아닌 것은 버린다(공문 이력·에이전트 검색이 같이 쓴다). */

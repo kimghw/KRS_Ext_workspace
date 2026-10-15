@@ -12,6 +12,8 @@
 //   · JOB-ID — 팝업(RnDPMS Get_PMSJobID.aspx)의 격자(캔버스) 더블클릭 대신, 그 격자가 받는 목록(ListJSON_Ver2.ashx)을 받아 과제명이 같은 줄을
 //     고르고 팝업이 opener 에 부르는 callBackReturnFromDialog 를 부른다. 같은 줄이 없으면 고르지 않는다(원본은 첫 줄로 넘어가는 결함이 있었다).
 //   · 본문 — <control>_SetHTMLBody(저장 뒤에도 남는 길)로 넣고 <control>_GetTextBody 로 다시 읽는다.
+//   · 칸이 정해진 폼(외부강의등 신고서 — 2026-10-15 사용자 지정) — 본문·과제 칸 대신 칸 지도의 source: draft 칸마다 넣는다(pageForm). 글 칸은 value,
+//     날짜·시각 칸은 Telerik 피커의 set_selectedDate. 성명·소속·연락처는 서버가 채워 둔 것을 둔다.
 //   · 문서설정 — 툴바의 ShowSetupDocument 가 열 주소(DialogBoxReturn → DocumentSetting.aspx)를 숨은 틀로 열어 수신처는 SetReceiverValue('내부결재-,-내부결재')
 //     (수신처 창의 '내부결재' 단추와 확인이 opener 에 부르는 것), 칸을 고른 뒤 __Page_FormSubmitCallback(2)(발송경고 창의 '예'가 부르는 것).
 //     설정이 툴바의 SetupDocSetting 으로 돌아오면 됐다. 그 화면은 끝에 window.top.close() 를 부른다 — 공문 창이 닫히지 않게 그동안 막는다.
@@ -39,6 +41,7 @@ export const STEPS = [
   { key: 'open', label: '새 공문 창' },
   { key: 'job', label: '과제(Job Id)' },
   { key: 'fields', label: '제목·차수' },
+  { key: 'report', label: '신고서 칸' },
   { key: 'body', label: '본문' },
   { key: 'setting', label: '문서설정' },
   { key: 'line', label: '결재선(위임전결)' },
@@ -118,6 +121,40 @@ function pageFill(list) {
     const label = f.label && document.querySelector(f.label);
     if (label) label.textContent = v;
     return { key: f.key, ok: el.value === v, value: el.value };
+  });
+}
+
+/**
+ * 칸이 정해진 폼(외부강의등 신고서)의 칸들 — 글 칸은 pageFill 과 같이 넣고, 날짜·시각 칸(Telerik RadDatePicker·RadDateTimePicker)은 $find(control).set_selectedDate
+ * 로 넣고 get_selectedDate 로 다시 읽는다(글 칸에 적으면 피커가 모르고, 상신 때 양식이 control 의 값으로 빈칸을 가린다). 피커가 아직 서지 않았으면 ready: false.
+ * value 는 날짜면 'YYYY-MM-DD', 시각이면 'YYYY-MM-DD HH:MM'(src/gongmun.js 의 draftValue).
+ */
+function pageForm(list) {
+  return list.map((f) => {
+    try {
+      if (f.kind === 'date' || f.kind === 'time') {
+        const c = typeof window.$find === 'function' ? window.$find(f.control) : null;
+        if (!c || typeof c.set_selectedDate !== 'function') return { key: f.key, ok: false, ready: false, why: '날짜·시각 칸이 아직 서지 않았습니다' };
+        const m = String(f.value || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?$/);
+        if (!m) return { key: f.key, ok: false, why: `값(${f.value})의 꼴이 틀렸습니다` };
+        const want = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0));
+        c.set_selectedDate(want);
+        const got = c.get_selectedDate();
+        const same = !!got && got.getFullYear() === want.getFullYear() && got.getMonth() === want.getMonth() && got.getDate() === want.getDate()
+          && (f.kind === 'date' || (got.getHours() === want.getHours() && got.getMinutes() === want.getMinutes()));
+        const input = document.getElementById(f.control);
+        return { key: f.key, ok: same && !!(input && input.value), value: input ? input.value : '' };
+      }
+      const el = document.querySelector(f.selector);
+      if (!el) return { key: f.key, ok: false, why: '칸이 없습니다' };
+      const v = String(f.value == null ? '' : f.value).slice(0, f.max || 10000);
+      el.value = v;
+      if (el.tagName === 'INPUT') el.setAttribute('value', v);
+      for (const type of ['input', 'change']) el.dispatchEvent(new Event(type, { bubbles: true }));
+      return { key: f.key, ok: el.value === v, value: el.value };
+    } catch (e) {
+      return { key: f.key, ok: false, why: String((e && e.message) || e) };
+    }
   });
 }
 
@@ -503,7 +540,7 @@ function pageDialog(op, arg) {
 }
 
 /** 테스트와 실제 브라우저 검사가 같은 함수를 쓰도록 내놓는다. */
-export const injected = { pageProbe, pageJob, pageFill, pageBody, pageDialog };
+export const injected = { pageProbe, pageJob, pageFill, pageForm, pageBody, pageDialog };
 
 /* ------------------------------------------------------------ 패널 쪽 */
 
@@ -528,7 +565,9 @@ export const turnDegree = (turn) => {
  */
 export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, files = [], api = globalThis.chrome, dry = false, tabId: given = null } = {}) {
   const steps = [];
-  const label = (key) => STEPS.find((s) => s.key === key)?.label || key;
+  // 차수 칸이 없는 폼(기안문·외부강의등 신고서)의 '제목·차수' 단계는 제목만 넣는다.
+  const noDegree = !Object.values(plan.fields || {}).some((f) => f.source === 'degree');
+  const label = (key) => (key === 'fields' && noDegree ? '제목' : STEPS.find((s) => s.key === key)?.label || key);
   const report = (key, ok, detail = '') => {
     const step = { key, label: label(key), ok, detail };
     const i = steps.findIndex((s) => s.key === key);
@@ -628,7 +667,7 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
     if (f.source === 'jobText') return job?.ok ? job.dash : '';
     return v[f.source] ?? '';
   };
-  const texts = fields.filter((f) => f.kind === 'title' || f.kind === 'text')
+  const texts = fields.filter((f) => (f.kind === 'title' || f.kind === 'text') && f.source !== 'draft')
     .map((f) => ({ key: f.key, selector: f.selector, label: f.label, max: f.max, value: value(f), source: f.source }))
     .filter((f) => f.source === 'title' || String(f.value).trim());
   const filled = await guard('fields', () => run(tabId, form, pageFill, [texts]));
@@ -638,6 +677,34 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
     report('fields', !bad.length, bad.length ? bad.map((r) => `${r.key} ${r.why || '들어가지 않음'}`).join(' · ') : `제목${deg ? ` · 차수 ${deg.value}` : ''}`);
   }
   if (jobField?.kind === 'text') report('job', !!job?.ok && !!filled?.find((r) => r.key === jobField.key)?.ok, job?.ok ? `${job.dash} (글 칸)` : job?.why || '');
+
+  // 칸이 정해진 폼(외부강의등 신고서) — 초안의 칸마다(source: draft). 빈 값은 넣지 않고, 꼭 채울 칸이 비었으면 그렇다고 적는다(창에서 적는다).
+  const drafted = fields.filter((f) => f.source === 'draft');
+  if (drafted.length) {
+    const nameOf = (key) => v.names?.[key]?.name || key;
+    const list = drafted.map((f) => ({ key: f.key, kind: f.kind, selector: f.selector, control: f.control, value: v.draft?.[f.key] ?? '' }))
+      .filter((f) => String(f.value).trim());
+    const empty = drafted.filter((f) => v.names?.[f.key]?.need && !String(v.draft?.[f.key] ?? '').trim()).map((f) => nameOf(f.key));
+    report('report', null, `${list.length}칸 넣는 중…`);
+    // 날짜·시각 피커(Telerik)는 본문 틀이 뜬 뒤에 선다 — 설 때까지 다시 넣는다(이미 넣은 글 칸을 다시 넣어도 같다).
+    const put = await guard('report', async () => {
+      let got = null;
+      const t1 = Date.now();
+      do {
+        got = await run(tabId, form, pageForm, [list]).catch(() => null);
+        if (Array.isArray(got) && !got.some((r) => r.ready === false)) break;
+        await sleep(POLL_MS);
+      } while (Date.now() - t1 < 10000);
+      return Array.isArray(got) ? got : null;
+    });
+    if (put) {
+      const bad = put.filter((r) => !r.ok).map((r) => `${nameOf(r.key)} ${r.why || '들어가지 않음'}`);
+      const left = empty.length ? `비어 넣지 않은 칸: ${[...new Set(empty)].join(' · ')} — 창에서 적어 주세요` : '';
+      const names = [...new Set(list.map((f) => nameOf(f.key)))];
+      report('report', !bad.length && !empty.length, [bad.join(' · '), left].filter(Boolean).join(' / ')
+        || `${put.length}칸 — ${names.slice(0, 6).join(' · ')}${names.length > 6 ? ' …' : ''}`);
+    } else if (!steps.find((s) => s.key === 'report' && s.ok === false)) report('report', false, '신고서 칸을 넣지 못했습니다 — 창에서 확인하세요');
+  }
 
   // 본문 — 편집기가 늦게 붙으면 붙을 때까지.
   const putBody = (check) => until(() => run(tabId, form, pageBody, [{ control, html: v.html, text: v.body, check }]), (r) => r.ready, 15000);

@@ -53,7 +53,8 @@ ${rows.map(row).join('\n')}
 
 /**
  * 외부강의등 신고서 본문 틀(완료된 문서 — 읽기 꼴). 값은 <span id="ctl00_ContentPlaceHolder_Content_…"> 에 있다(실측 id 그대로).
- * @param {{name?, dept?, org?, representative?, contact?, subject?, place?, from?, to?, start?, end?, hours?, mins?, batch?, avgTime?, monthCount?, fee?, avgFee?, yearTotal?, expenses?, note?, title?}} v
+ * rank(직급 — lblJickub)·contactTel(담당부서 연락처 — lblDepartmentTel)은 2026-10-15 실측(HER-2026-000266 읽기 꼴)으로 더했다.
+ * @param {{name?, dept?, rank?, tel?, org?, representative?, contact?, contactTel?, subject?, place?, from?, to?, start?, end?, hours?, mins?, batch?, avgTime?, monthCount?, fee?, avgFee?, yearTotal?, expenses?, note?, title?}} v
  */
 export function reportPage(v = {}) {
   const C = 'ctl00_ContentPlaceHolder_Content_';
@@ -63,8 +64,9 @@ export function reportPage(v = {}) {
 <input type="hidden" id="ctl00_ApplineInfoInReportKRTA1_txtDocTitle" value="${esc(v.title ?? '외부강의등 신고서')}" /><span id="ctl00_ApplineInfoInReportKRTA1_lblDocTitle">${esc(v.title ?? '외부강의등 신고서')}</span>
 <table class="ViewTable">
 <tr><td class="ViewTableTitleForm">${span('Name', '성명')}</td><td class="ViewTableItemForm">${span('lblName', v.name ?? '김거화')}</td><td class="ViewTableTitleForm">${span('DeptName', '소속')}</td><td>${span('lblDeptName', v.dept ?? '수소전기추진연구팀')}</td></tr>
+<tr><td class="ViewTableTitleForm">${span('Label8', '직급')}</td><td class="ViewTableItemForm">${span('lblJickub', v.rank)}</td><td class="ViewTableTitleForm">${span('Tel', '연락처')}</td><td>${span('lblTel', v.tel ?? '')}</td></tr>
 <tr><td class="ViewTableTitleForm">${span('InstituteName', '기관명')}</td><td class="ViewTableItemForm">${span('lblInstituteName', v.org)}</td><td>${span('Representative', '대표자')}</td><td>${span('lblRepresentative', v.representative)}</td></tr>
-<tr><td>${span('Department', '담당부서(담당자)')}</td><td>${span('lblDepartment', v.contact)}</td><td>${span('DepartmentTel', '연락처')}</td><td>${span('lblDepartmentTel', '')}</td></tr>
+<tr><td>${span('Department', '담당부서(담당자)')}</td><td>${span('lblDepartment', v.contact)}</td><td>${span('DepartmentTel', '연락처')}</td><td>${span('lblDepartmentTel', v.contactTel)}</td></tr>
 <tr><td class="ViewTableTitleForm">${span('LectureTopic', '외부강의등 주제')}</td><td class="ViewTableItemForm" colspan="5">${span('lblLectureTopic', v.subject)}</td></tr>
 <tr><td class="ViewTableTitleForm">${span('Place', '장소')}</td><td class="ViewTableItemForm" colspan="5">${span('lblPlace', v.place)}</td></tr>
 <tr><td class="ViewTableTitleForm" rowspan="3">${span('lblDateTime', '일시')}</td><td class="ViewTableItemForm calendarDiv" colspan="2">${span('lblStartDate', v.from)} &nbsp;~&nbsp; ${span('lblEndDate', v.to)}</td>

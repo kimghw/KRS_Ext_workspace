@@ -30,7 +30,7 @@ rules:
     source: "구본 ea_rules.yaml 출장(국내 팀장 · 해외 본부장, 확정) — krs-web-agents ea_approval 규정 키 출장"
 
   외부활동:
-    label: 외부활동 허가
+    label: 외부강의등 신고
     basis: none
     approver: 팀장
-    source: "QI-01K 45절에 행 없음 — 부서장 결재(이 확장의 기존 결재선, 2026-10-08). 규정 행을 찾으면 여기를 고친다"
+    source: "QI-01K 45절에 행 없음 — 팀장 결재(지난 외부강의등 신고서 HER-2026-000266 의 결재선이 담당 → 팀장, 2026-10-15 실측). 규정 행을 찾으면 여기를 고친다"

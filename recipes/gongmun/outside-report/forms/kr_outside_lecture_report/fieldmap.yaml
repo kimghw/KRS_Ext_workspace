@@ -1,0 +1,144 @@
+# 외부강의등 신고서의 칸 지도 — 새 공문 창(DocumentView)의 본문 틀(frameDocument, Forms/Drafts/KR_Outside_Lecture_Report.aspx)에 있는 칸.
+# 실측: 2026-10-15 CDP 로 연 빈 신고서(HER-2026-000690, 읽기만)와 지난 신고서 HER-2026-000266(읽기 꼴) — 칸 id·필수 검사(formSubmit)·숫자 검사.
+# kind 의 뜻은 research-form/forms/research_task/fieldmap.yaml 머리말과 같고, 이 폼에는 둘이 더 있다:
+#   date — Telerik RadDatePicker. control 의 $find(control).set_selectedDate 로 넣고 다시 읽는다(글 칸에 적으면 피커가 모른다).
+#   time — Telerik RadDateTimePicker(시각 칸). 같은 길로 넣는다 — 날짜는 on 이 가리키는 초안 칸(활동 첫날)이다.
+# source: draft 는 외부활동 초안(purposes/outside/purpose.yaml 의 fields)의 칸 값이다:
+#   from    초안 칸의 key — 목록이면 앞에서부터 비지 않은 것(종료일이 비면 시작일)
+#   default 초안 칸이 비었을 때 넣는 값 — 지난 신고서처럼 쓰지 않는 수 칸(일괄신고·1회 평균)은 0 이다(2026-08-13 HER-2026-000266)
+#   digits  숫자만 — 양식이 이 칸들을 ^\d+$ 로 검사한다(쉼표·하이픈·'원' 이 있으면 상신 때 막힌다)
+# 비면(default 도 없으면) 넣지 않는다 — 성명·소속·연락처는 서버가 채워 두니 칸 지도에 없다. 3회 초과시 사전 신고 완료(chkPriorNoti)는 사람이 고른다.
+# 상신 때 양식이 보는 필수 칸: 시작일·종료일·시작시간·종료시간·첨부·성명·소속·연락처·기관명·대표자·담당부서(담당자)·그 연락처·주제·장소·사례금 총액·
+# 총 시간·직급·당월 누적·당해 연도 사례금 누적 합계.
+anchor: '#ctl00_ContentPlaceHolder_Content_txtInstituteName'
+fields:
+  title:
+    kind: title
+    selector: '#ctl00_ApplineInfoInReportKRTA1_txtDocTitle'
+    label: '#ctl00_ApplineInfoInReportKRTA1_lblDocTitle'
+    max: 99
+    source: title
+  rank:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtJickub'   # 신고자 직급
+    source: draft
+    from: rank
+  org:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtInstituteName'   # 요청인 기관명
+    source: draft
+    from: org
+  representative:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtRepresentative'   # 요청인 대표자
+    source: draft
+    from: representative
+  contact:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtDepartment'   # 담당부서(담당자)
+    source: draft
+    from: contact
+  contactTel:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtDepartmentTel'   # 담당부서의 연락처 — 숫자만
+    source: draft
+    from: contactTel
+    digits: true
+  subject:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtLectureTopic'   # 외부강의등 주제(여러 줄)
+    source: draft
+    from: subject
+  place:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtPlace'   # 장소(여러 줄)
+    source: draft
+    from: place
+  from:
+    kind: date
+    control: ctl00_ContentPlaceHolder_Content_dtpStartDate
+    source: draft
+    from: from
+  to:
+    kind: date
+    control: ctl00_ContentPlaceHolder_Content_dtpEndDate
+    source: draft
+    from: [to, from]
+  start:
+    kind: time
+    control: ctl00_ContentPlaceHolder_Content_ttpStartTime
+    source: draft
+    from: start
+    on: from
+  end:
+    kind: time
+    control: ctl00_ContentPlaceHolder_Content_ttpEndTime
+    source: draft
+    from: end
+    on: from
+  hours:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_LectureTextHour'   # 총 시간 — 시간
+    source: draft
+    from: hours
+    digits: true
+  mins:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_LectureTextMin'   # 총 시간 — 분(0분이면 비워 둔다 — 지난 신고서)
+    source: draft
+    from: mins
+    digits: true
+  batchCount:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtAverageCount'   # 일괄신고 횟수
+    source: draft
+    default: '0'
+    digits: true
+  batchTime:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtAverageTime'   # 일괄신고 1회 평균 시간
+    source: draft
+    default: '0'
+    digits: true
+  monthCount:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtCumulativeCount'   # 당월 누적(이번 포함 횟수)
+    source: draft
+    from: monthCount
+    digits: true
+  fee:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtTotalHonorarium'   # 사례금 총액(교통비·숙박비·식비 뺀 것)
+    source: draft
+    from: fee
+    digits: true
+  feeAvg:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtAverageHonorarium'   # 1회 평균 대가(일괄신고일 때)
+    source: draft
+    default: '0'
+    digits: true
+  yearTotal:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtCumulativeAmount'   # 당해 연도 사례금 누적 합계(이번 포함)
+    source: draft
+    from: yearTotal
+    digits: true
+  expenses:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtEtc'   # 교통비·숙박비·식비(실비) — 별도
+    source: draft
+    from: expenses
+    default: '0'
+    digits: true
+  expensesAvg:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtAverageEtc'   # 1회 평균 교통비·숙박비·식비
+    source: draft
+    default: '0'
+    digits: true
+  note:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_txtNote'   # 비고(여러 줄)
+    source: draft
+    from: note

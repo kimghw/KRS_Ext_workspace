@@ -18,8 +18,10 @@ import { writePlan } from '../../src/gongmun.js';
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter((a) => a.startsWith('--') && (argv[argv.indexOf(a) + 1] ?? '--').startsWith('--')));
 const args = Object.fromEntries(argv.map((a, i, all) => (a.startsWith('--') && !flags.has(a) ? [a.slice(2), all[i + 1] ?? ''] : null)).filter(Boolean));
-if (!args.head || !args.project) {
-  console.log('쓰는 법: node test/cdp/gmwrite.mjs --head <부서장> --project <과제명> [--new] [--kind purchase] [--me <이름>] [--dept <부서>] [--lead <과제책임자>] [--code <과제번호>] [--director <소장>] [--title <제목>] [--total <합계>] [--attach <파일,파일>] [--live]');
+// 외부활동(외부강의등 신고서 — 2026-10-15)은 과제를 고르지 않아 --project 가 없어도 된다. 신고서 칸은 [시험] 값으로 채우고, 다 넣은 뒤 칸을 다시 읽고
+// 양식의 상신 전 검사(formSubmit(1, true, 0) — 포스트백 없이 칸만 보는 함수, 알림은 받아 적는다)를 돌려 무엇이 막히는지 보인다.
+if (!args.head || (!args.project && args.kind !== 'outside')) {
+  console.log('쓰는 법: node test/cdp/gmwrite.mjs --head <부서장> --project <과제명> [--new] [--kind purchase|edu|trip|outside] [--me <이름>] [--dept <부서>] [--lead <과제책임자>] [--code <과제번호>] [--director <소장>] [--title <제목>] [--total <합계>] [--attach <파일,파일>] [--live]');
   process.exit(2);
 }
 const dry = !flags.has('--live');
@@ -29,12 +31,20 @@ const files = (args.attach || '').split(',').map((s) => s.trim()).filter(Boolean
 }));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const kind = args.kind || 'purchase';
-const project = { name: args.project, code: args.code || '', lead: args.lead || '', alias: '', rnd: { year: 1 } };
+const project = args.project ? { name: args.project, code: args.code || '', lead: args.lead || '', alias: '', rnd: { year: 1 } } : null;
 const preset = { dept: args.dept || '', head: args.head, director: args.director || '', refs: (args.refs || '').split(/[,\s]+/).filter(Boolean) };
+const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+// 외부강의등 신고서의 시험 초안 — 칸마다 [시험] 이 보이게. 숫자만 받는 칸은 0·1.
+const OUTSIDE_DRAFT = {
+  org: '[시험] 기관', representative: '[시험] 대표', contact: '[시험] 부서(담당)', contactTel: '0000000000', subject: '[시험] 공문 작성기 실측 — 저장하지 말고 닫아 주세요',
+  place: '[시험] 장소', from: day, to: day, start: '14:00', end: '16:30', hours: 2, mins: 30, fee: 0, expenses: null, rank: '[시험]', monthCount: 1, yearTotal: 0,
+  note: `[시험] 작성기 실측${dry ? '(dry)' : ''}`,
+};
 const plan = writePlan(kind, {
-  title: args.title || `[시험] ${args.project} 공문 작성 시험`,
+  title: args.title || (kind === 'outside' ? '[시험] 외부강의등 신고서' : `[시험] ${args.project} 공문 작성 시험`),
   body: `1. 시험 — 이 글은 공문 작성기 실측${dry ? '(dry)' : ''}이 넣은 것입니다. 저장하지 말고 닫아 주세요.\n\n------------ 아   래 ------------\n\n가. 시험`,
-  draft: { total: Number(args.total || 300000) },
+  draft: kind === 'outside' ? OUTSIDE_DRAFT : { total: Number(args.total || 300000) },
+  ...(kind === 'outside' ? { form: 'KR_Outside_Lecture_Report' } : {}),
 }, { me: args.me || '', preset, project });
 console.log('계획', JSON.stringify({ form: plan.form, known: plan.known, job: plan.values.job, setting: plan.setting, line: plan.line, attach: files.map((f) => `${f.name} (${Math.round(f.base64.length * 3 / 4 / 1024)}KB)`), dry }));
 
@@ -71,6 +81,28 @@ try {
   const t0 = Date.now();
   const res = await writeGongmun(plan, { api, dry, files, tabId: 1, onStep: (s) => console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s`.padStart(6), s.key.padEnd(8), s.ok, s.detail) });
   console.log('문서', res.docId);
+  if (Object.keys(plan.values.draft).length) {
+    // 칸이 정해진 폼 — 넣은 칸을 다시 읽고(글 칸 value, 피커는 control 의 값·선택한 날짜) 양식의 상신 전 검사를 돌린다(포스트백 없음, 알림은 받아 적음).
+    const back = await inFrame('frameDocument', (fields) => fields.map((f) => {
+      const el = f.control ? document.getElementById(f.control) : document.querySelector(f.selector);
+      const c = f.control && window.$find ? window.$find(f.control) : null;
+      const d = c && c.get_selectedDate ? c.get_selectedDate() : null;
+      return [f.key, el ? el.value : '(칸 없음)', d ? `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : ''];
+    }), [Object.entries(plan.fields).filter(([, f]) => f.source === 'draft').map(([key, f]) => ({ key, selector: f.selector, control: f.control }))]);
+    console.log('다시 읽은 신고서 칸', JSON.stringify(back));
+    const check = await inFrame('frameDocument', () => {
+      const said = [];
+      const alert0 = window.alert;
+      window.alert = (m) => { said.push(String(m)); };
+      let pass = null;
+      let regex = null;
+      try { pass = typeof window.formSubmit === 'function' ? window.formSubmit(1, true, 0) : '없음'; } catch (e) { pass = `예외 ${e.message}`; }
+      try { regex = (window.Page_Validators || []).filter((v) => { window.ValidatorValidate(v); return !v.isvalid; }).map((v) => v.controltovalidate); } catch (e) { regex = `예외 ${e.message}`; }
+      window.alert = alert0;
+      return { pass, said, regex };
+    }, []);
+    console.log('양식의 상신 전 검사', JSON.stringify(check), '— 첨부가 없으면 "증빙자료를 첨부해 주세요" 에서 멈추는 것이 맞다');
+  }
   console.log('남은 숨은 틀', JSON.stringify(await inFrame('frameToolBar', () => [...document.querySelectorAll('iframe[data-krsws]')].map((f) => f.getAttribute('data-krsws')), [])));
   console.log('받아 적은 알림', JSON.stringify(await inFrame('frameToolBar', () => (window.__krsws || {}).said || [], [])));
   console.log('창의 알림', JSON.stringify(p.dialogs), '오류', JSON.stringify(p.errors.slice(0, 5)));

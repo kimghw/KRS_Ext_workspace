@@ -1,0 +1,161 @@
+# 외부활동 — 외부강의등 신고서(2026-10-15 사용자 지정: "현재 외부활동이 외부강의등 신고서인데 이 양식대로 작성하도록 되어 있지 않아").
+# 강의·자문·심사·평가·발표·위원 활동·집필 같은 외부활동을 할 때 올리는 회사 양식이다. 요청 공문·초청장·요청 메일을 넣으면 신고서의 요청인(기관명·대표자·
+# 담당부서(담당자)·연락처)·주제·장소·일시·사례금을 읽는다. 칸 하나가 신고서 칸 하나다(../../fieldmap.yaml 의 source: draft).
+# 예전에는 연구업무추진품의의 본문(외부활동 허가 신청서 — 활동목적·신청사유)으로 썼다(2026-10-08) — 신고서에는 그런 칸이 없어 사유 쓰기도 없다.
+# 칸의 꼴과 from 의 뜻은 research-form/…/purchase/purpose.yaml 머리말과 같다. 이 갈래만의 형: time(24시간 HH:MM)·number(쉼표 없는 수).
+# from: auto 칸은 패널이 공문 이력(eclass 에서 읽은 지난 신고서)과 다른 칸으로 셈한다(src/gongmun.js outsideAuto) — 사용자가 고치면 그 값이 남는다.
+# Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt outside`.
+purpose_id: outside
+label: 외부활동
+title: 외부강의등 신고서
+rule_key: 외부활동
+amount_field: null
+document_setting: 외부활동    # registries/settings.yaml — 보존 3년(지난 신고서)·검색 키워드 '외부활동'
+limit: null
+account: ''
+# 과제를 고르지 않는다 — 신고서에는 과제(Job Id) 칸이 없고 결재선도 담당 → 팀장뿐이다(지난 신고서 HER-2026-000266 — 과제책임자 합의 없음).
+project: false
+
+reading:
+  docs: 외부강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문
+  rules:
+    - 신고서에 그대로 옮겨 적는 값입니다 — 문서에 없는 대표자·담당자·연락처·시각·금액은 지어내지 않고 null 로 둡니다.
+
+# 차례가 화면의 차례다. open 칸(직급·당월 누적·당해 연도 누적·비고)은 작성 내용 탭에, 나머지 읽은 칸은 읽은 내용 탭에 선다.
+fields:
+  - key: org
+    label: 기관명
+    from: document
+    need: 기관명
+    read: 외부강의 등을 요청한 기관 — 공문의 발신 기관이나 메일을 보낸 기관의 이름 그대로. 학과·부서는 담당부서 칸에 적습니다.
+    example: 부산대학교
+
+  - key: representative
+    label: 대표자
+    from: document
+    need: 대표자
+    read: 요청 기관의 대표자(기관장) 이름 — 공문 끝의 발신 명의나 기관장 이름. 직함만 있고 이름이 문서에 없으면 null 입니다.
+    example: 홍길동
+
+  - key: contact
+    label: 담당부서(담당자)
+    wide: true
+    from: document
+    need: 담당부서(담당자)
+    read: 요청한 부서와 담당자 — "부서(담당자 이름)" 꼴. 공문의 담당자·문의처 줄이나 메일 서명에서 읽습니다.
+    example: 조선해양공학과(김철수)
+
+  - key: contactTel
+    label: 담당자 연락처 (숫자만)
+    from: document
+    need: 담당자 연락처
+    read: 담당자의 전화번호 — 숫자만(하이픈·괄호·공백 없이). 사무실 번호가 있으면 그것, 없으면 휴대전화.
+    example: '0515101234'
+
+  - key: subject
+    label: 외부강의등 주제
+    wide: true
+    area: true
+    max: 400
+    from: document
+    need: 주제
+    read: 강의·자문·심사·발표의 주제 — 문서에 적힌 제목 그대로. 같은 건으로 여러 날 나눠 하면 실시 일자를 뒤에 괄호로 붙입니다.
+    example: MVDC 차단기 기술 특강
+
+  - key: place
+    label: 장소
+    wide: true
+    from: document
+    need: 장소
+    read: 실시 장소 — 기관·건물·호실. 온라인이면 화상회의·온라인강의·서면제출 가운데 맞는 말입니다(신고서가 그렇게 적으라고 합니다).
+    example: 부산대학교 공학관 301호
+
+  - key: from
+    label: 시작일
+    type: date
+    from: document
+    need: 시작일
+    read: 외부활동의 첫날. 연도가 적혀 있지 않으면 문서 발행일(없으면 오늘)의 연도를 붙입니다.
+    example: 2026-11-05
+
+  - key: to
+    label: 종료일
+    type: date
+    from: document
+    not_before: from
+    read: 외부활동의 마지막 날 — 하루면 시작일과 같은 날입니다.
+    example: 2026-11-05
+
+  - key: start
+    label: 시작 시간
+    type: time
+    from: document
+    need: 시작 시간
+    read: 시작 시각 — 24시간 HH:MM(오후 2시는 14:00). 적혀 있지 않으면 null 입니다.
+    example: '14:00'
+
+  - key: end
+    label: 종료 시간
+    type: time
+    from: document
+    need: 종료 시간
+    read: 끝나는 시각 — 24시간 HH:MM. 시작 시각과 길이만 적혀 있으면 더해서 적고, 둘 다 없으면 null 입니다.
+    example: '16:00'
+
+  # 총 시간 — 시작·종료 시간으로 셈한다(여러 날이면 날수를 곱함). 고치면 그 값이 남는다.
+  - key: hours
+    label: 총 시간 (시간)
+    type: number
+    from: auto
+    need: 총 시간
+
+  - key: mins
+    label: 총 시간 (분)
+    type: number
+    from: auto
+
+  - key: fee
+    label: '사례금 총액 (원, 없으면 0)'
+    type: money
+    from: document
+    need: 사례금 총액
+    read: 사례금(강사료·자문료·심사료) 총액 — 교통비·숙박비·식비는 빼고 원 단위입니다. 적혀 있지 않으면 null 입니다.
+    example: 300000
+
+  - key: expenses
+    label: '교통비·숙박비·식비 (실비, 원)'
+    type: money
+    from: document
+    read: 사례금과 따로 받는 교통비·숙박비·식비(실비) — 적혀 있으면 그 금액, 없으면 null 입니다.
+    example: 50000
+
+  # 아래 넷은 작성 내용 탭 — 직급·당월 누적·당해 연도 누적은 공문 이력의 지난 신고서로 셈한다(outsideAuto).
+  - key: rank
+    label: 직급
+    open: true
+    from: auto
+    need: 직급
+    placeholder: 지난 신고서에서 채움
+
+  - key: monthCount
+    label: 당월 누적 (이번 포함 횟수)
+    type: number
+    open: true
+    from: auto
+    need: 당월 누적
+
+  - key: yearTotal
+    label: 당해 연도 사례금 누적 합계 (원, 이번 포함)
+    type: money
+    open: true
+    wide: true
+    from: auto
+    need: 당해 연도 누적 합계
+
+  - key: note
+    label: 비고
+    wide: true
+    area: true
+    open: true
+    from: user
+    placeholder: 일괄신고면 실시 일자 — 그 밖에 덧붙일 말

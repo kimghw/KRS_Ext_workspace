@@ -900,7 +900,7 @@ console.log('공문 탭');
     assert.ok(doc.getElementById('gmSearch').hidden, '검색 카드는 에이전트를 누르기 전에는 숨어 있다');
     assert.ok(!doc.getElementById('gongmun').classList.contains('agent'));
     assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').textContent, '외부활동');
-    assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').title, '외부활동 허가 신청서');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').title, '외부강의등 신고서');
     assert.ok(!doc.querySelector('#gmKinds [data-kind="trip"]').textContent.includes('준비 중'));
     assert.equal(doc.querySelector('#gmKinds .gm-kind.active').dataset.kind, 'purchase');
     assert.equal(doc.getElementById('gmSoon'), null, '준비 중 안내는 없다');
@@ -1349,44 +1349,65 @@ console.log('공문 탭');
     assert.match(doc.getElementById('gmSteps').textContent, /첨부 행사 안내문/);
   });
 
-  // 외부활동 허가 신청서(2026-10-08 사용자 지정: "출장 옆에 외부활동 허가 신청서") — 같은 문서 넣는 곳, 요청 공문을 읽는다.
+  // 외부활동 = 외부강의등 신고서(2026-10-15 사용자 지정: "외부활동이 외부강의등 신고서인데 이 양식대로 작성하도록") — 같은 문서 넣는 곳, 요청 공문을 읽는다.
   doc.querySelector('#gmKinds [data-kind="outside"]').click();
-  t('외부활동도 같은 문서 넣는 곳 — 요청 공문을 넣으라고 하고, 양식의 제목은 "[요청 기관] [구분] 외부활동 허가 신청"', () => {
+  t('외부활동도 같은 문서 넣는 곳 — 요청 공문을 넣으라고 하고, 양식은 외부강의등 신고서(제목도 그대로)', () => {
     assert.ok(!doc.getElementById('gmIntake').classList.contains('hidden'));
-    assert.equal(doc.getElementById('gmDropLead').textContent, '외부활동 요청 공문·메일(강의·자문·심사·발표 의뢰)을 넣으세요');
+    assert.equal(doc.getElementById('gmDropLead').textContent, '외부강의 등 요청 공문·메일(강의·자문·심사·발표 의뢰)을 넣으세요');
     assert.ok(doc.getElementById('gmDraft').classList.contains('hidden'));
-    assert.equal(doc.getElementById('gmTplTitle').value, '{요청기관} {활동구분} 외부활동 허가 신청');
-    assert.match(doc.getElementById('gmTplBody').value, /외부활동 내용/);
+    assert.equal(doc.getElementById('gmTplForm').value, 'KR_Outside_Lecture_Report');
+    assert.deepEqual([...doc.querySelectorAll('#gmTplForm option')].map((o) => o.value), ['KR_EA_Research_Task', 'KR_Outside_Lecture_Report', 'KR_EA_Form2', '']);
+    assert.equal(doc.getElementById('gmTplTitle').value, '외부강의등 신고서');
+    assert.match(doc.getElementById('gmTplBody').value, /■ 신 고 자 : \{기안자\}/);
   });
   doc.getElementById('gmManual').click();
   await settle();
-  t('외부활동 — 문서 없이 쓰면 외부활동 칸(읽은 칸은 접힘, 활동목적·신청사유는 펼침)이 서고, 구분은 강의가 기본', () => {
+  t('외부활동 — 문서 없이 쓰면 신고서 칸이 서고(읽은 칸은 접힘, 직급·당월 누적·당해 연도 누적·비고는 펼침), 시각 칸은 time, 남은 것은 신고서의 필수 칸', () => {
     assert.ok(!doc.getElementById('gmDraft').classList.contains('hidden'));
-    assert.deepEqual([...doc.querySelectorAll('#gmMoreFields [data-key]')].map((n) => n.dataset.key), ['type', 'org', 'subject', 'from', 'to', 'hours', 'place', 'fee', 'topics', 'who']);
-    assert.deepEqual([...doc.querySelectorAll('#gmFields [data-key]')].map((n) => n.dataset.key), ['purpose', 'reason']);
-    assert.equal(field('type').value, '강의');
-    assert.equal(field('who').value, '김거화');
-    assert.match(doc.getElementById('gmNeed').textContent, /요청 기관 · 활동명 · 활동기간 · 활동장소 · 활동목적 · 신청사유/);
+    assert.deepEqual([...doc.querySelectorAll('#gmMoreFields [data-key]')].map((n) => n.dataset.key),
+      ['org', 'representative', 'contact', 'contactTel', 'subject', 'place', 'from', 'to', 'start', 'end', 'hours', 'mins', 'fee', 'expenses']);
+    assert.deepEqual([...doc.querySelectorAll('#gmFields [data-key]')].map((n) => n.dataset.key), ['rank', 'monthCount', 'yearTotal', 'note']);
+    assert.deepEqual([field('start').type, field('from').type, field('hours').getAttribute('inputmode')], ['time', 'date', 'numeric']);
+    const need = doc.getElementById('gmNeed').textContent;
+    assert.match(need, / 기관명 · 대표자 · 담당부서\(담당자\) · 담당자 연락처 · 주제 · 장소 · 시작일 · 시작 시간 · 종료 시간 · 총 시간 · 사례금 총액 · 직급 · 당월 누적 · 당해 연도 누적 합계$/);
+    assert.ok(!/과제/.test(need), `과제는 묻지 않는다 — ${need}`);
+    assert.equal(doc.getElementById('gmAgent').classList.contains('hidden'), true, '사유 칸이 없어 에이전트 칸도 없다');
   });
-  t('외부활동 — 과제는 갈래 아래가 아니라 작성 내용 카드 안에서 고른다', () => {
+  t('외부활동 — 과제를 고르지 않는다(과제 줄·과제 목록·과제 기본 내용 없음), 결재선은 합의 없이 담당 → 팀장', () => {
     assert.ok(doc.getElementById('gmProjBar').classList.contains('hidden'));
-    assert.ok(!doc.getElementById('gmProjects').classList.contains('hidden'));
-    assert.equal(doc.querySelector('#gmProjects .gm-proj.active .gm-proj-name').textContent, PROJECT);
+    assert.ok(doc.getElementById('gmProjects').classList.contains('hidden'));
+    assert.ok(doc.getElementById('gmProjLabel').classList.contains('hidden'));
+    assert.ok(doc.getElementById('gmProjInfo').classList.contains('hidden'));
+    assert.ok(!/합의자/.test(doc.getElementById('gmLine').textContent), doc.getElementById('gmLine').textContent);
+    assert.match(doc.getElementById('gmLine').textContent, /^기안자김거화→결재자노길태/);
   });
   type(field('org'), '부산대학교');
+  type(field('representative'), '차정인');
+  type(field('contact'), '조선해양공학과(김철수)');
+  type(field('contactTel'), '0515101234');
   type(field('subject'), 'MVDC 차단기 기술 특강');
   type(field('from'), '2026-11-05');
   type(field('place'), '부산대학교 공학관');
-  type(field('purpose'), '연구 성과 확산');
-  type(field('reason'), '과제 연구 성과의 확산에 필요함');
-  t('외부활동 — 양식대로 제목·본문(외부활동 내용 · 신청사유 · ※ 첨부 요청 공문)이 만들어진다', () => {
+  type(field('start'), '14:00');
+  type(field('end'), '16:30');
+  t('외부활동 — 시작·종료 시간을 적으면 총 시간이 저절로 서고, 고치면 그 값이 남는다', () => {
+    assert.deepEqual([field('hours').value, field('mins').value], ['2', '30']);
+    type(field('hours'), '3');
+    type(field('end'), '17:00');
+    assert.deepEqual([field('hours').value, field('mins').value], ['3', '30'], '고친 총 시간은 다시 셈하지 않는다');
+  });
+  t('외부활동 — 공문 탭은 제목(외부강의등 신고서)과 넣을 칸의 미리보기(고칠 수 없음), 작성 차례는 신고서 칸', () => {
     assert.ok(!doc.getElementById('gmDoc').classList.contains('hidden'));
-    assert.equal(doc.getElementById('gmTitle').value, '부산대학교 강의 외부활동 허가 신청');
-    const body = doc.getElementById('gmBody').value;
-    assert.match(body, /나\. 외부활동 내용\n {4}\(1\) 활동구분 : 강의\n {4}\(2\) 요청기관 : 부산대학교\n {4}\(3\) 활 동 명 : MVDC 차단기 기술 특강\n {4}\(4\) 활동기간 : 2026\. 11\. 5\. \(1일\)\n {4}\(5\) 활동장소 : 부산대학교 공학관\n {4}\(6\) 활 동 자 : 김거화\n {4}\(7\) 활동목적 : 연구 성과 확산\n {4}\(8\) 신청사유 : 과제 연구 성과의 확산에 필요함/);
-    assert.match(body, /※ 첨 부\n {4}1\. 요청 공문 1부\.  끝\.$/);
-    assert.ok(!body.includes('예산계정'));
-    assert.match(doc.getElementById('gmSteps').textContent, /첨부 요청 공문/);
+    assert.equal(doc.getElementById('gmFormName').textContent, '외부강의등 신고서');
+    assert.equal(doc.getElementById('gmTitle').value, '외부강의등 신고서');
+    const body = doc.getElementById('gmBody');
+    assert.ok(body.readOnly);
+    assert.equal(doc.querySelector('label[for="gmBody"]').textContent, '신고서에 넣을 칸 (미리보기)');
+    assert.match(body.value, /■ 요 청 인 : 부산대학교 {2}\(대표자 차정인\)\n {4}담당부서\(담당자\) : 조선해양공학과\(김철수\) {2}☎ 0515101234/);
+    assert.match(body.value, /■ 일 {4}시 : 2026\. 11\. 5\. \(1일\) {2}14:00 ~ 17:00\n {4}총 시 간 : 3시간 30분/);
+    assert.match(body.value, /※ 첨 부\n {4}1\. 요청 공문 1부\.  끝\.$/);
+    assert.match(doc.getElementById('gmSteps').textContent, /공문 작성 외부강의등 신고서 — 제목 · 신고서 칸\(요청인·주제·장소·일시·사례금·누적\) · 문서설정 · 결재선을 창에 넣습니다/);
+    assert.match(doc.getElementById('gmSetState').textContent, /^전결 팀장 · 보존 3년 · .* · 키워드 외부활동$/, '보존 3년(지난 신고서)·검색 키워드 외부활동');
   });
 
   // 공문 이력(2026-10-11 사용자 지정: "출장·근태 이력처럼 공문 이력을 … 시스템이 공문을 검색해서 읽어 와야지") — 이 boot 는 네트워크가 막혀 있어 읽지 못한다.
@@ -3555,7 +3576,8 @@ console.log('공문 탭 — 공문 이력(eclass 기안함을 읽어 카드로 �
     }
     if (/\/RealEANET\/Forms\/Drafts\/KR_Outside_Lecture_Report\.aspx/.test(u)) {
       bodies.push(u);
-      return page(reportPage({ org: '더브릿지전략컨설팅', subject: '대형선박 전동화 로드맵 회의', place: '중소조선연구원 4층 회의실', from: REP_DATE, to: REP_DATE, start: '오후 03:00', end: '오후 05:00', hours: 2, monthCount: 1, fee: 200000, yearTotal: 200000, expenses: 0 }), u);
+      return page(reportPage({ rank: '책임연구원', org: '더브릿지전략컨설팅', representative: '정민의', contact: '혁신전략본부(강원선)', contactTel: '0212345678', subject: '대형선박 전동화 로드맵 회의',
+        place: '중소조선연구원 4층 회의실', from: REP_DATE, to: REP_DATE, start: '오후 03:00', end: '오후 05:00', hours: 2, monthCount: 1, fee: 200000, yearTotal: 200000, expenses: 0 }), u);
     }
     throw new Error('offline');
   };
@@ -3570,6 +3592,8 @@ console.log('공문 탭 — 공문 이력(eclass 기안함을 읽어 카드로 �
   const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
   const stateText = () => doc.getElementById('gmHistState').textContent;
   const shownIds = () => [...doc.querySelectorAll('#gmHistList .gm-hist-item')].map((li) => li.dataset.id);
+  const type2 = (node, value) => { node.value = value; node.dispatchEvent(new window.Event('input', { bubbles: true })); };
+  const pickDraft = (d) => ({ yearTotal: d?.yearTotal, monthCount: d?.monthCount, rank: d?.rank });
   for (let i = 0; i < 100 && !/건 · |읽지 못했습니다/.test(stateText()); i++) await settle(50);
   await settle(480);   // 저장 타이머
   t('외부활동 초안이 서면 공문 이력을 저절로 읽는다 — 기본은 최근 3개월(읽어 오는 것은 올해 1월 1일 이상), 네 함을 검색 포스트백(숨은 칸을 돌려보냄), 외부강의등 신고서는 본문까지', () => {
@@ -3599,6 +3623,81 @@ console.log('공문 탭 — 공문 이력(eclass 기안함을 읽어 카드로 �
   t('사례비 누계 줄 — 지금까지(올해 신고서의 당해 연도 누적 200,000원) + 이번 300,000원 = 합계 500,000원', () => {
     assert.equal(doc.getElementById('gmFeeSum').textContent, `사례비 누계지금까지 200,000원${dot(REP_DATE)} 외부강의등 신고서의 당해 연도 누적+ 이번 300,000원= 합계 500,000원이력`);
   });
+  // 외부강의등 신고서의 셈하는 칸(2026-10-15) — 읽은 신고서로 당해 연도 누적·당월 누적·직급을 채운다(요청인은 같은 기관의 신고서가 있을 때만).
+  const gmField = (key) => doc.querySelector(`#gongmun [data-key="${key}"]`);
+  t('이력을 읽으면 신고서의 셈하는 칸이 선다 — 당해 연도 누적 500,000(합계)·당월 누적 1(11월 첫 건)·직급(지난 신고서), 다른 기관이라 대표자는 빈 채', () => {
+    assert.deepEqual(['yearTotal', 'monthCount', 'rank', 'representative'].map((k) => gmField(k).value), ['500,000', '1', '책임연구원', '']);
+    assert.equal(store.gongmunHist.reports[B.id].rank, '책임연구원');
+    assert.deepEqual(pickDraft(store.gongmunDraft.outside.draft), { yearTotal: 500000, monthCount: 1, rank: '책임연구원' }, '저장된 초안에도');
+  });
+  type2(gmField('org'), '더브릿지전략컨설팅');
+  type2(gmField('fee'), '250,000');
+  t('같은 기관을 적으면 지난 신고서의 대표자·담당부서(담당자)·연락처가 빈 칸에 서고, 사례비를 고치면 당해 연도 누적이 따라간다', () => {
+    assert.deepEqual(['representative', 'contact', 'contactTel', 'yearTotal'].map((k) => gmField(k).value), ['정민의', '혁신전략본부(강원선)', '0212345678', '450,000']);
+  });
+  type2(gmField('yearTotal'), '1,000,000');
+  type2(gmField('fee'), '300,000');
+  t('당해 연도 누적을 고치면 그 값이 남는다', () => assert.equal(gmField('yearTotal').value, '1,000,000'));
+  type2(gmField('contactTel'), '021234567');
+  type2(gmField('start'), '14:00');
+  type2(gmField('end'), '16:00');
+  type2(gmField('yearTotal'), '500,000');
+  {
+    // 공문 작성 — 새 신고서 창(툴바 0 · 본문 틀 3)을 흉내 내고, 칸마다 무엇을 넘겼는지 본다.
+    const ran = [];
+    const tree = { line: [{ name: '김거화', role: '결재' }], refs: [] };
+    let person = '';
+    window.chrome.tabs.create = async (opts) => { calls.tabs.push(opts); return { id: 91 }; };
+    window.chrome.scripting.executeScript = async ({ target, func, args = [] }) => {
+      ran.push({ name: func.name, frame: target.frameIds?.[0] ?? 'all', args });
+      if (func.name === 'pageProbe') return [{ frameId: 0, result: { toolbar: true, ready: true } }, { frameId: 3, result: { form: true, ready: true, docId: `HER-${Y}-000701` } }];
+      const answer = {
+        pageFill: () => args[0].map((f) => ({ key: f.key, ok: true, value: f.value })),
+        pageForm: () => args[0].map((f) => ({ key: f.key, ok: true, value: f.value })),
+        pageDialog: () => {
+          const [op, value] = args;
+          if (op === 'setting:ready' || op === 'line:ready') return { ready: true, drafter: '김거화[수소전기추진연구팀]' };
+          if (op === 'setting:done' || op === 'line:done') return { done: true };
+          if (op === 'setting:fill') return { ok: true, picked: { receiver: value.receiver, retention: value.retention, docNo: value.docNo } };
+          if (op === 'line:pick') person = value;
+          if (op === 'line:press') tree.line.push({ name: person, role: '결재' });
+          if (op === 'line:tree') return tree;
+          return { ok: true };
+        },
+      }[func.name];
+      return [{ result: answer ? answer() : null }];
+    };
+    doc.getElementById('gmViewDoc').click();
+    doc.getElementById('gmWrite').click();
+    for (let i = 0; i < 80 && (doc.getElementById('gmWrite').disabled || !ran.length); i++) await settle(50);
+    const arg = (name) => ran.find((r) => r.name === name)?.args[0];
+    t('공문 작성 — 외부강의등 신고서 새 창을 열고, 과제·본문 없이 제목과 신고서 칸(날짜·시각은 피커 꼴, 수는 숫자만, 쓰지 않는 수 칸은 0)을 넣는다', () => {
+      assert.match(decodeURIComponent(calls.tabs.at(-1).url), /DocumentView\.aspx\?FORMID=KR_Outside_Lecture_Report&DOCID=&/);
+      const writing = ran.filter((r) => r.name !== 'pageProbe' && r.name !== 'pageDialog').map((r) => `${r.name}@${r.frame}`);
+      assert.deepEqual(writing, ['pageFill@3', 'pageForm@3'], '과제(pageJob)·본문(pageBody)은 없다');
+      assert.deepEqual(arg('pageFill').map((f) => [f.key, f.value]), [['title', '외부강의등 신고서']]);
+      const put = Object.fromEntries(arg('pageForm').map((f) => [f.key, f.value]));
+      assert.deepEqual(put, {
+        rank: '책임연구원', org: '더브릿지전략컨설팅', representative: '정민의', contact: '혁신전략본부(강원선)', contactTel: '021234567', subject: 'MVDC 차단기 기술 특강',
+        place: '부산대학교 공학관', from: `${Y}-11-05`, to: `${Y}-11-05`, start: `${Y}-11-05 14:00`, end: `${Y}-11-05 16:00`, hours: '2',
+        batchCount: '0', batchTime: '0', monthCount: '1', fee: '300000', feeAvg: '0', yearTotal: '500000', expenses: '0', expensesAvg: '0',
+      }, '빈 칸(분·비고)은 넘기지 않는다');
+      assert.deepEqual(arg('pageForm').filter((f) => f.kind !== 'text').map((f) => [f.key, f.kind, f.control]), [
+        ['from', 'date', 'ctl00_ContentPlaceHolder_Content_dtpStartDate'], ['to', 'date', 'ctl00_ContentPlaceHolder_Content_dtpEndDate'],
+        ['start', 'time', 'ctl00_ContentPlaceHolder_Content_ttpStartTime'], ['end', 'time', 'ctl00_ContentPlaceHolder_Content_ttpEndTime'],
+      ]);
+      const setting = ran.find((r) => r.name === 'pageDialog' && r.args[0] === 'setting:fill').args[1];
+      assert.deepEqual([setting.retention, setting.tag, setting.docNo], ['36', '외부활동', '8100']);
+      assert.deepEqual(ran.filter((r) => r.name === 'pageDialog' && r.args[0] === 'line:press').map((r) => r.args[1]), ['btnAPP'], '합의 없이 팀장 결재 하나');
+    });
+    t('공문 작성 — 작성 기록은 새 창 · 제목 · 신고서 칸 · 문서설정 · 결재선 · 첨부(건너뜀)', () => {
+      const log = [...doc.querySelectorAll('#gmWriteLog li')];
+      assert.deepEqual(log.map((li) => li.querySelector('b').textContent), ['새 공문 창', '제목', '신고서 칸', '문서설정', '결재선(위임전결)', '첨부']);
+      assert.deepEqual(log.map((li) => li.className), ['ok', 'ok', 'ok', 'ok', 'ok', 'skip']);
+      assert.match(log[2].textContent, /신고서 칸 20칸 — 직급 · 기관명 · 대표자 · 담당부서\(담당자\) · 담당자 연락처 · 외부강의등 주제 …/);
+      assert.match(doc.getElementById('gmWriteState').textContent, new RegExp(`^작성 완료 — 문서 HER-${Y}-000701`));
+    });
+  }
   doc.querySelector(`#gmHistList [data-id="${B.id}"] .gm-hist-head`).click();
   t('카드를 누르면 펴져서 본문의 칸(기관·주제·장소·일시·사례금·누적·당월 누적)과 eclass 에서 열기가 나온다', () => {
     const li = doc.querySelector(`#gmHistList [data-id="${B.id}"]`);
@@ -3659,6 +3758,42 @@ console.log('공문 탭 — 공문 이력(eclass 기안함을 읽어 카드로 �
     assert.equal(stateText(), '구매 1건 · 최근 3개월');
   });
   await settle(500);   // 저장 타이머가 다음 boot 의 전역 chrome 으로 넘어가지 않게 한다.
+}
+
+console.log('공문 탭 — 직급을 읽기 전에 저장한 외부강의등 신고서는 본문만 한 번 다시 읽는다(2026-10-15)');
+{
+  const { reportPage } = await import('./fixtures/gmlist-fixture.mjs');
+  const { blankDraft } = await import('../src/gongmun.js');
+  const Y = String(new Date().getFullYear());
+  const B = { id: `HER-${Y}-000266`, form: 'KR_Outside_Lecture_Report', formName: '외부강의등 신고서', title: '외부강의등 신고서', name: '김거화', dept: '수소전기추진연구팀', date: `${Y}-01-02`, status: '발송', flow: '7' };
+  const lists = [];
+  const bodies = [];
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (/DocList/.test(u)) { lists.push(u); throw new Error('목록은 읽지 않아야 한다'); }
+    if (/KR_Outside_Lecture_Report\.aspx/.test(u)) {
+      bodies.push(u);
+      const html = reportPage({ rank: '책임연구원', org: '더브릿지전략컨설팅', from: `${Y}-01-02`, to: `${Y}-01-02`, fee: 200000, yearTotal: 200000, monthCount: 1 });
+      return { ok: true, status: 200, type: 'basic', url: u, headers: { get: () => 'text/html; charset=utf-8' }, arrayBuffer: async () => new TextEncoder().encode(html).buffer };
+    }
+    throw new Error('offline');
+  };
+  const { window, store } = await boot({
+    mode: 'gongmun', gongmunKind: 'outside', myName: '김거화', gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
+    gongmunHist: { at: Date.now(), from: `${Y}-01-01`, to: `${Y}-12-31`, span: '3m', rows: [B], reports: { [B.id]: { org: '더브릿지전략컨설팅', fee: 200000, yearTotal: 200000, from: `${Y}-01-02` } }, notes: [] },
+    gongmunDraft: { outside: { draft: { ...blankDraft('outside'), from: `${Y}-11-05`, fee: 100000 }, source: { label: '직접 입력' }, notes: [], touched: [] } },
+  }, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 60 && doc.querySelector('#gongmun [data-key="rank"]')?.value !== '책임연구원'; i++) await settle(50);
+  await settle(480);
+  t('읽어 둔 목록이 10분 안이면 목록은 다시 읽지 않고 그 신고서 본문만 읽어 직급을 채운다', () => {
+    assert.deepEqual([lists.length, bodies.length], [0, 1]);
+    assert.equal(doc.querySelector('#gongmun [data-key="rank"]').value, '책임연구원');
+    assert.equal(doc.querySelector('#gongmun [data-key="yearTotal"]').value, '300,000');
+    assert.equal(store.gongmunHist.reports[B.id].rank, '책임연구원');
+  });
+  await settle(500);
 }
 
 console.log('공문 탭 — 에이전트(공문 검색, 2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 \'에이전트\' 하나 추가해서 공문검색 … 받은공문, 보낸 공문")');

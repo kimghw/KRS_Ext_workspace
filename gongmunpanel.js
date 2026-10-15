@@ -8,6 +8,9 @@
 //
 //   갈래(구매·교육·출장) → 과제 고르기(갈래 아래의 별칭 칩) → 문서 넣기(캡처 붙여넣기·끌어다 놓기·고르기·보고 있는 탭 통째로 캡처·웹페이지의 부분 골라 캡처) → 읽은 칸 고치기 → 문서설정·위임전결 → 공문 작성(첨부까지) → 공문 보기로 창을 열어 임시저장·상신
 //
+// 외부활동은 외부강의등 신고서(칸이 정해진 폼)다(2026-10-15 사용자 지정) — 과제를 고르지 않고, 직급·당월 누적·당해 연도 누적·총 시간과 요청인의 대표자·담당자는
+// 공문 이력의 지난 신고서와 다른 칸으로 셈해 채우며(outsideAuto), 공문 탭의 본문은 넣을 칸의 미리보기다(고쳐도 신고서에 들어가지 않는다).
+//
 // 양식(eclass 양식·제목 틀·본문 틀)과 공문 설정(부서·부서장·소장·본부장·문서번호 부서·참조자·과제 — R&D 탭에 과제가 있으면 그 과제들)은 이 탭 아래의 접힌 칸에서 고친다.
 // 갈래·틀·칸·위임전결·문서설정의 원본은 레시피(recipes/gongmun)다.
 
@@ -17,9 +20,11 @@ import {
   templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
   mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, moreLead,
-  writePlan, docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, OUTSIDE_TYPES, dotDate,
+  writePlan, docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, outsideAuto,
 } from './src/gongmun.js';
-import { HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, BOXES, normalizeHist, listMine, listBoxes, readOutsideReport, kindOf, stateOf, outsideSummary, viewUrl } from './src/gmlist.js';
+import {
+  HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, BOXES, normalizeHist, listMine, listBoxes, readOutsideReport, kindOf, stateOf, outsideSummary, outsideHistory, viewUrl,
+} from './src/gmlist.js';
 import { SEARCH_KEY, AGENT_KIND, DIRS, DIR_LABEL, DIR_BOXES, DIR_TITLE, CUSTOM, parseQuery, periodOf, filterRows, sameRead, normalizeSearch } from './src/gmsearch.js';
 import { writeGongmun, showTab } from './src/gmwrite.js';
 import { BOOK_KEY, normalizeBook, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
@@ -48,7 +53,10 @@ const VIA_LABEL = { cli: '로컬 CLI', api: 'API 키', local: '규칙 해석' };
 const CUT_KINDS = new Set(KIND_ORDER.filter((k) => KINDS[k].cut));
 /** 채팅 칸에 남겨 두는 말 수(내 말·답 합쳐서). */
 const CHAT_KEEP = 6;
-/** 과제를 갈래 아래의 별칭 칩(gmProjBar)에서 먼저 고르는 갈래(2026-10-08 사용자 지정). 외부활동은 작성 내용 탭 안에서 고른다. */
+/**
+ * 과제를 갈래 아래의 별칭 칩(gmProjBar)에서 먼저 고르는 갈래(2026-10-08 사용자 지정). 그 밖의 갈래는 작성 내용 탭 안에서 고르고, 과제를 고르지 않는 갈래
+ * (외부활동 — 외부강의등 신고서, 2026-10-15)는 고르는 곳이 없다.
+ */
 const PICK_FIRST = ['purchase', 'edu', 'trip'];
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -133,7 +141,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const cur = () => st.work[st.kind] || null;
   /** 초안에서 고르는 과제 — R&D 탭의 과제, 없으면 공문 설정의 과제. */
   const choices = () => (st.rnd.length ? st.rnd : st.projects);
-  const projectOf = (w) => choices().find((p) => p.name === w?.project) || null;
+  /** 갈래가 과제를 고르는가 — 외부활동(외부강의등 신고서)은 고르지 않는다(KINDS.project). */
+  const usesProject = (kind = st.kind) => KINDS[kind]?.project !== false;
+  const projectOf = (w, kind = st.kind) => (usesProject(kind) && choices().find((p) => p.name === w?.project)) || null;
   const ctxOf = (w) => ({ me: me(), preset: st.preset, project: projectOf(w), today: today() });
   /** 결재선의 맥락 — 갈래·초안(금액·출장 구분)·이 공문에서 고른 전결권자까지(위임전결). */
   const lineCtx = (w) => ({ ...ctxOf(w), kind: st.kind, draft: w?.draft || {}, rank: w?.rank || '' });
@@ -681,7 +691,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   function syncField(key) {
     const node = el.root.querySelector(`[data-key="${key}"]`);
     const w = cur();
-    if (node && w && document.activeElement !== node) node.value = w.draft[key] ?? '';
+    const f = (FIELDS[st.kind] || []).find((x) => x.key === key);
+    if (node && w && document.activeElement !== node) node.value = f ? fieldText(f, w.draft[key]) : w.draft[key] ?? '';
   }
 
   function paintReasonBtn() {
@@ -942,17 +953,20 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const NO_PROJECT = '<p class="gm-noproj">과제가 없습니다. <button type="button" class="ghost small" data-act="rnd">R&amp;D 탭에서 과제 더하기</button></p>';
 
   /**
-   * 과제 칩 — R&D 탭의 과제(없으면 공문 설정의 과제). 구매·교육·출장은 갈래 아래의 과제 줄(PICK_FIRST — 별칭 칩)에서, 외부활동은 작성 내용 탭
+   * 과제 칩 — R&D 탭의 과제(없으면 공문 설정의 과제). 구매·교육·출장은 갈래 아래의 과제 줄(PICK_FIRST — 별칭 칩)에서, 그 밖의 과제를 고르는 갈래는 작성 내용 탭
    * 안의 목록(과제명과 별칭·책임자)에서 고른다. 초안이 없을 때도 그린다 — 과제 줄은 문서를 넣기 전에 고른다.
    */
   function paintProjects() {
     const first = PICK_FIRST.includes(st.kind);
+    // 과제를 고르지 않는 갈래(외부활동 — 외부강의등 신고서에는 과제 칸이 없다, 2026-10-15)는 과제 줄도 목록도 없다.
+    const inCard = !first && usesProject();
     el.projBar.classList.toggle('hidden', !first);
-    el.projLabel.classList.toggle('hidden', first);
-    el.projects.classList.toggle('hidden', first);
+    el.projLabel.classList.toggle('hidden', !inCard);
+    el.projects.classList.toggle('hidden', !inCard);
     paintProjInfo();
     if (first) paintPick();
-    else paintProjList();
+    else if (inCard) paintProjList();
+    else el.projects.innerHTML = '';
   }
 
   /**
@@ -974,7 +988,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     }).join('') : NO_PROJECT;
   }
 
-  /** 작성 내용 탭 안의 과제 목록(외부활동) — 과제명과 별명·책임자. */
+  /** 작성 내용 탭 안의 과제 목록(갈래 아래의 과제 줄이 없는 갈래 — 2026-10-15 까지는 외부활동) — 과제명과 별명·책임자. */
   function paintProjList() {
     const w = cur();
     const list = choices();
@@ -1039,7 +1053,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       paintProjects();
       return;
     }
-    // 과제 줄은 하나를 고르는 곳이라 켜진 칩을 다시 눌러도 그대로다. 카드 안의 목록(외부활동)은 다시 누르면 고른 것을 푼다.
+    // 과제 줄은 하나를 고르는 곳이라 켜진 칩을 다시 눌러도 그대로다. 카드 안의 목록은 다시 누르면 고른 것을 푼다.
     const next = first || w.project !== p.name ? p.name : '';
     if (next === w.project) return;
     w.project = next;
@@ -1052,17 +1066,23 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (w.project) writeReason(st.kind, { auto: true });
   }
 
+  /** 칸에 보이는 글 — 금액은 쉼표, 수는 그대로, 빈 값은 빈 글. */
+  const fieldText = (f, raw) => (f.type === 'money' ? (moneyOf(raw) != null ? moneyOf(raw).toLocaleString('ko-KR') : '')
+    : f.type === 'number' ? (moneyOf(raw) != null ? String(moneyOf(raw)) : '') : (raw ?? ''));
+
   /** 칸 하나. 사유 칸에는 연구 내용(과제 내용)으로 쓰는 단추를 붙인다(2026-10-07 사용자 지정). */
   function fieldHtml(f, w) {
     const id = `gmF_${f.key}`;
     const raw = w.draft[f.key];
-    const value = f.type === 'money' ? (moneyOf(raw) != null ? moneyOf(raw).toLocaleString('ko-KR') : '') : (raw ?? '');
+    const value = fieldText(f, raw);
     const ph = f.placeholder || '';
+    // time 은 24시간 HH:MM(외부강의등 신고서의 시작·종료 시간), number 는 쉼표 없는 수(총 시간·당월 누적).
+    const type = f.type === 'date' || f.type === 'time' ? f.type : 'text';
     const input = f.type === 'choice'
       ? `<select id="${id}" data-key="${f.key}">${f.options.map((o) => `<option${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`
       : f.area
         ? `<textarea id="${id}" data-key="${f.key}" rows="2" placeholder="${escapeHtml(ph)}">${escapeHtml(value)}</textarea>`
-        : `<input id="${id}" data-key="${f.key}" type="${f.type === 'date' ? 'date' : 'text'}"${f.type === 'money' ? ' inputmode="numeric"' : ''}`
+        : `<input id="${id}" data-key="${f.key}" type="${type}"${f.type === 'money' || f.type === 'number' ? ' inputmode="numeric"' : ''}`
           + ` value="${escapeHtml(value)}" placeholder="${escapeHtml(ph)}" autocomplete="off" />`;
     const act = REASON_KEYS[st.kind]?.reason === f.key ? '<button type="button" class="ghost small gm-reason" data-act="reason">과제 내용으로 쓰기</button>' : '';
     return `<div class="gm-field${f.wide ? ' wide' : ''}" data-field="${f.key}"><div class="gm-field-head"><label for="${id}">${escapeHtml(f.label)}</label>${act}</div>${input}</div>`;
@@ -1088,7 +1108,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       const s = el.moreFields.querySelector('[data-key="summary"]');
       if (s) s.value = w.draft.summary;
     }
-    w.draft[f.key] = f.type === 'money' ? moneyOf(node.value) : node.value;
+    w.draft[f.key] = f.type === 'money' || f.type === 'number' ? moneyOf(node.value) : node.value;
     if (e.type === 'change' && f.type === 'money' && moneyOf(node.value) != null) node.value = moneyOf(node.value).toLocaleString('ko-KR');
     // 교육 구분을 손대지 않았으면 교육장소·교육기관을 따라간다("온라인" 이라 적으면 제목이 온라인교육 품의가 된다).
     if ((f.key === 'place' || f.key === 'provider') && 'mode' in w.draft && !(w.touched || []).includes('mode')) {
@@ -1107,10 +1127,25 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (btn && !btn.disabled) writeReason(st.kind);
   }
 
-  /** 칸을 고칠 때마다 바뀌는 것 — 한도, 결재선, 남은 것, 공문. */
+  /**
+   * 외부활동(외부강의등 신고서)의 셈하는 칸 — 총 시간은 시작·종료 시간으로, 당해 연도 누적·당월 누적·직급·요청인의 대표자·담당자는 공문 이력의 지난 신고서로
+   * (src/gongmun.js 의 outsideAuto · src/gmlist.js 의 outsideHistory — 사용자가 고친 칸은 둔다). 이력을 아직 읽지 않았으면 총 시간만 센다. 바뀐 칸만 화면에 맞추고 남긴다.
+   */
+  function autoFill(w) {
+    if (!w || !isOutside()) return;
+    const hist = st.hist.at ? outsideHistory(reportsOf(), { org: w.draft.org, from: w.draft.from, fee: moneyOf(w.draft.fee), today: today() }) : null;
+    const got = outsideAuto(w.draft, { touched: w.touched || [], hist });
+    if (!got.changed.length) return;
+    w.draft = got.draft;
+    for (const key of got.changed) syncField(key);
+    saveWork();
+  }
+
+  /** 칸을 고칠 때마다 바뀌는 것 — 셈하는 칸(외부활동), 한도, 결재선, 남은 것, 공문. */
   function paintLive() {
     const w = cur();
     if (!w) return;
+    autoFill(w);
     const lim = overLimit(st.kind, w.draft);
     const blocked = lim.over || lim.unknown;
     el.limit.classList.toggle('hidden', !blocked);
@@ -1179,9 +1214,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (needLead) steps.splice(1, 0, `<span class="gm-step miss"><em>${role('합의')}</em>과제책임자를 정하세요</span>`);
     // 위임전결로 결재선에 설 직책 가운데 공문 설정에 이름이 없는 것(부서장·소장·본부장).
     for (const r of line.missing || []) steps.push(`<span class="gm-step miss"><em>${role('결재')}</em>${RANK_WHY[r] || r}을 정하세요</span>`);
+    // 한 줄에 — 결재 차례 → 참조자, 덧붙임 말(합의를 뺀 까닭 등)은 줄 끝의 ⓘ 툴팁으로(2026-10-15 사용자 지정: "이건 한줄로 넣어줘").
+    const notes = line.notes.join(' · ');
     return `<span class="gm-steps">${steps.join('<span class="gm-arrow" aria-hidden="true">→</span>')}</span>`
       + (line.refs.length ? `<span class="gm-refs"><em>${role('참조')}</em>${escapeHtml(line.refs.join(', '))}</span>` : '')
-      + line.notes.map((n) => `<span class="gm-note">${escapeHtml(n)}</span>`).join('');
+      + (notes ? `<span class="gm-line-note" tabindex="0" role="note" title="${escapeHtml(notes)}" aria-label="${escapeHtml(notes)}">ⓘ</span>` : '');
   }
 
   /* ---------------------------------------------------------- 공문 이력 */
@@ -1207,20 +1244,30 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const inRange = () => { const from = rangeFrom(); return st.hist.rows.filter((r) => !r.date || r.date >= from); };
   /** 이력 칸에 보일 줄 — 보는 기간 안에서 고른 갈래의 것만(src/gmlist.js 의 kindOf), '전체'면 다. */
   const histRows = () => (st.hist.all ? inRange() : inRange().filter((r) => kindOf(r) === st.kind));
-  /** 읽어 둔 외부강의등 신고서(목록 줄 + 본문 칸) — 사례비 누계 줄과 카드의 사례금이 쓴다. */
-  const reportsOf = () => st.hist.rows.filter((r) => r.form === OUTSIDE_FORM && st.hist.reports[r.id]).map((r) => ({ ...st.hist.reports[r.id], id: r.id, date: r.date }));
+  /**
+   * 읽어 둔 외부강의등 신고서(목록 줄 + 본문 칸) — 사례비 누계 줄과 새 신고서의 셈하는 칸(autoFill)이 쓴다. 임시보관·반려한 것은 올라가지 않은 신고서라 뺀다.
+   */
+  const reportsOf = () => st.hist.rows.filter((r) => r.form === OUTSIDE_FORM && st.hist.reports[r.id] && !['kept', 'back'].includes(stateOf(r)))
+    .map((r) => ({ ...st.hist.reports[r.id], id: r.id, date: r.date }));
+  /**
+   * 본문을 (다시) 읽을 외부강의등 신고서 — 아직 안 읽은 것과, 직급·담당 연락처(rank·contactTel — 2026-10-15)를 읽기 전에 저장한 것(새 것부터 REPORT_MAX 건).
+   * 새 신고서의 직급·요청인을 거기서 채운다.
+   */
+  const staleReports = () => st.hist.rows.filter((r) => r.form === OUTSIDE_FORM && !('rank' in (st.hist.reports[r.id] || {}))).slice(0, REPORT_MAX);
 
   /**
    * eclass 기안함(완료함·상신함·반려함·임시보관함)을 읽어 내가 기안한 공문을 모은다(src/gmlist.js 의 listMine — 2026-10-11 사용자 지정: "출장·근태 이력처럼
    * 공문 이력 … 시스템이 공문을 검색해서 읽어 와야지"). 외부강의등 신고서는 본문도 읽어 사례금·당해 연도 누적 합계를 꺼낸다(새 것부터 REPORT_MAX 건).
    * 읽는 기간은 고른 기간(st.hist.span — 3개월·올해·1y·2y)의 첫날(올해 1월 1일보다 늦으면 올해 1월 1일 — fetchFrom)부터 오늘까지. force 가 아니면 HIST_FRESH_MS 안에
-   * 읽은 것이 그 기간을 덮으면 그대로 쓴다(좁히는 것은 걸러 보일 뿐 다시 읽지 않는다 — 넓힐 때만 다시 읽는다).
+   * 읽은 것이 그 기간을 덮으면 목록은 그대로 쓴다(좁히는 것은 걸러 보일 뿐 다시 읽지 않는다 — 넓힐 때만 다시 읽는다). 그때도 본문을 다시 읽을 신고서(staleReports)가
+   * 있으면 그 본문만 읽는다.
    */
   async function loadHist({ force = false } = {}) {
     if (st.hist.busy) return;
     const now = today();
     const from = fetchFrom();
-    if (!force && st.hist.at && Date.now() - st.hist.at < HIST_FRESH_MS && st.hist.from && from >= st.hist.from) return;
+    const fresh = !force && st.hist.at && Date.now() - st.hist.at < HIST_FRESH_MS && st.hist.from && from >= st.hist.from;
+    if (fresh && !staleReports().length) return;
     st.hist.busy = true;
     st.hist.tried = true;
     st.hist.error = '';
@@ -1228,12 +1275,15 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintHist();
     paintFeeSum();
     try {
-      const got = await listMine({ from, to: now, onBox: (box) => { st.hist.step = `${BOXES[box].label} 읽는 중…`; paintHistState(); } });
+      const got = fresh ? { rows: st.hist.rows, notes: [] }
+        : await listMine({ from, to: now, onBox: (box) => { st.hist.step = `${BOXES[box].label} 읽는 중…`; paintHistState(); } });
       st.hist.rows = got.rows;
-      st.hist.notes = got.notes;
-      st.hist.from = from;
-      st.hist.to = now;
-      const todo = st.hist.rows.filter((r) => r.form === OUTSIDE_FORM && !st.hist.reports[r.id]).slice(0, REPORT_MAX);
+      if (!fresh) {
+        st.hist.notes = got.notes;
+        st.hist.from = from;
+        st.hist.to = now;
+      }
+      const todo = staleReports();
       for (const [i, r] of todo.entries()) {
         st.hist.step = `외부강의등 신고서 읽는 중… ${i + 1}/${todo.length}`;
         paintHistState();
@@ -1243,9 +1293,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
           st.hist.notes.push(`${r.id} 본문을 읽지 못했습니다 — ${err.message}`);
         }
       }
-      st.hist.at = Date.now();
+      if (!fresh) st.hist.at = Date.now();
       saveHist();
-      logEvent('gongmun', true, `공문 이력 읽음 · ${st.hist.rows.length}건 · ${from}부터${got.notes.length ? ` · ${got.notes.join(' / ')}` : ''}`);
+      logEvent('gongmun', true, fresh ? `외부강의등 신고서 본문 ${todo.length}건 다시 읽음(직급·담당 연락처)`
+        : `공문 이력 읽음 · ${st.hist.rows.length}건 · ${from}부터${got.notes.length ? ` · ${got.notes.join(' / ')}` : ''}`);
     } catch (err) {
       st.hist.error = err.message;
       logEvent('gongmun', false, `공문 이력 읽기 실패 · ${err.message}`);
@@ -1253,7 +1304,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       st.hist.busy = false;
       st.hist.step = '';
       paintHist();
-      paintFeeSum();
+      // 외부활동 초안이면 읽은 신고서로 셈하는 칸(당해 연도 누적·당월 누적·직급…)을 채우고 남은 것까지 다시 그린다(paintLive 가 사례비 누계도 그린다).
+      if (isOutside() && cur()) paintLive();
+      else paintFeeSum();
     }
   }
 
@@ -1538,7 +1591,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       return;
     }
     const h = st.hist;
-    if (!h.at && !h.busy && !h.tried) loadHist();
+    // 이력을 아직 안 읽었거나, 읽어 둔 신고서가 직급·담당 연락처를 읽기 전 것이면 한 번 읽는다(새 신고서의 셈하는 칸이 거기서 온다).
+    if (!h.busy && !h.tried && (!h.at || staleReports().length)) loadHist();
     const s = outsideSummary(reportsOf(), { fee: moneyOf(w.draft.fee), today: today() });
     const bit = (label, value, note = '', title = '') => `<span${title ? ` title="${escapeHtml(title)}"` : ''}>${label} <b>${escapeHtml(value)}</b>${note ? `<small>${escapeHtml(note)}</small>` : ''}</span>`;
     // 기호(+·=)는 칩 안에 둔다 — 좁은 패널에서 줄이 바뀌어도 기호만 줄 끝에 남지 않게.
@@ -1553,6 +1607,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         bit(`${op('=')}합계`, won(s.total), '', '다음 신고서의 당해 연도 사례금 누적 합계에 적을 값'));
     }
     parts.push(`<button type="button" class="ghost small" data-act="ledger" title="공문 이력 — eclass 기안함에서 읽은 내 공문">${h.busy ? '읽는 중…' : '이력'}</button>`);
+    // 신고서의 '3회 초과시 사전 신고 완료' 칸은 작성기가 고르지 않는다 — 넘었으면 사람이 고르라고 적는다.
+    const nth = moneyOf(w.draft.monthCount);
+    if (nth > 3) parts.push(`<span class="gm-note">당월 ${nth}회째 — 3회를 넘으면 사전 신고를 마치고 창에서 '3회 초과시 사전 신고 완료' 를 고르세요</span>`);
     el.feeSum.innerHTML = parts.join('');
   }
 
@@ -1576,9 +1633,17 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const tpl = tplOf();
     const c = compose(st.kind, w.draft, ctxOf(w), tpl);
     el.formName.textContent = formLabel(tpl.form);
+    // 칸이 정해진 폼(외부강의등 신고서)은 본문이 없고 칸마다 넣는다 — 본문 칸은 넣을 칸의 미리보기라 고칠 수 없다(고치면 신고서에 들어가지 않으니).
+    const preview = fieldForm(tpl.form);
+    el.body.readOnly = preview;
+    const bodyLabel = el.doc.querySelector('label[for="gmBody"]');
+    if (bodyLabel) {
+      bodyLabel.textContent = preview ? '신고서에 넣을 칸 (미리보기)' : '본문';
+      bodyLabel.title = preview ? '칸마다 신고서에 넣습니다 — 고치려면 작성 내용·읽은 내용 탭의 칸에서' : '';
+    }
     if (document.activeElement !== el.title) el.title.value = w.title ?? c.title;
-    if (document.activeElement !== el.body) el.body.value = w.body ?? c.body;
-    el.edited.classList.toggle('hidden', w.title == null && w.body == null);
+    if (document.activeElement !== el.body) el.body.value = preview ? c.body : w.body ?? c.body;
+    el.edited.classList.toggle('hidden', w.title == null && (preview || w.body == null));
     const groups = pdfGroups(w);
     el.savePdf.classList.toggle('hidden', !groups.length);
     el.savePdf.textContent = groups.length > 1 ? `첨부 PDF ${groups.length}개 저장 (${groups.map((g) => g.label).join(' · ')})`
@@ -1643,8 +1708,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     // 첨부는 본문의 ※ 첨부와 같은 문서들이다(교육 안내문·교육 내용 …) — 읽은 것이 없으면 갈래의 기본 문서.
     const groups = pdfGroups(w);
     const docs = groups.length ? groups.map((g) => g.label).join(' · ') : [...new Set((w.draft.attach || []).map((a) => a.label).filter(Boolean))].join(' · ') || k.doc;
+    // 칸이 정해진 폼(외부강의등 신고서)은 본문 대신 신고서 칸(요청인·주제·장소·일시·사례금·누적)을 넣는다.
+    const what = fieldForm(tpl.form) ? '신고서 칸(요청인·주제·장소·일시·사례금·누적)' : '본문';
     const list = [
-      known ? `<b>공문 작성</b> ${escapeHtml(formLabel(tpl.form))} — ${p ? `과제 ${escapeHtml(p.alias || p.name)} · ` : ''}제목 · 본문 · 문서설정 · 결재선${groups.length ? ' · 첨부를' : '을'} 창에 넣습니다`
+      known ? `<b>공문 작성</b> ${escapeHtml(formLabel(tpl.form))} — ${p ? `과제 ${escapeHtml(p.alias || p.name)} · ` : ''}제목 · ${what} · 문서설정 · 결재선${groups.length ? ' · 첨부를' : '을'} 창에 넣습니다`
         : `<b>새 공문 열기</b> ${escapeHtml(formLabel(tpl.form))} — 칸 지도가 없는 양식이라 창만 엽니다`,
       `<b>결재선</b> ${escapeHtml(lineText(approvalLine(lineCtx(w))))}`,
       ...(docs ? [`<b>첨부</b> ${escapeHtml(docs)}${groups.length ? ' — 읽은 문서를 문서마다 PDF 로 묶어 창의 파일첨부에 올립니다' : ' — 넣은 문서가 없어 창의 파일첨부로 넣습니다'}`] : []),
@@ -1832,8 +1899,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   function paintTpl() {
     const tpl = tplOf();
-    const known = FORMS.some((f) => f.id === tpl.form);
-    el.tplForm.innerHTML = FORMS.map((f) => `<option value="${f.id}">${escapeHtml(f.label)}</option>`).join('') + '<option value="">양식 ID 직접 적기</option>';
+    // 고를 수 있는 양식 — 외부강의등 신고서는 외부활동에서만(칸이 외부활동 초안의 칸이다, formsFor).
+    const forms = formsFor(st.kind);
+    const known = forms.some((f) => f.id === tpl.form);
+    el.tplForm.innerHTML = forms.map((f) => `<option value="${f.id}">${escapeHtml(f.label)}</option>`).join('') + '<option value="">양식 ID 직접 적기</option>';
     el.tplForm.value = known ? tpl.form : '';
     el.tplFormId.hidden = known;
     if (document.activeElement !== el.tplFormId) el.tplFormId.value = known ? '' : tpl.form;

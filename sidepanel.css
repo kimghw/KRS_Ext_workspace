@@ -1233,8 +1233,13 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-doc textarea, .gongmun .gm-box textarea { font-family: ui-monospace, "D2Coding", "Malgun Gothic", monospace; font-size: 12.5px; white-space: pre; overflow-x: auto; }
 .gongmun input:focus, .gongmun textarea:focus, .gongmun select:focus { border-color: var(--pick); outline: none; }
 
-/* 결재선 — 기안자 → 합의자(과제책임자) → 결재자(부서장) · 참조자 */
-.gongmun .gm-line { display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+/* 결재선 — 기안자 → 합의자(과제책임자) → 결재자(부서장) · 참조자 를 한 줄에(2026-10-15 사용자 지정 "이건 한줄로") — 좁으면 그때만 접힌다. 덧붙임 말은 끝의 ⓘ 툴팁 */
+.gongmun .gm-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12.5px; }
+.gongmun .gm-line .gm-steps { gap: 2px; }
+.gongmun .gm-line .gm-step { gap: 3px; padding: 3px 5px; }
+.gongmun .gm-line .gm-step small { font-size: 10.5px; }
+.gongmun .gm-line-note { color: var(--faint); font-size: 13px; line-height: 1; cursor: help; }
+.gongmun .gm-line-note:hover, .gongmun .gm-line-note:focus-visible { color: var(--pick); outline: none; }
 .gongmun .gm-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .gongmun .gm-step { display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 8px; border-radius: 8px; background: var(--surface-soft); }
 .gongmun .gm-step em, .gongmun .gm-refs em { font-style: normal; font-size: 11px; font-weight: 650; color: var(--pick); }

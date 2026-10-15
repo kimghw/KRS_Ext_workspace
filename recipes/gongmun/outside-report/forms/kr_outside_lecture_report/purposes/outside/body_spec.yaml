@@ -1,0 +1,38 @@
+# 외부강의등 신고서의 제목과 미리보기 — 꼴(틀·vars·show)은 research-form/…/purchase/body_spec.yaml 머리말과 같다.
+# 제목은 양식의 기본 제목 그대로 "외부강의등 신고서"다(지난 신고서 HER-2026-000266 도 그대로 올렸다).
+# 신고서에는 본문 편집기가 없다 — 칸마다 넣는다(../../fieldmap.yaml). 아래 body 는 공문 탭에서 넣을 칸을 한눈에 보는 미리보기이고,
+# 양식 칸에서 연구업무추진품의·기안문으로 바꾸면 그 본문이 된다.
+title: 외부강의등 신고서
+body: |-
+  ■ 신 고 자 : {기안자} · {부서}
+      직    급 : {직급}
+  ■ 요 청 인 : {기관명}  (대표자 {대표자})
+      담당부서(담당자) : {담당부서}  ☎ {담당연락처}
+  ■ 주    제 : {주제}
+  ■ 장    소 : {장소}
+  ■ 일    시 : {일시}  {시각}
+      총 시 간 : {총시간}
+  ■ 당월 누적 : {당월누적}회
+  ■ 사 례 금 : 총액 {사례금}
+      교통비·숙박비·식비(실비) : {실비?} 별도
+      당해 연도 사례금 누적 합계 : {누적합계}
+  ■ 비    고 : {비고?}
+
+  ※ 첨 부
+  {첨부}
+vars:
+  직급: { from: rank, desc: 신고자 직급(지난 신고서에서) }
+  기관명: { from: org, desc: 요청 기관 }
+  대표자: { from: representative, desc: 요청 기관의 대표자 }
+  담당부서: { from: contact, desc: '담당부서(담당자) — 조선해양공학과(김철수)' }
+  담당연락처: { from: contactTel, desc: 담당자 연락처(숫자만) }
+  주제: { from: subject, desc: 외부강의등 주제 }
+  장소: { from: place, desc: 장소 }
+  일시: { from: [from, to], show: period, desc: '시작일 ~ 종료일(며칠) — 2026. 11. 5. (1일)' }
+  시각: { from: [start, end], show: clock, desc: '시작 ~ 종료 시각 — 14:00 ~ 16:00' }
+  총시간: { from: [hours, mins], show: duration, desc: '총 시간 — 2시간 30분' }
+  당월누적: { from: monthCount, desc: 당월 누적 횟수(이번 포함) }
+  사례금: { from: fee, show: won, desc: 사례금 총액 — 300,000원 }
+  실비: { from: expenses, show: won, desc: '교통비·숙박비·식비(실비) — 없으면 그 줄이 빠진다(신고서 칸에는 0)' }
+  누적합계: { from: yearTotal, show: won, desc: 당해 연도 사례금 누적 합계(이번 포함) }
+  비고: { from: note, desc: 비고 }

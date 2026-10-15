@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { listPage, reportPage } from './fixtures/gmlist-fixture.mjs';
 import {
   HIST_KEY, OUTSIDE_FORM, RESEARCH_FORM, PAGE_SIZE, BOXES, BOX_ORDER, INBOX_ORDER, boxGroup, SPANS, SPAN_LABEL, DEFAULT_SPAN, spanFrom, boxUrl, hiddenFields, parseDocList, searchFields, listBox, listBoxes, listMine,
-  viewUrl, bodyUrl, parseOutsideReport, readOutsideReport, kindOf, stateOf, outsideSummary, normalizeHist, normalizeRows,
+  viewUrl, bodyUrl, parseOutsideReport, readOutsideReport, kindOf, stateOf, outsideSummary, outsideHistory, normalizeHist, normalizeRows,
 } from '../src/gmlist.js';
 import { AuthError } from '../src/net.js';
 
@@ -163,11 +163,11 @@ await ta('받은 공문 — 결재함 다섯 함을 차례로(listBoxes), 키워
 });
 
 console.log('외부강의등 신고서');
-const REPORT = { org: '더브릿지전략컨설팅', representative: '정민의', contact: '혁신전략본부(강원선)', subject: '「대형선박 전동화 비전 및 중장기 로드맵 수립」 과제의 5분과 회의', place: '중소조선연구원(본원) 4층 회의실',
+const REPORT = { rank: '책임연구원', org: '더브릿지전략컨설팅', representative: '정민의', contact: '혁신전략본부(강원선)', contactTel: '02-123-4567', subject: '「대형선박 전동화 비전 및 중장기 로드맵 수립」 과제의 5분과 회의', place: '중소조선연구원(본원) 4층 회의실',
   from: '2026-08-04', to: '2026-08-04', start: '오후 03:00', end: '오후 05:00', hours: 2, mins: '', batch: 0, avgTime: 0, monthCount: 1, fee: 200000, avgFee: 0, yearTotal: 200000, expenses: 0, note: '' };
-t('본문 틀의 칸 — 기관·대표자·담당·주제·장소·일시·시간·총 시간·일괄신고·당월 누적·사례금 총액·1회 평균·당해 연도 누적·교통비 등·비고', () => {
+t('본문 틀의 칸 — 직급·기관·대표자·담당·연락처(숫자만)·주제·장소·일시·시간·총 시간·일괄신고·당월 누적·사례금 총액·1회 평균·당해 연도 누적·교통비 등·비고', () => {
   const r = parseOutsideReport(reportPage(REPORT));
-  assert.deepEqual(r, { org: REPORT.org, representative: '정민의', contact: '혁신전략본부(강원선)', subject: REPORT.subject, place: REPORT.place, from: '2026-08-04', to: '2026-08-04',
+  assert.deepEqual(r, { rank: '책임연구원', contactTel: '021234567', org: REPORT.org, representative: '정민의', contact: '혁신전략본부(강원선)', subject: REPORT.subject, place: REPORT.place, from: '2026-08-04', to: '2026-08-04',
     start: '오후 03:00', end: '오후 05:00', hours: 2, mins: null, batch: 0, monthCount: 1, fee: 200000, avgFee: 0, yearTotal: 200000, expenses: 0, note: '' });
 });
 t('사례금 총액 칸이 없으면 글("사례금 총액 : N 원")에서 찾고, 누적 합계도 마찬가지', () => {
@@ -232,6 +232,19 @@ t('사례비 누계 — 올해 신고서 가운데 가장 늦은 것의 당해 �
   assert.deepEqual([next.sofar, next.total, next.basis, next.count], [0, 50000, null, 0], '해가 바뀌면 0 부터');
   assert.equal(outsideSummary([{ id: 'x', date: '2026-09-01', yearTotal: null }], { fee: 1, today: '2026-10-11' }).sofar, 0, '누적을 못 읽은 신고서는 세지 않는다');
   assert.equal(outsideSummary([{ id: 'y', from: '2026-09-01', yearTotal: 7 }], { today: '2026-10-11' }).sofar, 7, '기안일이 없으면 활동일로');
+});
+t('새 신고서의 셈하는 칸(2026-10-15) — 당해 연도 누적은 누계의 합계, 당월 누적은 그 달에 활동한 신고서 + 1, 직급은 가장 늦은 것, 요청인은 같은 기관의 가장 늦은 것', () => {
+  const reports = [
+    { id: 'a', date: '2026-08-13', from: '2026-08-04', yearTotal: 200000, rank: '책임연구원', org: '더브릿지전략컨설팅', representative: '정민의', contact: '혁신전략본부(강원선)', contactTel: '021234567' },
+    { id: 'b', date: '2026-10-02', from: '2026-10-01', yearTotal: 450000, rank: '', org: '부산대학교', representative: '홍길동', contact: '조선해양공학과(김철수)', contactTel: '051-510-1234' },
+    { id: 'c', date: '2025-10-20', from: '2025-10-18', yearTotal: 900000, rank: '선임연구원', org: '부산 대학교', representative: '예전총장', contact: '예전(담당)', contactTel: '0510000000' },
+  ];
+  const h = outsideHistory(reports, { org: '부산대학교 ', from: '2026-10-28', fee: 300000, today: '2026-10-15' });
+  assert.deepEqual([h.yearTotal, h.sofar, h.basis.id, h.monthCount, h.rank], [750000, 450000, 'b', 2, '책임연구원'], '직급이 빈 신고서는 건너뛴다');
+  assert.deepEqual([h.representative, h.contact, h.contactTel], ['홍길동', '조선해양공학과(김철수)', '0515101234'], '같은 기관(빈칸 무시) 가운데 가장 늦은 것, 연락처는 숫자만');
+  const none = outsideHistory(reports, { org: '한국생산성본부', from: '2026-11-05', fee: null, today: '2026-10-15' });
+  assert.deepEqual([none.yearTotal, none.monthCount, none.representative, none.contact], [450000, 1, '', ''], '처음 가는 기관 — 요청인은 비고, 그 달 첫 건이면 1');
+  assert.equal(outsideHistory([], { today: '2026-10-15' }).monthCount, 1, '시작일이 없으면 오늘의 달');
 });
 t('저장소의 이력 — 모르는 것은 버리고 창의 표(by)는 떨어진다', () => {
   const h = normalizeHist({ at: 5, from: '2024-01-01', to: '2026-10-11', by: 'me', rows: [R1, null, { id: 'z' }], reports: { 'HER-2026-000266': { fee: 1 }, bad: null }, notes: ['n'] });

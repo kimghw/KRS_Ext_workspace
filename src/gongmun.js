@@ -9,6 +9,8 @@
 //
 // 갈래는 구매·교육·출장 셋이다(2026-10-07 사용자 지정). 셋 다 같은 문서 넣기(캡처·끌어다 놓기·붙여넣기·웹페이지 캡처)로 읽는다(2026-10-08 사용자 지정) —
 // 출장은 행사·회의·학회 안내문·초청장(출장지·기간·목적)과 교통·숙박 견적서(예상경비)를 읽는다.
+// 외부활동은 외부강의등 신고서(KR_Outside_Lecture_Report — 본문 없이 칸이 정해진 폼)로 쓴다(2026-10-15 사용자 지정: "외부활동이 외부강의등 신고서인데
+// 이 양식대로 작성하도록") — 초안의 칸 하나가 신고서 칸 하나이고(writePlan 의 values.draft), 과제를 고르지 않는다.
 // 갈래마다 양식(eclass 양식·제목 틀·본문 틀)은 패널에서 보고 고친다(2026-10-07 사용자 지정 — "어떤 양식으로 할지는 거기서 보고 수정").
 
 import { ORIGIN } from './config.js';
@@ -38,10 +40,16 @@ export const MAX_PROJECTS = RND_MAX_PROJECTS;
  * needDocs 는 꼭 드는 첨부다 — 본문 ※ 첨부에 늘 적고, 읽은 파일에 빠졌으면 "남은 것"과 넣는 곳의 말이 그것을 짚는다(교육 — 견적서·교육 내용).
  */
 export const KIND_ORDER = [...RECIPE.order];
-/** cut 은 견적서를 오리는 갈래다(레시피 purpose.yaml 에 quote_crop 이 있다 — 구매의 쇼핑몰 화면, 교육의 온라인 강의 페이지). */
+/**
+ * cut 은 견적서를 오리는 갈래다(레시피 purpose.yaml 에 quote_crop 이 있다 — 구매의 쇼핑몰 화면, 교육의 온라인 강의 페이지).
+ * project 가 false 면 과제를 고르지 않는 갈래다(외부활동 — 외부강의등 신고서에는 과제 칸이 없고 결재선에 과제책임자 합의도 없다).
+ */
 export const KINDS = Object.fromEntries(KIND_ORDER.map((k) => {
   const p = RECIPE.purposes[k];
-  const kind = { label: p.label, title: p.title, limit: p.limit, account: p.account, doc: p.attach.doc, ask: p.attach.ask, more: p.attach.more, cut: !!p.quote_crop };
+  const kind = {
+    label: p.label, title: p.title, limit: p.limit, account: p.account, doc: p.attach.doc, ask: p.attach.ask, more: p.attach.more, cut: !!p.quote_crop,
+    project: p.project !== false,
+  };
   return [k, p.attach.need.length ? { ...kind, needDocs: p.attach.need } : kind];
 }));
 
@@ -52,19 +60,19 @@ export const KINDS = Object.fromEntries(KIND_ORDER.map((k) => {
 export const PURCHASE_LIMIT = KINDS.purchase.limit;
 
 /**
- * 외부활동 구분 — 제목과 본문의 활동구분 칸(레시피 outside/purpose.yaml 의 type 칸 options). 읽기는 이 이름 그대로 돌려준다.
- * outsideTypeOf 는 예전 읽기의 코드(lecture …)나 이름을 이 이름으로 바꾼다(모르면 빈 글).
+ * eclass 전자결재 양식 — 레시피의 forms/<폼>/manifest.yaml. 본문을 넣는 양식(연구업무추진품의·기안문)과, 칸이 정해진 폼 가운데 칸 지도를 둔 것
+ * (외부강의등 신고서 — 외부활동만, only)이다. 구매요청서(KR_Purchase_Order)는 칸 지도가 없다. 목록에 없는 양식은 양식 ID 를 직접 적는다
+ * (그 양식은 칸 지도가 없어 새 공문 창을 열기만 한다).
  */
-export const OUTSIDE_TYPES = [...RECIPE.purposes.outside.fields.find((f) => f.key === 'type').options];
-const OUTSIDE_OF = { lecture: '강의', advisory: '자문', review: '심사·평가', talk: '발표', committee: '위원 활동', writing: '집필', other: '기타' };
-export const outsideTypeOf = (code) => OUTSIDE_OF[String(code ?? '').trim()] || (OUTSIDE_TYPES.includes(code) ? code : '');
-
-/**
- * eclass 전자결재 양식 — 레시피의 forms/<폼>/manifest.yaml. 본문을 넣는 양식만 둔다 — 구매요청서(KR_Purchase_Order)는 칸이 정해진 폼이라
- * 이 틀로 채울 수 없다. 목록에 없는 양식은 양식 ID 를 직접 적는다(그 양식은 칸 지도가 없어 새 공문 창을 열기만 한다).
- */
-export const FORMS = Object.values(RECIPE.forms).map((f) => ({ id: f.id, label: f.label }));
+export const FORMS = Object.values(RECIPE.forms).map((f) => ({ id: f.id, label: f.label, ...(f.only ? { only: [...f.only] } : {}) }));
 export const DEFAULT_FORM = RECIPE.purposes[KIND_ORDER[0]].form;
+/** 갈래의 양식 칸에서 고를 수 있는 양식 — only 가 있는 폼(외부강의등 신고서)은 그 갈래에서만. */
+export const formsFor = (kind) => FORMS.filter((f) => !f.only || f.only.includes(kind));
+/**
+ * 칸이 정해진 폼인가 — 칸 지도가 있는데 본문(편집기) 칸이 없다(외부강의등 신고서). 그런 폼은 칸마다 넣으니 공문 탭의 본문은 미리보기일 뿐이다.
+ * 칸 지도가 없는 양식(양식 ID 를 직접 적은 것)은 아니다.
+ */
+export const fieldForm = (formId) => !!RECIPE.forms[formId] && !RECIPE.forms[formId].fields.body;
 
 /* ------------------------------------------------------------ 양식(틀) */
 
@@ -478,9 +486,74 @@ export function attachBlock(attach) {
 function startValue(f, rec, me) {
   if (f.from === 'me') return me;
   const v = f.from === 'document' ? rec[f.key] : null;
-  if (f.type === 'money') return Number.isFinite(v) ? v : null;
+  if (f.type === 'money' || f.type === 'number') return Number.isFinite(v) ? v : null;
   if (f.type === 'choice') return f.options.includes(v) ? v : f.options[0];
+  if (f.type === 'time') return timeOf(v);
   return v == null ? '' : String(v);
+}
+
+/**
+ * 시각을 24시간 HH:MM 으로 — "14:00"·"9:30"·"14시"·"14시 30분"·"오후 2:00"·"2:00 PM" 을 읽는다. 못 읽으면 빈 글.
+ * 외부강의등 신고서의 시작·종료 시간(Telerik 시각 칸)에 넣는 꼴이다.
+ */
+export function timeOf(v) {
+  const s = String(v ?? '').trim().replace(/\s+/g, ' ');
+  const m = s.match(/^(오전|오후|AM|PM)?\s*(\d{1,2})\s*(?::\s*(\d{2})|시\s*(?:(\d{1,2})\s*분)?)\s*(AM|PM)?$/i);
+  if (!m) return '';
+  let h = +m[2];
+  const min = +(m[3] ?? m[4] ?? 0);
+  const half = String(m[1] || m[5] || '').toUpperCase();
+  if ((half === '오후' || half === 'PM') && h < 12) h += 12;
+  if ((half === '오전' || half === 'AM') && h === 12) h = 0;
+  return h <= 23 && min <= 59 ? `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}` : '';
+}
+
+const minutesOf = (hhmm) => { const t = timeOf(hhmm); return t ? +t.slice(0, 2) * 60 + +t.slice(3) : null; };
+const ymdOf = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '')) ? String(v) : '');
+
+/**
+ * 외부강의등 신고서의 총 시간(분) — 시작·종료 시간의 차이에 날수(시작일~종료일)를 곱한다. 모르면(시각이 비었거나 종료가 앞서면) null.
+ */
+export function minutesTotal(draft = {}) {
+  const a = minutesOf(draft.start);
+  const b = minutesOf(draft.end);
+  if (a == null || b == null || b <= a) return null;
+  const from = ymdOf(draft.from);
+  const to = ymdOf(draft.to) || from;
+  const days = from && to >= from ? Math.round((new Date(`${to}T00:00`) - new Date(`${from}T00:00`)) / 86_400_000) + 1 : 1;
+  return (b - a) * days;
+}
+
+/** 셈하는 칸에 쓰는 값이 같은가 — 수 칸은 수로 본다(1 과 '1'). */
+const sameValue = (a, b) => (a == null || a === '' ? b == null || b === '' : String(a) === String(b));
+
+/**
+ * 외부강의등 신고서의 셈하는 칸(레시피 outside/purpose.yaml 의 from: auto)을 채운다 — 사용자가 고친 칸(touched)은 두고:
+ *   총 시간(hours·mins) — 시작·종료 시간과 날수로(minutesTotal). 셀 수 없으면 있던 값을 둔다.
+ *   hist 가 있으면(공문 이력을 읽었으면 — src/gmlist.js 의 outsideHistory) 당해 연도 누적 합계·당월 누적은 늘 그 값으로 다시 셈하고(사례비·시작일을
+ *   고치면 따라간다), 직급과 요청인의 대표자·담당부서(담당자)·연락처는 칸이 비었을 때만 지난 신고서의 값으로 채운다(같은 기관에 낸 신고서가 있을 때).
+ * @param {{touched?: string[], hist?: {yearTotal:number|null, monthCount:number|null, rank:string, representative:string, contact:string, contactTel:string}|null}} [opts]
+ * @returns {{draft: object, changed: string[]}}
+ */
+export function outsideAuto(draft = {}, { touched = [], hist = null } = {}) {
+  const out = { ...draft };
+  const changed = [];
+  const put = (key, value) => {
+    if (touched.includes(key) || sameValue(out[key], value)) return;
+    out[key] = value;
+    changed.push(key);
+  };
+  const total = minutesTotal(out);
+  if (total != null && !touched.includes('hours') && !touched.includes('mins')) {
+    put('hours', Math.floor(total / 60));
+    put('mins', total % 60 || null);
+  }
+  if (hist) {
+    if (hist.yearTotal != null) put('yearTotal', hist.yearTotal);
+    if (hist.monthCount != null) put('monthCount', hist.monthCount);
+    for (const key of ['rank', 'representative', 'contact', 'contactTel']) if (hist[key] && !String(out[key] ?? '').trim()) put(key, hist[key]);
+  }
+  return { draft: out, changed };
 }
 
 /**
@@ -504,6 +577,12 @@ const FILL = {
     if (d.fee == null && Number.isFinite(r.supply) && Number.isFinite(r.vat)) d.fee = r.supply + r.vat;
     if (d.fee == null) notes.push('교육비를 읽지 못했습니다 — 직접 적어 주세요');
     d.mode = eduModeOf({ ...d, mode: '' });
+  },
+  // 외부강의등 신고서 — 담당자 연락처는 숫자만(양식이 ^\d+$ 로 검사한다), 총 시간은 시작·종료 시간으로 센다.
+  outside(d, r, notes) {
+    d.contactTel = String(d.contactTel ?? '').replace(/\D/g, '');
+    if (d.fee == null) notes.push('사례금이 문서에 없습니다 — 받는 금액을 적어 주세요(없으면 0)');
+    Object.assign(d, outsideAuto(d).draft);
   },
 };
 
@@ -709,7 +788,8 @@ export function approvalLine({ me = '', preset = {}, project = null, kind = '', 
   const p = normalizePreset(preset);
   const notes = [];
   const steps = [{ role: '기안', name: me || '나' }];
-  const lead = String(project?.lead || '').trim();
+  // 과제를 고르지 않는 갈래(외부강의등 신고서)는 합의가 없다 — 담당 → 팀장(지난 신고서의 결재선).
+  const lead = KINDS[kind]?.project === false ? '' : String(project?.lead || '').trim();
   if (lead && same(lead, me)) notes.push('과제책임자가 기안자라 합의는 뺐습니다');
   else if (lead) {
     steps.push({ role: '합의', name: lead, why: '과제책임자' });
@@ -876,6 +956,11 @@ const SHOW = {
   period: (from, to) => span(from, to),
   count: (v) => (Array.isArray(v) && v.length ? String(v.length) : ''),
   qty: (qty, unit) => (qty != null && qty !== '' ? `${Number(qty).toLocaleString('ko-KR')}${unit || ''}` : ''),
+  clock: (start, end) => [timeOf(start), timeOf(end)].filter(Boolean).join(' ~ '),
+  duration: (hours, mins) => {
+    const [h, m] = [moneyOf(hours), moneyOf(mins)];
+    return [h ? `${h}시간` : '', m ? `${m}분` : ''].filter(Boolean).join(' ') || (h === 0 && m == null ? '0시간' : '');
+  },
 };
 
 /** 틀 자리 하나의 값 — row 는 초안(목록 자리면 그 줄)이다. 비었고 or: me 이면 내 이름. */
@@ -928,9 +1013,11 @@ export function compose(kind, draft, ctx = {}, tpl = templateOf(kind, null)) {
  */
 export function needs(kind, draft, { preset = {}, project = null, projects = [], rank = '', setting = {} } = {}) {
   const out = [];
-  if (!projects.length) out.push('과제 등록(R&D 탭)');
-  else if (!project) out.push('과제 선택');
-  else {
+  // 과제를 고르지 않는 갈래(외부활동 — 외부강의등 신고서)는 과제를 묻지 않는다.
+  const pick = KINDS[kind]?.project !== false;
+  if (pick && !projects.length) out.push('과제 등록(R&D 탭)');
+  else if (pick && !project) out.push('과제 선택');
+  else if (pick) {
     if (!String(project.lead || '').trim()) out.push('합의자(과제책임자)');
     // 제목 틀에 {과제별명} 이 있는 갈래(교육·출장)는 과제 별명으로 쓴다 — 비면 과제명이 그대로 들어가 길어진다(막지는 않는다).
     if (DEFAULT_TEMPLATES[kind]?.title.includes('{과제별명}') && !String(project.alias || '').trim()) out.push('과제 별명(공문 설정 — 제목)');
@@ -943,7 +1030,7 @@ export function needs(kind, draft, { preset = {}, project = null, projects = [],
   // 꼭 채울 칸 — 레시피 purpose.yaml 에 need 를 적은 칸이 비면 그 이름으로. 꼭 드는 첨부(교육 — 교육 견적서·교육 내용)가 빠졌으면 그것도.
   const d = draft || {};
   for (const f of FIELDS[kind] || []) {
-    if (f.need && (f.type === 'money' ? moneyOf(d[f.key]) == null : !String(d[f.key] ?? '').trim())) out.push(f.need);
+    if (f.need && (f.type === 'money' || f.type === 'number' ? moneyOf(d[f.key]) == null : !String(d[f.key] ?? '').trim())) out.push(f.need);
   }
   for (const doc of missingDocs(kind, d.attach)) out.push(`${doc.label}(첨부)`);
   return out;
@@ -1041,6 +1128,27 @@ export const TITLE_MAX = 99;
  */
 export const degreeOf = (project) => (project?.rnd?.year > 0 ? String(project.rnd.year) : '');
 
+/** 칸 지도에서 초안 칸의 값을 넣는 칸들(source: draft) — [key, 칸]. */
+const draftFields = (fm) => Object.entries(fm?.fields || {}).filter(([, f]) => f.source === 'draft');
+
+/**
+ * 칸 지도의 source: draft 칸 하나에 넣을 값(레시피 외부강의등 신고서 fieldmap.yaml 머리말) — from 의 초안 칸 가운데 앞에서부터 비지 않은 것,
+ * 다 비면 default. date 는 YYYY-MM-DD, time 은 'YYYY-MM-DD HH:MM'(날짜는 on 칸 — 피커가 날짜와 시각을 같이 받는다), digits 는 숫자만이다.
+ * 글은 전자결재가 받는 꼴로(eclassText — 긴 줄표). 넣을 것이 없으면 빈 글이다(작성기가 그 칸은 건드리지 않는다).
+ */
+export function draftValue(f, draft = {}) {
+  const raw = [].concat(f.from ?? []).map((k) => draft?.[k]).find((v) => !blank(v));
+  if (f.kind === 'date') return ymdOf(raw);
+  if (f.kind === 'time') {
+    const day = ymdOf(draft?.[f.on]);
+    const t = timeOf(raw);
+    return day && t ? `${day} ${t}` : '';
+  }
+  let v = blank(raw) ? f.default ?? '' : typeof raw === 'number' ? String(Math.round(raw)) : eclassText(raw).trim();
+  if (f.digits) v = String(v).replace(/\D/g, '') || (f.default ?? '');
+  return String(v);
+}
+
 /**
  * 새 공문 창에 쓸 것 — src/gmwrite.js 가 이것만 보고 쓴다. 폼의 칸 지도(레시피 fieldmap)·값·문서설정·결재선을 한데 묶는다.
  * 레시피에 칸 지도가 없는 양식(양식 ID 를 직접 적은 것)은 fields 가 비어 있다 — 창을 열기만 한다.
@@ -1049,8 +1157,8 @@ export const degreeOf = (project) => (project?.rnd?.year > 0 ? String(project.rn
  */
 export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFAULT_FORM, setting = {}, rank = '' } = {}, ctx = {}) {
   const fm = RECIPE.forms[form] || null;
-  const project = ctx.project || null;
-  const line = approvalLine({ ...ctx, kind, draft, rank });
+  const project = KINDS[kind]?.project === false ? null : ctx.project || null;
+  const line = approvalLine({ ...ctx, project, kind, draft, rank });
   const text = eclassText(body);
   return {
     kind, form: fm ? fm.id : form, url: draftUrl(form), known: !!fm,
@@ -1059,6 +1167,12 @@ export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFA
       title: eclassText(title).replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX), body: text, html: bodyHtml(text),
       recipient: '', reference: '', degree: degreeOf(project),
       job: { name: project?.name || '', code: project?.code || '' },
+      // 칸이 정해진 폼(외부강의등 신고서)의 칸마다 넣을 값 — 칸 지도의 key → 값(draftValue). names 는 작성 기록이 부르는 이름과 꼭 채울 칸인가(초안 칸의 need).
+      draft: Object.fromEntries(draftFields(fm).map(([key, f]) => [key, draftValue(f, draft)])),
+      names: Object.fromEntries(draftFields(fm).map(([key, f]) => {
+        const field = (FIELDS[kind] || []).find((x) => x.key === [].concat(f.from ?? [])[0]);
+        return [key, { name: field ? field.label.replace(/\s+\(.*\)$/, '') : key, need: !!field?.need }];
+      })),
     },
     setting: docSettingOf(kind, ctx.preset, setting, { project }),
     line: {

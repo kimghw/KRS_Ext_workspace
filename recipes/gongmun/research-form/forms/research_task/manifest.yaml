@@ -3,5 +3,6 @@
 working_unit_id: research-form
 label: 연구업무추진품의
 form_id: KR_EA_Research_Task   # eclass 전자결재 FORMID
-# 패널의 갈래 차례 — purposes/<목적>/ 폴더 이름이다.
-purposes: [purchase, edu, trip, outside]
+# 패널의 갈래 차례 — 목적이 있는 폼끼리는 order 가 작은 폼이 앞이고, 폼 안에서는 purposes 차례다(purposes/<목적>/ 폴더 이름).
+order: 1
+purposes: [purchase, edu, trip]

@@ -45,6 +45,174 @@ export const RECIPE = {
         }
       }
     },
+    "KR_Outside_Lecture_Report": {
+      "id": "KR_Outside_Lecture_Report",
+      "label": "외부강의등 신고서",
+      "unit": "outside-report",
+      "slug": "kr_outside_lecture_report",
+      "only": [
+        "outside"
+      ],
+      "anchor": "#ctl00_ContentPlaceHolder_Content_txtInstituteName",
+      "fields": {
+        "title": {
+          "kind": "title",
+          "selector": "#ctl00_ApplineInfoInReportKRTA1_txtDocTitle",
+          "label": "#ctl00_ApplineInfoInReportKRTA1_lblDocTitle",
+          "max": 99,
+          "source": "title"
+        },
+        "rank": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtJickub",
+          "source": "draft",
+          "from": "rank"
+        },
+        "org": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtInstituteName",
+          "source": "draft",
+          "from": "org"
+        },
+        "representative": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtRepresentative",
+          "source": "draft",
+          "from": "representative"
+        },
+        "contact": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtDepartment",
+          "source": "draft",
+          "from": "contact"
+        },
+        "contactTel": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtDepartmentTel",
+          "source": "draft",
+          "from": "contactTel",
+          "digits": true
+        },
+        "subject": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtLectureTopic",
+          "source": "draft",
+          "from": "subject"
+        },
+        "place": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtPlace",
+          "source": "draft",
+          "from": "place"
+        },
+        "from": {
+          "kind": "date",
+          "control": "ctl00_ContentPlaceHolder_Content_dtpStartDate",
+          "source": "draft",
+          "from": "from"
+        },
+        "to": {
+          "kind": "date",
+          "control": "ctl00_ContentPlaceHolder_Content_dtpEndDate",
+          "source": "draft",
+          "from": [
+            "to",
+            "from"
+          ]
+        },
+        "start": {
+          "kind": "time",
+          "control": "ctl00_ContentPlaceHolder_Content_ttpStartTime",
+          "source": "draft",
+          "from": "start",
+          "on": "from"
+        },
+        "end": {
+          "kind": "time",
+          "control": "ctl00_ContentPlaceHolder_Content_ttpEndTime",
+          "source": "draft",
+          "from": "end",
+          "on": "from"
+        },
+        "hours": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_LectureTextHour",
+          "source": "draft",
+          "from": "hours",
+          "digits": true
+        },
+        "mins": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_LectureTextMin",
+          "source": "draft",
+          "from": "mins",
+          "digits": true
+        },
+        "batchCount": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtAverageCount",
+          "source": "draft",
+          "default": "0",
+          "digits": true
+        },
+        "batchTime": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtAverageTime",
+          "source": "draft",
+          "default": "0",
+          "digits": true
+        },
+        "monthCount": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtCumulativeCount",
+          "source": "draft",
+          "from": "monthCount",
+          "digits": true
+        },
+        "fee": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtTotalHonorarium",
+          "source": "draft",
+          "from": "fee",
+          "digits": true
+        },
+        "feeAvg": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtAverageHonorarium",
+          "source": "draft",
+          "default": "0",
+          "digits": true
+        },
+        "yearTotal": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtCumulativeAmount",
+          "source": "draft",
+          "from": "yearTotal",
+          "digits": true
+        },
+        "expenses": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtEtc",
+          "source": "draft",
+          "from": "expenses",
+          "default": "0",
+          "digits": true
+        },
+        "expensesAvg": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtAverageEtc",
+          "source": "draft",
+          "default": "0",
+          "digits": true
+        },
+        "note": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_txtNote",
+          "source": "draft",
+          "from": "note"
+        }
+      }
+    },
     "KR_EA_Form2": {
       "id": "KR_EA_Form2",
       "label": "기안문",
@@ -779,55 +947,75 @@ export const RECIPE = {
     },
     "outside": {
       "id": "outside",
-      "form": "KR_EA_Research_Task",
+      "form": "KR_Outside_Lecture_Report",
       "label": "외부활동",
-      "title": "외부활동 허가 신청서",
+      "title": "외부강의등 신고서",
       "rule_key": "외부활동",
       "amount_field": null,
       "document_setting": "외부활동",
       "limit": null,
       "account": "",
+      "project": false,
       "fields": [
         {
-          "key": "type",
-          "label": "활동 구분 (제목)",
-          "type": "choice",
-          "options": [
-            "강의",
-            "자문",
-            "심사·평가",
-            "발표",
-            "위원 활동",
-            "집필",
-            "기타"
-          ],
+          "key": "org",
+          "label": "기관명",
           "from": "document",
-          "read": "외부활동의 구분 — 강의·특강은 강의, 자문은 자문, 심사·평가위원은 심사·평가, 발표·강연은 발표, 위원회 위촉은 위원 활동, 집필·기고는 집필, 그 밖은 기타.",
-          "example": "강의"
+          "need": "기관명",
+          "read": "외부강의 등을 요청한 기관 — 공문의 발신 기관이나 메일을 보낸 기관의 이름 그대로. 학과·부서는 담당부서 칸에 적습니다.",
+          "example": "부산대학교"
         },
         {
-          "key": "org",
-          "label": "요청 기관",
+          "key": "representative",
+          "label": "대표자",
           "from": "document",
-          "need": "요청 기관",
-          "read": "활동을 요청한 기관·부서 — 공문의 발신 기관이나 메일을 보낸 곳의 이름 그대로.",
-          "example": "부산대학교 조선해양공학과"
+          "need": "대표자",
+          "read": "요청 기관의 대표자(기관장) 이름 — 공문 끝의 발신 명의나 기관장 이름. 직함만 있고 이름이 문서에 없으면 null 입니다.",
+          "example": "홍길동"
+        },
+        {
+          "key": "contact",
+          "label": "담당부서(담당자)",
+          "wide": true,
+          "from": "document",
+          "need": "담당부서(담당자)",
+          "read": "요청한 부서와 담당자 — \"부서(담당자 이름)\" 꼴. 공문의 담당자·문의처 줄이나 메일 서명에서 읽습니다.",
+          "example": "조선해양공학과(김철수)"
+        },
+        {
+          "key": "contactTel",
+          "label": "담당자 연락처 (숫자만)",
+          "from": "document",
+          "need": "담당자 연락처",
+          "read": "담당자의 전화번호 — 숫자만(하이픈·괄호·공백 없이). 사무실 번호가 있으면 그것, 없으면 휴대전화.",
+          "example": "0515101234"
         },
         {
           "key": "subject",
-          "label": "활동명 (주제)",
+          "label": "외부강의등 주제",
+          "wide": true,
+          "area": true,
+          "max": 400,
+          "from": "document",
+          "need": "주제",
+          "read": "강의·자문·심사·발표의 주제 — 문서에 적힌 제목 그대로. 같은 건으로 여러 날 나눠 하면 실시 일자를 뒤에 괄호로 붙입니다.",
+          "example": "MVDC 차단기 기술 특강"
+        },
+        {
+          "key": "place",
+          "label": "장소",
           "wide": true,
           "from": "document",
-          "need": "활동명",
-          "read": "활동명 — 강의 제목·자문 주제·심사 대상. 공문 본문에 들어가니 문서에 적힌 제목을 짧게 적습니다.",
-          "example": "MVDC 차단기 기술 특강"
+          "need": "장소",
+          "read": "실시 장소 — 기관·건물·호실. 온라인이면 화상회의·온라인강의·서면제출 가운데 맞는 말입니다(신고서가 그렇게 적으라고 합니다).",
+          "example": "부산대학교 공학관 301호"
         },
         {
           "key": "from",
           "label": "시작일",
           "type": "date",
           "from": "document",
-          "need": "활동기간",
+          "need": "시작일",
           "read": "외부활동의 첫날. 연도가 적혀 있지 않으면 문서 발행일(없으면 오늘)의 연도를 붙입니다.",
           "example": "2026-11-05"
         },
@@ -841,96 +1029,131 @@ export const RECIPE = {
           "example": "2026-11-05"
         },
         {
-          "key": "hours",
-          "label": "활동시간",
+          "key": "start",
+          "label": "시작 시간",
+          "type": "time",
           "from": "document",
-          "read": "활동 시간 — 시각과 길이를 적힌 대로.",
-          "example": "14:00~16:00 (2시간)"
+          "need": "시작 시간",
+          "read": "시작 시각 — 24시간 HH:MM(오후 2시는 14:00). 적혀 있지 않으면 null 입니다.",
+          "example": "14:00"
         },
         {
-          "key": "place",
-          "label": "활동장소",
+          "key": "end",
+          "label": "종료 시간",
+          "type": "time",
           "from": "document",
-          "need": "활동장소",
-          "read": "활동 장소 — 기관·건물·호실. 온라인이면 \"온라인\" 입니다.",
-          "example": "부산대학교 공학관"
+          "need": "종료 시간",
+          "read": "끝나는 시각 — 24시간 HH:MM. 시작 시각과 길이만 적혀 있으면 더해서 적고, 둘 다 없으면 null 입니다.",
+          "example": "16:00"
+        },
+        {
+          "key": "hours",
+          "label": "총 시간 (시간)",
+          "type": "number",
+          "from": "auto",
+          "need": "총 시간"
+        },
+        {
+          "key": "mins",
+          "label": "총 시간 (분)",
+          "type": "number",
+          "from": "auto"
         },
         {
           "key": "fee",
-          "label": "사례비 (원, 없으면 비움)",
+          "label": "사례금 총액 (원, 없으면 0)",
           "type": "money",
           "from": "document",
-          "read": "사례비·강사료·자문료 — 적혀 있으면 그 금액, 없으면 null 입니다.",
+          "need": "사례금 총액",
+          "read": "사례금(강사료·자문료·심사료) 총액 — 교통비·숙박비·식비는 빼고 원 단위입니다. 적혀 있지 않으면 null 입니다.",
           "example": 300000
         },
         {
-          "key": "topics",
-          "label": "활동내용",
+          "key": "expenses",
+          "label": "교통비·숙박비·식비 (실비, 원)",
+          "type": "money",
+          "from": "document",
+          "read": "사례금과 따로 받는 교통비·숙박비·식비(실비) — 적혀 있으면 그 금액, 없으면 null 입니다.",
+          "example": 50000
+        },
+        {
+          "key": "rank",
+          "label": "직급",
+          "open": true,
+          "from": "auto",
+          "need": "직급",
+          "placeholder": "지난 신고서에서 채움"
+        },
+        {
+          "key": "monthCount",
+          "label": "당월 누적 (이번 포함 횟수)",
+          "type": "number",
+          "open": true,
+          "from": "auto",
+          "need": "당월 누적"
+        },
+        {
+          "key": "yearTotal",
+          "label": "당해 연도 사례금 누적 합계 (원, 이번 포함)",
+          "type": "money",
+          "open": true,
+          "wide": true,
+          "from": "auto",
+          "need": "당해 연도 누적 합계"
+        },
+        {
+          "key": "note",
+          "label": "비고",
           "wide": true,
           "area": true,
-          "max": 400,
-          "from": "document",
-          "read": "활동 내용 — 강의 주제·자문 사항·심사 대상을 \" · \" 로 나열합니다.",
-          "example": "MVDC 차단기 개요 · 시험 결과"
-        },
-        {
-          "key": "who",
-          "label": "활동자",
-          "wide": true,
-          "from": "me"
-        },
-        {
-          "key": "purpose",
-          "label": "활동목적",
-          "wide": true,
           "open": true,
-          "from": "document",
-          "need": "활동목적",
-          "read": "그 활동이 과제·기관에 어떤 뜻인지 짧은 구절로. 문서에 적혀 있으면 그대로, 없으면 활동 내용으로 보아 적습니다(사용자가 고칩니다).",
-          "write": "그 활동이 과제·기관에 어떤 뜻인지 짧은 구절로(끝에 마침표 없이). 지금 적힌 활동목적이 있으면 그것을 다듬어 씁니다.",
-          "example": "부산대 특강을 통한 연구 성과 확산"
-        },
-        {
-          "key": "reason",
-          "label": "신청사유",
-          "wide": true,
-          "area": true,
-          "open": true,
-          "placeholder": "과제와 이어지는 필요성 — 비워 두지 않습니다",
-          "from": "write",
-          "need": "신청사유",
-          "write": "그 활동(강의·자문·심사·발표·위원 활동)이 과제 수행이나 연구 성과의 확산·활용과 어떻게 이어지는지, 직무와 상충하지 않는지를 1~2문장으로, \"…필요함\"·\"…위함\" 처럼 명사형으로 끝맺습니다.",
-          "example": "과제에서 얻은 MVDC 차단기 시험 성과를 학계에 확산하기 위함이며 직무와 상충하지 않음"
+          "from": "user",
+          "placeholder": "일괄신고면 실시 일자 — 그 밖에 덧붙일 말"
         }
       ],
       "reads": [],
       "reading": {
-        "docs": "강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문",
-        "rules": []
+        "docs": "외부강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문",
+        "rules": [
+          "신고서에 그대로 옮겨 적는 값입니다 — 문서에 없는 대표자·담당자·연락처·시각·금액은 지어내지 않고 null 로 둡니다."
+        ]
       },
       "quote_crop": null,
-      "writing": {
-        "context": "외부활동: {활동구분} — {활동명}\n요청 기관: {요청기관?}\n활동기간: {활동기간?}\n활동 내용: {활동내용?}\n지금 적힌 활동목적: {활동목적?}",
-        "rules": []
-      },
+      "writing": null,
       "template": {
-        "title": "{요청기관} {활동구분} 외부활동 허가 신청",
-        "body": "1. {부서:은} {과제개요}.\n2. 이와 관련하여 {요청기관}의 요청으로 아래와 같이 외부활동({활동구분})을 하고자 하오니 허가하여 주시기 바랍니다.\n\n------------ 아   래 ------------\n\n{차례}. 과제 개요\n    {세부차례} 과 제 명 : {과제명}\n    {세부차례} 과제번호 : {과제번호?}\n    {세부차례} 연구기간 : {연구기간?}\n    {세부차례} 과제책임자 : {과제책임자?}\n{차례}. 외부활동 내용\n    {세부차례} 활동구분 : {활동구분}\n    {세부차례} 요청기관 : {요청기관}\n    {세부차례} 활 동 명 : {활동명}\n    {세부차례} 활동기간 : {활동기간}\n    {세부차례} 활동시간 : {활동시간?}\n    {세부차례} 활동장소 : {활동장소}\n    {세부차례} 활동내용 : {활동내용?}\n    {세부차례} 활 동 자 : {활동자}\n    {세부차례} 사 례 비 : {사례비?}\n    {세부차례} 활동목적 : {활동목적}\n    {세부차례} 신청사유 : {신청사유}\n\n※ 첨 부\n{첨부}"
+        "title": "외부강의등 신고서",
+        "body": "■ 신 고 자 : {기안자} · {부서}\n    직    급 : {직급}\n■ 요 청 인 : {기관명}  (대표자 {대표자})\n    담당부서(담당자) : {담당부서}  ☎ {담당연락처}\n■ 주    제 : {주제}\n■ 장    소 : {장소}\n■ 일    시 : {일시}  {시각}\n    총 시 간 : {총시간}\n■ 당월 누적 : {당월누적}회\n■ 사 례 금 : 총액 {사례금}\n    교통비·숙박비·식비(실비) : {실비?} 별도\n    당해 연도 사례금 누적 합계 : {누적합계}\n■ 비    고 : {비고?}\n\n※ 첨 부\n{첨부}"
       },
       "vars": {
-        "활동구분": {
-          "from": "type",
-          "desc": "강의·자문·심사·평가·발표·위원 활동·집필·기타 — 활동 구분 칸"
+        "직급": {
+          "from": "rank",
+          "desc": "신고자 직급(지난 신고서에서)"
         },
-        "요청기관": {
+        "기관명": {
           "from": "org",
           "desc": "요청 기관"
         },
-        "활동명": {
-          "from": "subject",
-          "desc": "활동명(강의 제목·자문 주제)"
+        "대표자": {
+          "from": "representative",
+          "desc": "요청 기관의 대표자"
         },
-        "활동기간": {
+        "담당부서": {
+          "from": "contact",
+          "desc": "담당부서(담당자) — 조선해양공학과(김철수)"
+        },
+        "담당연락처": {
+          "from": "contactTel",
+          "desc": "담당자 연락처(숫자만)"
+        },
+        "주제": {
+          "from": "subject",
+          "desc": "외부강의등 주제"
+        },
+        "장소": {
+          "from": "place",
+          "desc": "장소"
+        },
+        "일시": {
           "from": [
             "from",
             "to"
@@ -938,42 +1161,51 @@ export const RECIPE = {
           "show": "period",
           "desc": "시작일 ~ 종료일(며칠) — 2026. 11. 5. (1일)"
         },
-        "활동시간": {
-          "from": "hours",
-          "desc": "활동시간"
+        "시각": {
+          "from": [
+            "start",
+            "end"
+          ],
+          "show": "clock",
+          "desc": "시작 ~ 종료 시각 — 14:00 ~ 16:00"
         },
-        "활동장소": {
-          "from": "place",
-          "desc": "활동장소"
+        "총시간": {
+          "from": [
+            "hours",
+            "mins"
+          ],
+          "show": "duration",
+          "desc": "총 시간 — 2시간 30분"
         },
-        "활동내용": {
-          "from": "topics",
-          "desc": "활동 내용"
+        "당월누적": {
+          "from": "monthCount",
+          "desc": "당월 누적 횟수(이번 포함)"
         },
-        "활동자": {
-          "from": "who",
-          "or": "me",
-          "desc": "활동자(비면 내 이름)"
-        },
-        "사례비": {
+        "사례금": {
           "from": "fee",
           "show": "won",
-          "desc": "사례비 — 300",
+          "desc": "사례금 총액 — 300",
           "000원": null
         },
-        "활동목적": {
-          "from": "purpose",
-          "desc": "활동목적"
+        "실비": {
+          "from": "expenses",
+          "show": "won",
+          "desc": "교통비·숙박비·식비(실비) — 없으면 그 줄이 빠진다(신고서 칸에는 0)"
         },
-        "신청사유": {
-          "from": "reason",
-          "desc": "신청사유(과제 내용으로 쓴다)"
+        "누적합계": {
+          "from": "yearTotal",
+          "show": "won",
+          "desc": "당해 연도 사례금 누적 합계(이번 포함)"
+        },
+        "비고": {
+          "from": "note",
+          "desc": "비고"
         }
       },
       "lists": {},
       "attach": {
         "doc": "요청 공문",
-        "ask": "외부활동 요청 공문·메일(강의·자문·심사·발표 의뢰)을 넣으세요",
+        "ask": "외부강의 등 요청 공문·메일(강의·자문·심사·발표 의뢰)을 넣으세요",
         "more": "행사 안내·일정표 더 넣기",
         "need": [],
         "parts": {
@@ -1023,10 +1255,10 @@ export const RECIPE = {
         "source": "구본 ea_rules.yaml 출장(국내 팀장 · 해외 본부장, 확정) — krs-web-agents ea_approval 규정 키 출장"
       },
       "외부활동": {
-        "label": "외부활동 허가",
+        "label": "외부강의등 신고",
         "basis": "none",
         "approver": "팀장",
-        "source": "QI-01K 45절에 행 없음 — 부서장 결재(이 확장의 기존 결재선, 2026-10-08). 규정 행을 찾으면 여기를 고친다"
+        "source": "QI-01K 45절에 행 없음 — 팀장 결재(지난 외부강의등 신고서 HER-2026-000266 의 결재선이 담당 → 팀장, 2026-10-15 실측). 규정 행을 찾으면 여기를 고친다"
       }
     }
   },
@@ -1047,6 +1279,7 @@ export const RECIPE = {
         "tag": "출장"
       },
       "외부활동": {
+        "retention": "36",
         "tag": "외부활동"
       }
     },
@@ -1885,7 +2118,7 @@ export const RECIPE = {
       ]
     },
     "gongmun.outside": {
-      "title": "외부활동 허가 신청서에 넣을 문서 읽기 — 강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문",
+      "title": "외부강의등 신고서에 넣을 문서 읽기 — 외부강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문",
       "kinds": [
         "outside"
       ],
@@ -1894,7 +2127,7 @@ export const RECIPE = {
         "export": "fromRecord"
       },
       "next": "src/gongmun.js fromRecord 가 초안으로 바꾼다 → 사용자가 과제를 고르고 칸을 고친다 → compose 가 틀에 넣어 제목·본문을 만든다",
-      "role": "당신은 사내 연구부서의 전자결재 품의 작성 도우미입니다. 첨부한 문서(강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문 등의 이미지나 PDF) 또는 붙여 넣은 글을 읽어 외부활동 허가 신청서에 넣을 값을 뽑습니다.",
+      "role": "당신은 사내 연구부서의 전자결재 품의 작성 도우미입니다. 첨부한 문서(외부강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일·행사 안내문 등의 이미지나 PDF) 또는 붙여 넣은 글을 읽어 외부강의등 신고서에 넣을 값을 뽑습니다.",
       "fields": {
         "docType": {
           "type": "enum",
@@ -1911,27 +2144,34 @@ export const RECIPE = {
             "unknown"
           ]
         },
-        "type": {
-          "type": "enum",
-          "desc": "외부활동의 구분 — 강의·특강은 강의, 자문은 자문, 심사·평가위원은 심사·평가, 발표·강연은 발표, 위원회 위촉은 위원 활동, 집필·기고는 집필, 그 밖은 기타. 예: 강의",
-          "values": [
-            "강의",
-            "자문",
-            "심사·평가",
-            "발표",
-            "위원 활동",
-            "집필",
-            "기타"
-          ]
-        },
         "org": {
           "type": "string",
-          "desc": "활동을 요청한 기관·부서 — 공문의 발신 기관이나 메일을 보낸 곳의 이름 그대로. 예: 부산대학교 조선해양공학과",
+          "desc": "외부강의 등을 요청한 기관 — 공문의 발신 기관이나 메일을 보낸 기관의 이름 그대로. 학과·부서는 담당부서 칸에 적습니다. 예: 부산대학교",
+          "max": 200
+        },
+        "representative": {
+          "type": "string",
+          "desc": "요청 기관의 대표자(기관장) 이름 — 공문 끝의 발신 명의나 기관장 이름. 직함만 있고 이름이 문서에 없으면 null 입니다. 예: 홍길동",
+          "max": 200
+        },
+        "contact": {
+          "type": "string",
+          "desc": "요청한 부서와 담당자 — \"부서(담당자 이름)\" 꼴. 공문의 담당자·문의처 줄이나 메일 서명에서 읽습니다. 예: 조선해양공학과(김철수)",
+          "max": 200
+        },
+        "contactTel": {
+          "type": "string",
+          "desc": "담당자의 전화번호 — 숫자만(하이픈·괄호·공백 없이). 사무실 번호가 있으면 그것, 없으면 휴대전화. 예: 0515101234",
           "max": 200
         },
         "subject": {
           "type": "string",
-          "desc": "활동명 — 강의 제목·자문 주제·심사 대상. 공문 본문에 들어가니 문서에 적힌 제목을 짧게 적습니다. 예: MVDC 차단기 기술 특강",
+          "desc": "강의·자문·심사·발표의 주제 — 문서에 적힌 제목 그대로. 같은 건으로 여러 날 나눠 하면 실시 일자를 뒤에 괄호로 붙입니다. 예: MVDC 차단기 기술 특강",
+          "max": 400
+        },
+        "place": {
+          "type": "string",
+          "desc": "실시 장소 — 기관·건물·호실. 온라인이면 화상회의·온라인강의·서면제출 가운데 맞는 말입니다(신고서가 그렇게 적으라고 합니다). 예: 부산대학교 공학관 301호",
           "max": 200
         },
         "from": {
@@ -1942,30 +2182,25 @@ export const RECIPE = {
           "type": "date",
           "desc": "외부활동의 마지막 날 — 하루면 시작일과 같은 날입니다. 예: 2026-11-05"
         },
-        "hours": {
+        "start": {
           "type": "string",
-          "desc": "활동 시간 — 시각과 길이를 적힌 대로. 예: 14:00~16:00 (2시간)",
-          "max": 200
+          "desc": "시작 시각 — 24시간 HH:MM(오후 2시는 14:00). 적혀 있지 않으면 null 입니다. 예: 14:00",
+          "max": 5
         },
-        "place": {
+        "end": {
           "type": "string",
-          "desc": "활동 장소 — 기관·건물·호실. 온라인이면 \"온라인\" 입니다. 예: 부산대학교 공학관",
-          "max": 200
+          "desc": "끝나는 시각 — 24시간 HH:MM. 시작 시각과 길이만 적혀 있으면 더해서 적고, 둘 다 없으면 null 입니다. 예: 16:00",
+          "max": 5
         },
         "fee": {
           "type": "number",
-          "desc": "사례비·강사료·자문료 — 적혀 있으면 그 금액, 없으면 null 입니다. 예: 300000",
+          "desc": "사례금(강사료·자문료·심사료) 총액 — 교통비·숙박비·식비는 빼고 원 단위입니다. 적혀 있지 않으면 null 입니다. 예: 300000",
           "min": 0
         },
-        "topics": {
-          "type": "string",
-          "desc": "활동 내용 — 강의 주제·자문 사항·심사 대상을 \" · \" 로 나열합니다. 예: MVDC 차단기 개요 · 시험 결과",
-          "max": 400
-        },
-        "purpose": {
-          "type": "string",
-          "desc": "그 활동이 과제·기관에 어떤 뜻인지 짧은 구절로. 문서에 적혀 있으면 그대로, 없으면 활동 내용으로 보아 적습니다(사용자가 고칩니다). 예: 부산대 특강을 통한 연구 성과 확산",
-          "max": 200
+        "expenses": {
+          "type": "number",
+          "desc": "사례금과 따로 받는 교통비·숙박비·식비(실비) — 적혀 있으면 그 금액, 없으면 null 입니다. 예: 50000",
+          "min": 0
         },
         "currency": {
           "type": "enum",
@@ -2027,45 +2262,8 @@ export const RECIPE = {
         "문서에 적힌 것만 채웁니다. 적혀 있지 않은 값은 null 이고, 추측하거나 지어내지 않습니다. 키의 설명이 \"없으면 … 적습니다\" 라고 한 키만 예외입니다.",
         "금액은 쉼표·통화 기호 없이 숫자만 적습니다. 날짜는 YYYY-MM-DD 입니다.",
         "첨부한 파일이 여러 개면 같은 건의 문서들입니다(견적서 여러 쪽, 견적서와 교육 내용 캡처 등). 값은 모두를 함께 보고 채우고, parts 에 파일마다 무슨 문서인지 적습니다.",
-        "품의에 넣을 문서가 아닌 화면(결재 화면·이 프로그램의 화면·메일 목록 등)이면 docType 은 unknown 이고 나머지 값은 null 이며, summary 에 무슨 화면인지 적습니다."
-      ]
-    },
-    "gongmunReason.outside": {
-      "title": "외부활동 허가 신청서의 활동목적·신청사유 쓰기",
-      "kinds": [
-        "outside"
-      ],
-      "consumer": {
-        "module": "src/gongmun.js",
-        "export": "applyReason"
-      },
-      "next": "src/gongmun.js applyReason 이 초안의 칸에 넣는다 → 사용자가 고친다 → compose 가 본문에 넣는다",
-      "role": "당신은 연구부서의 전자결재 품의 작성 도우미입니다. 입력의 과제 정보(과제명·과제 내용)와 품의할 것을 보고 외부활동 허가 신청서 본문에 들어갈 다음 칸을 공문체로 씁니다: 활동목적·신청사유. 입력에 사용자의 말이 있으면 그 요청대로 고쳐 씁니다.",
-      "fields": {
-        "purpose": {
-          "type": "string",
-          "desc": "그 활동이 과제·기관에 어떤 뜻인지 짧은 구절로(끝에 마침표 없이). 지금 적힌 활동목적이 있으면 그것을 다듬어 씁니다. 예: 부산대 특강을 통한 연구 성과 확산",
-          "max": 200
-        },
-        "reason": {
-          "type": "string",
-          "desc": "그 활동(강의·자문·심사·발표·위원 활동)이 과제 수행이나 연구 성과의 확산·활용과 어떻게 이어지는지, 직무와 상충하지 않는지를 1~2문장으로, \"…필요함\"·\"…위함\" 처럼 명사형으로 끝맺습니다. 예: 과제에서 얻은 MVDC 차단기 시험 성과를 학계에 확산하기 위함이며 직무와 상충하지 않음",
-          "required": true,
-          "max": 1000
-        },
-        "reply": {
-          "type": "string",
-          "desc": "사용자의 말이 있을 때 무엇을 어떻게 고쳤는지(또는 왜 못 고쳤는지) 한 줄. 사용자의 말이 없으면 null",
-          "max": 300
-        }
-      },
-      "rules": [
-        "과제 내용이 R&D 탭의 연구 내용이면 그 차년도의 연구개발 계획(개발목표·개발내용·성능목표·주요결과물·수행일정)과 진행 기록입니다. 그 가운데 품의할 것과 이어지는 목표·내용·결과물을 골라 사유의 근거로 삼습니다.",
-        "입력에 \"사용자의 말\"이 있으면 그 요청대로 사유와 용도를 고쳐 씁니다 — 지금 적힌 사유가 있으면 그것을 바탕으로 합니다. 요청이 사유·용도와 무관하면 지금 적힌 것을 그대로 돌려주고 reply 에 그렇게 적습니다. 요청이어도 과제 내용에 없는 과업·수치는 지어내지 않습니다.",
-        "사유는 과제 내용에 적힌 연구목표·연구내용을 근거로 씁니다. 과제 내용에 없는 연구 과업·수치·일정을 지어내지 않습니다.",
-        "과제 내용이 비었거나 품의할 것과 이어지는 대목이 없으면, 과제명과 품의할 것 자체의 쓰임만으로 일반적인 필요성을 씁니다.",
-        "공문체로 씁니다 — 문장을 \"…필요함\"·\"…위함\" 처럼 명사형으로 끝맺고, 경어·구어(\"합니다\", \"해요\")를 쓰지 않습니다.",
-        "금액·업체·날짜는 사유에 넣지 않습니다(본문의 다른 줄에 있습니다)."
+        "품의에 넣을 문서가 아닌 화면(결재 화면·이 프로그램의 화면·메일 목록 등)이면 docType 은 unknown 이고 나머지 값은 null 이며, summary 에 무슨 화면인지 적습니다.",
+        "신고서에 그대로 옮겨 적는 값입니다 — 문서에 없는 대표자·담당자·연락처·시각·금액은 지어내지 않고 null 로 둡니다."
       ]
     }
   }

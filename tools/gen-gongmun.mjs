@@ -30,16 +30,18 @@ import { checkSpec } from './gen-input.mjs';
 const ROOT = fileURLToPath(new URL('../recipes/gongmun/', import.meta.url));
 const TARGET = new URL('../src/gmrecipe.js', import.meta.url);
 
-const FIELD_KINDS = new Set(['text', 'title', 'picker', 'dext5']);
-const SOURCES = new Set(['title', 'recipient', 'reference', 'degree', 'job', 'jobText', 'body']);
-/** 초안 칸(purpose.yaml fields)의 형. 읽기만 하는 키(reads·reading.yaml)는 number(수)·list(목록)도 쓴다. */
-const FIELD_TYPES = new Set(['text', 'money', 'date', 'choice']);
-const READ_TYPES = new Set([...FIELD_TYPES, 'number', 'list']);
+/** 칸 지도의 칸 종류 — date·time 은 Telerik 날짜·시각 피커(외부강의등 신고서 fieldmap.yaml 머리말). */
+const FIELD_KINDS = new Set(['text', 'title', 'picker', 'dext5', 'date', 'time']);
+/** 칸 지도의 source — draft 는 초안 칸의 값(from)이다(칸이 정해진 폼 — 외부강의등 신고서). */
+const SOURCES = new Set(['title', 'recipient', 'reference', 'degree', 'job', 'jobText', 'body', 'draft']);
+/** 초안 칸(purpose.yaml fields)의 형 — time 은 24시간 HH:MM, number 는 쉼표 없는 수. 읽기만 하는 키(reads·reading.yaml)는 list(목록)도 쓴다. */
+const FIELD_TYPES = new Set(['text', 'money', 'date', 'choice', 'time', 'number']);
+const READ_TYPES = new Set([...FIELD_TYPES, 'list']);
 /** 칸의 값이 어디서 오는가 — purchase/purpose.yaml 머리말. */
 const FROMS = new Set(['document', 'write', 'me', 'user', 'auto', 'setup']);
-/** 틀 자리의 꼴 — purchase/body_spec.yaml 머리말. 두 칸을 쓰는 꼴(period·qty)은 from 이 [앞, 뒤] 다. */
-const SHOWS = new Set(['text', 'won', 'date', 'period', 'count', 'qty']);
-const PAIR_SHOWS = new Set(['period', 'qty']);
+/** 틀 자리의 꼴 — purchase/body_spec.yaml 머리말. 두 칸을 쓰는 꼴(period·qty·clock·duration)은 from 이 [앞, 뒤] 다. */
+const SHOWS = new Set(['text', 'won', 'date', 'period', 'count', 'qty', 'clock', 'duration']);
+const PAIR_SHOWS = new Set(['period', 'qty', 'clock', 'duration']);
 /** 틀의 공통 자리 — src/gongmun.js 의 varsFor 가 채우는 이름. registries/vars.yaml 의 common 이 이것과 같아야 한다. */
 export const COMMON_VARS = ['부서', '기안자', '과제명', '과제별명', '과제번호', '연구기간', '과제책임자', '과제개요', '계정', '오늘', '첨부'];
 const TPL_MARKS = new Set(['차례', '세부차례']);
@@ -65,6 +67,7 @@ function exampleProblem(k) {
       const d = m && new Date(+m[1], +m[2] - 1, +m[3]);
       return d && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3] ? '' : `example(${v})은 YYYY-MM-DD 날짜여야 합니다`;
     }
+    case 'time': return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? '' : `example(${v})은 24시간 HH:MM 글이어야 합니다`;
     case 'money':
     case 'number': return Number.isFinite(v) && v >= 0 ? '' : `example(${v})은 쉼표·원 없는 수여야 합니다`;
     case 'choice': return list(k.options).includes(v) ? '' : `example(${v})이 options 에 없습니다`;
@@ -262,15 +265,36 @@ export function checkRecipe({ delegation, settings, reading, writing, setup, var
     const have = f.purposes.map((p) => p.id);
     for (const id of listed) if (!have.includes(id)) at(`${w}/manifest.yaml`, `purposes 의 ${id} 폴더가 없습니다`);
     for (const id of have) if (!listed.includes(id)) at(`${w}/manifest.yaml`, `purposes/${id} 폴더가 purposes 목록에 없습니다`);
+    if ('order' in m && !Number.isFinite(m.order)) at(`${w}/manifest.yaml`, 'order(갈래 차례)는 수여야 합니다');
+    if ('only' in m && !(Array.isArray(m.only) && m.only.length && m.only.every(isStr))) at(`${w}/manifest.yaml`, 'only 는 이 폼을 고를 수 있는 갈래(목적 id)의 목록이어야 합니다');
+    for (const id of listed) if (Array.isArray(m.only) && !m.only.includes(id)) at(`${w}/manifest.yaml`, `only 에 이 폼의 목적 ${id} 가 없습니다`);
     const fm = f.fieldmap || {};
     if (!isStr(fm.anchor)) at(`${w}/fieldmap.yaml`, 'anchor 가 없습니다');
+    // source: draft 는 이 폼의 목적마다 그 초안 칸이 있어야 한다 — 없는 칸이면 늘 빈 값이라 신고서 칸이 조용히 빈다.
+    const draftKeys = f.purposes.map((p) => new Set(list(p.purpose?.fields).map((x) => x?.key)));
     for (const [key, fld] of Object.entries(fm.fields || {})) {
       const fw = `${w}/fieldmap.yaml fields.${key}`;
       if (!FIELD_KINDS.has(fld?.kind)) at(fw, `모르는 kind ${fld?.kind}`);
       if (!SOURCES.has(fld?.source)) at(fw, `모르는 source ${fld?.source}`);
       if (['text', 'title'].includes(fld?.kind) && !isStr(fld.selector)) at(fw, 'selector 가 없습니다');
       if (fld?.kind === 'picker' && !(isStr(fld.hidden) && isStr(fld.callback) && isStr(fld.list))) at(fw, 'picker 는 hidden·callback·list 가 있어야 합니다');
-      if (fld?.kind === 'dext5' && !isStr(fld.control)) at(fw, 'dext5 는 control 이 있어야 합니다');
+      if (['dext5', 'date', 'time'].includes(fld?.kind) && !isStr(fld.control)) at(fw, `${fld.kind} 는 control 이 있어야 합니다`);
+      if (['date', 'time'].includes(fld?.kind) && fld.source !== 'draft') at(fw, `${fld.kind} 는 source: draft 칸이어야 합니다`);
+      if (fld?.source !== 'draft') {
+        for (const k of ['from', 'default', 'digits', 'on']) if (k in fld) at(fw, `${k} 는 source: draft 칸에만 씁니다`);
+        continue;
+      }
+      if (!draftKeys.length) at(fw, 'source: draft 는 목적이 있는 폼에서만 씁니다');
+      const from = 'from' in fld ? [].concat(fld.from) : [];
+      if (!from.length && !isStr(fld.default)) at(fw, 'source: draft 칸은 from(초안 칸)이나 default 가 있어야 합니다');
+      if ('default' in fld && typeof fld.default !== 'string') at(fw, "default 는 글이어야 합니다(수도 '0' 처럼)");
+      if ('digits' in fld && typeof fld.digits !== 'boolean') at(fw, 'digits 는 true·false 여야 합니다');
+      if (fld.kind === 'time' && !isStr(fld.on)) at(fw, 'time 은 on(시각을 얹을 날짜 칸)이 있어야 합니다');
+      else if ('on' in fld && fld.kind !== 'time') at(fw, 'on 은 time 칸에만 씁니다');
+      for (const k of [...from, ...(isStr(fld.on) ? [fld.on] : [])]) {
+        if (!isStr(k)) at(fw, 'from 은 초안 칸의 key(목록이면 key 들)여야 합니다');
+        else draftKeys.forEach((keys, i) => { if (!keys.has(k)) at(fw, `${k} 가 ${f.purposes[i].id}/purpose.yaml 의 fields 에 없습니다`); });
+      }
     }
     if (!Object.values(fm.fields || {}).some((x) => x?.source === 'title')) at(`${w}/fieldmap.yaml`, '제목(source: title) 칸이 없습니다');
     for (const p of f.purposes) {
@@ -282,6 +306,7 @@ export function checkRecipe({ delegation, settings, reading, writing, setup, var
       for (const k of ['label', 'title', 'rule_key', 'document_setting']) if (!isStr(pu[k])) at(`${pw}/purpose.yaml`, `${k} 가 비어 있습니다`);
       if (pu.limit !== null && !(Number.isFinite(pu.limit) && pu.limit > 0)) at(`${pw}/purpose.yaml`, 'limit 는 양의 금액이나 null 이어야 합니다');
       if (typeof pu.account !== 'string') at(`${pw}/purpose.yaml`, 'account 는 글이어야 합니다(없으면 빈 글)');
+      if ('project' in pu && typeof pu.project !== 'boolean') at(`${pw}/purpose.yaml`, 'project 는 true·false 여야 합니다(false 면 과제를 고르지 않는다)');
       const fields = Array.isArray(pu.fields) ? pu.fields : [];
       if (!fields.length) at(`${pw}/purpose.yaml`, 'fields 가 비어 있습니다');
       const keys = fields.map((x) => x?.key);
@@ -380,13 +405,14 @@ export function checkRecipe({ delegation, settings, reading, writing, setup, var
     }
   }
   if (!purposeIds.size) errors.push('목적(purposes)이 하나도 없습니다');
+  for (const f of forms) for (const id of list(f.manifest?.only)) if (isStr(id) && !purposeIds.has(id)) at(`${f.unit}/forms/${f.slug}/manifest.yaml`, `only 의 ${id} 는 없는 목적입니다`);
   return errors;
 }
 
 /* ------------------------------------------------------------ 문서 읽기의 지시문 */
 
-/** 레시피의 형 → input.yaml 의 형(src/input.js 가 지시문·스키마·관문을 만든다). money 는 원 단위 수다. */
-const SPEC_TYPE = { text: 'string', money: 'number', number: 'number', date: 'date', choice: 'enum', list: 'list' };
+/** 레시피의 형 → input.yaml 의 형(src/input.js 가 지시문·스키마·관문을 만든다). money 는 원 단위 수, time 은 HH:MM 글이다(초안이 꼴을 다시 맞춘다). */
+const SPEC_TYPE = { text: 'string', time: 'string', money: 'number', number: 'number', date: 'date', choice: 'enum', list: 'list' };
 const sentence = (s) => String(s).replace(/\s+/g, ' ').trim().replace(/[.。]?$/, '.');
 const exampleText = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 /** 끝 글자에 받침이 있는가(한글만 — 모르면 없다고 본다). */
@@ -405,6 +431,7 @@ function specField(k) {
     if (k.max != null) out.max = k.max;
   }
   if (type === 'text') out.max = k.max ?? (k.area ? 1000 : 200);
+  if (type === 'time') out.max = 5;
   if (type === 'list') {
     out.max = k.max ?? 30;
     out.item = Object.fromEntries(k.item.map((x) => [x.key, specField(x)]));
@@ -491,9 +518,10 @@ export function setupTaskOf(setup) {
   };
 }
 
-/** 확장이 쓰는 꼴로 — 목적이 있는 폼이 앞이고, 갈래 차례는 manifest 의 purposes 차례다. */
+/** 확장이 쓰는 꼴로 — 목적이 있는 폼이 앞이고(그끼리는 manifest 의 order 차례), 폼 안의 갈래 차례는 manifest 의 purposes 차례다. */
 export function buildRecipe(raw) {
-  const forms = [...raw.forms].sort((a, b) => (b.purposes.length > 0) - (a.purposes.length > 0) || a.unit.localeCompare(b.unit));
+  const order = (f) => (Number.isFinite(f.manifest.order) ? f.manifest.order : Infinity);
+  const forms = [...raw.forms].sort((a, b) => (b.purposes.length > 0) - (a.purposes.length > 0) || order(a) - order(b) || a.unit.localeCompare(b.unit));
   const docType = list(raw.reading.before).concat(list(raw.reading.after)).find((k) => k.key === 'docType');
   const out = {
     forms: {}, order: [], purposes: {}, delegation: raw.delegation, settings: raw.settings, vars: raw.vars.common,
@@ -501,7 +529,9 @@ export function buildRecipe(raw) {
   };
   for (const f of forms) {
     const m = f.manifest;
-    out.forms[m.form_id] = { id: m.form_id, label: m.label, unit: f.unit, slug: f.slug, anchor: f.fieldmap.anchor, fields: f.fieldmap.fields };
+    out.forms[m.form_id] = {
+      id: m.form_id, label: m.label, unit: f.unit, slug: f.slug, ...(m.only ? { only: [...m.only] } : {}), anchor: f.fieldmap.anchor, fields: f.fieldmap.fields,
+    };
     for (const id of m.purposes || []) {
       const p = f.purposes.find((x) => x.id === id);
       const { purpose_id: _id, fields, reads = [], reading, quote_crop: crop = null, writing = null, ...rest } = p.purpose;
