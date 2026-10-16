@@ -1,6 +1,6 @@
 // 여비계산서 실행기 어댑터 — trip.* 기록을 src/travel.js·src/after.js·src/trip.js(송부는 src/send.js·pdf.js·teams.js·memo.js)의 인자로 바꿔 부른다.
 //
-//   registerTrip(d, deps)   디스패처에 trip.create · presave · preconfirm · postconfirm · delete · after · send 를 등록한다. deps 의 키는 실제 함수 이름과
+//   registerTrip(d, deps)   디스패처에 trip.create · presave · preconfirm · postconfirm · delete · after · send · lodge 를 등록한다. deps 의 키는 실제 함수 이름과
 //                           같고 기본값은 src 모듈의 진짜 함수다(테스트는 가짜를 넣는다)
 //
 //   trip.create     (rec, { memo, onStage })                → tripCreate(settlePlan(폼, memo), { emplNo: preset.hrMe.emplNo, name, onStage })
@@ -14,15 +14,24 @@
 //                   → 아직 사람이 정할 것이 남았으면(lodgeAsk) 올리지 않고 { sent: false, ask } 를 돌려준다 → tripAfterSave(row, trseq, plan, { name, onStage, always })
 //   trip.send       (rec, { row, stage, kept, onStage })    → tripCalPdf → buildPdf(계산서 + 보관함 증빙) → Teams(teamsSendFile) 또는 쪽지(memoSend). 보내기만 한다(§14.4) —
 //                   그 앞의 사후정산 저장·확정은 trip.after·trip.postconfirm 으로 패널이 먼저 돈다. 돌려주는 것은 { ok: true, channel, to, file, pages }
+//   trip.lodge      (rec, { lodge, kept, maxes })           → lodgebox.js 의 `상한`·`비고에 저장`·지우기 차례 그대로:
+//                   delete → tripAfterLodgeDelete · reason → 비고의 사유만 바꿔(lodgeReasonOf·lodgeCommentWith) tripAfterLodgeComment ·
+//                   cap·real → lodgeCapState 로 상한액·실제 금액을 알아(모르면 ActionError) lodgeSettle → 비고의 사유를 잇거나 걷어 tripAfterLodgeAmount.
+//                   lodge 는 화면에서 읽은 그 줄(tripAfterRows), kept 는 적어 둔 실제 금액·사유(attendLodgeActual 의 그 줄), maxes 는 읽어 둔 상한액이다.
+//                   돌려주는 것은 { rows(다시 읽은 숙박 줄), lodge(정한 줄 — cap·real), comment(바뀐 비고 — 그대로면 null), reason, had(전에 비고에 있던 사유) }
 //
-// 모든 trip.* 는 ctx.row(목록 줄)의 seq 가 기록의 seq 와 같은지 본다(§14.2 — 다르면 ActionError). name 은 preset.tripMe(여비계산서 목록이 아는 내 이름)이고
-// 비면 preset.me 다. 성공 판정(§14.3): trip.send 는 ok, 나머지는 던지지 않으면 성공(sent false 도 정상).
+// 숙박 줄(trip.lodge)이 아닌 trip.* 는 ctx.row(목록 줄)의 seq 가 기록의 seq 와 같은지 본다(§14.2 — 다르면 ActionError). trip.lodge 는 ctx.lodge 의 줄 번호를 본다.
+// name 은 preset.tripMe(여비계산서 목록이 아는 내 이름)이고 비면 preset.me 다. 성공 판정(§14.3): trip.send 는 ok, 나머지는 던지지 않으면 성공(sent false 도 정상).
 // 사이트 특유의 차례(저장 뒤 다시 읽어 판정·같은 줄 거르기·확정 폼 찾기)는 src/trip.js 에 그대로 있다 — 여기는 기록을 인자로 바꾸기만 한다.
 
 import { settlePlan, prePlan, stayPlan, tripStage, DEFAULT_TRANSPORT, DEFAULT_GRADE } from '../../src/travel.js';
-import { afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgeKnown } from '../../src/after.js';
+import { afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgeKnown, lodgeCommentWith, lodgeCommentWithout, LODGE_CURRENCY, LODGE_OVER_REASON } from '../../src/after.js';
 import { lodgeKey } from '../../src/afterup.js';
-import { tripCreate, tripPreSave, tripPreConfirm, tripPostConfirm, tripDelete, tripLodgeMax, tripAfterLodges, tripAfterSave, tripCalPdf } from '../../src/trip.js';
+import {
+  tripCreate, tripPreSave, tripPreConfirm, tripPostConfirm, tripDelete, tripLodgeMax, tripAfterLodges, tripAfterSave, tripCalPdf,
+  tripAfterLodgeAmount, tripAfterLodgeComment, tripAfterLodgeDelete,
+} from '../../src/trip.js';
+import { lodgeCapState, lodgeReasonOf } from '../../lodgebox.js';
 import { sendTitle, sendLines, calName, WAYS } from '../../src/send.js';
 import { buildPdf } from '../../src/pdf.js';
 import { teamsSendFile } from '../../src/teams.js';
@@ -34,6 +43,7 @@ import { fileOf } from './attend.js';
 const defaults = {
   settlePlan, prePlan, stayPlan, tripStage, afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgeKnown,
   tripCreate, tripPreSave, tripPreConfirm, tripPostConfirm, tripDelete, tripLodgeMax, tripAfterLodges, tripAfterSave, tripCalPdf,
+  tripAfterLodgeAmount, tripAfterLodgeComment, tripAfterLodgeDelete,
   sendTitle, sendLines, calName, buildPdf, teamsSendFile, memoSend, memoHtml,
 };
 const always = () => true;
@@ -46,6 +56,15 @@ function sameRow(rec, ctx) {
   const row = ctx?.row;
   if (!row || String(row.seq) !== String(rec.input.seq)) {
     throw new ActionError(rec.action, [`ctx.row 의 계산서 번호(${row?.seq ?? '없음'})가 기록의 ${rec.input.seq} 와 다릅니다`]);
+  }
+  return row;
+}
+
+/** ctx.lodge(화면에서 읽은 숙박 줄)가 기록의 줄인지 본다(§14.2). */
+function sameLodge(rec, ctx) {
+  const row = ctx?.lodge;
+  if (!row || String(row.seq) !== String(rec.input.lodgeSeq)) {
+    throw new ActionError(rec.action, [`ctx.lodge 의 숙박 줄 번호(${row?.seq ?? '없음'})가 기록의 ${rec.input.lodgeSeq} 와 다릅니다`]);
   }
   return row;
 }
@@ -201,5 +220,30 @@ export function registerTrip(d, deps = defaults) {
     else await f.memoSend({ to: [to.id], title, lines, file: { name: file, bytes: pdf.bytes, type: 'application/pdf' }, onStage });
     return { ok: true, channel, to: to.id, file, pages: pdf.pages };
   });
+
+  d.register('trip.lodge', async (rec, ctx = {}) => {
+    const i = rec.input;
+    const row = sameLodge(rec, ctx);
+    if (i.action === 'delete') return { rows: await f.tripAfterLodgeDelete(i.seq, i.trseq, i.lodgeSeq), lodge: null, comment: null, reason: '', had: '' };
+    const kept = ctx.kept || null;
+    const { reason: had, base, known } = lodgeReasonOf(row, kept);
+    const before = String(row.comment ?? '').trim();
+    // 비고의 상한 초과 사유만 고쳐 쓴다 — 나머지 글(묵은 곳 등)은 그대로, 빈 사유는 기본 문구(사유는 필수다).
+    if (i.action === 'reason') {
+      const reason = i.reason || LODGE_OVER_REASON;
+      const comment = lodgeCommentWith(base, reason);
+      return { rows: await f.tripAfterLodgeComment(i.seq, i.trseq, i.lodgeSeq, comment), lodge: null, comment, reason, had };
+    }
+    // `상한` — 실제 금액과 상한액 사이를 오간다. 공급가액·부가세는 lodgeSettle 이 정한다(적어 둔 문서의 값이 있으면 그것). 실제 금액으로 되돌리면 비고에 사유를 잇고, 낮추면 걷는다.
+    const c = lodgeCapState(row, kept, ctx.maxes || {});
+    if (!c?.can) throw new ActionError(rec.action, [`숙박 줄 ${i.lodgeSeq} 의 상한액이나 실제 금액을 몰라 정산금액을 바꿀 수 없습니다`]);
+    const l = f.lodgeSettle({ actual: c.actual, maxconv: c.day, sday: c.sday, settle: i.action, doc: { currency: LODGE_CURRENCY, total: c.actual, supply: kept?.supply ?? null, vat: kept?.vat ?? null } });
+    // 기록에 사유가 있으면(말로 정한 것) 비고에 있던 사유를 그것으로 바꾼다 — 없으면 있던 사유를 그대로 둔다(`상한` 버튼은 사유 없이 온다).
+    const reason = i.action === 'real' ? i.reason || had || known[0] : '';
+    const comment = i.action === 'real' ? lodgeCommentWith(i.reason ? base : before, reason) : lodgeCommentWithout(before, known);
+    const commented = comment !== before;
+    const rows = await f.tripAfterLodgeAmount(i.seq, i.trseq, i.lodgeSeq, { total: l.total, samount: l.samount, vat: l.vat, ...(commented ? { comment } : {}) });
+    return { rows, lodge: l, comment: commented ? comment : null, reason, had };
+  }, { ok: always });
   return d;
 }

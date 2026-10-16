@@ -1,7 +1,7 @@
 # 구매품의(연구업무추진품의) 작성 — 견적서·거래명세서·쇼핑몰 주문 화면을 읽어(gongmun.purchase) 초안을 만들고 과제 내용으로 구매사유를 쓴(gongmunReason.purchase) 뒤,
 # 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc). 부서 구매는 100만원 이하(부가세 포함 합계 — 레시피 purchase/purpose.yaml 의 limit,
 # 2026-10-07 사용자 지정)만 이 틀로 올린다 — 넘으면 패널이 본문을 만들지 않는다(overLimit).
-# 어댑터(gongmun.write): writePlan('purchase', { title, body, draft, form, setting, rank } = rec.input, { me: preset.me, preset: preset.setup, project: preset.project, today: preset.today })
+# 어댑터(gongmun.write): writePlan('purchase', { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me: preset.me, preset: preset.setup, project: preset.project, today: preset.today })
 # → writeGongmun(plan, { files: ctx.files, onStep, onTab, dry })(§14.4). 첨부 바이트(읽은 문서를 묶은 PDF·원본 파일 — base64)는 ctx.files 이고 기록의 attach 는 이름 목록이다.
 id: gongmun.purchase
 title: 구매품의 작성
@@ -9,7 +9,7 @@ summary: '{preset.kindTitle} · {title}'
 preset:
   # 불투명 객체(§14.1 — 사전설정에는 fields 를 두지 않는다). 키는 src/gongmun.js normalizePreset 의 dept(기안 부서)·head(부서장 — 결재)·director(소장)·chief(본부장)·docNo(문서번호 부서 코드)다.
   setup:     { from: storage:gongmunPreset, type: object, required: true, desc: '공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다' }
-  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year — 공문 탭이 R&D 탭의 과제에서 고른 것. 과제 내용 3000자가 들어 있어 로그에서 뺀다), log: false }
+  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year — 공문 탭이 R&D 탭의 과제에서 고른 것. 과제 내용 3000자가 들어 있어 로그에서 뺀다), log: false }
   kindTitle: { value: 구매품의, desc: 갈래 이름(레시피 purpose.yaml 의 title) — 활동 로그 한 줄에 쓴다 }
 fields:
   form:
@@ -50,6 +50,23 @@ fields:
     label: 전결권자
     desc: 이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(연구비집행 — 금액 구간). 고르면 그것이 이긴다(delegationOf 의 overridden)
     read: '사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)'
+  # 결재선의 합의자·참조자 — 공문 작성 단추를 누를 때 문서설정의 결재선 줄에 보이던 사람(2026-10-16 사용자 지정: "구매공문에서는 참조할 사람이 있거든.. 과제 별로
+  # 동일한 사람이 들어 갈 수 있도록", "과제 책임자가 아니면.. 합의도 들어 가야 함 … 같으면 입력은 하지 않도록", "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람
+  # 넣을 수 있도록"). 적는 곳은 R&D 탭이다 — 책임자는 과제 정보, 참조자는 참여연구자 및 행정지원에서 공문 참조를 켠 사람(그 과제의 공문마다 같다 — src/rnd.js
+  # support)과 계획서 YAML 의 공문.참조자.구매. 없으면(예전 기록) 고른 과제의 것. writePlan 이 approvalLine 에 넘긴다.
+  lead:
+    type: string
+    max: 40
+    label: 과제 책임자
+    desc: 합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자(preset.me) 본인이면 합의를 넣지 않는다
+    read: 과제 책임자 이름
+    llm: false
+  refs:
+    type: tags
+    label: 참조자
+    desc: 결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.구매. 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음
+    read: 참조자 이름들
+    llm: false
   # 문서설정에서 이 공문만 바꾼 값 — src/gongmun.js settingPatch 가 받는 키 전부(§14.2). 레시피 defaults < 프로파일(연구품의 — 10년·기안 팀 채번·내부결재·키워드 {과제별명}) < 이것.
   setting:
     type: object

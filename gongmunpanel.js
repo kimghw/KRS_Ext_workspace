@@ -12,8 +12,10 @@
 // 공문 이력의 지난 신고서와 다른 칸으로 셈해 채우며(outsideAuto), 공문 탭의 본문은 넣을 칸의 미리보기다(고쳐도 신고서에 들어가지 않는다).
 //
 // 양식(eclass 양식·제목 틀·본문 틀)과 공문 설정(부서·부서장·소장·본부장·문서번호 부서·과제 — R&D 탭에 과제가 있으면 그 과제들)은 이 탭 아래의 접힌 칸에서 고친다.
-// 참조자 칸은 없다(2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이 다르므로 전역 설정에 둘 수 없다") — 과제의 계획서 YAML(공문.참조자)에
-// 공문 종류별로 적고, 결재선에 고른 과제·고른 갈래의 참조자가 선다(src/gongmun.js 의 projectRefs). 적혀 있지 않으면 비운다.
+// 공문 설정에는 참조자 칸이 없다(2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이 다르므로 전역 설정에 둘 수 없다") — 과제의 계획서
+// YAML(공문.참조자)에 공문 종류별로 적거나, R&D 탭의 '참여연구자 및 행정지원'에서 행정 담당 등을 참조로 고른다(그 과제의 공문마다 — 2026-10-16 사용자 지정
+// "과제 별로 동일한 사람이 들어 갈 수 있도록", "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록"). 결재선에 고른 과제·고른 갈래의 것이
+// 선다(src/gongmun.js 의 projectRefs). 어디에도 없으면 비운다. 문서설정의 결재선 줄은 그것을 보이기만 한다(paintLineSet).
 // 갈래·틀·칸·위임전결·문서설정의 원본은 레시피(recipes/gongmun)다.
 
 import {
@@ -35,7 +37,7 @@ import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
 import { resolvePreset } from './actions/preset.js';
 import { ActionError } from './actions/gate.js';
 import { registerGongmun } from './actions/runners/gongmun.js';
-import { BOOK_KEY, normalizeBook, refsText, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
+import { BOOK_KEY, normalizeBook, refsText, supportText, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
 import { SET_KEY as RND_SET_KEY } from './src/rnderp.js';
 import { budgetCheck, budgetText, budgetTitle, itemOf } from './src/gmbudget.js';
 import PLAN from './rerp/plan.js';
@@ -110,6 +112,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     write: $('gmWrite'), showDoc: $('gmShowDoc'), writeState: $('gmWriteState'), writeLog: $('gmWriteLog'), savePdf: $('gmSavePdf'), steps: $('gmSteps'),
     setBox: $('gmSetBox'), setState: $('gmSetState'), rank: $('gmRank'), rankWhy: $('gmRankWhy'), retention: $('gmRetention'), docNoOne: $('gmDocNoOne'),
     receiver: $('gmReceiver'), scope: $('gmScope'), emergency: $('gmEmergency'), approvingOpen: $('gmApprovingOpen'), drm: $('gmDrm'), tag: $('gmTag'), setReset: $('gmSetReset'),
+    // 문서설정의 결재선 줄 — 과제 책임자(합의자)·참조자를 보이기만 한다(적는 곳은 R&D 탭 — 과제 정보의 책임자, 참여연구자 및 행정지원 — 2026-10-16).
+    lineSet: $('gmLineSet'), lead: $('gmLineLead'), refs: $('gmLineRefs'), lineWhy: $('gmLineWhy'), lineGo: $('gmLineGo'),
     tplBox: $('gmTplBox'), tplState: $('gmTplState'), tplForm: $('gmTplForm'), tplFormId: $('gmTplFormId'),
     tplTitle: $('gmTplTitle'), tplBody: $('gmTplBody'), tplReset: $('gmTplReset'), vars: $('gmVars'),
     presetBox: $('gmPresetBox'), presetState: $('gmPresetState'), dept: $('gmDept'), head: $('gmHead'),
@@ -439,10 +443,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /* ---------------------------------------------------------- 갈래 */
 
-  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(단추 글자는 HELP — 2026-10-12 사용자 지정, 공문 검색 — 비교작성 탭에는 없다). 에이전트가 켜져 있으면 갈래에는 불이 없다. */
+  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(공문 검색 — 비교작성 탭에는 없다). 단추 글자는 공문검색(2026-10-16 사용자 지정: "일단 공문 안에 있는 건
+   *  공문검색 넣어줘" — 10-12 부터 HELP 였다. 사용법 도움말은 따로 만든다). 에이전트가 켜져 있으면 갈래에는 불이 없다. */
   function paintKinds() {
     const agent = st.compareTab ? '' : `<button type="button" class="gm-kind gm-kind-agent${agentOn() ? ' active' : ''}" data-kind="${AGENT_KIND}" aria-pressed="${agentOn()}"`
-      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>HELP</button>';
+      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>공문검색</button>';
     el.kinds.innerHTML = `<div class="gm-kind-row">${KIND_ORDER.map((k) => {
       const on = k === st.kind && !agentOn();
       return `<button type="button" class="gm-kind${on ? ' active' : ''}" data-kind="${k}" aria-pressed="${on}" title="${escapeHtml(KINDS[k].title)}">${escapeHtml(KINDS[k].label)}</button>`;
@@ -1214,10 +1219,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       ? bit('연구 내용', [p.rnd.plan ? `연구개발 계획 ${p.rnd.plan}차년도` : '', p.rnd.logs ? `진행 기록 ${p.rnd.logs}건` : ''].filter(Boolean).join(' · ') || (p.content ? `${p.content.length.toLocaleString('ko-KR')}자` : ''),
         '연구 내용 없음 — R&D 탭에 계획서 YAML·진행 기록을 넣으면 사유가 과제에 맞게 써집니다')
       : bit('내용', p.content ? `${p.content.length.toLocaleString('ko-KR')}자` : '', '과제 내용 없음 — 사유가 일반적으로 써집니다');
-    // 참조자는 이 과제의 이 갈래에 적힌 사람(과제 YAML 의 공문.참조자) — 있을 때만 보인다. 없으면 참조 없이 쓴다(2026-10-15).
+    // 참조자는 이 과제의 이 갈래의 사람(R&D 탭 행정지원에서 참조로 고른 사람 + 과제 YAML 의 공문.참조자) — 있을 때만 보인다. 없으면 참조 없이 쓴다.
     const refs = projectRefs(p, st.kind);
     el.projInfo.innerHTML = '<strong>과제 기본 내용</strong>'
-      + [bit('별명', p.alias, '별명 없음 — 제목에 과제명이 들어갑니다'), bit('번호', p.code, '번호 없음'), bit('기간', p.period, '연구기간 없음'),
+      + [bit('별명', p.alias, '별명 없음 — 제목에 과제명이 들어갑니다'), bit('번호', p.code, '번호 없음'),
+        bit('Job Id', p.job, 'Job Id 없음 — 작성 때 책임자·과제명으로 찾습니다'), bit('기간', p.period, '연구기간 없음'),
         bit('책임자', p.lead, '책임자 없음 — 합의자가 빕니다'), ...(refs.length ? [bit('참조자', refs.join(', '), '')] : []), research].join('')
       + (p.rnd ? '<button type="button" class="ghost small" data-act="rnd">R&amp;D 탭</button>'
         : `<button type="button" class="ghost small" data-act="preset" data-name="${escapeHtml(p.name)}">고치기</button>`);
@@ -1877,6 +1883,32 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (document.activeElement !== el.tag) el.tag.value = s.tag;
     el.setState.textContent = `전결 ${d?.rank || RANKS[0]} · ${settingText(s)}`;
     el.setReset.disabled = !Object.keys(w.setting || {}).length && !w.rank;
+    paintLineSet(w);
+  }
+
+  /**
+   * 문서설정의 결재선 줄 — 이 공문에 설 과제 책임자(합의자)·참조자를 보이기만 한다. 적는 곳은 R&D 탭이다 — 책임자는 과제 정보, 참조자는 '참여연구자 및
+   * 행정지원'에서 참조로 고른 사람(그 과제의 공문마다 같은 사람 — 2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수
+   * 있도록", 참조는 "과제 마다 다름. 구매교육출장 이런거랑 달리")과 계획서 YAML 의 공문.참조자. 줄 끝 단추가 R&D 탭으로 간다.
+   * 과제 책임자가 기안자 본인이면 합의는 넣지 않는다(approvalLine — 같은 날 "같으면 입력은 하지 않도록"). 과제를 고르지 않는 갈래(외부활동)에서는 숨는다.
+   */
+  function paintLineSet(w) {
+    const on = usesProject();
+    el.lineSet.classList.toggle('hidden', !on);
+    if (!on) return;
+    const p = projectOf(w);
+    const lead = String(p?.lead || '').trim();
+    const refs = p ? projectRefs(p, st.kind) : [];
+    const self = !!lead && lead.replace(/\s/g, '') === String(me() || '').replace(/\s/g, '');
+    const out = (node, value, empty) => {
+      node.textContent = value || empty;
+      node.classList.toggle('empty', !value);
+    };
+    out(el.lead, lead && (self ? `${lead} (본인 — 합의 없음)` : lead), p ? '없음 — 합의자가 빕니다' : '과제를 고르세요');
+    out(el.refs, refs.join(', '), p ? '없음' : '과제를 고르세요');
+    el.lineGo.hidden = !p?.rnd;
+    el.lineWhy.textContent = !p ? '' : p.rnd ? `${p.alias || p.name} 과제의 공문마다 같은 사람이 들어갑니다 — 책임자는 과제 정보, 참조자는 참여연구자 및 행정지원에서 고칩니다.`
+      : '공문 설정의 과제입니다 — 책임자는 공문 설정의 과제 줄에서 고치고, 참조자는 R&D 탭에 과제를 두어야 적을 수 있습니다.';
   }
 
   /** 문서설정·위임전결을 고쳤을 때 — 레시피 기본값과 다른 것만 이 공문에 남긴다. */
@@ -2037,11 +2069,14 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const left = over ? ` · 첨부 칸(${ATTACH_SLOTS}개)이 모자라 ${over}개는 넣지 못했습니다 — 창의 파일첨부에서 바꿔 넣으세요` : '';
     // 기록 — 행위 gongmun.<갈래> 의 관문(실행 모드)을 지나 짓는다. 어긋나면(제목이 99자를 넘음·초안 칸이 틀림·공문 설정이 없음 …) 상태줄에 적고 멈춘다.
     const id = `gongmun.${st.kind}`;
+    // 합의자(과제 책임자)·참조자 — 문서설정의 두 칸이 보인 그대로(고른 과제에 과제마다 적은 것을 얹은 것). 과제를 고르지 않는 갈래(외부활동)에는 없는 칸이다.
+    const p = projectOf(w);
+    const line = usesProject() ? { lead: String(p?.lead || '').trim() || null, refs: p ? projectRefs(p, st.kind) : [] } : {};
     let record;
     try {
       ({ record } = actions.build(id, {
-        input: { title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, rank: w.rank || null, setting: w.setting || {}, attach },
-        preset: await presetFor(id, { project: projectOf(w) }),
+        input: { title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, rank: w.rank || null, setting: w.setting || {}, ...line, attach },
+        preset: await presetFor(id, { project: p }),
       }));
     } catch (err) {
       st.writing = false;
@@ -2216,6 +2251,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const ROW_KEYS = [
     ['name', '과제명 — 전자결재 과제 찾기에 이 이름 그대로 씁니다', true],
     ['alias', '과제 별명 — 교육·출장 품의 제목에 씁니다 (예: 차단기 과제)'], ['code', '과제번호 (예: RND-20-2026)'],
+    ['job', 'Job Id — 전자결재 과제 찾기 (예: RND00202026, 비우면 책임자·과제명으로 찾습니다)'],
     ['lead', '합의자 — 과제책임자 이름'], ['period', '연구기간 (예: 2026.04.01 ~ 2029.12.31)'],
     ['content', '과제 내용 — 연구목표·연구내용 (구매사유·교육사유를 이 내용으로 씁니다)', true, true],
     ['about', '과제 개요 — 본문 첫 줄 (비우면 「과제명」 과제를 수행하고 있습니다)', true], ['account', '계정 — 비우면 갈래 기본값', true],
@@ -2241,8 +2277,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
    * 공문에만 쓰는 개요·계정 칸을 둔다. p 는 rndProjects 의 것(빈 칸은 공문 설정의 같은 과제 줄에서 채운 값이다).
    */
   function linkedHtml(p) {
-    // 공문 참조자(과제 YAML 의 공문.참조자 — 공문 종류마다)는 여기 보이기만 한다. 적는 곳은 YAML 이다(2026-10-15).
-    const meta = [p.code, p.lead ? `책임자 ${p.lead}` : '', Object.keys(p.refs || {}).length ? `참조자 ${refsText(p.refs)}` : '', p.period,
+    // 공문 참조자(과제 YAML 의 공문.참조자 — 공문 종류마다)·행정지원(R&D 탭 — 참조로 고른 사람)은 여기 보이기만 한다. 적는 곳은 YAML 과 R&D 탭이다.
+    const meta = [p.code, p.job ? `Job Id ${p.job}` : '', p.lead ? `책임자 ${p.lead}` : '', Object.keys(p.refs || {}).length ? `참조자 ${refsText(p.refs)}` : '',
+      (p.support || []).length ? `행정지원 ${supportText(p.support)}` : '', p.period,
       p.rnd.plan ? `연구개발 계획 ${p.rnd.plan}차년도` : '', p.rnd.logs ? `진행 기록 ${p.rnd.logs}건` : ''].filter(Boolean).join(' · ');
     const field = ([k, ph]) => `<input type="text" data-x="${k}" class="wide" value="${escapeHtml(p[k] || '')}" placeholder="${escapeHtml(ph)}" `
       + `aria-label="${escapeHtml(ph.split(' —')[0])}" autocomplete="off" />`;
@@ -2432,6 +2469,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       node.addEventListener(node.tagName === 'SELECT' || node.type === 'checkbox' ? 'change' : 'input', onSetInput);
     }
     el.setReset.addEventListener('click', resetSet);
+    // 결재선 줄 끝의 R&D 탭 — 과제 책임자·행정지원(참조자)을 고치러 간다.
+    el.lineGo.addEventListener('click', () => $('tabRnd')?.click());
     el.savePdf.addEventListener('click', savePdf);
     for (const node of [el.tplForm, el.tplFormId, el.tplTitle, el.tplBody]) {
       node.addEventListener('input', onTplInput);

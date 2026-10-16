@@ -2,7 +2,11 @@
 
 R&D 탭이 넣는 연구개발계획서 YAML(`KR_<과제>.yaml` · `history/*.yaml`)은 **RND 프로젝트(`E:\dev\RND`)의 Claude Code 스킬**이 만든다.
 그 스킬 다섯 개를 여기 `skills/` 에 **그대로 복사해 두고**, R&D 탭 맨 아래 `차년도 YAML 뽑는 스킬` 칸에서 **zip 으로 내려받거나 쓰는 법을 복사**한다
-(2026-10-08 사용자 지정 — "복사해서 쓸 수 있게 넣어 달라, 여기서 뽑겠다는 것은 아니다"). **이 확장은 YAML 을 뽑지 않는다.**
+(2026-10-08 사용자 지정 — "복사해서 쓸 수 있게 넣어 달라, 여기서 뽑겠다는 것은 아니다").
+처음에는 이 확장이 YAML 을 뽑지 않았으나, 2026-10-16 사용자 지정("+ 누르면 … 사업계획서를 넣으면 과제의 YAML을 추출하도록 해줘. 그 스킬은 '차년도 YAML 뽑는 스킬' 거기 있지 …
+변경사항의 내용을 임의 형식으로 제공 하면 yaml 로 수정해서 업데이트")으로 **그 차년도 스냅샷 뽑기와 고치기는 R&D 탭이 한다** — ＋(과제 더하기)에 사업계획서를 넣으면
+`rnd-kr-extract` 의 `references/extract_fields.yaml`·`references/structured_output.md` 를 지시문에 실어 Claude 가 `KR_<과제>.yaml` 을 뽑고, 변경 및 이력 관리 카드가 아무 꼴의 변경 글로 그 YAML 을 고친다(`rndgen/` — [rndgen/README.md](../rndgen/README.md)).
+이력(`history/*.yaml`)·인력/예산 변경안·최신본 모으기는 여전히 이 스킬 묶음이 한다. **두 references 문서는 확장이 읽으므로** 다시 복사할 때 경로(`skills/rnd-kr-extract/references/`)를 바꾸지 않는다.
 
 | 스킬 | 하는 일 |
 |---|---|

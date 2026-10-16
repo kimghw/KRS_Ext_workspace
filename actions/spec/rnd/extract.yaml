@@ -1,0 +1,87 @@
+# 사업계획서에서 KR 스냅샷 YAML 뽑기 — R&D 탭의 ＋(과제 더하기) 카드·빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기"(rndgen/panel.js).
+# 사업계획서·연구계획서(PDF·HWPX·DOCX·XLSX·TXT)를 재료로 바꾸고(rndgen/source.js — 고른 쪽의 글자와 같은 쪽의 작은 PDF), rndgen/llm.js 가 머리말(오늘·뽑을 차년도·
+# 장부의 과제·고른 쪽) → 스킬 문서 두 벌(rnd/skills/rnd-kr-extract/references 의 extract_fields.yaml·structured_output.md) → 재료 글을 이어 rnd.extract 작업으로 묻는다.
+# 답의 YAML 은 rndgen/yaml.js 가 검사하고(스냅샷 꼴인가) 마무리한다 — 판(meta.rev r0)·meta.차년도·meta.source·파일 머리 주석 두 줄은 코드가 적는다(LLM 이 아니라).
+# 미리보기 뒤 사람이 "넣기" 를 누르면 rnd.yaml 과 같은 길(rnd.intake → src/rndyaml.js applyYaml)로 장부에 들어가고 원문은 rndYamlText 에 남는다.
+# 스킬 문서의 절차(RND_PROJECT 폴더·_source 이동·md 변환·에이전트·/rnd-kr-history init·year_slice.py·JSON 사본)는 여기서 하지 않는다 — YAML 글 하나뿐이다.
+id: rnd.extract
+title: 사업계획서에서 스냅샷 YAML 뽑기
+status: planned
+confirm: true                  # "넣기" 누름이 확인이다(뽑기만으로는 장부에 들어가지 않는다)
+effect: draft
+summary: 'R&D 스냅샷 뽑기 {stage}차년도'
+fields:
+  yaml:
+    type: string
+    required: true
+    max: 120000                # 관문 초안 모드는 한도를 넘는 글을 말없이 자른다(src/input.js asString — 기본 2000) — 스냅샷은 15KB 쯤이라 넉넉히
+    label: 스냅샷 YAML
+    desc: 사업계획서에서 뽑은 당해 차년도 KR 스냅샷 YAML 전문(KR_<과제>.yaml 의 본문 — 코드 펜스 없음)
+    read: >-
+      스냅샷 YAML 전문 — [스킬 규칙 2] structured_output.md 의 키 구조(meta · 연구개발내용 · 예산) 그대로, 한국선급(KR) 행·블록과 당해 차년도 행만.
+      코드 펜스(```)·설명·머리말 없이 YAML 글만 적습니다
+  alias:
+    type: string
+    max: 60
+    label: 별칭 제안
+    desc: 과제 별칭 제안(칩·머리에 과제명 대신 보이는 약어 — 사람이 고친다. 이미 있는 과제면 장부의 별칭을 쓴다)
+    read: '과제의 짧은 약어(영문 대문자 또는 한글 2~10자 — SSCB·PEMFC 꼴). 문서에 약어가 있으면 그것, 없으면 과제명에서 짓습니다'
+    example: SSCB
+  stage:
+    type: integer
+    min: 1
+    max: 20
+    label: 뽑은 차년도
+    desc: 뽑은 차년도 번호(meta.차년도 와 같은 수) — 코드가 meta.차년도·파일 머리 주석을 이 차년도로 맞춘다
+    read: 뽑은 차년도의 번호(2차년도면 2) — meta.차년도 에 적은 것과 같은 수
+    example: 2
+  warnings:
+    type: string
+    max: 3000
+    label: 경고
+    desc: 못 찾은 블록·원문끼리 어긋난 값·추정한 것 — " / " 로 이은 한 글(미리보기에 보인다)
+    read: '못 찾은 블록·원문끼리 어긋난 값·추정한 것을 " / " 로 이은 한 글. 없으면 null'
+    example: 8-3 (4) 간접비 세부 표를 찾지 못함 / 표지의 총연구개발비 합계가 연차별 합과 다름
+  # 화면 칸(llm: false) — 기록용. 바이트는 기록에 넣지 않는다(재료는 패널 메모리에만 있다).
+  file:
+    type: file
+    llm: false
+    label: 원본 문서
+    desc: 넣은 사업계획서(이름·형식만 — 바이트·고른 쪽의 작은 PDF 는 실행 때 ctx 로)
+    read: 이 칸은 사용자의 말로 채우지 않습니다 — 사용자가 끌어다 놓거나 고른 문서 그대로입니다
+  stageWanted:
+    type: integer
+    min: 1
+    max: 20
+    llm: false
+    label: 고른 차년도
+    desc: 화면에서 고른 차년도(비면 자동 — LLM 이 오늘이 든 차년도를 고른다. 빈 차년도 카드에서 열면 그 차년도)
+    read: '사용자가 "N차년도" 를 집어 말했을 때만 그 번호. 아니면 null(오늘이 든 차년도)'
+  projectId:
+    type: string
+    max: 40
+    llm: false
+    label: 과제 id
+    desc: 대상 과제의 id(빈 차년도 카드에서 열었을 때 — ＋ 로 열면 비고, 뽑은 과제명·과제번호가 장부의 과제와 같으면 그 과제로 들어간다)
+    read: '대상 과제의 id. 새 과제면 null'
+rules:
+  - '출력 yaml 은 [스킬 규칙 2] structured_output.md 의 키 구조 그대로인 스냅샷 YAML 전문입니다 — 코드 펜스·설명 없이 YAML 글만 적습니다. meta.과제명 은 표지의 과제명을 글자 그대로 적습니다. 표지에서 과제명을 찾지 못하면 이 문서에서는 스냅샷을 뽑지 못한 것입니다 — yaml 에는 찾은 것만 적고 warnings 첫머리에 "과제명을 찾지 못함" 과 까닭을 적습니다.'
+  - '한국선급(KR) 행·블록만 넣습니다(타 기관 행·블록은 뺍니다 — meta.표지 의 과제 식별 필드만 예외). 당해 차년도 행만 넣습니다 — 연차는 키로 두되(연차: N차년도 · 목표치: {N차년도: …}) 값은 그 한 연차뿐입니다. [스킬 규칙 1] extract_fields.yaml 의 include 만 넣고 exclude 는 빼며, fields 가 false 인 블록은 키째 뺍니다.'
+  - '금액은 수로 적습니다(쉼표와 "천원" 을 뗌) — 단위는 예산.단위: 천원 입니다. 합계·소계·총액은 원문의 합계 행에 적힌 값만 옮깁니다(새로 더하지 않습니다). 모르는 값은 null 입니다. 당해 연차분이 원문에 없는 블록은 명시적 빈 블록(- 연차: N차년도 · 참여자: [] · 소계: null)으로 둡니다.'
+  - '차년도: 입력의 "뽑을 차년도" 에 N차년도가 적혀 있으면 그 차년도입니다. "오늘이 든 차년도" 라고 적혀 있으면 표지의 연차별 연구개발기간 표에서 오늘 날짜가 든 차년도를 고릅니다(표를 읽을 수 없으면 입력의 "장부 기준 오늘이 든 차년도" 를 씁니다). 문서가 기준으로 삼은 연차와 다르면 오늘 기준을 택하고 warnings 에 적습니다. 고른 차년도를 meta.차년도(N차년도)와 stage(수 N)에 같이 적습니다.'
+  - 'meta 에는 과제명 · 수행기관(한국선급(KR)) · 단계 · 차년도 · 연차범위 · 연차별기간 · 기간 · 연구개발과제번호 · 협약일(YYYY-MM-DD, 있으면) · 표지 블록을 넣습니다. meta.rev · meta.source 와 파일 첫 줄의 머리 주석(# [N차년도 최초] …)은 코드가 적으니 넣지 않아도 됩니다(넣어도 됩니다).'
+  - '스킬 문서의 절차(RND_PROJECT 폴더 · _source 이동 · md 변환 · 에이전트 · /rnd-kr-history init · year_slice.py 실행 · JSON 사본)는 무시합니다 — 여기서는 YAML 글 하나만 냅니다. 파일을 만들거나 도구를 부르지 않습니다.'
+  - '첨부한 PDF 의 쪽은 입력 글의 "— N쪽 —" 표시와 같은 쪽입니다(표의 칸은 PDF 그림으로, 글자는 입력 글로 봅니다). 입력에 없는 쪽의 값을 지어내지 않습니다 — 찾지 못한 값은 null, 찾지 못한 블록은 빈 블록으로 두고 warnings 에 적습니다.'
+  - 'alias 는 과제의 짧은 약어입니다(영문 대문자 또는 한글 2~10자 — SSCB · PEMFC 꼴). 문서에 약어가 있으면 그것을, 없으면 과제명에서 짓습니다.'
+  - 'warnings 는 못 찾은 블록 · 원문끼리 어긋난 값 · 추정한 것을 " / " 로 잇습니다. 없으면 null 입니다.'
+llm: { task: rnd.extract }     # per-kind 작업의 이름 — rndgen/llm.js askExtract 가 부른다(src/llm.js fillAction 은 쓰지 않는다)
+runner: rnd.extract            # 이름만 — 2단계 어댑터(지금은 패널이 rndgen/ 을 바로 부른다)
+uses:
+  - { module: rndgen/llm.js, export: askRndTask }
+  - { module: src/rndyaml.js, export: kindOf }
+  - { module: src/rndyaml.js, export: readSnapshot }
+  - { module: rndgen/source.js, export: readDocument }        # 사업계획서 → 재료(고른 쪽의 글자·작은 PDF)
+  - { module: rndgen/yaml.js, export: checkExtracted }        # 답이 스냅샷 꼴인가
+  - { module: rndgen/yaml.js, export: finalizeExtracted }     # meta.차년도·rev r0·source·머리 주석은 코드가
+  - { module: rndgen/yaml.js, export: previewApply }          # 장부 사본에 미리 넣어 보기
+next: 미리보기(과제명·차년도·비목별 예산·참여연구자·경고)와 별칭 칸을 보인다 → 사람이 "넣기" 를 누르면 rnd.intake(장부 넣기 — rnd.yaml 과 같은 길)·rndYamlText 저장·setAlias 가 뒤따른다. "YAML 파일로 저장" 은 내려받기뿐이다

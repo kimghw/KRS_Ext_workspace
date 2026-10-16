@@ -306,6 +306,7 @@ export function createAttendPanel({
   const lodgeBox = createLodgeBox({
     escapeHtml, logEvent, repaint: () => paintList(),
     setStatus: (...args) => setStatus(...args), setError: (...args) => setError(...args),
+    build: buildRecord, run: runRecord,
   });
   // 출장 카드의 증빙 넣는 곳(사후정산 칸·여비증빙 송부 칸) 아래의 웹페이지 캡처 단추 둘(보고 있는 탭 · 부분 골라 캡처) — 공문 탭의 것과
   // 같은 단추다(webpick.js, 2026-10-08 사용자 지정: "여기도 웹페이지 카피 공문처럼 하게해줘.. 2개 동일한 기능으로"). webcap 은 테스트가 갈아 끼운다.

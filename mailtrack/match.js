@@ -125,7 +125,7 @@ export function matchAll(mails, items, { me = '', known = [], autoCount = true }
     const reply = normalizeReply({
       id, from: mail.from, key, receivedAt: mail.receivedAt, subject: mail.subject, conversationId: mail.conversationId, hasAttachments: mail.hasAttachments === true,
       kind, score: best.score, counted: autoCount !== false && kind === 'reply' && key !== null, manual: false, attachments: [], bodyStored: false, webLink: mail.webLink,
-      review: 'pending', reviewedAt: '',
+      review: 'pending', reviewedAt: '', via: mail.via,
     });
     linked.push({ itemId: best.item.id, reply });
   }

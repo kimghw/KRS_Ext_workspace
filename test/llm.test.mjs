@@ -340,7 +340,7 @@ console.log('행위 명세의 LLM 어댑터 — fillAction(행위 ID): 행위가
     setupAction();
     const { fillAction } = await load();
     const n = sent.length;
-    for (const id of ['gongmun.purchase', 'gongmun.setup', 'room.reserve', 'attend.cancel', 'trip.create']) {
+    for (const id of ['gongmun.purchase', 'room.reserve', 'attend.cancel', 'trip.create']) {
       await assert.rejects(fillAction(id, '글', { today: TODAY }, { useNative: true }), /이 행위는 말로 채우지 않습니다 — /, id);
     }
     await assert.rejects(fillAction('nope.search', '글', { today: TODAY }), /모르는 행위 nope\.search/);
@@ -512,6 +512,141 @@ console.log('API 길의 글자 먼저 뽑기 — 첨부가 있는 receipt·gongm
     const c = await viaCli(pdf, { trip: {} }, { useNative: true });
     assert.equal(c.via, 'cli');
     assert.deepEqual(c.read, []);
+  });
+}
+
+/**
+ * Messages API 스트리밍 답(SSE) 한 벌 — message_start · 생각 블록(빈 글 · 서명) · ping · text 블록(text 를 pieces 조각으로 나눠 text_delta) · message_delta(stop) · message_stop.
+ * eol 로 줄 끝을 바꾸고, tail:false 면 message_delta·message_stop 없이 끝난다(연결이 끊긴 꼴).
+ */
+function sseOf(text, { stop = 'end_turn', pieces = 3, eol = '\n', tail = true, extra = [] } = {}) {
+  const ev = (type, data) => `event: ${type}${eol}data: ${JSON.stringify({ type, ...data })}${eol}${eol}`;
+  const size = Math.max(1, Math.ceil(text.length / pieces));
+  const parts = [];
+  for (let i = 0; i < text.length; i += size) parts.push(text.slice(i, i + size));
+  return [
+    ev('message_start', { message: { id: 'msg_1', type: 'message', role: 'assistant', content: [], stop_reason: null } }),
+    ev('content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '' } }),
+    ev('content_block_delta', { index: 0, delta: { type: 'signature_delta', signature: 'sig' } }),
+    ev('content_block_stop', { index: 0 }),
+    ev('ping', {}),
+    `: 주석 줄은 버린다${eol}${eol}`,
+    ev('content_block_start', { index: 1, content_block: { type: 'text', text: '' } }),
+    ...parts.map((t) => ev('content_block_delta', { index: 1, delta: { type: 'text_delta', text: t } })),
+    ev('content_block_stop', { index: 1 }),
+    ...extra,
+    ...(tail ? [ev('message_delta', { delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 12 } }), ev('message_stop', {})] : []),
+  ].join('');
+}
+/** 바이트를 n 바이트씩 잘라 내주는 진짜 Response — 덩어리 경계가 한글 글자(3바이트)·사건 가운데에 걸리게. */
+const chunked = (sse, n = 7) => {
+  const bytes = new TextEncoder().encode(sse);
+  return new Response(new ReadableStream({
+    start(c) {
+      for (let i = 0; i < bytes.length; i += n) c.enqueue(bytes.slice(i, i + n));
+      c.close();
+    },
+  }), { status: 200 });
+};
+
+console.log('작업마다의 한도(src/tasktune.js) — API 길도 R&D 스냅샷 뽑기·YAML 고치기만 medium·32000, 나머지는 low·16000');
+{
+  const sent = [];
+  const answers = {
+    'rnd.extract': { yaml: 'meta:\n  과제명: 시험용 직류 차단기 개발', alias: 'SSCB', stage: 2, warnings: null },
+    'rnd.revise': { yaml: 'meta:\n  과제명: 시험용 직류 차단기 개발', summary: '연구재료비 12,000 → 15,000', changes: [], warnings: null },
+  };
+  /** 다리는 없고 API 만 있다 — 받은 본문을 적고 그 작업(지시문으로 가린다)의 답을 준다. stream: true 로 오면 SSE(진짜 Response 의 본문 스트림)로. */
+  const setupTuned = () => {
+    globalThis.chrome = { runtime: { sendNativeMessage: async () => { throw new Error('호스트를 찾을 수 없습니다'); } } };
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body);
+      sent.push(body);
+      const answer = body.system.includes('이번 일: 변경사항으로') ? answers['rnd.revise'] : answers['rnd.extract'];
+      if (body.stream) return new Response(sseOf(JSON.stringify(answer)), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+      return { ok: true, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }] }) };
+    };
+  };
+  const pdf = { name: '사업계획서_발췌.pdf', type: 'application/pdf', dataUrl: 'data:application/pdf;base64,PDFPDF' };
+
+  await ta('rnd.extract·rnd.revise 는 effort medium·max_tokens 32000 — 같은 모델이고 attend 는 그대로 low·16000', async () => {
+    setupTuned();
+    const { askClaude } = await load();
+    for (const task of ['rnd.extract', 'rnd.revise']) {
+      const r = await askClaude(task, '입력 글', { apiKey: 'sk-x', useNative: false });
+      assert.equal(r.via, 'api', task);
+      assert.deepEqual(r.data, answers[task], task);
+      const body = sent.at(-1);
+      assert.deepEqual([body.model, body.output_config.effort, body.max_tokens], ['claude-opus-5-5', 'medium', 32000], task);
+      assert.equal(body.system, systemPrompt(task));
+      assert.deepEqual(body.output_config.format.schema.required, Object.keys(answers[task]));
+      assert.equal(body.stream, true, `${task} 는 스트리밍(SSE)으로 받는다`);
+    }
+    // 다른 작업은 바이트까지 전과 같다 — 답이 그 작업의 꼴이 아니어도 보낸 본문은 남는다. stream 키는 아예 없고 키 차례도 전과 같다.
+    for (const task of ['attend', 'search.room', 'diagnose']) {
+      await askClaude(task, '입력 글', { apiKey: 'sk-x', useNative: false });
+      assert.deepEqual([sent.at(-1).model, sent.at(-1).output_config.effort, sent.at(-1).max_tokens], ['claude-opus-5-5', 'low', 16000], task);
+      assert.deepEqual(Object.keys(sent.at(-1)), ['model', 'max_tokens', 'system', 'output_config', 'messages'], task);
+    }
+    const { EFFORT, DEFAULT_MODEL } = await import('../src/ai.js');
+    assert.deepEqual([DEFAULT_MODEL, EFFORT], ['claude-opus-5-5', 'low'], 'export 는 남는다(기본 깊이)');
+  });
+  await ta('rnd.extract 의 첨부(작은 PDF)는 글자를 먼저 뽑지 않고 document 블록 그대로 간다 — textFirst 가 아니다', async () => {
+    setupTuned();
+    const { askClaude, textFirst } = await load();
+    const calls = [];
+    const r = await askClaude('rnd.extract', '사업계획서 글자', { apiKey: 'sk-x', useNative: false, files: [pdf], docText: async () => { calls.push(1); return null; } });
+    assert.equal(r.via, 'api');
+    assert.deepEqual(calls, []);
+    assert.deepEqual(sent.at(-1).messages[0].content, [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'PDFPDF' } }, { type: 'text', text: '사업계획서 글자' }]);
+    assert.deepEqual(['rnd.extract', 'rnd.revise'].filter(textFirst), []);
+  });
+
+  // 스트리밍 — 몇 분 걸리는 답에서 사내망 프록시가 조용한 연결을 끊지 않게(src/ai.js readStream).
+  const { callClaude, readStream } = await import('../src/ai.js');
+  const answer = { yaml: 'meta:\n  과제명: 시험용 직류 차단기 개발\n  차년도: 2차년도', alias: 'SSCB', stage: 2, warnings: '간접비 표를 찾지 못함 / 「>>>」 그대로' };
+  const once = (res) => { globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body)); return res; }; };
+
+  await ta('스트리밍 답은 text_delta 를 모아 JSON 하나로 — 덩어리가 한글 글자·사건 가운데서 갈리고 CRLF 여도, 생각 블록·ping·주석 줄은 버린다', async () => {
+    for (const [eol, n] of [['\n', 7], ['\r\n', 5], ['\n', 1]]) {
+      once(chunked(sseOf(JSON.stringify(answer), { pieces: 9, eol }), n));
+      assert.deepEqual(await callClaude('rnd.extract', '사업계획서 글자', { apiKey: 'sk-x' }), answer, `${JSON.stringify(eol)} ${n}바이트`);
+      assert.equal(sent.at(-1).stream, true);
+    }
+    // 본문 스트림이 없는 가짜(res.text 만)도 한 번에 나눠 읽는다.
+    once({ ok: true, text: async () => sseOf(JSON.stringify(answer)) });
+    assert.deepEqual(await callClaude('rnd.revise', '변경 글', { apiKey: 'sk-x' }), answer);
+  });
+
+  await ta('스트리밍의 stop_reason(message_delta) — refusal·max_tokens 는 스트리밍이 아닐 때와 같은 오류', async () => {
+    once(chunked(sseOf('{"yaml":"meta', { stop: 'refusal' })));
+    await assert.rejects(callClaude('rnd.extract', '글', { apiKey: 'sk-x' }), { message: '요청이 거부되었습니다. 다르게 적어보세요.' });
+    once(chunked(sseOf('{"yaml":"meta:\\n  과제', { stop: 'max_tokens' })));
+    await assert.rejects(callClaude('rnd.extract', '글', { apiKey: 'sk-x' }), { message: '응답이 중간에 끊겼습니다.' });
+    once(chunked(sseOf('{"yaml": 이건 JSON 이 아니다')));
+    await assert.rejects(callClaude('rnd.extract', '글', { apiKey: 'sk-x' }), { message: '응답을 해석하지 못했습니다.' });
+  });
+
+  await ta('스트리밍 도중의 error 사건은 그 까닭으로 던지고, 끝 사건 없이 본문이 끊기면 연결이 끊긴 것으로 던진다 — HTTP 오류는 전과 같다', async () => {
+    const overload = 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n';
+    once(chunked(sseOf('{"yaml":"meta"}', { tail: false, extra: [overload] })));
+    await assert.rejects(callClaude('rnd.extract', '글', { apiKey: 'sk-x' }), { message: 'Claude 호출 실패 (스트림 overloaded_error) Overloaded' });
+    once(chunked(sseOf('{"yaml":"meta"}', { tail: false })));
+    await assert.rejects(callClaude('rnd.extract', '글', { apiKey: 'sk-x' }), { message: '응답을 다 받기 전에 연결이 끊겼습니다.' });
+    once({ ok: false, status: 529, json: async () => ({ error: { message: 'Overloaded' } }) });
+    await assert.rejects(callClaude('rnd.revise', '글', { apiKey: 'sk-x' }), { message: 'Claude 호출 실패 (HTTP 529) Overloaded' });
+    // readStream 은 스트리밍이 아닐 때의 본문 꼴을 돌려준다 — text 블록만 글을 갖는다.
+    const body = await readStream(chunked(sseOf('{"a":1}')));
+    assert.deepEqual(body, { stop_reason: 'end_turn', content: [{ type: 'thinking', text: '' }, { type: 'text', text: '{"a":1}' }] });
+  });
+
+  await ta('askClaude 의 API 길에서도 스트리밍 답이 관문(structure)을 지나 data 로 온다 — 다른 작업은 스트리밍이 아니다', async () => {
+    setupTuned();
+    const { askClaude } = await load();
+    const r = await askClaude('rnd.extract', '사업계획서 글자', { apiKey: 'sk-x', useNative: false, files: [pdf] });
+    assert.deepEqual([r.via, r.data, sent.at(-1).stream], ['api', answers['rnd.extract'], true]);
+    await askClaude('attend', '내일 연차', { apiKey: 'sk-x', useNative: false });
+    assert.equal('stream' in sent.at(-1), false);
   });
 }
 

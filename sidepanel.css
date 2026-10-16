@@ -317,11 +317,26 @@ button.pk-del:hover { color: var(--danger); }
 .bu-via { flex: 0 1 auto; max-width: 55%; text-align: right; color: var(--muted); overflow-wrap: anywhere; }
 .bridge-use.is-alt .bu-via { color: var(--pick); }
 .bridge-use.is-off .bu-via { color: var(--danger); }
-/* 연결 갈래의 Teams·OneNote 줄 — 주소(바꾸지 않는다) · 배지 · 연결 확인. Outlook 은 메일 탭이 .conn-host 에 제 칸(mailtrack/panel.css .mt-conn)을 그린다. */
-.conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
-.conn-addr { flex: 1 1 180px; min-width: 0; font: 12px/1.6 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
-.conn-row > .badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+/* 연결 갈래 — 세 카드가 같은 꼴: 머리(이름 · 쓰는 곳) → 라벨 칸 7.5em 의 줄 → 상태 칩(왼쪽) · 단추(오른쪽).
+   Outlook 은 메일 탭이 .conn-host 에 제 칸(mailtrack/panel.css .mt-conn 의 .mt-field·.mt-state)을 그리고, Teams·OneNote 는 그 모양을 따른다 —
+   주소는 바꾸지 않으니 읽기 전용 칸, 상태 칩은 점 하나(확인 전 회색 · 확인 중 강조색 · 연결됨 초록 · 닿지 않음 빨강). */
 .conn-host { margin-top: 2px; }
+.conn-field { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 13px; }
+.conn-field > span:first-child { flex: none; width: 7.5em; color: var(--muted); font-size: 12px; }
+.conn-addr { flex: 1; min-width: 0; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); color: var(--muted); font: inherit; line-height: 20px; overflow-wrap: anywhere; }
+.conn-row, .conn-host .mt-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.conn-row > .conn-state, .conn-host .mt-state { margin-right: auto; }
+.badge.conn-state { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 25px; padding: 2px 8px; border-radius: 7px; background: var(--surface-soft); line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+.badge.conn-state::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.badge.conn-state.checking::before { background: var(--pick); animation: gitPulse .8s ease-in-out infinite alternate; }
+.badge.conn-state.on { border-color: color-mix(in srgb, var(--free-line) 65%, var(--line)); background: color-mix(in srgb, var(--free) 46%, var(--surface)); }
+.badge.conn-state.on::before { background: color-mix(in srgb, var(--free-line) 40%, var(--fg)); }
+.badge.conn-state.off::before { background: var(--danger); }
+/* 라벨을 칸 위로 올리는 폭도 Outlook 칸(mailtrack/panel.css 의 380px)과 같게. */
+@media (max-width: 380px) {
+  .conn-field { flex-wrap: wrap; gap: 6px; }
+  .conn-field > span:first-child { width: 100%; }
+}
 .diag + .diag { border-top: 1px solid var(--line); }
 .diag summary { display: flex; align-items: center; gap: 9px; min-height: 43px; color: var(--muted); font-size: 14px; cursor: pointer; list-style: none; }
 .diag summary::-webkit-details-marker { display: none; }
@@ -366,6 +381,38 @@ button.pk-del:hover { color: var(--danger); }
 .tab-pick input { flex: none; width: 13px; height: 13px; margin: 0; accent-color: var(--pick); cursor: pointer; }
 .tab-pick:has(input:checked) { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 22%, var(--line)); background: var(--pick-soft); }
 .tab-pick:hover { border-color: var(--pick); }
+/* 행위 명세(src/specview.js) — 갈래 단추 줄 → 종류 단추 줄 → YAML 원본. 고른 단추는 보이는 탭과 같은 연한 강조색, 예정(planned)은 점선 테두리. */
+.spec-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.spec-kinds { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.spec-kinds[hidden], .spec-file[hidden] { display: none; }
+.settings button.spec-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 550; white-space: nowrap; }
+.settings button.spec-chip:hover { border-color: var(--pick); color: var(--fg); }
+.settings button.spec-chip[aria-pressed="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 22%, var(--line)); background: var(--pick-soft); }
+.settings button.spec-chip.is-planned { border-style: dashed; }
+.spec-n, .spec-tag { font-size: 10px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
+.spec-chip[aria-pressed="true"] :is(.spec-n, .spec-tag) { color: inherit; opacity: .75; }
+.spec-file { margin-top: 12px; }
+.spec-path { display: block; margin-bottom: 6px; font: 11px/1.5 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+/* 원본 칸 — 오른쪽 아래 손잡이로 높이를 바꾼다(sidepanel.js watchSpecHeight 가 기억). 줄(.yl)마다 블록이고 --ind 만큼 매단 들여쓰기라
+   접힌 줄이 제 들여쓰기 + 2칸 아래에 선다. 색은 편집기처럼 키 · 따옴표 글 · 수 · true/false/null · 주석 · 기호를 가른다(src/specview.js yamlLines). */
+.diag-out.spec-out {
+  height: 360px; min-height: 96px; max-height: none; resize: vertical; margin: 0; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); color: var(--fg);
+  /* lang="ko" 페이지의 generic monospace 는 크롬의 한글 고정폭 설정(맑은 고딕)으로 가 들여쓰기가 어긋난다 — 고정폭 글꼴을 먼저 적는다(한글은 시스템 글꼴로 내려간다). */
+  font-family: Consolas, "Cascadia Mono", "D2Coding", ui-monospace, monospace;
+  --y-key: #0b57a4; --y-str: #a3451c; --y-num: #0f7b5c; --y-bool: #8a3fc2; --y-cmt: #5f7350;
+}
+.spec-out .yl { display: block; padding-left: calc((var(--ind, 0) + 2) * 1ch); text-indent: calc((var(--ind, 0) + 2) * -1ch); }
+.spec-out .y-key { color: var(--y-key); }
+.spec-out .y-str { color: var(--y-str); }
+.spec-out .y-num { color: var(--y-num); }
+.spec-out .y-bool { color: var(--y-bool); }
+.spec-out .y-cmt { color: var(--y-cmt); }
+.spec-out .y-punct { color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .diag-out.spec-out { --y-key: #7cc0ff; --y-str: #e6a17a; --y-num: #9fd8b4; --y-bool: #d0a3f5; --y-cmt: #8ea57a; }
+}
+.settings .spec-note { margin: 8px 2px 0; font-size: 11px; color: var(--muted); }
 @media (max-width: 440px) {
   .settings { padding: 12px 14px 16px; }
   .settings-head { gap: 8px; padding-bottom: 12px; }
@@ -1154,7 +1201,7 @@ button.danger:hover { filter: brightness(1.08); }
 
 .gongmun { margin-bottom: 18px; }
 .gongmun .gm-kinds { margin-bottom: 12px; }
-/* 다섯 단추(구매·교육·출장·외부활동·HELP)가 같은 폭으로 줄을 나눈다(2026-10-12 사용자 지정: "메뉴 사이즈 동일하게") — flex-basis 0 이라 글자 길이에 따르지 않는다. */
+/* 다섯 단추(구매·교육·출장·외부활동·공문검색)가 같은 폭으로 줄을 나눈다(2026-10-12 사용자 지정: "메뉴 사이즈 동일하게") — flex-basis 0 이라 글자 길이에 따르지 않는다. */
 .gongmun .gm-kind-row { display: flex; gap: 3px; }
 .gongmun .gm-kind {
   flex: 1 1 0; min-width: 0; gap: 4px; min-height: 32px; padding: 4px 2px; border: 1px solid var(--line); border-radius: 9px;
@@ -1204,6 +1251,9 @@ button.danger:hover { filter: brightness(1.08); }
 .gongmun .gm-evidence-head strong { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-size: 14px; font-weight: 650; }
 .gongmun .gm-evidence-head strong svg { width: 16px; height: 16px; color: var(--muted); }
 .gongmun .gm-evidence-head > .ghost { margin-left: auto; font-size: 12px; }
+/* 비우기 — 읽은 문서·초안을 지우는 단추라 빨간 글씨로 구별한다(2026-10-16 사용자 지정: "비우기 버튼 색상좀 넣어줘"). */
+.gongmun #gmReset { color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); font-weight: 600; }
+.gongmun #gmReset:hover { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-color: var(--danger); }
 .gongmun .gm-fold { display: flex; flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; min-height: 28px; padding: 0; background: transparent; text-align: left; }
 .gongmun .gm-fold:hover { background: transparent; }
 .gongmun .gm-fold-caret { width: 15px; height: 15px; color: var(--muted); transition: transform .16s ease; }
@@ -1383,8 +1433,24 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-set > summary > span:first-of-type { flex: none; color: var(--fg); font-weight: 600; white-space: nowrap; }
 .gongmun .gm-set > summary .summary-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .gongmun .gm-set > summary::after { flex: none; }
+/* 한 줄에 두 칸(2026-10-16 사용자 지정: "1줄에 1칸인데 2칸으로") — 칸(.gm-set-cell)이 두 줄로 서고 안내 줄·체크·단추(.gm-set-wide)는 두 칸을 다 쓴다.
+   맨 위의 과제 책임자·참조자(.gm-set-line)는 제 안에서 같은 두 칸이다(외부활동이면 통째로 숨는다). 아주 좁으면 한 칸씩. */
+.gongmun .gm-set-grid, .gongmun .gm-set-line { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
 .gongmun .gm-set-grid { padding: 0 0 12px; }
-.gongmun .gm-set-grid > .gm-label:first-child { margin-top: 2px; }
+.gongmun .gm-set-line, .gongmun .gm-set-wide { grid-column: 1 / -1; }
+.gongmun .gm-set-cell { min-width: 0; }
+.gongmun .gm-set-cell .gm-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gongmun .gm-set-cell input { width: 100%; }
+.gongmun .gm-set-line .gm-label { margin-top: 2px; }
+/* 결재선 줄 — 합의자·참조자를 보이기만 한다(적는 곳은 R&D 탭). 없으면 흐리게, 끝의 R&D 탭 단추는 안내 줄 오른쪽에. */
+.gongmun .gm-set-out { margin: 0; min-height: 38px; padding: 9px 2px; font-size: 14px; color: var(--fg); overflow-wrap: anywhere; }
+.gongmun .gm-set-out.empty { color: var(--faint); font-size: 13px; }
+.gongmun .gm-line-why { display: flex; align-items: flex-start; gap: 8px; margin-top: 0; }
+.gongmun .gm-line-why > span { flex: 1; min-width: 0; }
+.gongmun .gm-line-why > button { flex: none; margin: 0; }
+@media (max-width: 340px) {
+  .gongmun .gm-set-grid, .gongmun .gm-set-line { grid-template-columns: minmax(0, 1fr); }
+}
 .gongmun .gm-set select { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: var(--surface); font: inherit; font-size: 14px; color: inherit; }
 .gongmun .gm-set input[type="text"] { background: var(--surface); }
 .gongmun .gm-set-why { margin: 5px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.55; }
@@ -1570,6 +1636,24 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-field.wide { grid-column: 1 / -1; }
 .rnd .rd-field > span { color: var(--muted); font-size: 12px; }
 .rnd .rd-field .req { margin-left: 3px; color: var(--danger); font-size: 10px; font-weight: 700; }
+/* Job Id — 칸 옆에 찾기, 아래에 후보(높은 차례 — 고른 것은 파랑 테두리)와 알림 줄. */
+.rnd .rd-job > span small { margin-left: 4px; color: var(--faint); font-size: 11px; }
+.rnd .rd-job-row { display: flex; gap: 6px; align-items: center; }
+.rnd .rd-job-row input { flex: 1; min-width: 0; }
+.rnd .rd-job-row button { flex: none; min-height: 36px; }
+.rnd .rd-job-list { display: flex; flex-direction: column; gap: 4px; }
+.rnd .rd-job-cand {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; row-gap: 1px; align-items: baseline; width: 100%;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+}
+.rnd .rd-job-cand:hover { border-color: var(--pick); }
+.rnd .rd-job-cand.active { border-color: var(--pick); background: var(--pick-soft); }
+.rnd .rd-job-cand b { font-size: 12px; }
+.rnd .rd-job-cand .rd-job-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rd-job-cand small { grid-column: 2; color: var(--muted); font-size: 11px; }
+.rnd .rd-job-msg { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.rnd .rd-job-msg.bad { color: var(--danger); }
+.rnd .rd-job-msg:empty { display: none; }
 .rnd .rd-check { flex-direction: row; align-items: flex-start; gap: 8px; padding: 2px 0; font-size: 12px; line-height: 1.5; color: var(--muted); cursor: pointer; }
 .rnd .rd-check input { flex: none; width: auto; min-height: 0; margin-top: 2px; }
 .rnd .rd-check strong { color: var(--fg); }
@@ -1586,7 +1670,7 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-form .rd-del { margin-left: auto; }
 .rnd .statusline { margin-bottom: 10px; }
 
-/* 접는 칸(예산·연구내역·변경이력) — 공문 탭의 양식·공문 설정 칸과 같은 모양. */
+/* 접는 칸(예산·참여연구자·연구개발 계획·진행 기록·변경 및 이력 관리) — 공문 탭의 양식·공문 설정 칸과 같은 모양. */
 .rnd .rd-box { margin-bottom: 10px; padding: 0 14px; border-radius: 14px; }
 .rnd details > summary { display: flex; align-items: center; gap: 9px; min-height: 43px; color: var(--muted); font-size: 14px; cursor: pointer; list-style: none; }
 .rnd details > summary::-webkit-details-marker { display: none; }
@@ -1632,6 +1716,22 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-icon.fail { color: var(--danger); }
 .rnd .rd-list:empty + .rd-box-tools, .rnd .rd-box-tools:has(+ .rd-list:empty) { display: none; }
 .rnd .rd-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+/* 행정지원 — 참여연구자 표 아래, 과제마다 손으로 적는 줄(이름 · 맡은 일 · 공문 참조 · 빼기, 2026-10-16). 좁으면 이름·맡은 일이 한 줄, 참조·빼기가 다음 줄. */
+.rnd .rd-support { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.rnd .rd-support-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rnd .rd-support-head strong { flex: none; font-size: 13px; }
+.rnd .rd-support-head .rd-src { flex: 1; min-width: 0; line-height: 1.5; }
+.rnd .rd-support-head button { flex: none; }
+.rnd .rd-support-list { margin: 0; padding: 0; list-style: none; }
+.rnd .rd-support-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto auto; align-items: center; gap: 6px; padding: 3px 0; }
+.rnd .rd-support-row input[type="text"] { width: 100%; min-width: 0; }
+.rnd .rd-support-ref { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.rnd .rd-support-ref input { width: auto; min-height: 0; margin: 0; }
+@media (max-width: 400px) {
+  .rnd .rd-support-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .rnd .rd-support-ref { justify-self: start; }
+  .rnd .rd-support-row .rd-del { justify-self: end; }
+}
 /* 원노트 공유(선택) — 켜기 · 섹션 고르기 · 지금 맞추기 · 마지막 결과. */
 .rnd .rd-note-how { margin: 6px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; word-break: keep-all; }
 .rnd .rd-note-row { display: flex; gap: 6px; align-items: center; }
@@ -1704,6 +1804,15 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
   .rnd .rd-erp-table .krext-bar { background: var(--busy, #414149); }
   .rnd .rd-erp-table .krext-tag-grey { background: var(--surface-soft); color: var(--muted); }
 }
+
+/* 변경 및 이력 관리(2026-10-16 사용자 지정 — 변경이력 칸을 대체) — 다른 칸처럼 접는 카드(2026-10-16 사용자 지정 "접어라"): 머리(아이콘 · 이름 · 변경이력 건수 · 꺾쇠)
+   · 펴면 위는 YAML 고치기(rndgen/panel.css 의 .rdg-revise) · 가는 줄 아래 변경이력(이름 · 직접 적기 · 복사 → 적는 칸 → 목록). */
+.rnd .rd-change[open] { padding-bottom: 14px; }
+.rnd .rd-change-log { padding-top: 10px; border-top: 1px solid var(--line); }
+.rnd .rd-change-tools { display: flex; align-items: center; gap: 6px 8px; min-height: 28px; margin-bottom: 6px; }
+.rnd .rd-change-sub { flex: none; margin-right: auto; font-size: 13px; font-weight: 600; }
+.rnd .rd-change-log:has(> .rd-list:empty) #rdChangesCopy { display: none; }
+.rnd .rd-change .rd-list { margin-top: 8px; }
 
 /* 진행 기록·변경이력 — 적는 칸과 목록(늦은 것부터). */
 .rnd .rd-new { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; background: color-mix(in srgb, var(--pick) 5%, var(--surface)); }

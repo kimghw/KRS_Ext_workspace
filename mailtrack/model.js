@@ -14,9 +14,10 @@
 //   TrackedItem = { id(보낸 메일 messageId), conversationId, internetMessageId, subject, subjectKey, sentAt, registeredAt, webLink, from, to, cc,
 //                   expect: Expect[], replies: Reply[], attachments, templates, status:{ expected, responded, excluded, done }, synced, closed, note }
 //   Reply       = { id, from, key, receivedAt, subject, conversationId, hasAttachments, kind, score, counted, manual, attachments, bodyStored, webLink,
-//                   review('pending' 확인 필요 · 'accepted' 수락 · 'rejected' 거부), reviewedAt }
+//                   review('pending' 확인 필요 · 'accepted' 수락 · 'rejected' 거부), reviewedAt, via? }
 //   (꼴의 원본은 계획서 3.2 — 병렬 작업의 계약이라 이름을 바꾸지 않는다. lastSync.kind 는 덧붙인 것: 마지막 실패의 갈래(auth·offline…)를 패널이 다시 열었을 때도 말하려고.
-//    review·reviewedAt 도 덧붙인 것(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지") — 사람이 회신을 보고 수락(센다)·거부(세지 않고 그 받을 곳은 다시 기다림)한다.)
+//    review·reviewedAt 도 덧붙인 것(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지") — 사람이 회신을 보고 수락(센다)·거부(세지 않고 그 받을 곳은 다시 기다림)한다.
+//    via 도 덧붙인 것(2026-10-16) — 'block' 이면 메일 보안(block@krs.co.kr)이 붙잡아 둔 메일의 인증 요청 알림을 원 메일로 푼 회신(block.js). 없으면 칸이 없다.)
 
 /** 장부의 chrome.storage 키 — store/book.js 의 BOOK_KEY 와 같은 값(서로 import 하지 않는다). */
 export const BOOK_KEY = 'mailtrackBook';
@@ -163,6 +164,7 @@ export function normalizeReply(raw) {
     hasAttachments: o.hasAttachments === true, kind: REPLY_KINDS.includes(o.kind) ? o.kind : 'reply', score: intIn(o.score, 0, 3, 0),
     counted: o.counted === true, manual: o.manual === true, attachments: attachmentsOf(o.attachments), bodyStored: o.bodyStored === true, webLink: str(o.webLink),
     review: REVIEW_STATES.includes(o.review) ? o.review : 'pending', reviewedAt: str(o.reviewedAt),
+    ...(o.via === 'block' ? { via: 'block' } : {}),
   };
 }
 

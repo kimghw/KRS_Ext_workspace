@@ -10,7 +10,8 @@
 // 원본(krs-web-agents ea_approval · ApprovalInPrinciple vendor/ea_writer)은 Playwright 의 진짜 클릭으로 팝업을 몰았다. 확장은 진짜 클릭이
 // 없으니 그 팝업이 결국 부르는 페이지 함수를 부른다(같은 출처라 틀 안을 만질 수 있다).
 //   · JOB-ID — 팝업(RnDPMS Get_PMSJobID.aspx)의 격자(캔버스) 더블클릭 대신, 그 격자가 받는 목록(ListJSON_Ver2.ashx)을 받아 과제명이 같은 줄을
-//     고르고 팝업이 opener 에 부르는 callBackReturnFromDialog 를 부른다. 같은 줄이 없으면 고르지 않는다(원본은 첫 줄로 넘어가는 결함이 있었다).
+//     고르고 팝업이 opener 에 부르는 callBackReturnFromDialog 를 부른다. 같은 줄이 없으면 첫 줄로 넘어가지 않고(원본의 결함) 책임자가 같은 과제 먼저
+//     과제명 유사도 0.5 이상에서 가장 높은 줄을 고른다(src/jobid.js — 2026-10-16 사용자 지정). 그것도 없으면 고르지 않는다.
 //   · 본문 — <control>_SetHTMLBody(저장 뒤에도 남는 길)로 넣고 <control>_GetTextBody 로 다시 읽는다.
 //   · 칸이 정해진 폼(외부강의등 신고서 — 2026-10-15 사용자 지정) — 본문·과제 칸 대신 칸 지도의 source: draft 칸마다 넣는다(pageForm). 글 칸은 value,
 //     날짜·시각 칸은 Telerik 피커의 set_selectedDate. 성명·소속·연락처는 서버가 채워 둔 것을 둔다.
@@ -30,6 +31,8 @@
 //     닫기(WinClose)가 하던 대로 툴바의 AttachCallback(0)을 불러 의견·첨부 틀(frameDocOther)을 다시 읽게 하고 숨은 틀을 지운다. 올린 뒤 화면은
 //     opener 를 부르지 않는다(reloadParent 호출은 주석). 2026-10-12 CDP 로 읽은 화면(HER-2026-000641)이다 — 실제로 올려 본 것은 아직 없다.
 // 임시저장(lbtnGianSave)·상신(lbtnGianReport)·미리보기(lbtnGianPreview — 안에서 저장한다)는 누르지 않는다. 확인하고 올리는 것은 사람이다.
+
+import { JOB_LIST_PATH, JOB_QUERY, rankJobs } from './jobid.js';
 
 const FRAME_WAIT_MS = 45000;
 const STEP_MS = 60000;
@@ -69,13 +72,11 @@ function pageProbe(anchor, control) {
 /**
  * 과제 목록(R&D PMS)에서 이 과제를 찾는다. 번호가 RND-20-2026·RND00202026 꼴이면 번호로, 아니면 과제명(빈칸 무시)으로 같은 줄만.
  * 여럿이면 진행 중인 것, 그래도 여럿이면 고르지 않는다. picker 면 팝업이 하던 대로 callback 을 부르고 숨은 칸을 다시 읽는다.
+ * 하나로 고르지 못하면 목록을 줄여(choices) 돌려준다 — 패널이 책임자·과제명 유사도로 고른 줄의 번호로 다시 부른다(src/jobid.js rankJobs).
  */
 async function pageJob(spec) {
   const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase();
-  const q = new URLSearchParams({
-    SYSTEMID: 'RD', SEARCHTYPE_P: 'true', SEARCHTYPE_N: 'true', SEARCHTYPE_J: '0', SEARCHTYPE_C: '0', SEARCHTEXT: '',
-    DEPTID: '', FROMDATE: '', TODATE: '', PROJECT_CLASS: '', CONTRACTOR: '', IS_PROCESSING: 'true',
-  });
+  const q = spec.query || 'SYSTEMID=RD&SEARCHTYPE_P=true&SEARCHTYPE_N=true&SEARCHTYPE_J=0&SEARCHTYPE_C=0&SEARCHTEXT=&DEPTID=&FROMDATE=&TODATE=&PROJECT_CLASS=&CONTRACTOR=&IS_PROCESSING=true';
   let rows = [];
   try {
     const r = await fetch(`${spec.list}?${q}`, { credentials: 'include' });
@@ -93,8 +94,12 @@ async function pageJob(spec) {
     const live = hits.filter((r) => r.Process === '진행');
     if (live.length) hits = live;
   }
-  if (!hits.length) return { ok: false, why: `과제 목록에 '${spec.name}' 와 이름이 같은 과제가 없습니다 — 창의 Job Id. 검색으로 고르세요`, rows: rows.length };
-  if (hits.length > 1) return { ok: false, why: `이름이 같은 과제가 ${hits.length}개입니다(${hits.map((r) => r.Project_ID_DASH).join(', ')}) — 창에서 고르세요` };
+  const choices = () => rows.map((r) => ({ id: r.Project_ID, dash: r.Project_ID_DASH, name: r.Project_Name, lead: r.User_Name, proc: r.Process, year: r.YEAR }));
+  if (!hits.length) {
+    const what = byCode ? `Job Id ${spec.code} 가` : `'${spec.name}' 와 이름이 같은 과제가`;
+    return { ok: false, why: `과제 목록에 ${what} 없습니다 — 창의 Job Id. 검색으로 고르세요`, choices: choices() };
+  }
+  if (hits.length > 1) return { ok: false, why: `이름이 같은 과제가 ${hits.length}개입니다(${hits.map((r) => r.Project_ID_DASH).join(', ')}) — 창에서 고르세요`, choices: choices() };
   const h = hits[0];
   const out = { ok: true, id: h.Project_ID, dash: h.Project_ID_DASH, name: h.Project_Name, turn: String(h.TURN || '') };
   if (spec.mode !== 'picker') return out;
@@ -652,13 +657,26 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
 
   // 과제(JOB-ID) — 연구업무추진품의는 고르기(picker), 기안문은 글 칸(과제 번호).
   let job = null;
+  /** 규칙으로 고른 것이면 작성 기록에 그렇다고 — 무엇으로 골랐고 다른 후보가 무엇인지(사람이 창에서 확인한다). */
+  const rankNote = (j) => (j?.ranked
+    ? ` — 책임자·과제명으로 고름(유사도 ${j.ranked.score.toFixed(2)}${j.ranked.sameLead ? ' · 책임자 같음' : ''}${j.others.length ? ` · 다른 후보 ${j.others.map((r) => r.dash || r.id).join(', ')}` : ''}). 틀리면 창에서 고르고 R&D 탭 과제 정보의 Job Id 에 적어 두세요`
+    : '');
   const jobField = fields.find((f) => f.source === 'job' || f.source === 'jobText');
   if (jobField && (v.job.name || v.job.code)) {
     report('job', null, '과제 목록에서 찾는 중…');
-    job = await guard('job', () => run(tabId, form, pageJob, [{
-      mode: jobField.kind, list: jobField.list || '/RnDPMS/View/PMS/ListJSON_Ver2.ashx', callback: jobField.callback, hidden: jobField.hidden, name: v.job.name, code: v.job.code,
-    }]));
-    if (job && jobField.kind === 'picker') report('job', !!job.ok, job.ok ? `${job.dash} · ${job.name}` : job.why);
+    const spec = {
+      mode: jobField.kind, list: jobField.list || JOB_LIST_PATH, query: JOB_QUERY, callback: jobField.callback, hidden: jobField.hidden, name: v.job.name, code: v.job.code,
+    };
+    job = await guard('job', () => run(tabId, form, pageJob, [spec]));
+    // Job Id 로도 이름으로도 하나를 고르지 못했으면 — 책임자가 같은 과제 먼저, 과제명 유사도 0.5 이상에서 가장 높은 것(2026-10-16 사용자 지정).
+    if (job && !job.ok && Array.isArray(job.choices)) {
+      const { list } = rankJobs(job.choices, { name: v.job.name, lead: v.job.lead });
+      const top = list[0];
+      const again = top ? await guard('job', () => run(tabId, form, pageJob, [{ ...spec, code: top.id }])) : null;
+      job = again?.ok ? { ...again, ranked: top, others: list.slice(1) }
+        : again || { ...job, why: `${job.why}${top ? '' : ' — 책임자·과제명이 비슷한 과제(유사도 0.5 이상)도 없습니다'}` };
+    }
+    if (job && jobField.kind === 'picker') report('job', !!job.ok, job.ok ? `${job.dash} · ${job.name}${rankNote(job)}` : job.why);
   } else if (jobField) report('job', false, '고른 과제가 없습니다');
 
   // 제목·수신·참조·차수(+ 기안문의 Job Id. 글 칸)
@@ -676,7 +694,7 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
     const deg = texts.find((f) => f.source === 'degree');
     report('fields', !bad.length, bad.length ? bad.map((r) => `${r.key} ${r.why || '들어가지 않음'}`).join(' · ') : `제목${deg ? ` · 차수 ${deg.value}` : ''}`);
   }
-  if (jobField?.kind === 'text') report('job', !!job?.ok && !!filled?.find((r) => r.key === jobField.key)?.ok, job?.ok ? `${job.dash} (글 칸)` : job?.why || '');
+  if (jobField?.kind === 'text') report('job', !!job?.ok && !!filled?.find((r) => r.key === jobField.key)?.ok, job?.ok ? `${job.dash} (글 칸)${rankNote(job)}` : job?.why || '');
 
   // 칸이 정해진 폼(외부강의등 신고서) — 초안의 칸마다(source: draft). 빈 값은 넣지 않고, 꼭 채울 칸이 비었으면 그렇다고 적는다(창에서 적는다).
   const drafted = fields.filter((f) => f.source === 'draft');

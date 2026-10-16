@@ -15,7 +15,8 @@
 > - 근태 결재요청의 성패는 `ctx.outcome` 안에서 목록을 다시 읽어 정한다. 실패 run 의 줄 글은 `ctx.text` 에 "— 까닭" 을 잇는다(패널의 로그 래퍼). 로그 차례는 [근태 줄 → 여비계산서 줄].
 > - 단독 패널 테스트가 `actions` 없이 패널을 만들므로 패널 팩토리는 deps.actions 가 없으면 스스로 디스패처를 만든다.
 > - `references/input.yaml` 에는 `receipt`·`diagnose` 만 남았다(옮기기 전 모습은 `actions/test/fixtures/tasks-before.json`). `src/logbook.js` 에 `trip`·`rnd` 이름을 더했다.
-> - 2단계로 남긴 것: §12 의 planned 행위 배선(R&D·메일·홈 카드·배경·회람·기념일 지원·숙박 줄), 재현용 원장, 통합 명령창. 콘텐츠 스크립트가 `actions/` 를 읽게 되면 `manifest.json` 의 web_accessible_resources 에 더해야 한다.
+> - 2단계로 남긴 것: §12 의 planned 행위 배선(메일·홈 카드·배경·회람 — R&D·기념일 지원은 아래 범위대로 이번에 옮기지 않는다), 재현용 원장, 통합 명령창. 콘텐츠 스크립트가 `actions/` 를 읽게 되면 `manifest.json` 의 web_accessible_resources 에 더해야 한다.
+> - 범위(2026-10-16 사용자 지정: "근태·공문·회의실·차량만 하면 됨", R&D·기념일 지원은 이번 범위 밖): 숙박 줄 `trip.lodge` 를 live 로 배선했다(lodgebox.js 가 기록을 짓고 actions/runners/trip.js 가 상한액·비고를 셈한다). `gongmun.setup` 은 걷어냈다 — 그 명세는 2026-10-09 사용자가 뺀 공문 설정 채팅 칸의 것이었고, 공문 설정 자체는 공문 4종 기록의 `preset.setup` 으로 공문안과 같이 간다.
 
 > 아래부터는 구현 전에 쓴 계약 원문이다(에이전트의 유일한 계약이었다). 이름(파일·함수·행위 ID·칸 이름)은 구현과 같고, 다른 곳은 위 메모와 §14 가 이긴다.
 
@@ -43,7 +44,7 @@ LLM(말·문서)   ──  명세에서 만든 작업 ───┘
 | 말 | 뜻 |
 |---|---|
 | 갈래(domain) | room · car · attend · trip · gongmun · (2단계) rnd · mail · home · circulate |
-| 종류(kind) | 갈래 안의 행위 하나. 파일 하나. 근태는 trip·out·leaveout·leave·flex·health + cancel·doc, 공문은 purchase·edu·trip·outside + setup |
+| 종류(kind) | 갈래 안의 행위 하나. 파일 하나. 근태는 trip·out·leaveout·leave·flex·health + cancel·doc, 공문은 purchase·edu·trip·outside(setup 은 2026-10-16 걷어냄 — 머리 메모) |
 | 행위 ID | `<갈래>.<종류>` — `attend.trip`, `gongmun.purchase`, `room.reserve` |
 | 사전설정(preset) | 사용자가 그때그때 적지 않는 값 — 내 이름·오늘·근무지·공문 설정(부서·부서장·소장·본부장·문서번호 부서)·고른 과제·종류의 기본값. 저장소·레시피·상수에서 **실행 전에 채워 기록에 같이 담는다** |
 | 입력(input) | 사용자(UI) 또는 LLM 이 정하는 칸의 값 |
@@ -62,7 +63,7 @@ actions/
     car/_domain.yaml   car/search.yaml   car/reserve.yaml   car/cancel.yaml   car/modify.yaml
     attend/_domain.yaml  attend/trip.yaml  attend/out.yaml  attend/leaveout.yaml  attend/leave.yaml  attend/flex.yaml  attend/health.yaml  attend/cancel.yaml  attend/doc.yaml
     trip/_domain.yaml  trip/create.yaml  trip/presave.yaml  trip/preconfirm.yaml  trip/postconfirm.yaml  trip/after.yaml  trip/delete.yaml  trip/send.yaml
-    gongmun/_domain.yaml  gongmun/purchase.yaml  gongmun/edu.yaml  gongmun/trip.yaml  gongmun/outside.yaml  gongmun/setup.yaml
+    gongmun/_domain.yaml  gongmun/purchase.yaml  gongmun/edu.yaml  gongmun/trip.yaml  gongmun/outside.yaml   (setup.yaml 은 2026-10-16 걷어냄 — 머리 메모)
     rnd/… mail/… home/… circulate/…   (status: planned — 2단계)
   spec.js                   생성물 — 고치지 않는다(`node tools/gen-actions.mjs`)
   gate.js                   관문 — 기록을 명세로 검증·정규화(초안/실행 모드)
@@ -427,10 +428,11 @@ export function registerTrip(d)
   'trip.presave' · 'trip.preconfirm' · 'trip.postconfirm' · 'trip.delete' (rec, { row, onStage, … })  → src/trip.js 의 같은 이름 함수(row 는 ctx — 목록에서 읽은 줄)
   'trip.after'   (rec, { row, trseq, detail, picks, onStage, always, preconfirm }) → afterPlan(rec.input.records, {…}) → (필요하면 tripPreConfirm) → tripAfterSave   // 지금 attendpanel 의 runAfter/sendAfter 차례 그대로
   'trip.send'    (rec, { evidence, buildPdf, teams, memo, onStage }) → sendbox 의 go 가 하던 차례(계산서 PDF → 묶기 → Teams 또는 쪽지)
+  'trip.lodge'   (rec, { lodge, kept, maxes }) → delete: tripAfterLodgeDelete · reason: tripAfterLodgeComment · cap·real: lodgeCapState → lodgeSettle → tripAfterLodgeAmount   // 2026-10-16 live
 // gongmun.js
 export function registerGongmun(d)
-  'gongmun.write' (rec, { files, onStep, onTab, dry }) → writeGongmun(writePlan(rec.kind, { title, body, draft, form, setting, rank } = rec.input, { me, preset: setup, project, today } = rec.preset), { files, onStep, onTab, dry })
-  'gongmun.setup' (rec, { rows, preset, current })   → mergeSetup(rows, preset, rec.input, { current })   // confirm false · effect draft
+  'gongmun.write' (rec, { files, onStep, onTab, dry }) → writeGongmun(writePlan(rec.kind, { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me, preset: setup, project, today } = rec.preset), { files, onStep, onTab, dry })
+  // 'gongmun.setup' 은 2026-10-16 걷어냄(머리 메모)
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.
@@ -516,11 +518,17 @@ export async function fillAttendSmart(text, opts)   // 그대로(작업 이름 '
 
 ## 12. 2단계 — planned 로 두는 행위(명세만, U1b)
 
-`rnd.project`(과제 더하기·고치기)·`rnd.delete`·`rnd.yaml`(YAML 넣기)·`rnd.erp.link`·`rnd.erp.fetch`·`rnd.note.sync`·`rnd.research.share`·`rnd.skills.zip` · `mail.register`·`mail.refresh`·`mail.delete`·`mail.merge`·`mail.settings` · `home.evidence`(홈 카드 증빙 받기 — background.evidenceKeep)·`home.afterup`(홈에서 사후정산 올리기)·`home.receipt`(afterpage 의 receiptRead) · `circulate.run` · `attend.welfare`(기념일 지원 화면 채우기)·`trip.lodge`(숙박 줄 상한·비고·지우기 — lodgebox). 각 파일은 id·title·status: planned·effect·fields(지금 코드가 받는 값)·preset·runner(이름만)·uses 를 적는다. 생성기는 planned 의 uses 는 검사하고 runner 등록은 요구하지 않는다.
+`rnd.project`(과제 더하기·고치기)·`rnd.delete`·`rnd.yaml`(YAML 넣기)·`rnd.erp.link`·`rnd.erp.fetch`·`rnd.note.sync`·`rnd.research.share`·`rnd.skills.zip` · `mail.register`·`mail.refresh`·`mail.delete`·`mail.merge`·`mail.settings` · `home.evidence`(홈 카드 증빙 받기 — background.evidenceKeep)·`home.afterup`(홈에서 사후정산 올리기)·`home.receipt`(afterpage 의 receiptRead) · `circulate.run` · `attend.welfare`(기념일 지원 화면 채우기 — 2026-10-16 사용자가 옮기지 않기로 함). `trip.lodge`(숙박 줄 상한·비고·지우기 — lodgebox)는 2026-10-16 live 로 옮겼다. 각 파일은 id·title·status: planned·effect·fields(지금 코드가 받는 값)·preset·runner(이름만)·uses 를 적는다. 생성기는 planned 의 uses 는 검사하고 runner 등록은 요구하지 않는다.
+
+R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출 … 변경사항의 내용을 임의 형식으로 제공 하면 yaml 로 수정해서 업데이트")도 planned 로 더했다 — `rnd/_domain.yaml` 의 `llm` 이 `per-kind`(consumer `rndgen/llm.js askRndTask`)가 되고 두 종류만 `llm: { task }` 를 갖는다(나머지 R&D 종류는 `llm: false`).
+- `rnd.extract` — 사업계획서(PDF·HWPX·DOCX·XLSX·TXT) → 그 차년도의 KR 스냅샷 YAML. 답 칸 `yaml`(필수, 120,000자)·`alias`·`stage`·`warnings`, 화면 칸 `file`·`stageWanted`·`projectId`(llm: false). 지시문은 스킬 `rnd-kr-extract` 의 references 두 문서(extract_fields.yaml·structured_output.md)를 입력 글에 실어 따른다.
+- `rnd.revise` — 기준 YAML + 아무 꼴의 변경 글(붙인 문서의 글자) → 고친 YAML 전문. 답 칸 `yaml`·`summary`(필수)·`changes`(list ≤ 50)·`warnings`, 화면 칸 `projectId`·`n`·`text`·`files`.
+- 두 작업만 `src/tasktune.js` 로 effort medium · max_tokens 32000 · 입력 15만 자 · CLI 10분이고, API 길은 스트리밍(SSE — 몇 분 걸리는 답에서 사내망 프록시가 조용한 연결을 끊지 않게)이다. 다른 작업은 바이트까지 그대로.
+- 지금은 디스패처를 거치지 않는다 — 화면(`rndgen/panel.js`)이 `rndgen/llm.js` 로 askClaude 를 바로 부르고(src/llm.js 의 fillAction·INPUTS 는 이 갈래를 쓰지 않는다), 판(rev)·머리 주석은 LLM 이 아니라 `rndgen/yaml.js` 가 적으며, 사람이 "넣기"·"반영" 을 눌러야 `rnd.intake`(장부 — `rnd.yaml` 과 같은 길)와 원문 저장(`rndYamlText`)이 뒤따른다. 2단계에 `runner: rnd.extract|rnd.revise` 로 잇는다. 자세히: `rndgen/README.md`.
 
 ## 13. 추측·미결(통합자가 결정한다 — 에이전트는 계약대로 간다)
 
-- `gongmunSetupSmart`(공문 설정 채우기)는 지금 패널에서 부르는 곳이 없다 → `gongmun.setup` 은 status: planned.
+- `gongmunSetupSmart`(공문 설정 채우기)는 지금 패널에서 부르는 곳이 없다 → `gongmun.setup` 은 status: planned. (2026-10-16 결정: 그 채팅 칸은 2026-10-09 사용자가 뺐으므로 `gongmun.setup` 명세·실행기를 걷어냈다. 공문 설정은 공문 4종의 `preset.setup` 이다.)
 - 근태 `attend.doc`(상신·회수·삭제)과 `attend.cancel`(취소신청)의 input 은 `{ docNo, formId, action | reason }` 이고 목록 줄(item)은 ctx 다.
 - `room.modify` 의 input `{ back, next }` 두 object 칸은 reserve 칸과 같은 fields 를 쓴다(생성기가 `from: room.reserve` 로 펼친다 — U1 이 `from: <행위 ID>` 를 지원한다).
 - 여비 `trip.after` 의 `records` 는 `list` 칸이고 item 은 `from: task:receipt`(input.yaml 의 receipt 칸) + `file`(이름·형식) — U1b 가 적고 U1 의 생성기가 `from: task:<이름>` 을 지원한다.
@@ -568,7 +576,7 @@ export async function fillAttendSmart(text, opts)   // 그대로(작업 이름 '
 어댑터 주입: `register<갈래>(d, deps = {})` — deps 의 키는 실제 함수 이름과 같고 기본값은 src 모듈의 진짜 함수다(테스트는 가짜를 넣는다). 갈래별 테스트 파일은 §9 대로 `actions/test/runners-<갈래>.test.mjs` 다(§8 의 공용 runners.test.mjs 는 없다).
 
 ### 14.4 패널 (U4·U5·U6)
-- gongmun.write: `writePlan(entry.kind, { title, body, draft, form, setting, rank } = rec.input, { me: rec.preset.me, preset: rec.preset.setup, project: rec.preset.project, today: rec.preset.today })` — 기록에 kind 는 없다(entry 에서 온다). `ctx.preset` 자리에 `rec.preset.setup` 을 넘긴다(공문 설정 — 문서번호·결재선이 여기서 나온다).
+- gongmun.write: `writePlan(entry.kind, { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me: rec.preset.me, preset: rec.preset.setup, project: rec.preset.project, today: rec.preset.today })` — 기록에 kind 는 없다(entry 에서 온다). `ctx.preset` 자리에 `rec.preset.setup` 을 넘긴다(공문 설정 — 문서번호·결재선이 여기서 나온다). `lead`·`refs`(구매·교육·출장 — 합의자·참조자, 2026-10-16)는 패널이 문서설정의 결재선 줄에 보인 사람(R&D 과제의 책임자, 행정지원에서 공문 참조를 켠 사람 + YAML 의 공문.참조자)이고, 없으면(예전 기록·외부활동) writePlan 이 고른 과제의 것을 쓴다.
 - attend.doc: `rec.input.action === 'delete' ? hrDeleteDoc(ctx.item, { onStage }) : hrRunJob(buildDocJob(ctx.item, rec.input.action), { onStage })`; attend.cancel 도 `{ onStage }` 를 넘긴다.
 - `createAttendPanel`·`createGongmunPanel`·`createSendBox` 는 deps.actions 가 없으면 **스스로** `createDispatcher({ log })` 를 만든다(단독 패널 테스트 attendlist·tripcard·tripcancel·lodgeask 가 actions 없이 만든다).
 - 근태 결재요청의 최종 성공은 confirmInList 뒤에 정해진다 → `actions.run(record, { …, outcome: async (r) => { /* confirmInList 등 */ return { ok, text, data }; } })`.

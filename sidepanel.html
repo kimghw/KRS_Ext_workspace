@@ -9,6 +9,8 @@
   <!-- R&D 탭의 rERP 집행내역·예상 비용 표 — kr_ext_rerp 에서 옮긴 모양(rerp/plan.css, 클래스 krext-*). 어두운 화면 덮어쓰기는 sidepanel.css 의 .rd-erp 절. -->
   <link rel="stylesheet" href="rerp/plan.css" />
   <link rel="stylesheet" href="mailtrack/panel.css" />
+  <!-- R&D 탭의 과제 더하기 카드·변경 및 이력 관리 카드의 YAML 고치기 몫(rndgen/ — 2026-10-16). .rnd .rdg-* 만. -->
+  <link rel="stylesheet" href="rndgen/panel.css" />
 </head>
 <body>
   <main class="app">
@@ -126,7 +128,7 @@
         <div id="gmPick" class="gm-pick-row" role="radiogroup" aria-label="연결 과제"></div>
       </div>
       <!-- 에이전트 — 공문 검색(2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 '에이전트' 하나 추가해서 공문검색할 수 있는 기능 추가해줘, 받은공문, 보낸 공문").
-           갈래 줄 맨 끝의 'HELP'(에이전트 — 2026-10-12 사용자 지정) 단추를 누르면 작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨고 이 카드만 선다(sidepanel.css 의 .gongmun.agent).
+           갈래 줄 맨 끝의 '공문검색'(에이전트 — 2026-10-12 사용자 지정, 10-16 까지는 글자가 HELP) 단추를 누르면 작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨고 이 카드만 선다(sidepanel.css 의 .gongmun.agent).
            말로 적으면(예: 지난달 받은 출장 공문) 방향(받은 — 결재함 · 보낸 — 기안함)·기간·찾을 말로 풀어(src/gmsearch.js, 규칙 풀이 — Claude 를 부르지 않는다)
            전자결재 문서함을 제목 검색으로 읽고(src/gmlist.js) 공문 이력과 같은 카드로 보인다. 받은 공문·보낸 공문과 기간은 단추로도 고른다.
            찾은 것은 이 브라우저(chrome.storage 의 gongmunSearch)에 남아 다시 열어도 바로 보인다. gongmunpanel.js 가 그린다. -->
@@ -234,28 +236,31 @@
             <p id="gmEdited" class="gm-edited hidden">직접 고친 글입니다 — 위 칸을 바꿔도 그대로 둡니다. <button type="button" id="gmRegen" class="ghost small">양식으로 다시 만들기</button></p>
             <!-- 문서설정·위임전결 — 새 공문 창에 같이 넣는다(2026-10-08 사용자 지정: "문서설정, 위임전결도 같이 입력"). 기본값은 레시피
                  (recipes/gongmun/registries 의 settings.yaml·delegation.yaml)이고, 여기서 바꾼 것은 이 공문에만 남는다. -->
+            <!-- 한 줄에 두 칸(2026-10-16 사용자 지정: "1줄에 1칸인데 2칸으로") — 칸마다 .gm-set-cell 로 묶고, 안내 줄·체크·단추는 두 칸을 다 쓴다(.gm-set-wide).
+                 맨 위의 결재선 줄은 이 공문에 설 과제 책임자(합의자 — 본인이면 합의 없음)·참조자를 보이기만 한다. 적는 곳은 R&D 탭이다(책임자는 과제 정보,
+                 참조자는 '참여연구자 및 행정지원'에서 참조로 고른 사람 — 같은 날 "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록").
+                 외부활동(과제를 고르지 않음)에서는 숨는다. -->
             <details id="gmSetBox" class="gm-set">
               <summary><span>문서설정 · 위임전결</span><span id="gmSetState" class="summary-detail"></span></summary>
               <div class="gm-set-grid">
-                <label for="gmRank" class="gm-label">전결권자</label>
-                <select id="gmRank"></select>
-                <p id="gmRankWhy" class="gm-set-why"></p>
-                <label for="gmRetention" class="gm-label">보존년한</label>
-                <select id="gmRetention"></select>
-                <label for="gmDocNoOne" class="gm-label">Doc No. (문서번호 부서 코드)</label>
-                <input type="text" id="gmDocNoOne" inputmode="numeric" maxlength="8" autocomplete="off" />
-                <label for="gmReceiver" class="gm-label">수신처</label>
-                <select id="gmReceiver"></select>
-                <label for="gmScope" class="gm-label">공개범위</label>
-                <select id="gmScope"></select>
-                <div class="gm-set-checks">
+                <div id="gmLineSet" class="gm-set-line">
+                  <div class="gm-set-cell"><span class="gm-label">과제 책임자 <small>합의</small></span><p id="gmLineLead" class="gm-set-out"></p></div>
+                  <div class="gm-set-cell"><span class="gm-label">참조자 <small>행정지원 · 과제마다</small></span><p id="gmLineRefs" class="gm-set-out"></p></div>
+                  <p class="gm-set-why gm-set-wide gm-line-why"><span id="gmLineWhy"></span><button type="button" id="gmLineGo" class="ghost small" title="과제 책임자는 과제 정보, 참조자는 참여연구자 및 행정지원에서 고칩니다">R&amp;D 탭</button></p>
+                </div>
+                <div class="gm-set-cell"><label for="gmRank" class="gm-label">전결권자</label><select id="gmRank"></select></div>
+                <div class="gm-set-cell"><label for="gmRetention" class="gm-label">보존년한</label><select id="gmRetention"></select></div>
+                <p id="gmRankWhy" class="gm-set-why gm-set-wide"></p>
+                <div class="gm-set-cell"><label for="gmDocNoOne" class="gm-label">Doc No. <small>문서번호 부서 코드</small></label><input type="text" id="gmDocNoOne" inputmode="numeric" maxlength="8" autocomplete="off" /></div>
+                <div class="gm-set-cell"><label for="gmReceiver" class="gm-label">수신처</label><select id="gmReceiver"></select></div>
+                <div class="gm-set-cell"><label for="gmScope" class="gm-label">공개범위</label><select id="gmScope"></select></div>
+                <div class="gm-set-cell"><label for="gmTag" class="gm-label">검색 키워드</label><input type="text" id="gmTag" autocomplete="off" placeholder="고른 과제의 별명" title="비우면 고른 과제의 별명(출장·외부활동은 갈래 이름)" /></div>
+                <div class="gm-set-checks gm-set-wide">
                   <label><input type="checkbox" id="gmEmergency" /> 긴급</label>
                   <label><input type="checkbox" id="gmApprovingOpen" /> 진행공개</label>
                   <label><input type="checkbox" id="gmDrm" /> DRM</label>
                 </div>
-                <label for="gmTag" class="gm-label">검색 키워드</label>
-                <input type="text" id="gmTag" autocomplete="off" placeholder="고른 과제의 별명 (출장·외부활동은 갈래 이름)" />
-                <div class="gm-actions"><button type="button" id="gmSetReset" class="ghost small">기본값으로</button></div>
+                <div class="gm-actions gm-set-wide"><button type="button" id="gmSetReset" class="ghost small">기본값으로</button></div>
               </div>
             </details>
             <!-- 공문 작성 — 새 공문 창을 뒤 탭으로 열고 과제(Job Id)·제목·차수·본문·문서설정·결재선·첨부(읽은 문서를 묶은 PDF)를 넣는다(src/gmwrite.js). 임시저장·상신은
@@ -334,7 +339,8 @@
             <div><label for="gmDirector" class="gm-label">소장 <small>소장 전결일 때</small></label><input type="text" id="gmDirector" placeholder="예) 송강현" autocomplete="off" /></div>
             <div><label for="gmChief" class="gm-label">본부장 <small>본부장 전결일 때</small></label><input type="text" id="gmChief" placeholder="예) 김대헌" autocomplete="off" /></div>
           </div>
-          <!-- 참조자 칸은 없다 — 공문마다·과제마다 달라 과제의 계획서 YAML(공문.참조자)에 공문 종류별로 적는다(2026-10-15 사용자 지정). R&D 과제 줄에 보이기만 한다. -->
+          <!-- 참조자 칸은 없다 — 공문마다·과제마다 달라 전역에 둘 수 없다(2026-10-15 사용자 지정). 과제의 계획서 YAML(공문.참조자)에 공문 종류별로 적거나
+               R&D 탭의 '참여연구자 및 행정지원'에서 행정 담당 등을 참조로 고른다(과제마다 — 2026-10-16). R&D 과제 줄에 보이기만 한다. -->
           <div class="gm-proj-head"><span class="gm-label">과제 <span id="gmProjCount" class="count"></span></span><button type="button" id="gmProjAdd" class="ghost small">과제 더하기</button></div>
           <ul id="gmProjList" class="gm-proj-list"></ul>
         </div>
@@ -347,7 +353,7 @@
       <!-- 과제 칩 한 줄 — 별칭(없으면 과제명을 줄여)으로, 맨 끝의 ＋ 로 과제를 더한다. -->
       <div id="rdProjects" class="rd-projects" role="group" aria-label="과제"></div>
       <div id="rdEmpty" class="rd-empty card hidden">
-        <p>적어 둔 과제가 없습니다. 맨 아래 칸에 연구개발계획서 YAML 을 넣거나, 공문 탭의 공문 설정에 둔 과제를 가져오거나, 새 과제를 더하세요.</p>
+        <p>적어 둔 과제가 없습니다. <strong>과제 더하기</strong>로 연구개발계획서 YAML 을 넣거나 사업계획서에서 뽑고, 공문 탭의 공문 설정에 둔 과제를 가져오거나, 직접 적으세요.</p>
         <div class="rd-actions">
           <button type="button" id="rdEmptyImport" class="ghost small">공문 탭의 과제 가져오기</button>
           <button type="button" id="rdEmptyAdd" class="primary small">과제 더하기</button>
@@ -378,6 +384,18 @@
           <label class="rd-field"><span>별칭 <span class="req">필수</span></span><input type="text" id="rdFAlias" autocomplete="off" spellcheck="false" placeholder="예) SSCB — 칩에 보일 이름" /></label>
           <label class="rd-field"><span>과제번호</span><input type="text" id="rdFCode" autocomplete="off" spellcheck="false" placeholder="예) RND-20-2026" /></label>
           <label class="rd-field"><span>과제책임자</span><input type="text" id="rdFLead" autocomplete="off" placeholder="예) 박기도" /></label>
+          <!-- Job Id — 전자결재 공문의 과제 찾기 번호(RND00202026 꼴, 2026-10-16). 과제번호(국가과제 번호일 수 있다 — rERP 잇기)와 따로 둔다. 찾기는 R&D PMS 과제 목록에서
+               책임자가 같은 과제 먼저 과제명 유사도 0.5 이상을 높은 차례로 보이고 가장 높은 것을 칸에 넣는다 — 다른 후보를 누르면 바뀐다(rndpanel.js findJob · src/jobid.js).
+               비워 두면 공문 작성 때 같은 규칙으로 고른다(src/gmwrite.js). -->
+          <div class="rd-field wide rd-job">
+            <span>Job Id <small>전자결재 과제 찾기</small></span>
+            <div class="rd-job-row">
+              <input type="text" id="rdFJob" autocomplete="off" spellcheck="false" aria-label="Job Id" placeholder="예) RND00202026 — 비우면 공문 작성 때 책임자·과제명으로 찾습니다" />
+              <button type="button" class="ghost small" id="rdFJobFind" title="R&amp;D PMS 과제 목록에서 책임자가 같은 과제 먼저, 과제명이 비슷한 것(유사도 0.5 이상)을 찾습니다">찾기</button>
+            </div>
+            <div id="rdFJobList" class="rd-job-list hidden" role="group" aria-label="Job Id 후보"></div>
+            <p id="rdFJobMsg" class="rd-job-msg" role="status"></p>
+          </div>
           <label class="rd-field"><span>연구 시작일</span><input type="date" id="rdFStart" /></label>
           <label class="rd-field"><span>연구 종료일</span><input type="date" id="rdFEnd" /></label>
           <!-- 차년도 끊는 기준. 산업부 과제는 첫 해만 협약일~12월 31일이고 그 뒤는 해마다라 1월 1일에 끊는다. 끄면 시작일부터 한 해씩. -->
@@ -391,6 +409,9 @@
           <button type="button" id="rdFDel" class="ghost rd-del hidden" title="이 과제와 적어 둔 차년도 내용을 모두 지웁니다. 두 번 누릅니다.">과제 지우기</button>
         </div>
       </div>
+      <!-- 과제 더하기 카드(rndgen/panel.js — YAML 넣기 또는 사업계획서에서 이 차년도 KR 스냅샷 뽑기, 2026-10-16). ＋ 칩·과제 더하기·빈 차년도 카드의 단추가 연다.
+           열려 있으면 머리·몸통은 숨고 ＋ 칩이 켜진다(rndpanel.js setOverlay) — 과제 칩을 누르면 닫히고 그 과제로 간다. 안은 rndgen/panel.js 가 그린다. -->
+      <div id="rdgAdd" class="rdg hidden"></div>
       <div class="statusline"><span id="rdStatus" class="status" role="status" aria-live="polite"></span></div>
       <!-- 예산 정보가 없는 차년도를 보고 있을 때(2026-10-11 사용자 지정 — "비활성 차년도면 이전 차년도 기록을 보여주지 말고 R&D 설정을 열어서") —
            지난 차년도의 기록 칸들(rdBody) 대신 이 까닭 카드가 서고 바로 아래 R&D 설정(rdSetBox)이 저절로 펴진다(rndpanel.js paintHead·openSetFor). 글은 rndpanel.js 가 채운다. -->
@@ -441,12 +462,19 @@
             </details>
           </div>
         </details>
-        <!-- 참여연구자 — 연구개발계획서(YAML)에서 온 그 차년도의 참여연구자 표. 계획서를 다시 넣으면 바뀐다(src/rndyaml.js). -->
+        <!-- 참여연구자 및 행정지원 — 연구개발계획서(YAML)에서 온 그 차년도의 참여연구자 표(계획서를 다시 넣으면 바뀐다 — src/rndyaml.js)와, 손으로 적는 과제의
+             행정지원(행정 담당 등 — 이름·맡은 일·공문 참조, 차년도가 아니라 과제마다). 참조로 고른 사람은 이 과제의 공문(구매·교육·출장 가리지 않고)마다 결재선의
+             참조자가 된다(2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록", 담당 직원은 행정 담당으로 참조).
+             접혀 있어도 머리 줄에 행정지원과 참조자가 보인다. -->
         <details id="rdRosterBox" class="rd-box card">
-          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19.5v-.5A5 5 0 0 1 7.5 14h3a5 5 0 0 1 5 5v.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14a5 5 0 0 1 3 4.6v.9"/></svg><span>참여연구자</span><span id="rdRosterState" class="summary-detail"></span></summary>
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19.5v-.5A5 5 0 0 1 7.5 14h3a5 5 0 0 1 5 5v.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14a5 5 0 0 1 3 4.6v.9"/></svg><span>참여연구자 및 행정지원</span><span id="rdRosterState" class="summary-detail"></span></summary>
           <div class="rd-box-body">
             <div id="rdRosterTools" class="rd-box-tools"><span id="rdRosterSrc" class="rd-src"></span><button type="button" id="rdRosterCopy" class="rd-icon" title="참여연구자 복사 — 표(탭으로 나눈 글)로(엑셀·한글 표에 그대로 붙습니다)" aria-label="참여연구자 표 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button></div>
             <div id="rdRoster"></div>
+            <div class="rd-support">
+              <div class="rd-support-head"><strong>행정지원</strong><span id="rdSupportNote" class="rd-src"></span><button type="button" id="rdSupportAdd" class="ghost small">사람 더하기</button></div>
+              <ul id="rdSupport" class="rd-support-list"></ul>
+            </div>
           </div>
         </details>
         <!-- 연구개발 계획 — 계획서에서 온 그 차년도의 개발목표·개발내용·성능목표·주요결과물·수행일정. -->
@@ -476,11 +504,22 @@
             <ul id="rdLogs" class="rd-list"></ul>
           </div>
         </details>
-        <!-- 변경이력 — 날짜·구분·항목·변경 전·후·사유. 저절로 남은 줄(auto)은 사유만 적는다. 처음엔 접혀 있다(2026-10-11 사용자 지정 — 건수·사유 없음 n 은 머리 줄에). -->
-        <details id="rdChangeBox" class="rd-box card">
-          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg><span>변경이력</span><span id="rdChangeState" class="summary-detail"></span></summary>
-          <div class="rd-box-body">
-            <div class="rd-new" aria-label="변경이력 적기">
+        <!-- 변경 및 이력 관리(2026-10-16 사용자 지정 — 변경사항 반영 카드가 접혀 있던 변경이력 칸을 대체) — 다른 칸처럼 접는 카드 하나에 두 몫
+             (2026-10-16 사용자 지정 "접어라" — 기본 접힘, 머리 줄에 변경이력 건수·사유 없음 n).
+             위: 바뀐 내용을 아무 꼴(메일·공문·메모·표)로 적거나 문서를 붙이면 LLM 이 기준 YAML(저장된 원문, 없으면 장부로 지은 것)을 고치고(rnd.revise)
+                 구조 차이·새로 남을 변경이력 미리보기 뒤 "반영" 으로 장부에 넣는다 — rndgen/panel.js 가 #rdgRevise 안에 그린다.
+             아래: 변경이력 — 날짜·구분·항목·변경 전·후·사유. 저절로 남은 줄(auto)은 줄 안에서 사유만 적는다.
+                 손으로 적는 칸은 "직접 적기"·줄의 "고치기" 로 열리고 기록·취소하면 닫힌다(rndpanel.js). -->
+        <details id="rdChangeBox" class="rd-box rd-change card">
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg><span id="rdChangeTitle">변경 및 이력 관리</span><span id="rdChangeState" class="summary-detail"></span></summary>
+          <div id="rdgRevise" class="rdg hidden"></div>
+          <div class="rd-change-log">
+            <div class="rd-change-tools">
+              <span class="rd-change-sub">변경이력</span>
+              <button type="button" id="rdChNew" class="ghost small" title="변경이력 한 줄을 손으로 적습니다 — 날짜·구분·항목·변경 전·후·사유">직접 적기</button>
+              <button type="button" id="rdChangesCopy" class="rd-icon" title="변경이력 전부 복사 — 이른 것부터 글로. 한 줄만은 그 줄의 복사 아이콘" aria-label="변경이력 전부 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button>
+            </div>
+            <div id="rdChForm" class="rd-new hidden" aria-label="변경이력 적기">
               <div class="rd-new-row">
                 <input type="date" id="rdChDate" aria-label="날짜" />
                 <select id="rdChKind" aria-label="구분"></select>
@@ -494,10 +533,9 @@
               <input type="text" id="rdChReason" aria-label="사유" placeholder="사유 (선택)" autocomplete="off" />
               <div class="rd-actions">
                 <button type="button" id="rdChAdd" class="primary small">기록</button>
-                <button type="button" id="rdChCancel" class="ghost small hidden">고치기 그만두기</button>
+                <button type="button" id="rdChCancel" class="ghost small">취소</button>
               </div>
             </div>
-            <div class="rd-box-tools"><button type="button" id="rdChangesCopy" class="rd-icon" title="변경이력 전부 복사 — 이른 것부터 글로. 한 줄만은 그 줄의 복사 아이콘" aria-label="변경이력 전부 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button></div>
             <ul id="rdChanges" class="rd-list"></ul>
           </div>
         </details>
@@ -571,12 +609,15 @@
         </label>
       </div>
       <!-- 차년도 YAML 을 뽑는 스킬 묶음 — RND 프로젝트의 Claude Code 스킬 다섯 개를 rnd/skills/ 에 복사해 두고(tools/rndskills.mjs sync, 목록 rnd/skills.json),
-           여기서 zip 으로 내려받거나 쓰는 법을 복사한다. 이 확장이 뽑지는 않는다(2026-10-08 사용자 지정). src/rndskills.js. 과제가 없어도 보인다. -->
+           여기서 zip 으로 내려받거나 쓰는 법을 복사한다. src/rndskills.js. 과제가 없어도 보인다.
+           처음에는 이 확장이 뽑지 않았으나(2026-10-08 사용자 지정), 2026-10-16 사용자 지정("+ 누르면 … 사업계획서를 넣으면 과제의 YAML 을 추출 … 그 스킬은 '차년도 YAML 뽑는 스킬' 거기 있지")으로
+           ＋(과제 더하기)가 첫 스킬(rnd-kr-extract)의 references 두 문서를 지시문에 실어 그 차년도 스냅샷을 뽑는다(rndgen/). 이력·변경안·모으기는 여전히 이 스킬 묶음으로. -->
       <details id="rdSkillBox" class="rd-box card">
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M2 13l10 5 10-5M2 18l10 5 10-5"/></svg><span>차년도 YAML 뽑는 스킬</span><span id="rdSkillState" class="summary-detail">Claude Code 스킬 묶음</span></summary>
         <div class="rd-box-body">
           <p class="rd-skill-lead">연구개발계획서에서 차년도 YAML(KR_&lt;과제&gt;.yaml)과 이력(history/*.yaml)을 뽑는 <strong>RND 프로젝트의 Claude Code 스킬</strong>입니다.
-            이 확장은 뽑지 않습니다 — 묶음을 받아 과제 작업 프로젝트의 <code>.claude/skills/</code> 에 풀고, 나온 YAML 을 위 상자에 넣으세요.</p>
+            이 확장은 ＋(과제 더하기)에 사업계획서를 넣으면 첫 스킬(rnd-kr-extract)의 structured 규칙으로 그 차년도 스냅샷을 뽑고, 변경 및 이력 관리 카드로 YAML 을 고칩니다.
+            이력(history/*.yaml)·변경안·최신본 모으기는 묶음을 받아 과제 작업 프로젝트의 <code>.claude/skills/</code> 에 풀어 쓰고, 나온 YAML 을 위 상자에 넣으세요.</p>
           <ol id="rdSkills" class="rd-skills" aria-label="스킬"></ol>
           <div class="rd-actions">
             <button type="button" id="rdSkillZip" class="primary small" title="스킬 다섯 개(SKILL.md · 스크립트 · 참고 · 양식)를 zip 하나로 내려받습니다. 맨 앞에 쓰는 법(README.md)이 들어 있습니다">스킬 묶음 저장 (zip)</button>
@@ -747,6 +788,19 @@
           </div>
           <p class="hint" id="docCirculateState" role="status" hidden></p>
         </section>
+        <!-- 행위 명세 — actions/spec/<갈래>/<종류>.yaml 원본을 읽기만 한다(2026-10-16 사용자 지정: "yaml 파일을 … 일반에서 볼 수 있었으면",
+             "근태 공문 이런 식으로 구분"). 갈래 단추(#specDomains) → 종류 단추(#specKinds — 공통(_domain.yaml)이 먼저) → 원본(#specOut).
+             목록은 생성물 ACTIONS 에서 만들고(src/specview.js), 같은 단추를 다시 누르면 접는다. -->
+        <section class="set-section" aria-labelledby="specTitle">
+          <div class="set-section-head"><h2 id="specTitle">행위 명세</h2><span class="set-caption">YAML 원본 · 읽기 전용</span></div>
+          <div id="specDomains" class="spec-chips" role="group" aria-label="갈래"></div>
+          <div id="specKinds" class="spec-chips spec-kinds" role="group" aria-label="종류" hidden></div>
+          <div id="specFile" class="spec-file" hidden>
+            <code id="specPath" class="spec-path"></code>
+            <pre id="specOut" class="diag-out spec-out" aria-label="YAML 원본"></pre>
+            <p class="hint spec-note">고치는 곳은 저장소의 이 파일입니다. 고친 뒤 <code>node tools/gen-actions.mjs</code> 로 생성물(<code>actions/spec.js</code>)을 다시 만들고 확장을 새로 고치면 패널에 반영됩니다.</p>
+          </div>
+        </section>
         <div class="set-section-head set-tools-head"><h2>기록 및 진단</h2></div>
         <details id="logBox" class="diag">
           <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span>활동 로그</span><span id="logCount" class="summary-detail">기록 없음</span></summary>
@@ -781,7 +835,7 @@
           <details class="set-help" id="llmHelp">
             <summary aria-label="AI 도우미 도움말" title="AI 도우미 도움말"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></summary>
             <div class="set-help-content">
-              <p class="hint">말로 찾기·말로 채우기·공문 읽기·HELP에 사용할 Claude를 연결합니다. <strong>로컬 CLI → API 키</strong> 순서로 사용합니다.</p>
+              <p class="hint">말로 찾기·말로 채우기·공문 읽기에 사용할 Claude를 연결합니다. <strong>로컬 CLI → API 키</strong> 순서로 사용합니다.</p>
               <p class="hint">연결이 없으면 규칙으로만 읽습니다. 첨부 문서는 다리가 연결되면 다리에서, 연결되지 않으면 브라우저에서 글자를 먼저 추출합니다.</p>
             </div>
           </details>
@@ -828,11 +882,13 @@
         </div>
         <div class="set-block">
           <div class="set-block-head"><strong>Teams MCP</strong><span class="summary-detail">여비증빙 송부 — 안 닿으면 쪽지로</span></div>
-          <div class="conn-row"><code id="connTeamsUrl" class="conn-addr"></code><span id="connTeamsState" class="badge">확인 전</span><button id="connTeamsCheck" type="button" class="ghost small">연결 확인</button></div>
+          <div class="conn-field"><span>MCP 주소</span><code id="connTeamsUrl" class="conn-addr" title="지정된 주소 — 바꾸지 않습니다"></code></div>
+          <div class="conn-row"><span id="connTeamsState" class="badge conn-state" role="status" aria-live="polite">확인 전</span><button id="connTeamsCheck" type="button" class="ghost small">연결 확인</button></div>
         </div>
         <div class="set-block">
           <div class="set-block-head"><strong>OneNote MCP</strong><span class="summary-detail">R&amp;D 탭 — 원노트 공유</span></div>
-          <div class="conn-row"><code id="connNoteUrl" class="conn-addr"></code><span id="connNoteState" class="badge">확인 전</span><button id="connNoteCheck" type="button" class="ghost small">연결 확인</button></div>
+          <div class="conn-field"><span>MCP 주소</span><code id="connNoteUrl" class="conn-addr" title="지정된 주소 — 바꾸지 않습니다"></code></div>
+          <div class="conn-row"><span id="connNoteState" class="badge conn-state" role="status" aria-live="polite">확인 전</span><button id="connNoteCheck" type="button" class="ghost small">연결 확인</button></div>
         </div>
         <p class="hint set-footnote">Outlook 주소는 localhost · 127.0.0.1만 입력할 수 있습니다. Teams·OneNote는 지정된 포트(5003 · 5005)를 사용합니다. Claude 연결은 <strong>LLM</strong> 탭에서 설정하세요.</p>
       </div>

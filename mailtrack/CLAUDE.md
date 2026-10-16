@@ -20,7 +20,7 @@
 
 ## 단위의 경계
 
-- `model.js`·`match.js` 는 **순수**하다(chrome·IndexedDB·네트워크·시계 없음 — 시각은 인자로). 장부 꼴(계획서 3.2)의 이름은 바꾸지 않는다.
+- `model.js`·`match.js`·`block.js` 는 **순수**하다(chrome·IndexedDB·네트워크·시계 없음 — 시각은 인자로). 장부 꼴(계획서 3.2)의 이름은 바꾸지 않는다.
 - `sync.js` 는 outlook·book·vault·merge 를 **주입받는다** — chrome·fetch 를 직접 부르지 않는다. `register`·`refresh`·`probe` 는 던지지 않고 결과로 말한다
   (`errors` 는 실패, `warnings` 는 된 것 중 알릴 것 — 큰 첨부 따위). 활동 로그는 **패널이 한 일마다 한 줄** 남긴다; sync 의 `log` 는 패널이 모르는 일(지우기 뒤 금고 정리 실패)에만 쓴다.
 - `mcp/outlook.js` 만 도구 이름·인자를 안다. 서버 꼴이 바뀌면 여기와 `test/fixtures/graph.mjs` 를 같이 고친다(서버 소스 `E:\dev\KR_MS365_mcp` 는 읽기만).

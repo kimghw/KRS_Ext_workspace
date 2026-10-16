@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
 const { JSDOM } = require('jsdom');
 import { DEFAULT_MODEL } from '../src/ai.js';   // LLM 갈래가 보이는 모델 이름
+import { ACTIONS } from '../actions/spec.js';   // 설정 → 일반의 행위 명세가 그리는 목록
 
 const root = new URL('../', import.meta.url);
 const html = fs.readFileSync(new URL('sidepanel.html', root), 'utf8');
@@ -677,6 +678,121 @@ console.log('설정(일반)의 미회람 문서 자동 열람 체크박스');
   });
 }
 
+console.log('설정(일반)의 행위 명세 — 갈래 → 종류 → YAML 원본(2026-10-16 사용자 지정: "근태 공문 이런 식으로 구분")');
+{
+  const YAML = 'id: gongmun.purchase\ntitle: 구매 품의\n';
+  const { window, calls } = await boot({ mode: 'room' }, {
+    fetchImpl: async (url) => {
+      if (String(url) === 'chrome-extension://test/actions/spec/gongmun/purchase.yaml') return { ok: true, status: 200, text: async () => YAML };
+      if (String(url).startsWith('chrome-extension://test/actions/spec/')) return { ok: false, status: 404, text: async () => '' };
+      throw new Error('offline');
+    },
+  });
+  const doc = window.document;
+  const domains = doc.getElementById('specDomains');
+  const kinds = doc.getElementById('specKinds');
+  const file = doc.getElementById('specFile');
+  const out = doc.getElementById('specOut');
+  const chip = (box, text) => [...box.querySelectorAll('.spec-chip')].find((b) => b.firstChild.textContent === text);
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+  t('일반 갈래 안에 갈래 단추가 탭 차례로 서고, 종류 줄·원본은 닫혀 있다', () => {
+    assert.ok(domains.closest('#setGeneral'));
+    assert.deepEqual([...domains.children].map((b) => b.firstChild.textContent),
+      ['근태', '여비계산서', '공문', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']);
+    assert.ok([...domains.children].every((b) => b.type === 'button' && b.getAttribute('aria-pressed') === 'false'));
+    assert.ok(kinds.hidden && file.hidden);
+  });
+  chip(domains, '공문').click();
+  t('갈래를 누르면 그 갈래의 종류가 공통부터 선다', () => {
+    assert.equal(chip(domains, '공문').getAttribute('aria-pressed'), 'true');
+    assert.equal(kinds.hidden, false);
+    const keys = [...kinds.children].map((b) => b.dataset.key);
+    assert.equal(keys[0], '_domain');
+    assert.equal(kinds.children[0].textContent, '공통');
+    assert.ok(keys.includes('purchase'), keys.join(','));
+    assert.ok(!kinds.querySelector('[data-key="purchase"]').classList.contains('is-planned'));
+    assert.ok(file.hidden, '종류를 고르기 전에는 원본을 열지 않는다');
+  });
+  kinds.querySelector('[data-key="purchase"]').click();
+  await settle();
+  t('종류를 누르면 확장 꾸러미의 그 YAML 을 읽어 경로와 함께 보인다 — 글자는 원본 그대로', () => {
+    assert.ok(calls.urls.includes('chrome-extension://test/actions/spec/gongmun/purchase.yaml'), calls.urls.join('\n'));
+    assert.equal(file.hidden, false);
+    assert.equal(doc.getElementById('specPath').textContent, 'actions/spec/gongmun/purchase.yaml');
+    assert.equal(out.textContent, YAML.trimEnd());
+  });
+  t('YAML 꼴로 칠한다 — 줄마다 블록(.yl, 들여쓰기 --ind), 키·값을 가른다(2026-10-16 "yaml 포맷 형태로 안보이네")', () => {
+    const rows = [...out.querySelectorAll('.yl')];
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((r) => r.style.getPropertyValue('--ind') === '0'));
+    assert.deepEqual([...out.querySelectorAll('.y-key')].map((s) => s.textContent), ['id', 'title']);
+    assert.deepEqual([...out.querySelectorAll('.y-val')].map((s) => s.textContent), ['gongmun.purchase', '구매 품의']);
+  });
+  kinds.querySelector('[data-key="_domain"]').click();
+  await settle();
+  t('읽지 못하면 원본 칸에 경로와 까닭을 적는다', () => {
+    assert.equal(doc.getElementById('specPath').textContent, 'actions/spec/gongmun/_domain.yaml');
+    assert.equal(out.textContent, '읽지 못했습니다 — actions/spec/gongmun/_domain.yaml (HTTP 404)');
+  });
+  const before = calls.urls.length;
+  kinds.querySelector('[data-key="purchase"]').click();
+  await settle();
+  t('한 번 읽은 파일은 다시 읽지 않는다', () => {
+    assert.equal(calls.urls.length, before);
+    assert.equal(out.textContent, YAML.trimEnd());
+  });
+  kinds.querySelector('[data-key="purchase"]').click();
+  t('고른 종류를 다시 누르면 원본을 닫는다', () => {
+    assert.ok(file.hidden);
+    assert.ok([...kinds.children].every((b) => b.getAttribute('aria-pressed') === 'false'));
+  });
+  chip(domains, '근태').click();
+  t('다른 갈래를 누르면 종류 줄이 그 갈래 것으로 바뀐다', () => {
+    assert.equal(chip(domains, '공문').getAttribute('aria-pressed'), 'false');
+    assert.ok(kinds.querySelector('[data-key="trip"]') && !kinds.querySelector('[data-key="purchase"]'));
+  });
+  chip(domains, '근태').click();
+  t('고른 갈래를 다시 누르면 종류 줄과 원본을 접는다', () => {
+    assert.ok(kinds.hidden && file.hidden);
+  });
+  // 예정(planned)인 종류 — 어느 것이 예정인지는 명세가 바뀌며 달라지니 생성물에서 하나 고른다.
+  const planned = Object.values(ACTIONS.actions).find((a) => a.status === 'planned');
+  if (planned) {
+    domains.querySelector(`[data-domain="${planned.domain}"]`).click();
+    t(`예정(planned)인 종류는 점선·\`예정\` — ${planned.id}`, () => {
+      const b = kinds.querySelector(`[data-key="${planned.kind}"]`);
+      assert.ok(b.classList.contains('is-planned'));
+      assert.match(b.textContent, /예정$/);
+      assert.match(b.title, /^예정\(planned\)/);
+    });
+  }
+}
+{
+  // 원본 칸의 높이 — 손잡이로 끌면 브라우저가 인라인 height 를 적고, ResizeObserver 가 알린다. jsdom 에는 없어 흉내 낸다.
+  const seen = [];
+  globalThis.ResizeObserver = class { constructor(fn) { this.fn = fn; seen.push(this); } observe(target) { this.target = target; } };
+  try {
+    const { window, store } = await boot({ mode: 'room', specHeight: 520 });
+    const out = window.document.getElementById('specOut');
+    t('기억해 둔 높이로 연다', () => assert.equal(out.style.height, '520px'));
+    const ro = seen.find((o) => o.target === out);
+    t('원본 칸의 크기를 지켜본다', () => assert.ok(ro, 'ResizeObserver 가 specOut 을 보지 않는다'));
+    ro.fn([]);
+    await new Promise((r) => setTimeout(r, 450));
+    t('크기가 그대로면(접고 펴기) 저장하지 않는다', () => assert.equal(store.specHeight, 520));
+    out.style.height = '333.4px';
+    ro.fn([]);
+    await new Promise((r) => setTimeout(r, 450));
+    t('끌어 바꾼 높이를 저장한다', () => assert.equal(store.specHeight, 333));
+  } finally {
+    delete globalThis.ResizeObserver;
+  }
+}
+{
+  const { window } = await boot({ mode: 'room', specHeight: 40 });
+  t('너무 작은 높이는 받지 않고 기본 높이(CSS)로 연다', () => assert.equal(window.document.getElementById('specOut').style.height, ''));
+}
+
 console.log('차량 모드로 시작 (조기 return 회귀 방지)');
 {
   const { wired, window, calls } = await boot({ mode: 'car' });
@@ -1239,10 +1355,10 @@ console.log('공문 탭');
     assert.ok(doc.getElementById('attend').classList.contains('hidden'));
     for (const sel of ['.controls', '.schedule', '.ask']) assert.ok(doc.querySelector(sel).hasAttribute('hidden'), sel);
   });
-  t('갈래는 구매·교육·출장·외부활동이고 맨 끝이 에이전트(공문 검색 — 단추 글자는 HELP, 2026-10-12 사용자 지정), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
+  t('갈래는 구매·교육·출장·외부활동이고 맨 끝이 에이전트(공문 검색 — 단추 글자는 공문검색, 2026-10-16 사용자 지정), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
     const kinds = [...doc.querySelectorAll('#gmKinds .gm-kind')].map((b) => b.dataset.kind);
     assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'outside', 'agent']);
-    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').textContent, 'HELP');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').textContent, '공문검색');
     assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').getAttribute('aria-pressed'), 'false');
     assert.ok(doc.getElementById('gmSearch').hidden, '검색 카드는 에이전트를 누르기 전에는 숨어 있다');
     assert.ok(!doc.getElementById('gongmun').classList.contains('agent'));
@@ -1328,9 +1444,11 @@ console.log('공문 탭');
   type(doc.querySelector('#gmProjList [data-k="lead"]'), '박기도');
   await settle(480);
   t('적은 과제·과제책임자(합의자)·부서장이 공문 설정에 저장된다 — 참조자 칸은 없다', () => {
-    assert.deepEqual(store.gongmunProjects, [{ name: PROJECT, alias: '', code: 'RND-20-2026', lead: '박기도', period: '', about: '', content: '', account: '' }]);
+    assert.deepEqual(store.gongmunProjects, [{ name: PROJECT, alias: '', code: 'RND-20-2026', job: '', lead: '박기도', period: '', about: '', content: '', account: '' }]);
+    assert.ok(doc.querySelector('#gmProjList [data-k="job"]'), 'Job Id 칸(전자결재 과제 찾기 — 비우면 책임자·과제명으로 찾는다, 2026-10-16)');
     assert.deepEqual(store.gongmunPreset, { dept: '', head: '노길태', director: '', chief: '', docNo: '' });
-    assert.equal(doc.getElementById('gmRefs'), null, '참조자 칸은 없다 — 과제 YAML 의 공문.참조자(2026-10-15)');
+    assert.equal(doc.getElementById('gmRefs'), null, '공문 설정(전역)에 참조자 칸은 없다 — 과제 YAML 의 공문.참조자(2026-10-15)');
+    assert.equal(doc.querySelector('#gmPresetBox #gmLineRefs'), null, '참조자는 문서설정에서 과제마다 적는다(2026-10-16) — 공문 설정에는 없다');
     assert.equal(doc.getElementById('gmHead').value, '노길태');
     assert.equal(doc.querySelector('#gmProjList [data-k="lead"]').value, '박기도');
   });
@@ -1378,8 +1496,10 @@ console.log('공문 탭');
     const body = doc.getElementById('gmBody').value;
     assert.match(body, new RegExp(`「${PROJECT}」 과제를 수행하고 있습니다`));
     assert.match(body, /34인치 모니터를 구매하고자 아래와 같이 품의하오니/);
-    assert.match(body, /나\. 구매금액 : 989,000원 \(VAT 포함\)/);
-    assert.match(body, /라\. 구매계정 : 연구활동비\(연구실운용비\)/);
+    // 가. 과제 개요(2026-10-16 사용자 지정: "구매양식에 과제 개요가 들어가 있질 않음") — 그 뒤로 구매 내역·구매금액… 이 한 칸씩 밀린다.
+    assert.match(body, new RegExp(`가\\. 과제 개요\\n {4}\\(1\\) 과 제 명 : ${PROJECT}\\n {4}\\(2\\) 과제번호 : RND-20-2026\\n {4}\\(3\\) 과제책임자 : 박기도\\n나\\. 구매 내역`));
+    assert.match(body, /다\. 구매금액 : 989,000원 \(VAT 포함\)/);
+    assert.match(body, /마\. 구매계정 : 연구활동비\(연구실운용비\)/);
     assert.match(doc.getElementById('gmNeed').textContent, /부서\(공문 설정\)/, '부서는 아직 비어 있다');
   });
   t('공문·작성 내용·읽은 내용(그 차례 — 2026-10-12 사용자 지정)은 접근성 탭이며 키보드 이동과 선택 클릭은 작업 영역을 펼친다', () => {
@@ -1673,7 +1793,7 @@ console.log('공문 탭');
     assert.equal(doc.getElementById('gmBody').value, '직접 고친 본문');
     assert.ok(!doc.getElementById('gmEdited').classList.contains('hidden'));
     doc.getElementById('gmRegen').click();
-    assert.match(doc.getElementById('gmBody').value, /마\. 용도 : 다른 용도/);
+    assert.match(doc.getElementById('gmBody').value, /바\. 용도 : 다른 용도/);
   });
 
   t('공문 설정의 과제 줄에 과제 내용 칸이 있다 — 사유를 쓰는 근거', () => {
@@ -1986,7 +2106,9 @@ console.log('공문 탭 — 구매·교육·출장은 갈래 아래의 과제 �
     gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     // 참조자는 과제의 YAML(공문.참조자)에서 온 것 — 공문 종류마다(2026-10-15). SSCB 의 구매는 이몽룡·박기도(합의자라 참조에서 빠짐), 수소추진에는 없다.
     rndBook: { projects: [
-      { id: 'p1', name: A, alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도', refs: { 구매: ['이몽룡', '박기도'], 교육: ['성춘향'] } },
+      { id: 'p1', name: A, alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도', refs: { 구매: ['이몽룡', '박기도'], 교육: ['성춘향'] },
+        // R&D 탭의 행정지원(2026-10-16) — 공문 참조를 켠 변학도는 이 과제의 공문마다 참조자, 끈 심청은 들지 않는다.
+        support: [{ name: '변학도', role: '행정 담당', ref: true }, { name: '심청', role: '연구지원', ref: false }] },
       { id: 'p2', name: B, alias: '수소추진', code: 'RS-2026-0002', lead: '홍길동' },
     ] },
   });
@@ -2025,13 +2147,37 @@ console.log('공문 탭 — 구매·교육·출장은 갈래 아래의 과제 �
   });
   chip('SSCB').click();
   await settle();
-  t('초안이 있을 때 과제 줄에서 바꾸면 초안의 과제가 바뀐다 — 참조자는 그 과제의 YAML 에 구매로 적힌 사람(합의자는 뺌)', () => {
+  t('초안이 있을 때 과제 줄에서 바꾸면 초안의 과제가 바뀐다 — 참조자는 공문 참조를 켠 행정지원과 그 과제의 YAML 에 구매로 적힌 사람(합의자는 뺌)', () => {
     assert.deepEqual(chips(), [['SSCB', true], ['수소추진', false]]);
     assert.match(doc.getElementById('gmProjInfo').textContent, /별명 SSCB/);
-    assert.match(doc.getElementById('gmProjInfo').textContent, /참조자 이몽룡/);
+    assert.match(doc.getElementById('gmProjInfo').textContent, /참조자 변학도, 이몽룡/);
     assert.match(doc.getElementById('gmLine').textContent, /합의자박기도/);
-    assert.equal(doc.querySelector('#gmLine .gm-refs').textContent, '참조자이몽룡');
-    assert.match(doc.querySelector('#gmProjList .gm-proj-linked[data-rnd="p1"] .gm-linked-meta').textContent, /책임자 박기도 · 참조자 구매 이몽룡, 박기도 \/ 교육 성춘향$/, '공문 설정의 R&D 과제 줄에는 YAML 의 참조자가 보이기만 한다');
+    assert.equal(doc.querySelector('#gmLine .gm-refs').textContent, '참조자변학도, 이몽룡', '공문 참조를 끈 심청은 들지 않는다');
+    assert.match(doc.querySelector('#gmProjList .gm-proj-linked[data-rnd="p1"] .gm-linked-meta').textContent,
+      /책임자 박기도 · 참조자 구매 이몽룡, 박기도 \/ 교육 성춘향 · 행정지원 변학도\(행정 담당·참조\), 심청\(연구지원\)$/, '공문 설정의 R&D 과제 줄에는 YAML 의 참조자·행정지원이 보이기만 한다');
+  });
+  // 문서설정의 결재선 줄(2026-10-16 사용자 지정: "과제 책임자 칸도 넣어주고,, 같으면 입력은 하지 않도록", "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람
+  // 넣을 수 있도록") — 합의자(과제 책임자)·참조자(R&D 탭 행정지원에서 공문 참조를 켠 사람 + YAML 의 공문.참조자)를 보이기만 하고, 적는 곳은 R&D 탭이다.
+  // 문서설정은 공문 보기 안에 있다 — 합계를 알아야(한도에 걸리지 않아야) 그려진다.
+  doc.querySelector('#gongmun [data-key="total"]').value = '989000';
+  doc.querySelector('#gongmun [data-key="total"]').dispatchEvent(new window.Event('input', { bubbles: true }));
+  t('문서설정 맨 위의 결재선 줄 — 과제 책임자는 R&D 과제의 책임자, 참조자는 공문 참조를 켠 행정지원이 먼저이고 YAML 에 구매로 적힌 사람이 뒤(보이기만 한다)', () => {
+    assert.ok(!doc.getElementById('gmLineSet').classList.contains('hidden'));
+    assert.equal(doc.querySelector('#gmSetBox .gm-set-grid').firstElementChild.id, 'gmLineSet');
+    assert.equal(doc.querySelector('#gmLineSet input'), null, '적는 칸은 없다 — R&D 탭에서 적는다');
+    assert.equal(doc.getElementById('gmLineLead').textContent, '박기도');
+    assert.equal(doc.getElementById('gmLineRefs').textContent, '변학도, 이몽룡, 박기도');
+    assert.match(doc.getElementById('gmLineWhy').textContent, /^SSCB 과제의 공문마다 같은 사람이 들어갑니다/);
+    assert.ok(!doc.getElementById('gmLineGo').hidden);
+  });
+  t('결재선 줄 끝의 R&D 탭 단추는 R&D 탭을 연다', () => {
+    let went = 0;
+    const tab = doc.getElementById('tabRnd');
+    const keep = tab.click;
+    tab.click = () => { went++; };
+    doc.getElementById('gmLineGo').click();
+    tab.click = keep;
+    assert.equal(went, 1);
   });
   doc.querySelector('#gmKinds [data-kind="edu"]').click();
   t('초안이 없는 다른 갈래로 가도 마지막에 고른 과제가 켜져 있다', () => {
@@ -2040,6 +2186,9 @@ console.log('공문 탭 — 구매·교육·출장은 갈래 아래의 과제 �
   });
   doc.querySelector('#gmKinds [data-kind="outside"]').click();
   t('외부활동에서는 과제 줄이 숨는다(작성 내용 카드 안에서 고른다)', () => assert.ok(doc.getElementById('gmProjBar').classList.contains('hidden')));
+  doc.getElementById('gmManual').click();
+  await settle();
+  t('외부활동(과제를 고르지 않음)에서는 문서설정의 과제 책임자·참조자 두 칸이 숨는다', () => assert.ok(doc.getElementById('gmLineSet').classList.contains('hidden')));
 }
 
 console.log('R&D 탭');
@@ -2050,13 +2199,17 @@ console.log('R&D 탭');
     assert.ok(wired.get('tabRnd')?.has('click'));
     const want = [['rdProjects', 'click'], ['rdEmptyAdd', 'click'], ['rdEmptyImport', 'click'], ['rdEdit', 'click'], ['rdYears', 'click'],
       ['rdAliasSet', 'click'], ['rdAliasIn', 'keydown'], ['rdRosterCopy', 'click'], ['rdPlanCopy', 'click'],
+      ['rdSupportAdd', 'click'], ['rdSupport', 'input'], ['rdSupport', 'change'], ['rdSupport', 'click'],
+      // 과제 더하기·변경사항 카드(rndgen/ — 2026-10-16): host 마다 위임 리스너, 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기".
+      ['rdYearEmpty', 'click'], ['rdgAdd', 'click'], ['rdgAdd', 'change'], ['rdgAdd', 'dragover'], ['rdgAdd', 'dragleave'], ['rdgAdd', 'drop'],
+      ['rdgRevise', 'click'], ['rdgRevise', 'change'], ['rdgRevise', 'dragover'], ['rdgRevise', 'dragleave'], ['rdgRevise', 'drop'],
       ['rdNoteOn', 'change'], ['rdNoteSection', 'change'], ['rdNoteSections', 'click'], ['rdNoteSync', 'click'],
       ['rdPlusOn', 'change'], ['rdPlusFind', 'click'], ['rdPlusSection', 'keydown'],
       ['rdErpRefresh', 'click'], ['rdErpLink', 'click'], ['rdErpUnlink', 'click'], ['rdErpPickOk', 'click'], ['rdErpSelect', 'keydown'], ['rdErpOn', 'change'], ['rdIncUnbilled', 'change'], ['rdIncPlan', 'change'], ['rdItems', 'change'],
       ['rdFSave', 'click'], ['rdFCancel', 'click'], ['rdFDel', 'click'], ['rdForm', 'keydown'],
       ['rdBudget', 'input'], ['rdBudget', 'change'], ['rdBudget', 'click'],
       ['rdLogAdd', 'click'], ['rdLogCancel', 'click'], ['rdLogTitle', 'keydown'], ['rdLogs', 'click'],
-      ['rdChAdd', 'click'], ['rdChCancel', 'click'], ['rdChanges', 'click'], ['rdChanges', 'change'],
+      ['rdChAdd', 'click'], ['rdChCancel', 'click'], ['rdChNew', 'click'], ['rdChanges', 'click'], ['rdChanges', 'change'],
       ['rdCopy', 'click'], ['rdBudgetCopy', 'click'], ['rdLogsCopy', 'click'], ['rdChangesCopy', 'click'], ['rdExport', 'click'], ['rdImport', 'change'], ['rdImportGm', 'click'],
       ['rdYaml', 'change'], ['rnd', 'dragover'], ['rnd', 'drop'], ['rdSkillBox', 'toggle'], ['rdSkillZip', 'click'], ['rdSkillGuide', 'click']];
     for (const [id, type] of want) assert.ok(wired.get(id)?.has(type), `${id} 에 ${type}`);

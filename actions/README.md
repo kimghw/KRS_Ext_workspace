@@ -81,6 +81,7 @@ then: [{ action: trip.create, when: settle }]   # 뒤따르는 행위(패널이 
 - **모든 칸에 `read` 가 있다.** 지금 LLM 이 채우지 않는 칸(`llm: false` — 첨부·체크박스·교통편 …)도 read 를 둔다 — 나중에 LLM 을 넣을 때 그대로 쓴다.
 - `preset` 은 그때그때 적지 않는 값 — 내 이름·오늘·근무지·공문 설정(부서·부서장·소장·본부장·문서번호 부서)·고른 과제·HR 의 나. 실행 전에 채워 기록에 같이 담긴다. 폼의 기본값(출장 07:00~20:00 같은 것)은 preset 이 아니라 칸의 `default` 다.
 - LLM 작업은 갈래의 `llm.mode` 로 만든다 — `merged`(근태: LLM 이 종류를 고른다 — 종류별 칸을 합쳐 작업 `attend` 하나), `per-kind`(회의실·차량 조회: `search.room`·`search.car`), `recipe`(공문: 작업은 레시피 `recipes/gongmun` 의 `gongmun.<갈래>`·`gongmunReason.<갈래>` 를 가리킨다 — 공문 초안 칸은 YAML 에 다시 적지 않고 `draft: { from: recipe }` 로 펼친다), `none`.
+- per-kind 의 또 한 보기는 R&D 다 — `rnd.extract`(사업계획서 → 그 차년도 KR 스냅샷 YAML)·`rnd.revise`(아무 꼴의 변경 글 → 고친 YAML). 갈래의 consumer 는 `rndgen/llm.js askRndTask` 하나이고, 디스패처 전이라 패널 `rndgen/` 이 askClaude 를 바로 부른다(2026-10-16 — 자세히 `rndgen/README.md`).
 - `references/input.yaml` 에는 **읽기 작업**(출장 증빙 `receipt`·실패 원인 `diagnose`)만 남는다. 조회 조건(`parse`)·근태 조각(`attend`)은 이 폴더가 만든다.
 - 고친 뒤: `node tools/gen-actions.mjs` → `node --test "actions/test/*.test.mjs"` → `npm test`. 틀린 명세는 생성기가 무엇이 틀렸는지만 말하고 끝낸다(없는 칸을 summary 가 가리킴·모르는 형·read 없음·없는 실행기·uses 의 없는 export …).
 
@@ -119,11 +120,12 @@ const found = await actions.run(q, { onProgress, loadDay });
 | `src/input.js` | `TASKS` 에 `ACTIONS.tasks` 를 합친다(`import { ACTIONS } from '../actions/spec.js'` — 순수 데이터). `structureOf`·`schemaOf`·실행 모드·`when`·새 형(`tags`·`file`·`object`) 은 관문이 쓴다 |
 | `src/llm.js` | `fillAction(id, text, ctx, opts)` — 행위의 작업(`entry.task`)으로 말을 읽어 초안 조각을 돌려준다. `parseSmart` 는 `search.<kind>`, `fillAttendSmart` 는 `attend` |
 | `sidepanel.js` | 디스패처를 하나 만들어 근태·공문 패널에 넘긴다. 회의실·차량의 예약·취소·수정·말로 찾기가 지난다 |
-| `attendpanel.js` · `sendbox.js` | 근태 신청·상신·회수·삭제·취소신청, 여비계산서(사전정산 작성·고치기·확정, 사후정산 올리기·확정·지우기), 여비증빙 송부 |
+| `attendpanel.js` · `sendbox.js` · `lodgebox.js` | 근태 신청·상신·회수·삭제·취소신청, 여비계산서(사전정산 작성·고치기·확정, 사후정산 올리기·확정·지우기), 여비증빙 송부, 사후정산 숙박 줄의 `상한`·`비고에 저장`·지우기(`trip.lodge` — 기록은 attendpanel 의 buildRecord·runRecord 로, 화면의 그 줄·적어 둔 실제 금액·상한액은 ctx) |
 | `gongmunpanel.js` | 공문 작성(`gongmun.<갈래>`) |
 | `tools/refdata.mjs` · `package.json` | `gen`/`check` 에 생성기, `npm test` 에 `actions/test` |
 | `native/host.mjs` | 손대지 않는다 — `src/input.js` 의 `TASKS` 에서 작업을 만들므로 저절로 따라온다 |
 
 ## 아직 안 옮긴 것(2단계 — `status: planned`)
 
-R&D 탭(과제·YAML 넣기·rERP·원노트·연구내용 공유·스킬 zip), 메일 탭(등록·갱신·지우기·병합·설정), 홈 카드(증빙 받기·사후정산 올리기)·사후정산 입력 화면의 증빙 읽기, DOC-Cruiser 회람, 기념일 지원 화면 채우기, 숙박 줄 고치기(lodgebox). 명세 파일은 있고(`spec/rnd` …) 실행기 등록과 배선이 없다 — `dispatch.run` 은 planned 를 돌리지 않는다. 같은 입력으로 계획을 다시 짓는 재현용 원장, LLM 이 허용 행위 가운데 고르는 통합 명령창도 2단계다.
+R&D 탭(과제·YAML 넣기·rERP·원노트·연구내용 공유·스킬 zip), 메일 탭(등록·갱신·지우기·병합·설정), 홈 카드(증빙 받기·사후정산 올리기)·사후정산 입력 화면의 증빙 읽기, DOC-Cruiser 회람, 기념일 지원 화면 채우기. 명세 파일은 있고(`spec/rnd` …) 실행기 등록과 배선이 없다 — `dispatch.run` 은 planned 를 돌리지 않는다. 같은 입력으로 계획을 다시 짓는 재현용 원장, LLM 이 허용 행위 가운데 고르는 통합 명령창도 2단계다.
+2026-10-16 사용자 지정 범위는 근태·공문·회의실·차량이다 — 숙박 줄 고치기(`trip.lodge`)는 그날 live 로 옮겼고, R&D·기념일 지원은 이번에 옮기지 않는다. 공문 설정 채우기(`gongmun.setup`)는 걷어냈다(그 채팅 칸은 2026-10-09 에 뺐다 — 공문 설정은 공문 4종의 `preset.setup` 이다).

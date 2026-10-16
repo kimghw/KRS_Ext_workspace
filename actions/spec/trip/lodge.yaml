@@ -1,20 +1,22 @@
 # 사후정산 숙박 줄 손질 — 출장 카드의 숙박비 내역(lodgebox.js): `상한` 버튼으로 정산금액을 상한액과 실제 금액 사이에서 바꾸고(toggleCap — 2026-10-06 사용자 지정
 # "상한할지 안할지 버튼 하나"), 비고의 상한 초과 사유를 고쳐 쓰고(setReason — 2026-10-08 "수정 가능하게 해줘"), 줄을 지운다(remove — 두 번 누름).
 # 셋 다 사후정산 입력 화면의 폼을 그 줄의 칸만 바꿔 그대로 다시 저장하는 것이다(src/trip.js tripAfterLodgeAmount·tripAfterLodgeComment·tripAfterLodgeDelete) —
-# **실제로 보내 본 적이 없다**(2026-10-03·10-06·10-08). 2단계에 옮긴다(§12) — 지금은 lodgebox.js 가 src/trip.js 를 바로 부른다.
-# 화면의 숙박 줄(rows — tripAfterRows)·적어 둔 실제 금액(attendLodgeActual)·상한(maxes)은 ctx 다. 실행기(trip.lodge)는 action 에 따라 세 함수 가운데 하나를 부른다.
+# **실제로 보내 본 적이 없다**(2026-10-03·10-06·10-08 — 실물 미확인). lodgebox.js 가 누름마다 이 기록을 짓고(attendpanel.js 의 buildRecord) 디스패처가
+# 실행기 trip.lodge(actions/runners/trip.js)로 돌린다 — 정산금액·비고의 셈(lodgeCapState·lodgeReasonOf·lodgeSettle·lodgeCommentWith/Without)은 어댑터가
+# lodgebox.js 가 하던 그대로 하고, 패널은 돌아온 줄·정한 금액·비고로 적어 둘 것(실제 금액·사유·증빙 표시)과 상태 줄을 맞춘다. 활동 로그 한 줄은 디스패처가 남긴다.
+# 화면의 숙박 줄(lodge — tripAfterRows 의 그 줄)·적어 둔 실제 금액(kept — attendLodgeActual)·상한(maxes)은 ctx 다. 실행기는 action 에 따라 세 함수 가운데 하나를 부른다.
 id: trip.lodge
 title: 사후정산 숙박 줄 손질
-status: planned
+status: live
 confirm: true                  # 상한 버튼·비고에 저장·지우기(두 번 누름)가 확인이다
 effect: write
 summary: '여비계산서 {seq} 숙박 줄 {lodgeSeq} · {action}'
 preset:
-  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름 — 출장자 번호(trseq)를 고른다 }
+  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름 — 패널이 이 이름으로 출장자 번호(trseq)를 고른다(어댑터는 쓰지 않는다) }
 fields:
   seq:      { type: string, required: true, max: 20, label: 계산서 번호, desc: 여비계산서 번호, read: 열린 출장 카드의 여비계산서 번호 그대로, example: '145580' }
-  trseq:    { type: string, required: true, max: 20, label: 출장자 번호, desc: '내 출장자 번호(목록 줄 travelers[].trseq — 사후정산 입력 화면 주소에 든다)', read: '내 출장자 번호. 모르면 null', example: '203311' }
-  lodgeSeq: { type: string, required: true, max: 20, label: 숙박 줄 번호, desc: 바꿀 줄의 번호(lodge_seq — 화면의 줄), read: 바꿀 숙박 줄의 번호 — 숙박비 내역의 줄 그대로, example: '7' }
+  trseq:    { type: string, required: true, max: 20, label: 출장자 번호, desc: '내 출장자 번호(목록 줄 travelers[].trseq — attendpanel.js 의 trseqOf). 사후정산 입력 화면 주소에 든다 — 숙박비 내역은 이 번호가 있어야 서므로 누를 때는 늘 있다', read: '내 출장자 번호. 모르면 null', example: '203311' }
+  lodgeSeq: { type: string, required: true, max: 20, label: 숙박 줄 번호, desc: 바꿀 줄의 번호(lodge_seq — 화면의 줄). 어댑터가 ctx.lodge 의 줄 번호와 같은지 본다, read: 바꿀 숙박 줄의 번호 — 숙박비 내역의 줄 그대로, example: '7' }
   action:
     type: enum
     required: true
@@ -26,7 +28,9 @@ fields:
     type: string
     max: 200
     label: 상한 초과 사유
-    desc: 비고에 적을 사유(real·reason 일 때 — 비면 기본 문구 LODGE_OVER_REASON). 정산금액이 상한액을 넘는 줄은 사유가 필수다
+    desc: >-
+      비고에 적을 사유 — reason 은 비면 기본 문구(LODGE_OVER_REASON), real 은 비면 비고에 이미 있는 사유 → 적어 둔 사유(attendLodgeActual) → 기본 문구 차례다.
+      cap·delete 에는 쓰지 않는다. 화면의 `상한` 버튼은 null 로, `비고에 저장` 은 칸에 적힌 사유(비면 기본 문구)로 짓는다. 정산금액이 상한액을 넘는 줄은 사유가 필수다
     read: '사용자가 말한 상한 초과 사유. 말하지 않았으면 null(기본 문구)'
     example: 인근 숙소비 상승으로 인해 숙박비 내에 숙박이 어려움
 llm: false
@@ -36,4 +40,6 @@ uses:
   - { module: src/trip.js, export: tripAfterLodgeComment }
   - { module: src/trip.js, export: tripAfterLodgeDelete }
   - { module: src/after.js, export: lodgeSettle }
+  - { module: lodgebox.js, export: lodgeCapState }
+  - { module: lodgebox.js, export: lodgeReasonOf }
 next: 보낸 뒤 화면을 다시 읽어 그 줄의 정산금액·비고가 바뀌었는지(또는 줄이 없어졌는지)로 판정한다. 패널은 실제 금액·사유를 적어 두고(attendLodgeActual) 올린 내용의 칸을 맞춘다(patchLodgeInfo)

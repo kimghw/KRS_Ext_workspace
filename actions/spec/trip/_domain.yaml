@@ -1,5 +1,5 @@
 # 여비계산서(출장 여비 — eclass /BusinessTrip) 갈래. 사전정산(create·presave·preconfirm) → 사후정산(after·postconfirm) → 증빙 송부(send),
-# 출장 취소의 계산서 삭제(delete), 사후정산 숙박 줄 손질(lodge — 2단계). 실행기는 src/trip.js·src/travel.js·src/after.js·sendbox.js 의 것 그대로이고
+# 출장 취소의 계산서 삭제(delete), 사후정산 숙박 줄 손질(lodge — 출장 카드의 숙박비 내역). 실행기는 src/trip.js·src/travel.js·src/after.js·sendbox.js 의 것 그대로이고
 # 이 명세는 그 앞에 서는 기록의 꼴이다(docs/actions-design.md §6.6 — actions/runners/trip.js). 사이트의 순서·다시 읽어 판정하기·되돌리기는 옮기지 않는다.
 #
 # LLM 작업은 만들지 않는다(mode none — §3.4: 여비는 UI 가 모은 값으로만 짓는다. 증빙을 읽는 LLM 작업은 references/input.yaml 의 receipt 가 따로 있고,

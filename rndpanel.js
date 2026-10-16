@@ -2,7 +2,7 @@
 // 여기는 그것을 화면에 잇고 chrome.storage(rndBook)에 남긴다.
 //
 //   과제 칩(별칭) → 머리(별칭 한 줄 — 펴면 과제 정보) · 차년도 칩(오늘이 든 것에 "올해" — 예산 정보가 없는 차년도는 회색 점선)
-//   → 예산(비목 줄) · 참여연구자 · 연구개발 계획 · 진행 기록 · 변경이력 → 요약 복사 · JSON 저장·불러오기 → R&D 설정(연구개발계획서 YAML 넣기 …)
+//   → 예산(비목 줄) · 참여연구자 · 연구개발 계획 · 진행 기록 · 변경 및 이력 관리(위는 rndgen 의 YAML 고치기, 아래는 변경이력) → 요약 복사 · JSON 저장·불러오기 → R&D 설정(연구개발계획서 YAML 넣기 …)
 //   예산 정보가 없는 차년도를 보고 있으면(2026-10-11 사용자 지정) 기록 칸들 대신 까닭 카드가 서고 R&D 설정이 저절로 펴진다 — 지난 차년도의 기록을 보이지 않는다.
 //
 // 어디에도 올리지 않는다 — 이 브라우저에만 남는다. 공문 탭의 공문 설정 과제를 가져올 수 있다(처음 열 때 과제가 없으면 저절로).
@@ -13,7 +13,7 @@ import {
   BOOK_KEY, MAX_PROJECTS, CHANGE_KINDS, BUDGET_ITEMS, normalizeBook, normalizeProject, projectOf, aliasOwner, viewYear, yearBook, yearsOf, currentYear, yearLabel, yearState,
   periodText, dot, todayStr, isYmd, amountOf, comma, shortWon, budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst, newId,
   fromGongmun, mergeProjects, restoreBook, exportJson, exportName, importJson, summaryText, parseRoster, parseSections, fileLog, noteLogs,
-  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand, refsText,
+  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand, refsText, normalizeSupport, supportRefs, SUPPORT_MAX,
 } from './src/rnd.js';
 import { SET_KEY, normalizeSet, includeNames, isHidden, nameKey, projectRecs, pickYearRec, candidates, linkOf, isLive, isFresh, fetchSnapshot, applySnapshot, erpExtras, erpHead, clock as erpClock } from './src/rnderp.js';
 // kr_ext_rerp 에서 옮긴 것(rerp/ — 출처·갱신 규칙은 rerp/README.md): rERP 호출(erp), 예상 비용 저장소와 입력 처리(PLAN), 과제집행비율 표(budgetTable), 원노트 동기화 배선(createPlusSync).
@@ -27,7 +27,10 @@ import RSY from './rerp/researchsync.js';
 import KRX_MCP from './rerp/mcp.js';
 import KRX_ONENOTE from './rerp/onenote.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
-import { kindOf, applyYaml, KIND_ORDER, revOf } from './src/rndyaml.js';
+import { JOB_LIST_PATH, JOB_QUERY, parseJobRows, rankJobs, jobLine } from './src/jobid.js';
+import { siteFetch } from './src/net.js';
+import { ORIGIN } from './src/config.js';
+import { kindOf, applyYaml, KIND_ORDER, revOf, readSnapshot } from './src/rndyaml.js';
 import { MANIFEST_PATH, checkManifest, skillGuide, bundleSkills, zipName, kb } from './src/rndskills.js';
 import {
   NOTE_KEY, INFO_KEYS, normalizeNote, bookHash, syncInfo, blockHtml, findBlock, readBlock, openNote as defaultOpenNote,
@@ -55,9 +58,10 @@ const copyBtn = (attr, what) => `<button type="button" class="rd-icon" ${attr} t
  *   openNote?:() => Promise<{tool:(name:string, args:object, ms?:number) => Promise<any>}>}} deps
  *   readAsset 은 확장 안의 파일(rnd/skills.json · rnd/skills/…)을 읽는 길, today 는 검사에서 날짜를 못 박는 데 쓴다,
  *   openNote 는 OneNote MCP 서버에 붙는 길(검사에서는 흉내), erp 는 rERP 를 부르는 것(rerp/erp.js — 검사에서는 흉내), me 는 내 이름(설정),
- *   mcpFetch 는 예상 비용 원노트 동기화가 MCP 서버를 두드릴 fetch(검사에서는 흉내, 없으면 전역)
+ *   mcpFetch 는 예상 비용 원노트 동기화가 MCP 서버를 두드릴 fetch(검사에서는 흉내, 없으면 전역),
+ *   jobs 는 과제 폼의 Job Id 찾기가 받는 R&D PMS 과제 목록(줄 배열 — 검사에서는 흉내)
  */
-export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote, erp = ERP, me = () => '', mcpFetch = undefined }) {
+export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote, erp = ERP, me = () => '', mcpFetch = undefined, jobs = defaultJobs }) {
   const el = {
     root: $('rnd'), projects: $('rdProjects'), empty: $('rdEmpty'), emptyImport: $('rdEmptyImport'), emptyAdd: $('rdEmptyAdd'),
     intake: $('rdIntake'), yaml: $('rdYaml'),
@@ -65,13 +69,17 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     aliasAsk: $('rdAliasAsk'), aliasIn: $('rdAliasIn'), aliasSet: $('rdAliasSet'),
     form: $('rdForm'), formTitle: $('rdFormTitle'), fName: $('rdFName'), fAlias: $('rdFAlias'), fCode: $('rdFCode'), fLead: $('rdFLead'),
     fStart: $('rdFStart'), fEnd: $('rdFEnd'), fCalendar: $('rdFCalendar'), fNote: $('rdFNote'), fNeed: $('rdFNeed'), fSave: $('rdFSave'), fCancel: $('rdFCancel'), fDel: $('rdFDel'),
+    // Job Id(전자결재 과제 찾기 — 2026-10-16) — 칸 · 찾기 · 후보 줄 · 알림 줄.
+    fJob: $('rdFJob'), fJobFind: $('rdFJobFind'), fJobList: $('rdFJobList'), fJobMsg: $('rdFJobMsg'),
     status: $('rdStatus'), body: $('rdBody'), yearEmpty: $('rdYearEmpty'),
     budgetState: $('rdBudgetState'), budget: $('rdBudget'), budgetSum: $('rdBudgetSum'), budgetCopy: $('rdBudgetCopy'),
     rosterState: $('rdRosterState'), roster: $('rdRoster'), rosterTools: $('rdRosterTools'), rosterSrc: $('rdRosterSrc'), rosterCopy: $('rdRosterCopy'),
+    // 행정지원(과제마다 — 이름·맡은 일·공문 참조, 2026-10-16) — 참여연구자 칸 안에 손으로 적는다.
+    support: $('rdSupport'), supportAdd: $('rdSupportAdd'), supportNote: $('rdSupportNote'),
     planState: $('rdPlanState'), plan: $('rdPlan'), planTools: $('rdPlanTools'), planSrc: $('rdPlanSrc'), planCopy: $('rdPlanCopy'),
     logState: $('rdLogState'), logDate: $('rdLogDate'), logTitle: $('rdLogTitle'), logText: $('rdLogText'), logAdd: $('rdLogAdd'), logCancel: $('rdLogCancel'), logs: $('rdLogs'), logsCopy: $('rdLogsCopy'),
     changeState: $('rdChangeState'), chDate: $('rdChDate'), chKind: $('rdChKind'), chItem: $('rdChItem'), chBefore: $('rdChBefore'), chAfter: $('rdChAfter'),
-    chReason: $('rdChReason'), chAdd: $('rdChAdd'), chCancel: $('rdChCancel'), changes: $('rdChanges'), changesCopy: $('rdChangesCopy'),
+    chReason: $('rdChReason'), chAdd: $('rdChAdd'), chCancel: $('rdChCancel'), chNew: $('rdChNew'), chForm: $('rdChForm'), changes: $('rdChanges'), changesCopy: $('rdChangesCopy'),
     copy: $('rdCopy'), export: $('rdExport'), import: $('rdImport'), importGm: $('rdImportGm'),
     skillBox: $('rdSkillBox'), skillState: $('rdSkillState'), skills: $('rdSkills'), skillZip: $('rdSkillZip'), skillGuide: $('rdSkillGuide'),
     noteState: $('rdNoteState'), noteOn: $('rdNoteOn'), noteSection: $('rdNoteSection'), noteSections: $('rdNoteSections'), noteSync: $('rdNoteSync'),
@@ -90,7 +98,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   const st = {
     loaded: false, book: normalizeBook(null),
     // editing 은 고치는 중인 과제 id('new' 는 새 과제). snap 은 그린 시점의 예산 줄 — 계획이 바뀌었는지 이것과 견준다.
-    editing: null, snap: [], logEdit: null, chEdit: null,
+    // overlay 는 머리·몸통을 덮는 카드({ name, close } — rndgen 의 과제 더하기 'add', 2026-10-16). 폼·덮개가 열려 있으면 과제 칩은 어느 것도 켜지지 않고 ＋ 칩이 켜진다.
+    editing: null, overlay: null, snap: [], logEdit: null, chEdit: null,
+    // 과제 폼의 Job Id 후보(src/jobid.js rankJobs 의 list — 높은 차례)와 도는 중인 찾기(폼을 닫거나 다른 과제를 열면 그 답은 버린다).
+    jobList: [], jobRun: 0,
+    // 참여연구자 칸 머리 줄의 앞쪽(계획서의 참여연구자 수·인건비) — 뒤에 행정지원이 붙는다(paintSupportState).
+    rosterText: '',
     // 예산 정보가 없는 차년도를 보는 중이면 그 과제:차년도(emptyKey) — 들어올 때 R&D 설정을 저절로 폈으면(setAuto) 나갈 때 도로 접는다(2026-10-11 사용자 지정).
     emptyKey: '', setAuto: false,
     // 스킬 목록(rnd/skills.json)은 그 칸을 처음 펼 때 읽는다. 못 읽었으면 까닭을 둔다.
@@ -109,6 +122,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     resShare: {}, resBusy: false, resMsg: '', resError: false, resFor: '',
   };
 
+  // rndgen/(과제 더하기·변경사항 카드 — sidepanel.js 가 잇는다)의 훅 — 하나씩(마지막 등록이 이긴다). 없으면 ＋ 는 새 과제 폼이고 넣기·지우기 뒤에 할 일이 없다.
+  //   viewHook(view())            : 그릴 때마다(paintAll·폼 열기) — 보고 있는 과제·차년도·폼/덮개
+  //   addHook({ projectId, n })   : ＋ 칩 · 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기"
+  //   intakeHook(result, texts, meta) : YAML 이 하나라도 들어간 뒤(끌어 놓기·붙여 넣기·뽑기·고치기 모두) — 원문 저장(rndYamlText)
+  //   deleteHook(projectId)       : 과제를 지운 뒤
+  let viewHook = null, addHook = null, intakeHook = null, deleteHook = null;
   const cur = () => projectOf(st.book, st.book.current.project);
   const curYear = (p) => viewYear(st.book, p, today());
   /**
@@ -160,18 +179,40 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   function paintProjects() {
     const p = cur();
     const full = st.book.projects.length >= MAX_PROJECTS;
+    // 폼·덮개(과제 더하기 카드)가 열려 있으면 보고 있던 과제의 칩도 꺼진다 — 그 칩을 누르면 폼·덮개를 닫고 그 과제로 간다(pickProject).
+    const covered = st.editing != null || !!st.overlay;
+    const adding = st.editing === 'new' || st.overlay?.name === 'add';
     const chips = st.book.projects.map((x) => {
-      const on = x.id === p?.id;
+      const on = !covered && x.id === p?.id;
       return `<button type="button" class="rd-proj${on ? ' active' : ''}" data-proj="${x.id}" aria-pressed="${on}" title="${escapeHtml(x.name)}${x.code ? ` · ${escapeHtml(x.code)}` : ''}">${escapeHtml(label(x))}</button>`;
     });
-    chips.push(`<button type="button" class="rd-proj rd-proj-add" data-add="1" aria-label="과제 더하기" title="${full ? `과제는 ${MAX_PROJECTS}개까지입니다` : '과제 더하기'}"${full ? ' disabled' : ''}>＋</button>`);
+    chips.push(`<button type="button" class="rd-proj rd-proj-add${adding ? ' active' : ''}" data-add="1" aria-pressed="${adding}" aria-label="과제 더하기" title="${full ? `과제는 ${MAX_PROJECTS}개까지입니다` : '과제 더하기 — YAML 을 넣거나 사업계획서에서 뽑거나 직접 적습니다'}"${full ? ' disabled' : ''}>＋</button>`);
     el.projects.innerHTML = chips.join('');
     el.projects.classList.toggle('hidden', !st.book.projects.length);
-    el.empty.classList.toggle('hidden', !!st.book.projects.length || st.editing != null);
+    el.empty.classList.toggle('hidden', !!st.book.projects.length || covered);
   }
 
+  /**
+   * 과제 칩 — 그 과제로 간다. 새 과제 폼·과제 더하기 카드(덮개)가 열려 있으면 그것을 닫고 간다 — 보고 있던 과제의 칩이어도
+   * (2026-10-16 사용자 지정: "sscb 버튼 누르면 그리 안감" — 전에는 같은 과제면 아무것도 하지 않아 폼이 그대로 남았다).
+   */
   function pickProject(id) {
-    if (!projectOf(st.book, id) || id === st.book.current.project) return;
+    if (!projectOf(st.book, id)) return;
+    const covered = st.editing != null || !!st.overlay;
+    if (st.editing != null) {
+      st.editing = null;
+      el.form.classList.add('hidden');
+    }
+    if (st.overlay) {
+      // 덮개를 먼저 비우고 닫는다 — 닫는 쪽(rndgen)이 setOverlay(null) 을 다시 부르지 않게(view().overlay 가 이미 null).
+      const o = st.overlay;
+      st.overlay = null;
+      try { o.close?.(); } catch { /* 닫는 쪽의 탈은 칩 누름을 막지 않는다 */ }
+    }
+    if (id === st.book.current.project) {
+      if (covered) paintAll();
+      return;
+    }
     st.book.current.project = id;
     clearLogForm();
     clearChangeForm();
@@ -184,7 +225,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   function paintHead() {
     const p = cur();
-    const editing = st.editing != null;
+    // 폼이나 덮개(과제 더하기 카드)가 열려 있으면 머리·몸통·빈 차년도 카드를 숨긴다.
+    const editing = st.editing != null || !!st.overlay;
     el.head.classList.toggle('hidden', !p || editing);
     // 예산 정보가 없는 차년도를 보고 있으면(2026-10-11 사용자 지정) 상관없는 지난 차년도의 예산·참여연구자·계획·기록 칸(rdBody) 대신 까닭 카드가 서고 R&D 설정이 펴진다.
     const empty = !!p && !editing && yearEmpty(p, curYear(p));
@@ -199,6 +241,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // 과제 정보는 접힌 칸 안에 — 머리에는 별칭 한 줄과 차년도 칩만 늘 보인다.
     const meta = [['과제명', p.name]];
     if (p.code) meta.push(['과제번호', p.code]);
+    if (p.job) meta.push(['Job Id', p.job]);
     if (p.lead) meta.push(['책임자', p.lead]);
     // 공문 참조자(계획서 YAML 의 공문.참조자 — 공문 종류마다)는 보이기만 한다. 적는 곳은 YAML 이고 공문 탭이 결재선에 쓴다(2026-10-15).
     if (Object.keys(p.refs || {}).length) meta.push(['공문 참조자', refsText(p.refs)]);
@@ -217,7 +260,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     }).join('');
     const y = ys.find((x) => x.n === view) || ys[0];
     el.yearNote.textContent = `${yearLabel(y.n)}${y.start ? ` · ${dot(y.start)} ~ ${dot(y.end)}` : ''} · ${yearState(y, today())}`;
-    if (empty) el.yearEmpty.innerHTML = `<p><strong>${yearLabel(view)}</strong> — ${NO_BUDGET}. 아래 <strong>R&amp;D 설정</strong>의 연구개발계획서 YAML 넣기에 이 차년도의 KR_&lt;과제&gt;.yaml 을 넣으면 예산·참여연구자·연구개발 계획이 서고 기록 칸이 열립니다.</p>`;
+    // 단추는 사업계획서에서 이 차년도의 스냅샷을 뽑는 더하기 카드(rndgen — 2026-10-16)를 이 과제·차년도로 연다. YAML 을 넣는 길도 그대로 둔다(둘 다 길).
+    if (empty) {
+      el.yearEmpty.innerHTML = `<p><strong>${yearLabel(view)}</strong> — ${NO_BUDGET}. 아래 <strong>R&amp;D 설정</strong>의 연구개발계획서 YAML 넣기에 이 차년도의 KR_&lt;과제&gt;.yaml 을 넣으면 예산·참여연구자·연구개발 계획이 서고 기록 칸이 열립니다.</p>`
+        + '<div class="rd-actions"><button type="button" class="primary small" data-rdg-extract="1">사업계획서에서 이 차년도 뽑기</button></div>';
+    }
   }
 
   /**
@@ -281,6 +328,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.fName.value = p.name;
     el.fAlias.value = p.alias;
     el.fCode.value = p.code;
+    el.fJob.value = p.job;
+    clearJobs();
     el.fLead.value = p.lead;
     el.fStart.value = p.start;
     el.fEnd.value = p.end;
@@ -291,18 +340,167 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.form.classList.remove('hidden');
     paintProjects();
     paintHead();
+    notifyView();
     el.fName.focus();
   }
 
   function closeForm() {
     st.editing = null;
+    clearJobs();
     el.form.classList.add('hidden');
     paintAll();
   }
 
+  /* ---------------------------------------------------------- Job Id 찾기(과제 폼 — 2026-10-16 사용자 지정) */
+  // "과제 책임자로 우선 검색하고 유사도가 높은 0.5 이상인 걸 … 규칙식으로 검색해서 가장 높은 걸 가져오고 선택할 수 있도록" — 규칙은 src/jobid.js.
+  // 찾기를 누르면 R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것)을 받아 후보를 높은 차례로 보이고 가장 높은 것을 칸에 넣는다. 저장해야 남는다.
+
+  function clearJobs() {
+    st.jobList = [];
+    st.jobRun++;
+    el.fJobFind.disabled = false;
+    el.fJobList.innerHTML = '';
+    el.fJobList.classList.add('hidden');
+    setJobMsg('');
+  }
+
+  function setJobMsg(text, bad = false) {
+    el.fJobMsg.textContent = text;
+    el.fJobMsg.classList.toggle('bad', !!bad);
+  }
+
+  const jobKey = (s) => String(s ?? '').replace(/[^0-9a-z]/gi, '').toLowerCase();
+  const isPicked = (r) => !!el.fJob.value.trim() && [r.id, r.dash].some((v) => jobKey(v) === jobKey(el.fJob.value));
+
+  function paintJobs() {
+    el.fJobList.classList.toggle('hidden', !st.jobList.length);
+    el.fJobList.innerHTML = st.jobList.map((r, i) => {
+      const on = isPicked(r);
+      const meta = [r.sameLead ? `책임자 ${r.lead} 같음` : r.lead ? `책임자 ${r.lead}` : '', r.proc, `유사도 ${r.score.toFixed(2)}`].filter(Boolean).join(' · ');
+      return `<button type="button" class="rd-job-cand${on ? ' active' : ''}" data-job="${i}" aria-pressed="${on}" title="${escapeHtml(jobLine(r))}">`
+        + `<b>${escapeHtml(r.id)}</b><span class="rd-job-name">${escapeHtml(r.name)}</span><small>${escapeHtml(meta)}</small></button>`;
+    }).join('');
+  }
+
+  async function findJob() {
+    const name = el.fName.value.trim();
+    const lead = el.fLead.value.trim();
+    if (!name) {
+      setJobMsg('과제명을 먼저 적으세요 — 과제명이 비슷한 과제를 찾습니다.', true);
+      el.fName.focus();
+      return;
+    }
+    const run = ++st.jobRun;
+    el.fJobFind.disabled = true;
+    setJobMsg('R&D PMS 과제 목록에서 찾는 중…');
+    let rows;
+    try {
+      rows = await jobs();
+    } catch (err) {
+      if (run !== st.jobRun) return;
+      el.fJobFind.disabled = false;
+      setJobMsg(`과제 목록을 받지 못했습니다 — ${err?.message || err}`, true);
+      return;
+    }
+    if (run !== st.jobRun) return;
+    el.fJobFind.disabled = false;
+    const { by, list } = rankJobs(rows, { name, lead });
+    st.jobList = list;
+    if (!list.length) {
+      paintJobs();
+      setJobMsg(rows?.length ? `과제명이 비슷한 과제(유사도 0.5 이상)가 없습니다 — 과제 목록 ${rows.length}개를 봤습니다. Job Id 를 직접 적으세요.`
+        : '과제 목록이 비었습니다 — eclass 에 로그인되어 있는지 보세요.', true);
+      return;
+    }
+    const kept = list.some(isPicked);
+    if (!kept) el.fJob.value = list[0].id;
+    paintJobs();
+    const why = by === 'lead' ? `책임자 ${list[0].lead} 같음 · ` : lead ? `책임자 ${lead} 의 과제는 비슷한 것이 없어 과제명으로만 · ` : '';
+    setJobMsg(kept ? `적혀 있던 Job Id 가 후보에 있습니다 — 다른 후보를 누르면 바뀝니다(저장해야 남습니다).`
+      : `가장 비슷한 과제를 넣었습니다(${why}유사도 ${list[0].score.toFixed(2)}) — 맞는지 보고 저장하세요. 다른 후보를 누르면 바뀝니다.`);
+  }
+
+  function pickJob(i) {
+    const r = st.jobList[i];
+    if (!r) return;
+    el.fJob.value = r.id;
+    paintJobs();
+    setJobMsg(`${r.dash || r.id} 로 바꿨습니다 — 저장해야 남습니다.`);
+  }
+
+  /* ---------------------------------------------------------- rndgen 손잡이(과제 더하기·변경사항 카드 — 2026-10-16) */
+
+  /** 보고 있는 것 — rndgen 이 따라 그린다(계약 View). yearEmpty 는 그 차년도에 예산 정보가 없는가(폼·덮개와 상관없이). */
+  function view() {
+    const p = cur();
+    const n = p ? curYear(p) : 0;
+    const snap = p ? p.years?.[n]?.snapshot : null;
+    return {
+      project: p || null, n, editing: st.editing != null, overlay: st.overlay?.name || null,
+      yearEmpty: !!p && yearEmpty(p, n), snapshot: snap ? { rev: snap.rev || '', date: snap.date || '', file: snap.file || '' } : null,
+    };
+  }
+
+  /** 그린 뒤 rndgen 에 알린다 — 그쪽의 탈이 이 탭 그리기를 막지 않게 삼킨다. */
+  function notifyView() {
+    if (!viewHook) return;
+    try {
+      viewHook(view());
+    } catch (err) {
+      console.error('R&D 더하기·변경사항 카드를 그리지 못했습니다', err);
+    }
+  }
+
+  /** ＋ · 과제 더하기 · 빈 차년도 카드의 단추 — rndgen 이 있으면 더하기 카드(target: {} 또는 { projectId, n }), 없으면 새 과제 폼. */
+  function openAdd(target = {}) {
+    if (addHook) addHook(target);
+    else openForm('new');
+  }
+
+  /** 덮개 켜기(name 'add') · 끄기(null). 켜면 열린 폼은 닫는다 — 폼과 덮개는 하나만. 칩으로 닫을 때는 onClose 를 부른다(pickProject). */
+  function setOverlay(name, onClose) {
+    if (name) {
+      if (st.editing != null) {
+        st.editing = null;
+        el.form.classList.add('hidden');
+      }
+      st.overlay = { name: String(name), close: typeof onClose === 'function' ? onClose : null };
+    } else {
+      st.overlay = null;
+    }
+    paintAll();
+  }
+
+  /** 더하기 카드의 "직접 적기" — 덮개를 (닫는 쪽을 부르지 않고) 걷고 새 과제 폼을 연다. */
+  function addManually() {
+    st.overlay = null;
+    openForm('new');
+  }
+
+  /** 그 과제(폼·덮개가 있으면 닫고) · 그 차년도로 — 넣기·반영 뒤에 rndgen 이 부른다. */
+  function pick(projectId, n) {
+    pickProject(projectId);
+    if (Number(n) > 0 && cur()?.id === projectId) pickYear(Number(n));
+  }
+
+  /** 별칭이 없던 과제에 별칭을 붙인다(뽑은 스냅샷을 넣은 뒤) — 비었거나 다른 과제와 겹치면 붙이지 않고 까닭을 돌려준다. */
+  function setAliasOf(projectId, alias) {
+    const p = projectOf(st.book, projectId);
+    if (!p) return { ok: false, error: '과제를 찾지 못했습니다' };
+    const a = String(alias ?? '').trim().slice(0, 60);
+    if (!a) return { ok: false, error: '별칭을 적으세요 — 예) SSCB' };
+    const dup = aliasOwner(st.book, a, p.id);
+    if (dup) return { ok: false, error: `같은 별칭의 과제가 있습니다 — ${dup.name}` };
+    p.alias = a;
+    logEvent('rnd', true, `R&D 과제 별칭: ${p.name} → ${a}`);
+    paintAll();
+    save();
+    return { ok: true, error: '' };
+  }
+
   function saveForm() {
     const draft = normalizeProject({
-      id: st.editing === 'new' ? '' : st.editing, name: el.fName.value, alias: el.fAlias.value, code: el.fCode.value, lead: el.fLead.value,
+      id: st.editing === 'new' ? '' : st.editing, name: el.fName.value, alias: el.fAlias.value, code: el.fCode.value, job: el.fJob.value, lead: el.fLead.value,
       start: el.fStart.value, end: el.fEnd.value, calendar: el.fCalendar.checked, note: el.fNote.value,
     });
     if (!draft.name) {
@@ -334,7 +532,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       const p = projectOf(st.book, st.editing);
       if (!p) return closeForm();
       const changes = projectChanges(p, draft, today());
-      Object.assign(p, { name: draft.name, alias: draft.alias, code: draft.code, lead: draft.lead, start: draft.start, end: draft.end, calendar: draft.calendar, note: draft.note });
+      Object.assign(p, { name: draft.name, alias: draft.alias, code: draft.code, job: draft.job, lead: draft.lead, start: draft.start, end: draft.end, calendar: draft.calendar, note: draft.note });
       if (changes.length) {
         // 연구기간이 바뀌어 차년도가 달라졌을 수 있다 — 고친 뒤의 보고 있는 차년도에 남긴다.
         yearBook(p, viewYear(st.book, p, today())).changes.push(...changes);
@@ -358,6 +556,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     setStatus(`과제를 지웠습니다 — ${label(p)}`);
     closeForm();
     save();
+    // 그 과제의 저장된 YAML 원문(rndYamlText)도 지운다(rndgen).
+    try { deleteHook?.(p.id); } catch (err) { console.error('R&D YAML 원문을 지우지 못했습니다', err); }
   }
 
   /* ---------------------------------------------------------- 예산 */
@@ -575,9 +775,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const people = roster ? parseRoster(roster.text) : null;
     const pay = (people || []).reduce((a, x) => a + (amountOf(x.pay) || 0), 0);
     el.roster.innerHTML = roster ? (people ? rosterHtml(people) : `<p class="rd-text">${escapeHtml(roster.text)}</p>`) : none('참여연구자가');
-    el.rosterState.textContent = !roster ? '계획서 없음' : people ? `${people.length}명${pay ? ` · 인건비 ${shortWon(pay)}` : ''}` : '있음';
+    st.rosterText = !roster ? '계획서 없음' : people ? `${people.length}명${pay ? ` · 인건비 ${shortWon(pay)}` : ''}` : '있음';
     el.rosterSrc.textContent = roster ? src : '';
     el.rosterTools.classList.toggle('hidden', !roster);
+    paintSupport();
 
     const plan = fileLog(b, 'plan');
     const secs = plan ? parseSections(plan.text) : null;
@@ -587,6 +788,80 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.planState.textContent = !plan ? '계획서 없음' : [goals ? `목표 ${goals}개` : '', months].filter(Boolean).join(' · ') || '있음';
     el.planSrc.textContent = plan ? src : '';
     el.planTools.classList.toggle('hidden', !plan);
+  }
+
+  /* ---------------------------------------------------------- 행정지원(과제마다 — 공문 참조자) */
+
+  /**
+   * 행정지원 — 과제마다 손으로 적는 사람(이름·맡은 일·공문 참조). 참조로 고른 사람은 이 과제의 공문(구매·교육·출장)마다 결재선의 참조자다
+   * (src/gongmun.js 의 projectRefs — 2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록", 담당 직원은 행정 담당으로
+   * 참조, 참조는 "과제 마다 다름. 구매교육출장 이런거랑 달리"). 이름을 적기 전의 빈 줄도 그린다(저장소에서 다시 읽으면 빠진다).
+   */
+  /** 화면이 고치는 행정지원 줄 — 저장된 그대로의 차례(같은 이름·빈 줄도 남긴다 — 줄의 data-i 가 이 차례다). 머리 줄·공문은 normalizeSupport 를 지난 것을 본다. */
+  const supportRows = (p) => (Array.isArray(p?.support) ? p.support : []).slice(0, SUPPORT_MAX)
+    .map((x) => ({ name: String(x?.name ?? ''), role: String(x?.role ?? ''), ref: x?.ref !== false }));
+
+  function paintSupport() {
+    const p = cur();
+    if (!p) return;
+    const rows = supportRows(p);
+    el.support.innerHTML = rows.map((s, i) => `<li class="rd-support-row" data-i="${i}">`
+      + `<input type="text" data-k="name" value="${escapeHtml(s.name)}" placeholder="이름" aria-label="행정지원 ${i + 1} 이름" maxlength="40" autocomplete="off" spellcheck="false" />`
+      + `<input type="text" data-k="role" value="${escapeHtml(s.role)}" placeholder="맡은 일 — 예) 행정 담당" aria-label="행정지원 ${i + 1} 맡은 일" maxlength="40" autocomplete="off" />`
+      + `<label class="rd-support-ref" title="이 과제의 공문(구매·교육·출장)마다 결재선의 참조자로 넣습니다"><input type="checkbox" data-k="ref"${s.ref ? ' checked' : ''} /> 공문 참조</label>`
+      + `<button type="button" class="ghost small rd-del" data-drop="${i}" aria-label="행정지원 ${i + 1} 빼기">빼기</button></li>`).join('');
+    el.supportAdd.disabled = rows.length >= SUPPORT_MAX;
+    el.supportAdd.title = el.supportAdd.disabled ? `행정지원은 과제마다 ${SUPPORT_MAX}명까지입니다` : '행정 담당 등을 더합니다 — 공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다';
+    paintSupportState();
+  }
+
+  /** 참여연구자 칸 머리 줄(참여연구자 · 행정지원 · 참조자)과 행정지원 안내 — 줄을 다시 그리지 않고(적는 중인 칸을 지키게) 글만 바꾼다. */
+  function paintSupportState() {
+    const p = cur();
+    if (!p) return;
+    const named = normalizeSupport(p.support);
+    const refs = supportRefs(p);
+    el.rosterState.textContent = [st.rosterText, named.length ? `행정지원 ${named.length}명` : '', refs.length ? `공문 참조 ${refs.join(', ')}` : ''].filter(Boolean).join(' · ');
+    el.supportNote.textContent = named.length ? (refs.length ? '공문 참조를 켠 사람은 이 과제의 공문마다 참조자로 들어갑니다' : '공문 참조를 켠 사람이 없습니다')
+      : '행정 담당 등을 적고 공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다';
+  }
+
+  /** 행정지원 줄을 고쳤을 때 — 이름·맡은 일은 적는 대로, 공문 참조는 누르는 대로 과제에 남긴다(빈 줄은 그대로 두고 저장소에서 다시 읽을 때 빠진다). */
+  function onSupportInput(e) {
+    const p = cur();
+    const node = e.target instanceof Element ? e.target.closest('[data-k]') : null;
+    const li = node?.closest('[data-i]');
+    if (!p || !node || !li) return;
+    const rows = supportRows(p);
+    const row = rows[+li.dataset.i];
+    if (!row) return;
+    if (node.dataset.k === 'ref') row.ref = node.checked;
+    else row[node.dataset.k] = node.value;
+    p.support = rows;
+    save();
+    paintSupportState();
+  }
+
+  function onSupportClick(e) {
+    const p = cur();
+    const btn = e.target instanceof Element ? e.target.closest('[data-drop]') : null;
+    if (!p || !btn) return;
+    const rows = supportRows(p);
+    rows.splice(+btn.dataset.drop, 1);
+    p.support = rows;
+    save();
+    paintSupport();
+  }
+
+  function addSupport() {
+    const p = cur();
+    if (!p) return;
+    const rows = supportRows(p);
+    if (rows.length >= SUPPORT_MAX) return;
+    p.support = [...rows, { name: '', role: '', ref: true }];
+    save();
+    paintSupport();
+    el.support.querySelector('li:last-child [data-k="name"]')?.focus();
   }
 
   /* ---------------------------------------------------------- 진행 기록(손으로 적는 연구내역) */
@@ -702,7 +977,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     setStatus('진행 기록을 지웠습니다.');
   }
 
-  /* ---------------------------------------------------------- 변경이력 */
+  /* ---------------------------------------------------------- 변경이력(변경 및 이력 관리 카드의 아래 몫) */
 
   function paintChanges() {
     const p = cur();
@@ -729,7 +1004,13 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.chKind.value = CHANGE_KINDS[0];
     for (const node of [el.chItem, el.chBefore, el.chAfter, el.chReason]) node.value = '';
     el.chAdd.textContent = '기록';
-    el.chCancel.classList.add('hidden');
+    showChangeForm(false);
+  }
+
+  /** 손으로 적는 칸 — "직접 적기"·줄의 "고치기" 로 열고 기록·취소하면 닫는다(2026-10-16 — 변경 및 이력 관리 카드에 YAML 고치기 칸과 함께 서서). */
+  function showChangeForm(on) {
+    el.chForm.classList.toggle('hidden', !on);
+    el.chNew.classList.toggle('hidden', on);
   }
 
   function addChange() {
@@ -781,7 +1062,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       el.chAfter.value = c.after;
       el.chReason.value = c.reason;
       el.chAdd.textContent = '저장';
-      el.chCancel.classList.remove('hidden');
+      showChangeForm(true);
       paintChanges();
       el.chItem.focus();
       return;
@@ -936,16 +1217,23 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
         return;
       }
     }
-    await intakeTexts(texts);
+    return intakeTexts(texts, { source: 'file' });
   }
 
   /**
    * YAML 글들을 장부에 넣는다 — 풀어서 종류를 가리고(스냅샷 → 개정 레지스트리 → 예산 이력 → 참여연구원 이력 차례), 하나씩 넣는다.
    * 이력 파일은 주석의 과제명으로 과제를 찾고 없으면 보고 있는 과제에 넣는다. 하나라도 들어갔으면 그린 뒤 저장한다.
+   * 넣은 결과를 돌려주고(rndgen 의 넣기·반영이 읽는다), 하나라도 들어갔으면 intakeHook 을 부른다(원문 저장 — 끌어 놓기·붙여 넣기로 넣은 것도).
+   * source 는 어디서 왔나('file'·'paste'·'extract'·'revise'), summary 는 고치기의 변경분 한 줄 — 훅에 그대로 넘긴다.
+   * @returns {Promise<{ ok: boolean, error: string, lines: string[],
+   *   results: Array<{ name: string, kind: string, label: string, summary: string, projectId: string, n: number, rev: string, applied: boolean }> }>}
+   *   applied 는 스냅샷이면 그 판이 그 차년도에 들어갔는가(더 오래된 판이라 넣지 않았으면 false), 이력 파일은 늘 true.
    */
-  async function intakeTexts(texts) {
+  async function intakeTexts(texts, { source = 'file', summary = '' } = {}) {
     el.intake.setAttribute('aria-busy', 'true');
     const lines = [];
+    const results = [];
+    let error = '';
     let resAfter = [];   // 연구내용 페이지를 다시 올릴 과제 (원노트에 올린 적이 있는 것만)
     try {
       const { parse } = await loadYaml();
@@ -969,12 +1257,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
         const res = applyYaml(st.book, d.obj, { text: d.text, file: d.name, current: p, n: p ? curYear(p) : 0, today: today() });
         lines.push(`${res.label}${d.name ? `(${d.name})` : ''}: ${res.summary}`);
         logEvent('rnd', true, `R&D YAML 넣음 — ${res.label}: ${res.summary}`, { file: d.name });
+        results.push(intakeResult(d, res));
       }
       // 스냅샷은 연구내용 공유에 쓸 모양(rerp/research.js 기록 — 개발목표·개발내용·연구활동비 세부사용계획 …)으로도 남기고, 이미 원노트에 올린 과제면 그 페이지를 고친다.
       const recs = docs.filter((d) => d.kind === 'snapshot').map((d) => { try { return RS.readSnapshot(d.obj, { text: d.text, file: d.name }); } catch { return null; } }).filter(Boolean);
       if (recs.length) resAfter = await storeResearch(recs);
       setStatus(lines.join(' / '));
     } catch (err) {
+      error = err.message;
       setStatus(`${lines.length ? `${lines.join(' / ')} / ` : ''}${err.message}`, 'error');
       logEvent('rnd', false, `R&D YAML 넣기 실패: ${err.message}`);
     } finally {
@@ -990,6 +1280,26 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       el.status.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
       for (const p of resAfter) shareResearch(p, { auto: true });   // 기다리지 않는다
     }
+    const result = { ok: !error, error, lines, results };
+    if (lines.length && intakeHook) {
+      try {
+        intakeHook(result, texts, { source, summary });
+      } catch (err) {
+        console.error('R&D YAML 원문을 남기지 못했습니다', err);
+      }
+    }
+    return result;
+  }
+
+  /** 넣은 문서 하나의 결과 — 스냅샷은 그 판(readSnapshot 의 n·rev)이 그 차년도에 실제로 들어갔는지(applied)까지. */
+  function intakeResult(d, res) {
+    const projectId = res.project?.id || '';
+    if (d.kind !== 'snapshot') {
+      return { name: d.name || '', kind: d.kind, label: res.label, summary: res.summary, projectId, n: res.project ? curYear(res.project) : 0, rev: '', applied: true };
+    }
+    const snap = readSnapshot(d.obj);
+    const applied = res.project?.years?.[snap.n]?.snapshot?.rev === snap.rev;
+    return { name: d.name || '', kind: d.kind, label: res.label, summary: res.summary, projectId, n: snap.n, rev: snap.rev || '', applied };
   }
 
   function onDrag(e) {
@@ -1025,7 +1335,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const text = typing ? '' : (e.clipboardData?.getData('text/plain') || '').trim();
     if (!text || !/^(#|meta:|entity:|project:|revisions:)/m.test(text)) return;
     e.preventDefault();
-    intakeTexts([{ name: '', text }]);
+    intakeTexts([{ name: '', text }], { source: 'paste' });
   }
 
   /* ---------------------------------------------------------- 차년도 YAML 뽑는 스킬 */
@@ -1754,12 +2064,15 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     paintHead();
     paintItems();   // 장부에 새 비목이 들어왔을 수 있다(YAML·JSON 들이기) — 설정의 비목 체크도 맞춘다
     paintRes();     // 원노트 칸의 연구내용 공유는 보고 있는 과제의 것
-    if (!cur()) return;
-    paintBudget();
-    paintErp();
-    paintFiles();
-    paintLogs();
-    paintChanges();
+    if (cur()) {
+      paintBudget();
+      paintErp();
+      paintFiles();
+      paintLogs();
+      paintChanges();
+    }
+    // 과제 더하기·변경사항 카드(rndgen)는 보고 있는 과제·차년도·폼/덮개를 따라 그린다 — 과제가 없을 때도.
+    notifyView();
   }
 
   function wire() {
@@ -1767,10 +2080,16 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.projects.addEventListener('click', (e) => {
       const b = e.target instanceof HTMLElement ? e.target.closest('[data-proj],[data-add]') : null;
       if (!b) return;
-      if (b.dataset.add) openForm('new');
+      // ＋ — 과제 더하기 카드(YAML 넣기 · 사업계획서에서 뽑기 · 직접 적기, rndgen — 2026-10-16). rndgen 이 없으면 새 과제 폼.
+      if (b.dataset.add) openAdd({});
       else pickProject(b.dataset.proj);
     });
-    el.emptyAdd.addEventListener('click', () => openForm('new'));
+    el.emptyAdd.addEventListener('click', () => openAdd({}));
+    // 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기" — 이 과제·차년도로 더하기 카드를 연다.
+    el.yearEmpty.addEventListener('click', (e) => {
+      const p = cur();
+      if (p && e.target instanceof Element && e.target.closest('[data-rdg-extract]')) openAdd({ projectId: p.id, n: curYear(p) });
+    });
     el.emptyImport.addEventListener('click', () => importGongmun());
     el.edit.addEventListener('click', () => { const p = cur(); if (p) openForm(p.id); });
     el.aliasSet.addEventListener('click', setAlias);
@@ -1782,6 +2101,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.fSave.addEventListener('click', saveForm);
     el.fCancel.addEventListener('click', closeForm);
     el.fDel.addEventListener('click', delProject);
+    el.fJobFind.addEventListener('click', findJob);
+    el.fJobList.addEventListener('click', (e) => {
+      const b = e.target instanceof Element ? e.target.closest('[data-job]') : null;
+      if (b) pickJob(+b.dataset.job);
+    });
+    el.fJob.addEventListener('input', () => { if (st.jobList.length) paintJobs(); });
     el.form.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target instanceof HTMLElement && e.target.tagName === 'INPUT') {
         e.preventDefault();
@@ -1798,11 +2123,17 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.logs.addEventListener('click', onLogsClick);
     el.chAdd.addEventListener('click', addChange);
     el.chCancel.addEventListener('click', () => { clearChangeForm(); paintChanges(); });
+    el.chNew.addEventListener('click', () => { clearChangeForm(); showChangeForm(true); el.chItem.focus(); });
     el.changes.addEventListener('click', onChangesClick);
     el.changes.addEventListener('change', onReasonChange);
     el.copy.addEventListener('click', copySummary);
     el.budgetCopy.addEventListener('click', copyBudget);
     el.rosterCopy.addEventListener('click', () => copyFile(el.rosterCopy, 'roster', '참여연구자 표'));
+    // 행정지원 — 사람 더하기, 줄의 이름·맡은 일(input)·공문 참조(change)·빼기(click).
+    el.supportAdd.addEventListener('click', addSupport);
+    el.support.addEventListener('input', onSupportInput);
+    el.support.addEventListener('change', onSupportInput);
+    el.support.addEventListener('click', onSupportClick);
     el.planCopy.addEventListener('click', () => copyFile(el.planCopy, 'plan', '연구개발 계획'));
     el.logsCopy.addEventListener('click', copyLogs);
     el.changesCopy.addEventListener('click', copyChanges);
@@ -1825,6 +2156,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     });
     for (const type of ['dragover', 'dragleave']) el.root.addEventListener(type, onDrag);
     el.root.addEventListener('drop', onDrop);
+    // 더하기·변경사항 카드(rndgen)는 놓인 문서를 받아 전파를 멈춘다 — 그때도 YAML 넣기 칸의 "놓기" 표시는 거둔다(잡는 단계에서).
+    el.root.addEventListener('drop', () => el.intake.classList.remove('over'), true);
     document.addEventListener('paste', onPaste);
     el.noteOn.addEventListener('change', onNoteToggle);
     el.noteSection.addEventListener('change', onNoteSection);
@@ -1898,7 +2231,25 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.root.classList.add('hidden');
   }
 
-  return { wire, show, hide, book: () => st.book, skills: loadManifest, note: () => st.note, noteSync, erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set };
+  return {
+    wire, show, hide, book: () => st.book, skills: loadManifest, note: () => st.note, noteSync, erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
+    // rndgen/(과제 더하기·변경사항 카드)의 손잡이 — 2026-10-16. 훅은 하나씩(마지막 등록이 이긴다).
+    current: () => { const p = cur(); return p ? { project: p, n: curYear(p) } : null; },
+    view,
+    onView: (fn) => { viewHook = typeof fn === 'function' ? fn : null; },
+    onAdd: (fn) => { addHook = typeof fn === 'function' ? fn : null; },
+    onIntake: (fn) => { intakeHook = typeof fn === 'function' ? fn : null; },
+    onDelete: (fn) => { deleteHook = typeof fn === 'function' ? fn : null; },
+    setOverlay, addManually, pick, setAlias: setAliasOf,
+    intake: (texts, opts) => intakeTexts(texts, opts),
+    download, readAsset,
+  };
+}
+
+/** R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것) — 확장에서 바로(쿠키가 실린다), 안 되면 eclass 탭을 거쳐(src/net.js). */
+async function defaultJobs() {
+  const { html } = await siteFetch(`${ORIGIN}${JOB_LIST_PATH}?${JOB_QUERY}`);
+  return parseJobRows(html);
 }
 
 async function defaultCopy(text) {

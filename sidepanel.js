@@ -9,6 +9,8 @@ import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js'
 import { ONENOTE_MCP_URL } from './src/rndnote.js';
 import { bridgeGuide, bridgeRoot } from './src/bridgeguide.js';
 import { bridgeUses } from './src/bridgeuse.js';
+import { specGroups, yamlLines } from './src/specview.js';
+import { ACTIONS } from './actions/spec.js';
 import { createLogbook, formatEntries, buildLogReport, stamp } from './src/logbook.js';
 import { buildSaveDigest } from './src/diagnose.js';
 import { MAX_DAYS, widenHours } from './src/search.js';
@@ -31,6 +33,7 @@ import { createAttendPanel } from './attendpanel.js';
 import { createGongmunPanel } from './gongmunpanel.js';
 import { createRndPanel } from './rndpanel.js';
 import { createMailPanel } from './mailtrack/index.js';
+import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
 import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
@@ -65,6 +68,7 @@ const el = {
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
   homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
   docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'), tabPicks: $('tabPicks'),
+  specDomains: $('specDomains'), specKinds: $('specKinds'), specFile: $('specFile'), specPath: $('specPath'), specOut: $('specOut'),
   settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), settingsTabs: $('settingsTabs'), settingsClose: $('settingsClose'), llmModel: $('llmModel'),
   connTeamsUrl: $('connTeamsUrl'), connTeamsState: $('connTeamsState'), connTeamsCheck: $('connTeamsCheck'),
   connNoteUrl: $('connNoteUrl'), connNoteState: $('connNoteState'), connNoteCheck: $('connNoteCheck'),
@@ -77,6 +81,7 @@ const state = { day: null, picks: [], drag: null, loadedAt: 0, timer: null,
   region: null, regions: [], apiKey: '', found: [], cli: false, mode: 'room', extendTarget: null,
   tabsOff: [],   // 설정(보이는 탭)에서 끈 탭의 모드 이름 — src/tabpick.js
   settingsOpen: false, settingsPane: 'general', settingsScroll: 0,   // 설정 화면(머리의 톱니)이 열려 있는가 · 보이는 갈래(일반 general · LLM llm · 연결 conn — settingsPane 에 저장) · 열기 전 스크롤 자리
+  specDomain: '', specKey: '',   // 일반 갈래의 행위 명세에서 고른 갈래(attend …)와 파일(_domain·종류) — 저장하지 않는다
   // 다리 확인이 한 번이라도 끝났는지와, 닿지 않았을 때 브라우저가 댄 까닭(연결 지침에 적는다).
   cliChecked: false, cliError: '',
   // 브라우저 글자 뽑기 꾸러미(doctext/browser.js ready())가 있는가 — 다리가 없을 때 첨부를 어디서 읽는지 "다리가 하는 일" 표에 적는다. init 이 느리게 채운다.
@@ -1888,6 +1893,18 @@ const rnd = createRndPanel({
 });
 
 /**
+ * R&D 탭의 과제 더하기·변경사항 카드(rndgen/ — 2026-10-16 사용자 지정: "＋ 누르면 YAML 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML 을 추출 …
+ * 변경사항의 내용을 임의 형식으로 제공 하면 yaml 로 수정해서 업데이트"). 화면·LLM·원문 저장은 모두 rndgen/ 안이고 여기서는 잇기만 한다.
+ * Claude 연결(로컬 CLI · API 키)은 부를 때마다 설정에서 읽는다.
+ */
+const rndgen = createRndGen({
+  rnd, $, escapeHtml, logEvent,
+  flash: (btn, text, ms) => flash(btn, text, ms),
+  ai: () => ({ apiKey: state.apiKey, cli: state.cli }),
+  today: todayStr,
+});
+
+/**
  * 메일 탭(2026-10-15 사용자 지정: "별도 폴더에 작성 … 지금 프로젝트와 가능한 분리해서") — 내가 보낸 메일의 회신을 받는 사람 조직마다 센다.
  * 화면·장부·금고·Outlook MCP(:5001)는 모두 mailtrack/ 안에 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다(mailtrack/index.js).
  * MCP 주소·내 메일 주소·연결 확인은 설정 화면의 연결 갈래(#connOutlook)에 그린다(connRoot) — 나머지 메일 설정은 메일 탭에 남는다.
@@ -2095,6 +2112,124 @@ function choosePane(name, { save = true } = {}) {
   if (pane === 'conn') mail.loadSettings();   // 메일 탭을 한 번도 열지 않았어도 저장된 MCP 주소·내 메일 주소가 보이게
 }
 
+/* 일반 갈래의 행위 명세 — 갈래 단추 → 종류 단추 → YAML 원본(src/specview.js). 같은 단추를 다시 누르면 접는다. */
+const SPEC_GROUPS = specGroups(ACTIONS);
+/** 경로 → 읽은 원본. 확장 꾸러미 안의 파일이라 패널이 열려 있는 동안 다시 읽지 않는다(고쳤으면 확장을 새로 고친다). */
+const specTexts = new Map();
+
+function specChip(text, data, extra = null) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'spec-chip';
+  b.setAttribute('aria-pressed', 'false');
+  Object.assign(b.dataset, data);
+  b.append(text);
+  if (extra) b.append(extra);
+  return b;
+}
+
+function specSmall(cls, text) {
+  const s = document.createElement('span');
+  s.className = cls;
+  s.textContent = text;
+  return s;
+}
+
+/** 갈래 단추 줄 — init 에서 한 번 그린다. 숫자는 그 갈래의 종류 수(공통 빼고). */
+function paintSpecDomains() {
+  el.specDomains.textContent = '';
+  for (const g of SPEC_GROUPS) el.specDomains.append(specChip(g.title, { domain: g.domain }, specSmall('spec-n', String(g.files.length - 1))));
+}
+
+/** 갈래를 고른다('' 이면 접는다) — 종류 단추 줄을 그 갈래 것으로 다시 그리고 원본은 닫는다. */
+function pickSpecDomain(domain) {
+  state.specDomain = domain;
+  for (const b of el.specDomains.children) b.setAttribute('aria-pressed', String(b.dataset.domain === domain));
+  const g = SPEC_GROUPS.find((x) => x.domain === domain);
+  el.specKinds.textContent = '';
+  for (const f of g?.files || []) {
+    const planned = f.status === 'planned';
+    const b = specChip(f.label, { key: f.key }, planned ? specSmall('spec-tag', '예정') : null);
+    if (planned) {
+      b.classList.add('is-planned');
+      b.title = '예정(planned) — 기능은 있어도 아직 행위 층(관문·디스패처)을 거치지 않습니다. 2단계에 옮깁니다';
+    }
+    el.specKinds.append(b);
+  }
+  el.specKinds.hidden = !g;
+  pickSpecFile('');
+}
+
+/** 파일을 고른다('' 이면 닫는다) — 꾸러미 안의 YAML 을 읽어 그대로 보인다. 읽는 사이 다른 것을 골랐으면 늦게 온 글은 버린다. */
+async function pickSpecFile(key) {
+  state.specKey = key;
+  for (const b of el.specKinds.children) b.setAttribute('aria-pressed', String(b.dataset.key === key));
+  const f = SPEC_GROUPS.find((x) => x.domain === state.specDomain)?.files.find((x) => x.key === key);
+  el.specFile.hidden = !f;
+  if (!f) return;
+  el.specPath.textContent = f.path;
+  if (specTexts.has(f.path)) { paintYaml(specTexts.get(f.path)); return; }
+  el.specOut.textContent = '읽는 중…';
+  let text = null;
+  let fail = '';
+  try {
+    const res = await fetch(chrome.runtime.getURL(f.path));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    text = await res.text();
+    specTexts.set(f.path, text);
+  } catch (err) {
+    fail = `읽지 못했습니다 — ${f.path} (${err?.message || err})`;
+  }
+  if (el.specPath.textContent !== f.path || state.specKey !== key) return;
+  if (text == null) el.specOut.textContent = fail;
+  else paintYaml(text);
+}
+
+/**
+ * 원본을 편집기처럼 칠해 그린다(src/specview.js yamlLines — 키·값·따옴표 글·수·주석). 줄마다 블록이라, 좁은 패널에서 접혀도 이어지는 줄이
+ * 제 들여쓰기 아래에 선다(--ind 매단 들여쓰기 — sidepanel.css .spec-out .yl). 글자는 원본 그대로라 골라 복사해도 같다.
+ */
+function paintYaml(text) {
+  const lines = yamlLines(text);
+  const frag = document.createDocumentFragment();
+  lines.forEach((line, i) => {
+    const row = document.createElement('span');
+    row.className = 'yl';
+    row.style.setProperty('--ind', String(line.ind));
+    for (const p of line.parts) {
+      if (!p.c) { row.append(p.t); continue; }
+      const s = document.createElement('span');
+      s.className = `y-${p.c}`;
+      s.textContent = p.t;
+      row.append(s);
+    }
+    if (i < lines.length - 1) row.append('\n');
+    frag.append(row);
+  });
+  el.specOut.replaceChildren(frag);
+}
+
+/** 원본 칸의 높이 — 오른쪽 아래 손잡이로 끌어 바꾸면(CSS resize) 기억했다가 다음에 그 높이로 연다. */
+const SPEC_HEIGHT_KEY = 'specHeight';
+const SPEC_MIN_HEIGHT = 96;
+
+function watchSpecHeight(saved) {
+  if (Number.isFinite(saved) && saved >= SPEC_MIN_HEIGHT) el.specOut.style.height = `${Math.round(saved)}px`;
+  let kept = el.specOut.style.height;
+  if (typeof ResizeObserver !== 'function') return;
+  let timer = 0;
+  // 손잡이로 끌면 브라우저가 인라인 height 를 적는다. 접고 펼 때는 그대로라 저장하지 않는다.
+  new ResizeObserver(() => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const h = el.specOut.style.height;
+      if (!h || h === kept) return;
+      kept = h;
+      chrome.storage.local.set({ [SPEC_HEIGHT_KEY]: Math.round(parseFloat(h)) });
+    }, 400);
+  }).observe(el.specOut);
+}
+
 /** 일반 갈래의 보이는 탭 아래 알림 줄 — 설정 화면이 열려 있으면 예약 현황의 상태 줄은 숨어 있어 거기 적어도 보이지 않는다. */
 function settingsNote(text, kind = '') {
   el.setNote.className = `status set-note${kind ? ` ${kind}` : ''}`;
@@ -2137,6 +2272,7 @@ async function checkMcp(which) {
   btn.disabled = true;
   badge.textContent = '확인 중…';
   badge.classList.remove('on', 'off');
+  badge.classList.add('checking');
   badge.title = '';
   try {
     const mcp = await mcpConnect(c.url, fetch, MCP_PROBE_MS, c.label);
@@ -2151,6 +2287,7 @@ async function checkMcp(which) {
     badge.title = String(err?.message || err);
     logEvent('setting', false, `${c.label} 연결 확인 — 닿지 않음: ${badge.title}`);
   } finally {
+    badge.classList.remove('checking');
     btn.disabled = false;
   }
 }
@@ -2826,7 +2963,8 @@ async function init() {
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
-      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY]);
+      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
+      SPEC_HEIGHT_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
   if (saved.spanDays != null) el.spanDays.value = saved.spanDays;
@@ -2915,6 +3053,7 @@ async function init() {
   gongmun.wire();
   el.tabRnd.addEventListener('click', () => setMode('rnd'));
   rnd.wire();
+  rndgen.wire();
   el.tabMail.addEventListener('click', () => setMode('mail'));
   mail.wire();
   el.tabRoom.addEventListener('click', () => setMode('room'));
@@ -2969,6 +3108,17 @@ async function init() {
     const on = el.docCirculate.checked;
     chrome.storage.local.set({ [CIRC_ENABLE_KEY]: on });
     logEvent('setting', true, `DOC-Cruiser 미회람 문서 자동 열람 ${on ? '켬' : '끔'}`);
+  });
+  // 행위 명세 — 갈래 단추 → 종류 단추 → YAML 원본. 고른 단추를 다시 누르면 접는다. 원본 칸의 높이는 끌어 바꾼 대로 기억한다.
+  paintSpecDomains();
+  watchSpecHeight(saved[SPEC_HEIGHT_KEY]);
+  el.specDomains.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-domain]');
+    if (b) pickSpecDomain(b.dataset.domain === state.specDomain ? '' : b.dataset.domain);
+  });
+  el.specKinds.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-key]');
+    if (b) pickSpecFile(b.dataset.key === state.specKey ? '' : b.dataset.key);
   });
   // 보이는 탭. 끈 탭은 머리의 탭 줄에서 사라진다. 보고 있던 탭을 끄면 보이는 첫 탭으로 옮기고, 마지막 하나는 끌 수 없다(src/tabpick.js).
   el.tabPicks.addEventListener('change', (e) => {

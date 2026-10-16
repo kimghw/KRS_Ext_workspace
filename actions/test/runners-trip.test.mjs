@@ -1,6 +1,7 @@
 // 여비계산서 어댑터(actions/runners/trip.js) — 기록을 기존 함수의 인자로 바꾸는 변환과 부르는 차례가 맞는가.
 // trip.create: 폼 → settlePlan → tripCreate(사번·이름) · trip.presave: picks·edits·meal → prePlan·stayPlan → tripPreSave · preconfirm/postconfirm/delete: 그대로 ·
-// trip.after: afterPlan → (preconfirm) → 상한액·같은 줄 → 기록의 lodge 결정 → (ask) → tripAfterSave · trip.send: calPdf → buildPdf → teams|memo.
+// trip.after: afterPlan → (preconfirm) → 상한액·같은 줄 → 기록의 lodge 결정 → (ask) → tripAfterSave · trip.send: calPdf → buildPdf → teams|memo ·
+// trip.lodge: delete → tripAfterLodgeDelete · reason → tripAfterLodgeComment · cap·real → lodgeSettle → tripAfterLodgeAmount.
 // 사이트·PDF·Teams·쪽지는 가짜다(셈은 진짜 함수) — 실제 사이트에는 아무것도 가지 않는다.
 import assert from 'node:assert/strict';
 
@@ -67,6 +68,9 @@ function make(site = {}) {
     buildPdf: spy('buildPdf', async () => ({ bytes: new Uint8Array([9]), pages: 3 })),
     teamsSendFile: spy('teamsSendFile', async () => ({ messageId: 'm-1' })),
     memoSend: spy('memoSend', async () => ({ dId: '771', file: 'ok' })),
+    tripAfterLodgeAmount: spy('tripAfterLodgeAmount', async () => site.rows || [{ seq: '81558' }]),
+    tripAfterLodgeComment: spy('tripAfterLodgeComment', async () => site.rows || [{ seq: '81558' }]),
+    tripAfterLodgeDelete: spy('tripAfterLodgeDelete', async () => site.rows || []),
   });
   const names = () => calls.map((c) => c[0]);
   const argsOf = (name) => calls.find((c) => c[0] === name)?.slice(1);
@@ -276,6 +280,98 @@ t('관문: 받는 사람·과제·계정·보내는 길·PDF 이름이 비면 �
   const { d } = make();
   assert.throws(() => build(d, 'trip.send', { ...SEND, to: null }), (err) => err instanceof ActionError && /to 가 없습니다/.test(err.message));
   assert.throws(() => build(d, 'trip.send', { ...SEND, channel: 'fax' }), (err) => err instanceof ActionError && /channel 값\(fax\)이 틀렸습니다/.test(err.message));
+});
+
+console.log('trip.lodge — 숙박비 내역의 `상한`·`비고에 저장`·지우기(lodgebox.js): delete · reason · cap · real');
+const REASON = LODGE_OVER_REASON;
+// 화면의 숙박 줄(tripAfterRows) — 원화, 1박, 상한액 120,000원(숨은 칸 lodge_maxconv), 실제 금액 125,052원으로 정산 중. 비고에는 묵은 곳이 적혀 있다.
+const LODGE = (over = {}) => ({ seq: '81558', nation: 'KR||', paydate: '2026-09-09', sday: '1', company: 'Toyoko INN', currency: 'KRW', maxconv: '120000', maxtotal: '120000', maxcur: 'KRW',
+  total: '125052', samount: '0', vat: '0', comment: 'Toyoko INN', ...over });
+const LODGE_IN = (action, reason = null) => ({ seq: '145580', trseq: '157777', lodgeSeq: '81558', action, reason });
+await ta('delete: tripAfterLodgeDelete(계산서·출장자·줄 번호)만 부르고, 다시 읽은 줄을 돌려준다. 확인(지문) 없이는 돌지 않는다', async () => {
+  const { d, calls, names, argsOf, log } = make({ rows: [{ seq: '81560' }] });
+  const record = build(d, 'trip.lodge', LODGE_IN('delete'));
+  await rejects(d.run(record, { lodge: LODGE(), kept: null, maxes: {} }), /확인 없이 실행할 수 없습니다/, ActionError);
+  assert.deepEqual(calls, []);
+  const r = await run(d, record, { lodge: LODGE(), kept: null, maxes: {} });
+  assert.deepEqual(names(), ['tripAfterLodgeDelete']);
+  assert.deepEqual(argsOf('tripAfterLodgeDelete'), ['145580', '157777', '81558']);
+  assert.deepEqual(r, { rows: [{ seq: '81560' }], lodge: null, comment: null, reason: '', had: '' });
+  assert.deepEqual([log.length, log[0].kind, log[0].ok], [1, 'trip', true], '로그 한 줄 — 갈래의 kind(trip)');
+});
+await ta('reason: 비고의 나머지 글(묵은 곳)에 사유를 이어 tripAfterLodgeComment — 빈 사유는 기록에 없는 것이고 기본 문구(LODGE_OVER_REASON)를 적는다', async () => {
+  const { d, names, argsOf } = make();
+  const typed = build(d, 'trip.lodge', LODGE_IN('reason', '행사라 숙소 부족'));
+  const r = await run(d, typed, { lodge: LODGE(), kept: null, maxes: {} });
+  assert.deepEqual(names(), ['tripAfterLodgeComment']);
+  assert.deepEqual(argsOf('tripAfterLodgeComment'), ['145580', '157777', '81558', 'Toyoko INN · 행사라 숙소 부족']);
+  assert.deepEqual([r.comment, r.reason, r.had, r.lodge], ['Toyoko INN · 행사라 숙소 부족', '행사라 숙소 부족', '', null]);
+  const blank = make();
+  const empty = build(blank.d, 'trip.lodge', LODGE_IN('reason', '  '));
+  assert.equal(empty.input.reason, null, '빈 글은 기록에 없는 것이다');
+  const r2 = await run(blank.d, empty, { lodge: LODGE(), kept: null, maxes: {} });
+  assert.deepEqual([blank.argsOf('tripAfterLodgeComment')[3], r2.reason], [`Toyoko INN · ${REASON}`, REASON]);
+  // 비고에 이미 적어 둔 사유가 있으면 그 자리를 바꾼다(묵은 곳은 그대로) — had 는 전의 사유다.
+  const swap = make();
+  const again = build(swap.d, 'trip.lodge', LODGE_IN('reason', '성수기'));
+  const r3 = await run(swap.d, again, { lodge: LODGE({ comment: 'Toyoko INN · 행사라 숙소 부족' }), kept: { actual: 125052, supply: null, vat: null, reason: '행사라 숙소 부족' }, maxes: {} });
+  assert.deepEqual([swap.argsOf('tripAfterLodgeComment')[3], r3.had], ['Toyoko INN · 성수기', '행사라 숙소 부족']);
+});
+await ta('cap: 상한액을 넘는 원화 줄 — lodgeSettle 로 상한액(공급가액·부가세 역산)을 정해 tripAfterLodgeAmount, 비고의 상한 초과 사유는 걷는다', async () => {
+  const { d, names, argsOf, log } = make();
+  const record = build(d, 'trip.lodge', LODGE_IN('cap'));
+  const r = await run(d, record, { lodge: LODGE({ comment: `Toyoko INN · ${REASON}` }), kept: null, maxes: {} });
+  assert.deepEqual(names(), ['lodgeSettle', 'tripAfterLodgeAmount']);
+  assert.deepEqual(argsOf('tripAfterLodgeAmount'), ['145580', '157777', '81558', { total: 120000, samount: 109091, vat: 10909, comment: 'Toyoko INN' }]);
+  assert.deepEqual([r.lodge.total, r.lodge.settle, r.comment, r.reason, r.had, log[0].ok], [120000, 'cap', 'Toyoko INN', '', REASON, true]);
+  // 비고에 사유가 없었으면 비고는 보내지 않는다(comment 가 null).
+  const plain = make();
+  const r2 = await run(plain.d, build(plain.d, 'trip.lodge', LODGE_IN('cap')), { lodge: LODGE(), kept: null, maxes: {} });
+  assert.deepEqual([plain.argsOf('tripAfterLodgeAmount')[3], r2.comment], [{ total: 120000, samount: 109091, vat: 10909 }, null]);
+});
+await ta('real: 상한액으로 정산 중인 줄을 적어 둔 실제 금액(문서의 공급가액·부가세)으로 되돌리고 비고에 사유를 잇는다 — 기록의 사유가 비면 적어 둔 사유, 있으면 그것', async () => {
+  const kept = { actual: 125052, supply: 113684, vat: 11368, reason: '행사라 숙소 부족' };
+  const { d, names, argsOf } = make();
+  const r = await run(d, build(d, 'trip.lodge', LODGE_IN('real')), { lodge: LODGE({ total: '120000', samount: '109091', vat: '10909' }), kept, maxes: {} });
+  assert.deepEqual(names(), ['lodgeSettle', 'tripAfterLodgeAmount']);
+  assert.deepEqual(argsOf('tripAfterLodgeAmount'), ['145580', '157777', '81558', { total: 125052, samount: 113684, vat: 11368, comment: 'Toyoko INN · 행사라 숙소 부족' }]);
+  assert.deepEqual([r.lodge.settle, r.comment, r.reason, r.had], ['real', 'Toyoko INN · 행사라 숙소 부족', '행사라 숙소 부족', '']);
+  const typed = make();
+  await run(typed.d, build(typed.d, 'trip.lodge', LODGE_IN('real', '직접 쓴 사유')), { lodge: LODGE({ total: '120000' }), kept, maxes: {} });
+  assert.equal(typed.argsOf('tripAfterLodgeAmount')[3].comment, 'Toyoko INN · 직접 쓴 사유');
+  // 비고에 이미 사유가 있는 줄에 기록의 사유가 오면 덧붙이지 않고 바꾼다(사유가 두 번 들어가면 안 된다).
+  const swap = make();
+  await run(swap.d, build(swap.d, 'trip.lodge', LODGE_IN('real', '직접 쓴 사유')), { lodge: LODGE({ total: '120000', comment: 'Toyoko INN · 행사라 숙소 부족' }), kept, maxes: {} });
+  assert.equal(swap.argsOf('tripAfterLodgeAmount')[3].comment, 'Toyoko INN · 직접 쓴 사유');
+  // 적어 둔 사유도 없으면 기본 문구, 상한은 사이트에서 읽어 둔 것(maxes — 화면의 숨은 칸이 빌 때)도 쓴다.
+  const bare = make();
+  await run(bare.d, build(bare.d, 'trip.lodge', LODGE_IN('real')), { lodge: LODGE({ total: '120000', maxconv: '', maxtotal: '' }), kept: { actual: 125052 }, maxes: { 'KR|||KRW': { maxconv: '120000' } } });
+  assert.deepEqual(bare.argsOf('tripAfterLodgeAmount')[3], { total: 125052, samount: 113684, vat: 11368, comment: `Toyoko INN · ${REASON}` });
+});
+await ta('ctx.lodge 가 기록의 줄이 아니면 ActionError — 사이트로 가지 않고, 실패가 로그 한 줄로 남는다', async () => {
+  const { d, calls, log } = make();
+  const record = build(d, 'trip.lodge', LODGE_IN('delete'));
+  await rejects(run(d, record, { lodge: LODGE({ seq: '999' }) }), /숙박 줄 번호\(999\)가 기록의 81558 와 다릅니다/, ActionError);
+  await rejects(run(d, record, {}), /숙박 줄 번호\(없음\)/, ActionError);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(log.map((e) => e.ok), [false, false]);
+});
+await ta('상한액이나 실제 금액을 모르면(상한액으로 정산 중인데 적어 둔 실제 금액 없음 · 외화 줄 · 상한액 모름) cap·real 은 ActionError — 셈도 사이트도 부르지 않는다', async () => {
+  const { d, calls } = make();
+  const real = build(d, 'trip.lodge', LODGE_IN('real'));
+  await rejects(run(d, real, { lodge: LODGE({ total: '120000' }), kept: null, maxes: {} }), /숙박 줄 81558 의 상한액이나 실제 금액을 몰라 정산금액을 바꿀 수 없습니다/, ActionError);
+  const cap = build(d, 'trip.lodge', LODGE_IN('cap'));
+  await rejects(run(d, cap, { lodge: LODGE({ currency: 'USD', total: '88.46' }), kept: null, maxes: {} }), /상한액이나 실제 금액을 몰라/, ActionError);
+  await rejects(run(d, cap, { lodge: LODGE({ maxconv: '', maxtotal: '' }), kept: null, maxes: {} }), /상한액이나 실제 금액을 몰라/, ActionError);
+  assert.deepEqual(calls, []);
+});
+t('관문: 출장자 번호·무엇을이 비거나 틀리면 기록을 짓지 못한다', () => {
+  const { d } = make();
+  assert.throws(() => build(d, 'trip.lodge', { ...LODGE_IN('cap'), trseq: null }), (err) => err instanceof ActionError && /trseq 가 없습니다/.test(err.message));
+  assert.throws(() => build(d, 'trip.lodge', LODGE_IN('drop')), (err) => err instanceof ActionError && /action 값\(drop\)이 틀렸습니다/.test(err.message));
+  // 사유는 200자까지(trip.after 의 사유와 같은 한도) — 화면의 사유 칸도 maxlength 200 이라 거기서는 넘지 않는다.
+  assert.equal(build(d, 'trip.lodge', LODGE_IN('reason', 'ㄱ'.repeat(200))).input.reason.length, 200);
+  assert.throws(() => build(d, 'trip.lodge', LODGE_IN('reason', 'ㄱ'.repeat(201))), (err) => err instanceof ActionError && /reason 가 200자를 넘습니다/.test(err.message));
 });
 
 console.log(`\n통과 ${pass}건`);

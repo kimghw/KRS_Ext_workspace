@@ -9,6 +9,9 @@
 //
 // 과제에는 **공문 참조자**(refs — 공문 종류마다 이름들)도 둔다. 연구개발계획서 YAML 의 `공문.참조자`(src/rndyaml.js)에서 오고, 공문 탭이 그 과제·그 공문
 // 종류의 사람을 결재선의 참조자로 넣는다(src/gongmun.js 의 projectRefs — 2026-10-15 사용자 지정: 참조자는 공문마다·과제마다 달라 전역 공문 설정에 둘 수 없다).
+// 과제의 **행정지원**(support — 행정 담당 등 이름·맡은 일·참조 여부)은 R&D 탭의 '참여연구자 및 행정지원' 칸에서 적는다. 참조로 고른 사람은 그 과제의
+// 공문(구매·교육·출장 가리지 않고)마다 결재선의 참조자가 된다(2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록",
+// 담당 직원은 행정 담당으로 참조에 들고, 참조는 "과제 마다 다름. 구매교육출장 이런거랑 달리").
 //
 // 과제 목록은 공문 탭의 공문 설정(gongmunProjects — 과제명·별명·과제번호·책임자·연구기간 글)에서 가져올 수 있다.
 // 과제번호(없으면 과제명)가 같으면 같은 과제로 보고 빈 칸만 채운다(mergeProjects). 여기 담은 것은 이 브라우저에만 남으니
@@ -25,7 +28,8 @@ export const BUDGET_ITEMS = Object.freeze(['인건비', '연구시설·장비비
 /** 변경이력의 구분. 저절로 남는 줄은 예산(계획·비목)·연구기간·연구진(과제책임자)이다. */
 export const CHANGE_KINDS = Object.freeze(['예산', '연구내용', '연구기간', '연구진', '기타']);
 /** calendar 는 차년도를 1월 1일에 끊는 과제(산업부 과제처럼 첫 해만 협약일~12.31, 그 뒤는 해마다) — 아니면 시작일부터 한 해씩. */
-export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, years: {} });
+// job 은 전자결재 과제 찾기의 Job Id(RND00202026 꼴 — 2026-10-16 사용자 지정으로 과제번호와 따로 둔다. 과제번호는 국가과제 번호일 수 있다 — rERP 잇기의 열쇠).
+export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', job: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
 
 const text = (v, max = 2000) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').slice(0, max).trim() : '');
 const pad = (n) => String(n).padStart(2, '0');
@@ -218,17 +222,43 @@ export function normalizeRefs(raw) {
 /** 공문 참조자를 한 줄로 — "구매 홍길동, 이몽룡 / 교육 성춘향". 없으면 빈 글. */
 export const refsText = (refs) => Object.entries(refs || {}).map(([k, v]) => `${k} ${(v || []).join(', ')}`).join(' / ');
 
+/** 행정지원의 한도 — 과제마다 열 명. */
+export const SUPPORT_MAX = 10;
+/**
+ * 행정지원 — [{ name, role, ref }]. name 은 이름(공문 결재선에서 조직도로 찾는 이름), role 은 맡은 일(행정 담당·연구지원 …), ref 는 공문 참조자로 넣는가.
+ * 이름이 빈 줄(화면에서 이름을 적기 전의 줄)은 버린다. 같은 이름은 한 번만(공백은 보지 않는다).
+ */
+export function normalizeSupport(raw) {
+  const seen = new Set();
+  const out = [];
+  for (const s of Array.isArray(raw) ? raw : []) {
+    if (out.length >= SUPPORT_MAX) break;
+    const name = text(s?.name, 40);
+    const key = name.replace(/\s/g, '');
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, role: text(s?.role, 40), ref: s?.ref !== false });
+  }
+  return out;
+}
+/** 행정지원 가운데 공문 참조자로 넣는 사람의 이름. */
+export const supportRefs = (project) => normalizeSupport(project?.support).filter((s) => s.ref).map((s) => s.name);
+/** 행정지원을 한 줄로 — "홍길동(행정 담당·참조), 이몽룡(연구지원)". 없으면 빈 글. */
+export const supportText = (support) => normalizeSupport(support)
+  .map((s) => `${s.name}${s.role || s.ref ? `(${[s.role, s.ref ? '참조' : ''].filter(Boolean).join('·')})` : ''}`).join(', ');
+
 /**
  * 저장된 과제를 지금 모양으로. start·end 는 날짜 칸이고, period 는 공문 탭에서 오는 "2026.04.01 ~ 2029.12.31" 글 —
- * 날짜 칸이 비었을 때만 글에서 읽는다. 시작일보다 앞선 종료일은 버린다. refs 는 공문 참조자(normalizeRefs).
+ * 날짜 칸이 비었을 때만 글에서 읽는다. 시작일보다 앞선 종료일은 버린다. refs 는 공문 참조자(normalizeRefs), support 는 행정지원(normalizeSupport).
  */
 export function normalizeProject(raw) {
-  const p = { ...EMPTY_PROJECT, refs: {}, years: {} };
+  const p = { ...EMPTY_PROJECT, refs: {}, support: [], years: {} };
   if (!raw || typeof raw !== 'object') return p;
   p.id = text(raw.id, 40) || newId();
   p.name = text(raw.name, 200);
   p.alias = text(raw.alias, 60);
   p.code = text(raw.code, 40);
+  p.job = text(raw.job, 20).replace(/\s+/g, '');
   p.lead = text(raw.lead, 40);
   const per = periodOf(raw.period);
   p.start = isYmd(raw.start) ? raw.start : per?.start || '';
@@ -237,6 +267,7 @@ export function normalizeProject(raw) {
   p.note = text(raw.note, 1000);
   p.calendar = raw.calendar === true;
   p.refs = normalizeRefs(raw.refs);
+  p.support = normalizeSupport(raw.support);
   const years = raw.years && typeof raw.years === 'object' ? raw.years : {};
   for (const [k, v] of Object.entries(years)) {
     const n = Number(k);
@@ -349,7 +380,7 @@ export const newestFirst = (list) => [...(list || [])].map((x, i) => [x, i]).sor
 export function fromGongmun(list) {
   return (Array.isArray(list) ? list : [])
     .filter((p) => text(p?.name))
-    .map((p) => normalizeProject({ name: p.name, alias: p.alias, code: p.code, lead: p.lead, period: p.period }));
+    .map((p) => normalizeProject({ name: p.name, alias: p.alias, code: p.code, job: p.job, lead: p.lead, period: p.period }));
 }
 
 /**
@@ -375,7 +406,7 @@ export function mergeProjects(book, incoming) {
       continue;
     }
     let touched = false;
-    for (const k of ['alias', 'code', 'lead', 'start', 'end', 'calendar']) {
+    for (const k of ['alias', 'code', 'job', 'lead', 'start', 'end', 'calendar']) {
       if (!hit[k] && inc[k]) {
         hit[k] = inc[k];
         touched = true;
@@ -547,8 +578,10 @@ export function summaryText(project, n, today = todayStr()) {
   lines.push(`[${project.alias || project.name}] ${yearLabel(y.n)}${y.start ? ` (${dot(y.start)} ~ ${dot(y.end)})` : ''} — ${yearState(y, today)}`);
   lines.push(`과제명: ${project.name}`);
   if (project.code) lines.push(`과제번호: ${project.code}`);
+  if (project.job) lines.push(`Job Id: ${project.job}`);
   if (project.lead) lines.push(`과제책임자: ${project.lead}`);
   if (Object.keys(project.refs || {}).length) lines.push(`공문 참조자: ${refsText(project.refs)}`);
+  if (normalizeSupport(project.support).length) lines.push(`행정지원: ${supportText(project.support)}`);
   if (project.start) lines.push(`연구기간: ${periodText(project)} (총 ${ys.length}차년도)`);
   if (project.note) lines.push(`비고: ${project.note}`);
 

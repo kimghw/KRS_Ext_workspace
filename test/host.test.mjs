@@ -269,6 +269,65 @@ console.log('무엇을 남기나 (가짜 claude)');
   });
 }
 
+console.log('작업마다의 한도(src/tasktune.js) — R&D 스냅샷 뽑기·YAML 고치기만 깊게·길게, 나머지는 전과 같다');
+{
+  const { tuneOf, DEFAULT_TUNE, TASK_TUNE } = await import('../src/tasktune.js');
+  const pdf = { name: '사업계획서_발췌.pdf', type: 'application/pdf', dataUrl: 'data:application/pdf;base64,JVBERg==' };
+  const flag = (call, name) => call.args[call.args.indexOf(name) + 1];
+  await ta('표에 없는 작업은 기본값 그대로 — low·16000·2만 자·60초/120초(이름이 객체의 내장 속성이어도)', async () => {
+    assert.deepEqual(DEFAULT_TUNE, { effort: 'low', maxTokens: 16000, inputMax: 20_000, timeoutMs: 60_000, timeoutFilesMs: 120_000 });
+    for (const name of ['search.room', 'attend', 'receipt', 'gongmun.edu', 'constructor', '__proto__']) assert.deepEqual(tuneOf(name), DEFAULT_TUNE, name);
+    assert.deepEqual(Object.keys(TASK_TUNE), ['rnd.extract', 'rnd.revise']);
+    // stream 은 API 길(src/ai.js)만 본다 — 다리는 쓰지 않는다. 기본값에는 키가 없다(다른 작업의 본문에 stream 이 들지 않게).
+    assert.deepEqual(tuneOf('rnd.revise'), { effort: 'medium', maxTokens: 32000, inputMax: 150_000, timeoutMs: 600_000, timeoutFilesMs: 600_000, stream: true });
+    assert.equal('stream' in DEFAULT_TUNE, false);
+  });
+  await ta('tune 을 든 작업은 --effort medium · 10분 — 바로 싣는 길(첨부 있음·없음)과 Read 로 읽히는 길 모두', async () => {
+    const task = { system: '지시문', tune: tuneOf('rnd.extract') };
+    const direct = cliCall(task, '글', [pdf], { direct: true });
+    assert.deepEqual([flag(direct, '--effort'), direct.limitMs], ['medium', 600_000]);
+    assert.equal(cliCall(task, '글', [], { direct: true }).limitMs, 600_000);
+    const tool = cliCall(task, '글', [pdf]);
+    assert.deepEqual([flag(tool, '--effort'), tool.limitMs, flag(tool, '-p').startsWith('글\n\n첨부 파일')], ['medium', 600_000, true]);
+    tool.cleanup();
+    // tune 이 없는 task 객체(지금까지의 호출)는 전과 같다.
+    assert.deepEqual([flag(cliCall({ system: 'x' }, '글', [], { direct: true }), '--effort'), cliCall({ system: 'x' }, '글').limitMs], ['low', 60_000]);
+  });
+  await ta('인자로 넘기는 길에서 2만 4천 자가 넘는 프롬프트는 표준 입력으로 간다(Windows 명령줄 한도) — 기본 작업의 프롬프트(2만 자 + 첨부 경로)는 전처럼 인자', async () => {
+    const long = '가'.repeat(40_000);
+    const call = cliCall({ system: '지시문', tune: tuneOf('rnd.revise') }, long);
+    assert.deepEqual(call.args.slice(0, 3), ['-p', '--output-format', 'json']);
+    assert.equal(call.stdin, long);
+    assert.ok(!call.args.includes(long));
+    const short = cliCall({ system: '지시문', tune: tuneOf('rnd.revise') }, '짧은 글');
+    assert.deepEqual([short.args.slice(0, 2), short.stdin], [['-p', '짧은 글'], '']);
+    // 기본 작업은 다리가 자른 가장 긴 입력(2만 자)에 첨부 여섯 장의 경로가 붙어도 전처럼 인자다.
+    const png = { name: 'r.png', type: 'image/png', dataUrl: 'data:image/png;base64,AAAA' };
+    const most = cliCall({ system: '지시문' }, 'ㄱ'.repeat(20_000), Array(6).fill(png));
+    assert.deepEqual([most.args[0], most.args[1].startsWith('ㄱ'.repeat(20_000)), most.stdin], ['-p', true, '']);
+    most.cleanup();
+  });
+  await ta('handle 은 작업의 한도에서 입력을 자른다 — rnd 작업 15만 자, search.room 2만 자 — run 이 받는 task 에 tune 이 든다', async () => {
+    const seen = {};
+    const run = async (task, input) => { seen.task = task; seen.input = input; return { data: {} }; };
+    const log = () => {};
+    await handle({ task: 'rnd.extract', input: 'ㄱ'.repeat(160_000) }, { log, run });
+    assert.deepEqual([seen.input.length, seen.task.tune.effort, seen.task.tune.timeoutMs], [150_000, 'medium', 600_000]);
+    await handle({ task: 'rnd.revise', input: 'ㄱ'.repeat(140_000) }, { log, run });
+    assert.equal(seen.input.length, 140_000);
+    await handle({ task: 'search.room', input: 'ㄴ'.repeat(25_000) }, { log, run });
+    assert.deepEqual([seen.input.length, seen.task.tune], [20_000, DEFAULT_TUNE]);
+  });
+  await ta('rnd 작업의 첨부(작은 PDF)는 글자를 먼저 뽑지 않고 그대로 간다(TEXT_FIRST 아님)', async () => {
+    assert.deepEqual(['rnd.extract', 'rnd.revise'].filter((n) => TEXT_FIRST.has(n)), []);
+    let seen;
+    await handle({ task: 'rnd.extract', input: '사업계획서', files: [pdf] }, {
+      log: () => {}, text: async () => assert.fail('부르면 안 됨'), run: async (_t, input, files, opts) => { seen = { input, files, opts }; return { data: {} }; },
+    });
+    assert.deepEqual(seen, { input: '사업계획서', files: [pdf], opts: { lean: false } });
+  });
+}
+
 console.log('파일');
 {
   const dir = path.join(tmp, 'unit');

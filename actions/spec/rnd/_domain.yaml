@@ -1,14 +1,27 @@
 # R&D 탭 갈래(rndpanel.js) — 2단계(§12, status planned). 과제 장부(chrome.storage 의 rndBook — src/rnd.js)는 이 브라우저에만 남고, rERP 집행내역(rerp/ — kr_ext_rerp 에서 옮긴 것,
 # 읽기만)·OneNote 과제 정보 페이지(src/rndnote.js)·연구내용 페이지(rerp/researchsync.js)와 맞춘다. 지금은 rndpanel.js 가 src/rnd*.js·rerp/* 를 바로 부르고 logEvent('rnd', …) 를 남긴다 —
 # 여기 적은 칸은 그 함수들이 받는 값이다. 어댑터는 2단계에 쓴다(runner 이름만 맡아 둔다).
-# LLM 작업은 없다(mode none) — R&D 탭에는 말로 채우는 칸이 없다. read 는 2단계 통합 명령창을 위해 둔다.
+# LLM 작업은 per-kind 모드 — 사업계획서에서 KR 스냅샷 YAML 뽑기(extract.yaml → rnd.extract)와 변경사항으로 YAML 고치기(revise.yaml → rnd.revise) 두 종류만
+# 켜고(2026-10-16 사용자 지정: "＋ 누르면 … 사업계획서를 넣으면 과제의 YAML 을 추출 … 변경사항 … yaml 로 수정해서 업데이트"), 나머지 종류는 llm: false 다
+# (말로 채우는 칸이 없다 — read 는 2단계 통합 명령창을 위해 둔다). 두 작업은 src/llm.js 의 fillAction·INPUTS 를 거치지 않는다 — 패널(rndgen/)이
+# rndgen/llm.js 로 입력 글(머리말·스킬 문서·재료)을 짓고 askClaude 를 바로 부른다. 한도(effort medium·32000 토큰·입력 15만 자·10분)는 src/tasktune.js.
 domain: rnd
 title: R&D
 log: rnd                       # rndpanel.js 가 지금 쓰는 'rnd'(src/logbook.js KIND_LABEL 에는 아직 이름이 없다 — 통합자)
-kinds: [project, delete, yaml, erp.link, erp.fetch, note.sync, research.share, skills.zip]
+kinds: [project, delete, yaml, erp.link, erp.fetch, note.sync, research.share, skills.zip, extract, revise]
 preset:
   today: { from: today, desc: 오늘(YYYY-MM-DD) — 차년도(오늘이 든 것)·변경이력 날짜·zip 이름 }
   me:    { from: me, desc: 내 이름 — 연구내용 페이지의 올린 사람(by) }
 llm:
-  task: rnd
-  mode: none
+  task: rnd                    # 작업 이름의 머리 — 실제 이름은 종류 파일의 llm.task(rnd.extract · rnd.revise)
+  mode: per-kind
+  partial: false               # 답은 한 벌 — YAML 전문이 빠지면 답을 버린다(관문이 막는다)
+  input: rnd                   # src/llm.js INPUTS 에는 없다 — rndgen/llm.js 가 askClaude 를 바로 부른다(fillAction 은 이 갈래를 쓰지 않는다)
+  title: 'R&D {종류}'          # {종류} 는 종류 파일의 title 로 바뀐다
+  consumer: { module: rndgen/llm.js, export: askRndTask }
+  next: 답(YAML 전문)을 rndgen/yaml.js 가 검사·마무리하고 미리보기 뒤 사람이 누르면 rnd.intake(장부 넣기)와 rndYamlText 저장이 뒤따른다
+  role: >-
+    당신은 한국선급(KR) 연구개발 과제의 연구개발계획서 스냅샷 YAML(KR_<과제>.yaml)을 다루는 도우미입니다. 이번 일: {종류}.
+    답은 YAML 글과 몇 개의 짧은 칸뿐입니다 — 파일을 만들거나 폴더를 다루지 않습니다.
+  rules: []                    # 공통 규칙은 비우고 종류 파일에 둔다(둘이 다르다)
+  fields: {}

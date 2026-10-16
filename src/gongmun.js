@@ -15,7 +15,7 @@
 
 import { ORIGIN } from './config.js';
 import { RECIPE } from './gmrecipe.js';
-import { currentYear, fileLog, noteLogs, logLines, periodText, yearLabel, MAX_PROJECTS as RND_MAX_PROJECTS } from './rnd.js';
+import { currentYear, fileLog, noteLogs, logLines, periodText, yearLabel, supportRefs, MAX_PROJECTS as RND_MAX_PROJECTS } from './rnd.js';
 
 /* ------------------------------------------------------------ 저장소 키 */
 
@@ -165,8 +165,8 @@ export function namesOf(value) {
  * 공문 설정 — 부서(본문 첫 줄), 부서장(결재 — 위임전결의 팀장), 소장·본부장(전결권자가 그 위일 때 결재선에 선다), 문서번호 부서
  * (문서설정의 Doc No. 코드 — 비면 레시피 settings.yaml 의 teams 표에서 부서 이름으로 찾는다). 실명은 공개 저장소(레시피)에 두지 않고 여기에만 둔다.
  * 부서장·소장·본부장은 어느 공문이든 같은 사람이라 전역이다. 참조자는 여기 없다(2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이
- * 다르므로 전역 설정에 둘 수 없다") — 과제의 YAML 에 공문 종류별로 적고(src/rnd.js 의 refs) 결재선이 그 과제·그 갈래의 것을 읽는다(projectRefs).
- * 예전 저장분의 refs 는 버린다.
+ * 다르므로 전역 설정에 둘 수 없다") — R&D 과제의 행정지원(참조로 고른 사람 — src/rnd.js 의 support, 2026-10-16)과 과제의 YAML 에 공문 종류별로 적은 것
+ * (src/rnd.js 의 refs)을 결재선이 그 과제·그 갈래의 것으로 읽는다(projectRefs). 예전 저장분의 refs 는 버린다.
  */
 export function normalizePreset(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -185,8 +185,8 @@ export function normalizeProjects(raw) {
   const list = Array.isArray(raw) ? raw : [];
   return list
     .map((p) => ({
-      name: text(p?.name, 200).trim(), alias: text(p?.alias, 60).trim(), code: text(p?.code, 40).trim(), lead: text(p?.lead, 40).trim(),
-      period: text(p?.period, 60).trim(),
+      name: text(p?.name, 200).trim(), alias: text(p?.alias, 60).trim(), code: text(p?.code, 40).trim(), job: text(p?.job, 20).replace(/\s+/g, ''),
+      lead: text(p?.lead, 40).trim(), period: text(p?.period, 60).trim(),
       about: text(p?.about, 300).trim().replace(/[.。]+$/, ''), content: text(p?.content, 3000).trim(), account: text(p?.account, 60).trim(),
     }))
     .filter((p) => p.name)
@@ -239,7 +239,8 @@ export function rndContent(project, today = '') {
  * 별칭(제목)·과제번호·책임자(합의자)·연구기간(과제 개요)은 그 과제의 것이고, 과제 내용은 연구 내용(rndContent)이다. 개요·계정은 공문 설정에서
  * 그 과제 몫으로 적은 것(extra — normalizeRndExtra)이고, 적은 적이 없으면 공문 설정의 같은 과제(sameProject) 줄의 것이다. R&D 쪽에 비어 있는
  * 별칭·번호·책임자·연구기간·내용도 그 줄에서 채운다. rnd 는 화면이 보여 줄 근거의 형편(과제 id·올해 차년도·계획을 가져온 차년도·진행 기록 수)이다.
- * refs 는 그 과제의 공문 참조자({ 공문 종류: 이름[] } — 계획서 YAML 의 공문.참조자, src/rnd.js)다. 공문 설정의 과제 줄에는 없다 — YAML 에만 적는다(2026-10-15).
+ * refs 는 그 과제의 공문 참조자({ 공문 종류: 이름[] } — 계획서 YAML 의 공문.참조자, src/rnd.js)이고, support 는 R&D 탭의 행정지원([{ name, role, ref }] —
+ * 참조로 고른 사람은 그 과제의 모든 공문에 참조자로 선다, 2026-10-16)이다. 둘 다 공문 설정의 과제 줄에는 없다 — R&D 탭(과 YAML)에서만 적는다.
  * @param {{projects?: object[]}} book src/rnd.js 의 normalizeBook 을 지난 장부
  * @param {object[]} [preset] 공문 공문 설정의 과제(gongmunProjects)
  * @param {object} [extra] R&D 과제마다 공문에만 쓰는 값(gongmunRndExtra)
@@ -252,10 +253,11 @@ export function rndProjects(book, preset = [], today = '', extra = {}) {
     const own = p.id ? ex[p.id] : null;
     const got = rndContent(p, today);
     return {
-      name: p.name, alias: p.alias || same?.alias || '', code: p.code || same?.code || '', lead: p.lead || same?.lead || '',
+      name: p.name, alias: p.alias || same?.alias || '', code: p.code || same?.code || '', job: p.job || same?.job || '', lead: p.lead || same?.lead || '',
       period: periodText(p) || same?.period || '', about: own ? own.about : same?.about || '', content: got.text || same?.content || '',
       account: own ? own.account : same?.account || '',
       refs: p.refs && typeof p.refs === 'object' ? p.refs : {},
+      support: Array.isArray(p.support) ? p.support : [],
       rnd: { id: p.id, year: got.year, plan: got.plan, logs: got.logs },
     };
   });
@@ -730,7 +732,7 @@ export function parseSetupLocal(text) {
 
 const keyOf = (s) => String(s ?? '').replace(/\s/g, '').toLowerCase();
 /** 공문 설정 칸의 과제 한 줄. */
-export const EMPTY_ROW = Object.freeze({ name: '', alias: '', code: '', lead: '', period: '', about: '', content: '', account: '' });
+export const EMPTY_ROW = Object.freeze({ name: '', alias: '', code: '', job: '', lead: '', period: '', about: '', content: '', account: '' });
 /** 과제 없이 와도 지금 고른 과제 몫으로 넣는 칸 — [칸, 사람에게 부르는 이름]. */
 const CURRENT_KEYS = [['lead', '합의자'], ['alias', '과제 별명'], ['period', '연구기간'], ['content', '과제 내용']];
 
@@ -789,17 +791,18 @@ const same = (a, b) => !!a && !!b && String(a).replace(/\s/g, '') === String(b).
  *
  * 결재는 부서장(팀장)부터 위임전결의 전결권자까지 아래에서 위로 선다 — 마지막 결재자가 전결이다(delegationOf, 2026-10-08 사용자 지정
  * "위임전결도 같이 입력"). 갈래(kind)를 주지 않으면 부서장 전결이다. 공문 설정에 이름이 없는 직책은 missing 에 남는다 — 화면이 채우라고 보인다.
- * 참조자는 고른 과제의 이 갈래에 적힌 사람(projectRefs — 과제 YAML 의 공문.참조자)이다. 결재선에 이미 선 사람은 참조에서 뺀다.
- * @param {{kind?: string, draft?: object, rank?: string}} [opts] rank 는 이 공문에서 고른 전결권자(비면 규정대로)
+ * 참조자는 고른 과제의 사람(projectRefs — R&D 탭 행정지원에서 참조로 고른 사람과 과제 YAML 의 공문.참조자에 이 갈래로 적힌 사람)이다.
+ * 결재선에 이미 선 사람은 참조에서 뺀다. lead·refs 를 주면(공문 기록의 과제 책임자·참조자 칸 — actions/spec/gongmun) 과제의 것 대신 그것을 쓴다.
+ * @param {{kind?: string, draft?: object, rank?: string, lead?: string|null, refs?: string[]|null}} [opts] rank 는 이 공문에서 고른 전결권자(비면 규정대로)
  * @returns {{steps: {role:string, name:string, why?:string}[], refs: string[], notes: string[], missing: string[], delegation: object|null}}
  */
-export function approvalLine({ me = '', preset = {}, project = null, kind = '', draft = {}, rank = '' } = {}) {
+export function approvalLine({ me = '', preset = {}, project = null, kind = '', draft = {}, rank = '', lead: leadIn = null, refs: refsIn = null } = {}) {
   const p = normalizePreset(preset);
   const notes = [];
   const steps = [{ role: '기안', name: me || '나' }];
   // 과제를 고르지 않는 갈래(외부강의등 신고서)는 합의가 없다 — 담당 → 팀장(지난 신고서의 결재선). 과제의 참조자도 없다.
   const picks = KINDS[kind]?.project !== false;
-  const lead = picks ? String(project?.lead || '').trim() : '';
+  const lead = picks ? String(leadIn || project?.lead || '').trim() : '';
   if (lead && same(lead, me)) notes.push('과제책임자가 기안자라 합의는 뺐습니다');
   else if (lead) {
     steps.push({ role: '합의', name: lead, why: '과제책임자' });
@@ -812,21 +815,22 @@ export function approvalLine({ me = '', preset = {}, project = null, kind = '', 
     if (name) steps.push({ role: '결재', name, why: RANK_WHY[r] || r });
     else missing.push(r);
   }
-  const refs = picks ? projectRefs(project, kind) : [];
+  const refs = !picks ? [] : Array.isArray(refsIn) ? namesOf(refsIn) : projectRefs(project, kind);
   return { steps, refs: refs.filter((n) => !steps.some((s) => same(s.name, n))), notes, missing, delegation };
 }
 
 /**
- * 이 과제의 이 갈래에 적힌 참조자 — 과제의 refs({ 공문 종류: 이름[] }, 연구개발계획서 YAML 의 공문.참조자 — src/rnd.js 의 normalizeRefs)에서 갈래의
- * 키(purchase)·이름(구매)·제목(구매품의)으로 찾는다(공백·대소문자는 보지 않는다). 적혀 있지 않으면 빈 목록 — 참조 없이 쓴다(2026-10-15 사용자 지정:
- * "어떤 과제의 어떤 공문에 누구를 참조할지" YAML 에 명시적으로 적고, 적혀 있지 않으면 비운다).
+ * 이 과제의 이 갈래의 참조자 — 먼저 R&D 탭의 행정지원에서 참조로 고른 사람(support — 갈래를 가리지 않는다, 2026-10-16 사용자 지정: 담당 직원은
+ * 행정 담당으로 참조에 들고 참조는 "과제 마다 다름. 구매교육출장 이런거랑 달리"), 그 뒤에 과제의 refs({ 공문 종류: 이름[] }, 연구개발계획서 YAML 의
+ * 공문.참조자 — src/rnd.js 의 normalizeRefs)에서 갈래의 키(purchase)·이름(구매)·제목(구매품의)으로 찾은 사람(공백·대소문자는 보지 않는다).
+ * 같은 이름은 한 번. 어디에도 없으면 빈 목록 — 참조 없이 쓴다. 갈래를 모르면 비운다.
  */
 export function projectRefs(project, kind = '') {
   const map = project?.refs && typeof project.refs === 'object' ? project.refs : {};
   const keys = [kind, KINDS[kind]?.label, KINDS[kind]?.title].filter(Boolean).map(keyOf);
   if (!keys.length) return [];
   const hit = Object.entries(map).find(([k]) => keys.includes(keyOf(k)));
-  return hit ? namesOf(hit[1]) : [];
+  return namesOf([...supportRefs(project), ...(hit ? namesOf(hit[1]) : [])]);
 }
 
 /* ------------------------------------------------------------ 위임전결 */
@@ -1176,13 +1180,15 @@ export function draftValue(f, draft = {}) {
 /**
  * 새 공문 창에 쓸 것 — src/gmwrite.js 가 이것만 보고 쓴다. 폼의 칸 지도(레시피 fieldmap)·값·문서설정·결재선을 한데 묶는다.
  * 레시피에 칸 지도가 없는 양식(양식 ID 를 직접 적은 것)은 fields 가 비어 있다 — 창을 열기만 한다.
- * @param {{title:string, body:string, draft:object, form?:string, setting?:object, rank?:string}} doc 화면의 제목·본문(직접 고친 것이면 그 글)과 초안
+ * @param {{title:string, body:string, draft:object, form?:string, setting?:object, rank?:string, lead?:string|null, refs?:string[]|null}} doc 화면의 제목·본문(직접 고친 것이면 그 글)과 초안,
+ *   합의자(과제 책임자)·참조자 — 비면(null) 고른 과제의 것
  * @param {{me?:string, preset?:object, project?:object|null}} ctx
  */
-export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFAULT_FORM, setting = {}, rank = '' } = {}, ctx = {}) {
+export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFAULT_FORM, setting = {}, rank = '', lead = null, refs = null } = {}, ctx = {}) {
   const fm = RECIPE.forms[form] || null;
   const project = KINDS[kind]?.project === false ? null : ctx.project || null;
-  const line = approvalLine({ ...ctx, project, kind, draft, rank });
+  // 합의자(과제 책임자)·참조자 — 기록에 적혀 있으면 그것, 없으면(예전 기록) 고른 과제의 것.
+  const line = approvalLine({ ...ctx, project, kind, draft, rank, lead, refs });
   const text = eclassText(body);
   return {
     kind, form: fm ? fm.id : form, url: draftUrl(form), known: !!fm,
@@ -1190,7 +1196,8 @@ export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFA
     values: {
       title: eclassText(title).replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX), body: text, html: bodyHtml(text),
       recipient: '', reference: '', degree: degreeOf(project),
-      job: { name: project?.name || '', code: project?.code || '' },
+      // 과제 찾기 — Job Id(R&D 탭에서 고른 것)가 있으면 그것, 없으면 과제번호(RND-… 꼴일 때만 번호로 찾는다). 못 찾으면 책임자·과제명 유사도로 고른다(src/jobid.js).
+      job: { name: project?.name || '', code: project?.job || project?.code || '', lead: project?.lead || '' },
       // 칸이 정해진 폼(외부강의등 신고서)의 칸마다 넣을 값 — 칸 지도의 key → 값(draftValue). names 는 작성 기록이 부르는 이름과 꼭 채울 칸인가(초안 칸의 need).
       draft: Object.fromEntries(draftFields(fm).map(([key, f]) => [key, draftValue(f, draft)])),
       names: Object.fromEntries(draftFields(fm).map(([key, f]) => {

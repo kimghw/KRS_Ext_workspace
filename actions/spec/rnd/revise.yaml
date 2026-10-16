@@ -1,0 +1,117 @@
+# 변경사항으로 YAML 고치기 — R&D 탭의 변경 및 이력 관리 카드 위쪽(rndgen/panel.js — 2026-10-16 변경이력 칸을 대체). 과제를 보고 있고 그 차년도에 예산 정보가 있을 때 늘 보인다.
+# 기준 YAML(저장된 원문 rndYamlText — 없으면 장부로 지은 것, 손실 있음)과 사람이 붙여 넣은 변경 글(메일·공문·메모·표)·붙인 문서의 글자를 rndgen/llm.js 가 이어
+# rnd.revise 작업으로 묻는다. 답의 YAML 전문은 rndgen/yaml.js 가 마무리한다 — 다음 판(meta.rev rN+1)과 파일 머리 주석(# [재생성 rN] … · # 변경분: …)은 코드가 적는다.
+# 구조 차이(diffYaml)·새로 생길 변경이력 줄(previewApply) 미리보기 뒤 사람이 "반영" 을 누르면 rnd.intake 로 장부에 들어가고 원문은 rndYamlText 에 남는다.
+id: rnd.revise
+title: 변경사항으로 YAML 고치기
+status: planned
+confirm: true                  # "반영" 누름이 확인이다
+effect: draft
+summary: 'R&D YAML 고치기 {summary}'
+fields:
+  yaml:
+    type: string
+    required: true
+    max: 120000                # 관문 초안 모드의 글 자르기(기본 2000)에 걸리지 않게
+    label: 고친 YAML
+    desc: 변경사항을 반영한 YAML 전문(기준 YAML 의 키 구조·주석·차례 그대로 — 코드 펜스 없음)
+    read: >-
+      변경사항이 말한 곳만 고친 YAML 전문 — [기준 YAML] 의 키 구조·주석·차례를 그대로 두고, 코드 펜스(```)·설명 없이 YAML 글만 적습니다
+  summary:
+    type: string
+    required: true
+    max: 300
+    label: 변경분 한 줄
+    desc: 무엇을 바꿨는지 한 줄 — 파일 머리의 "# 변경분:" 에 그대로 들어간다
+    read: 무엇을 바꿨는지 한국어 한 줄(경로 · 전 → 후, 여럿이면 " · " 로 잇습니다)
+    example: 예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가
+  changes:
+    type: list
+    max: 50
+    label: 바뀐 곳
+    desc: 바꾼 곳마다 경로와 전·후 값(글) — 미리보기의 바뀐 곳 목록과 견준다
+    read: 바꾼 곳마다 한 줄 — 경로와 바꾸기 전·후의 값(글로). 바꾼 곳이 없으면 빈 목록
+    item:
+      path:
+        type: string
+        required: true
+        max: 200
+        desc: 바꾼 칸의 경로
+        read: '바꾼 칸의 경로 — 목록은 [연차]·[성명] 처럼 그 줄의 열쇠로 적습니다(예: 예산.비목별[2차년도].직접비.연구재료비)'
+      before:
+        type: string
+        max: 500
+        desc: 바꾸기 전의 값(글)
+        read: 바꾸기 전의 값(글로). 새로 넣은 칸이면 null
+      after:
+        type: string
+        max: 500
+        desc: 바꾼 뒤의 값(글)
+        read: 바꾼 뒤의 값(글로). 뺀 칸이면 null
+  warnings:
+    type: string
+    max: 3000
+    label: 경고
+    desc: 모호해서 바꾸지 않은 것·기준 YAML 에 해당 칸이 없는 것 — " / " 로 이은 한 글(미리보기에 보인다)
+    read: '모호해서 바꾸지 않은 것 · 기준 YAML 에 해당 칸이 없어 바꾸지 않은 것 · 다시 맞춘 합계를 " / " 로 이은 한 글. 없으면 null'
+  # 화면 칸(llm: false) — 기록용. 기준 YAML 원문은 기록에 넣지 않는다(저장소 rndYamlText 에 있다).
+  projectId:
+    type: string
+    max: 40
+    llm: false
+    label: 과제 id
+    desc: 고치는 과제의 id(보고 있는 과제)
+    read: 이 칸은 사용자의 말로 채우지 않습니다 — 보고 있는 과제입니다
+  n:
+    type: integer
+    min: 1
+    max: 20
+    llm: false
+    label: 차년도
+    desc: 고치는 차년도(보고 있는 차년도)
+    read: 이 칸은 사용자의 말로 채우지 않습니다 — 보고 있는 차년도입니다
+  text:
+    type: string
+    max: 20000
+    llm: false
+    label: 변경 글
+    desc: 사람이 붙여 넣은 변경 내용(메일·공문·메모·표 — 2만 자에서 자른다)
+    read: 사용자가 붙여 넣은 변경 내용 그대로
+  files:
+    type: list
+    max: 6
+    llm: false
+    label: 붙인 문서
+    desc: 변경 내용으로 붙인 문서(이름·형식만 — 글자는 rndgen/source.js 가 뽑아 입력 글에 싣는다)
+    read: 이 칸은 사용자의 말로 채우지 않습니다 — 사용자가 붙인 문서 그대로입니다
+    item:
+      name:
+        type: string
+        max: 200
+        desc: 문서 이름
+        read: 문서 이름
+      type:
+        type: string
+        max: 100
+        desc: 문서 형식(MIME)
+        read: 문서 형식
+rules:
+  - '[기준 YAML] 의 키 구조 · 주석 · 차례를 그대로 두고 [변경사항](과 붙인 문서 글자)이 말한 곳만 고친 YAML 전문을 yaml 에 냅니다 — 코드 펜스 · 설명 없이 YAML 글만 적습니다.'
+  - '금액은 수로 적습니다(쉼표 · 단위 글자를 뗌) — 단위는 기준 YAML 의 예산.단위 를 따릅니다(변경 글의 금액이 다른 단위 — 원 등 — 면 기준 단위로 바꿔 적습니다).'
+  - '합계 · 소계 · 총액은 변경사항이 말하지 않았어도 그 아래 값이 바뀌었으면 다시 더해 맞춥니다(기준 YAML 안의 값으로만 — 이것이 사업계획서 뽑기와 다른 점입니다). 다시 맞춘 합계도 changes 에 적습니다.'
+  - 'meta.rev 와 파일 머리 주석(# [재생성 rN] … · # 변경분: …)은 코드가 적으니 바꾸지 않습니다.'
+  - '참여연구자가 바뀌면 예산.참여연구자인건비 의 참여자 줄과 소계, 비목별의 인건비를 함께 고칩니다.'
+  - '변경사항이 모호하거나 기준 YAML 에 해당 칸이 없으면 바꾸지 말고 warnings 에 적습니다. 변경사항에 없는 값을 지어내지 않습니다.'
+  - 'summary 는 "예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가" 꼴의 한 줄입니다.'
+  - 'changes 는 바꾼 곳마다 한 줄 — path(목록은 [연차] · [성명] 처럼 그 줄의 열쇠로) · before · after(글로) 입니다. 새로 넣은 칸의 before, 뺀 칸의 after 는 null 입니다.'
+llm: { task: rnd.revise }      # per-kind 작업의 이름 — rndgen/llm.js askRevise 가 부른다(src/llm.js fillAction 은 쓰지 않는다)
+runner: rnd.revise             # 이름만 — 2단계 어댑터(지금은 패널이 rndgen/ 을 바로 부른다)
+uses:
+  - { module: rndgen/llm.js, export: askRndTask }
+  - { module: src/rndyaml.js, export: kindOf }
+  - { module: src/rndyaml.js, export: readSnapshot }
+  - { module: rndgen/yaml.js, export: bookToSnapshot }        # 저장된 원문(rndYamlText)이 없을 때의 기준
+  - { module: rndgen/yaml.js, export: finalizeRevised }       # 다음 판 rN·머리 주석(# [재생성 rN] · # 변경분:)은 코드가
+  - { module: rndgen/yaml.js, export: diffYaml }              # 기준과 고친 것의 구조 차이
+  - { module: rndgen/yaml.js, export: previewApply }          # 새로 남을 변경이력 줄
+next: 미리보기(변경분 한 줄·다음 판·구조 차이·새로 생길 변경이력 줄·경고)를 보인다 → 사람이 "반영" 을 누르면 rnd.intake(장부 넣기)·rndYamlText 저장이 뒤따른다. "YAML 파일로 저장" 은 내려받기뿐이다

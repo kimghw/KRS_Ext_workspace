@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom';
 import { readZip } from '../src/zip.js';
 import { PAGE_TITLE, blockHtml, findBlock, readBlock } from '../src/rndnote.js';
 import PLAN_SYNC from '../rerp/plansync.js';
+import { normalizeBook } from '../src/rnd.js';
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -179,9 +180,20 @@ t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 
   assert.deepEqual([$('rdRosterState').textContent, $('rdPlanState').textContent], ['계획서 없음', '계획서 없음']);
   assert.match($('rdRoster').textContent, /맨 아래 칸에 연구개발계획서 YAML/);
   assert.ok(hidden('rdRosterTools') && hidden('rdPlanTools'), '복사할 것이 없으면 복사 아이콘도 없다');
-  assert.ok(!$('rdRosterBox').open && !$('rdPlanBox').open && !$('rdLogBox').open && !$('rdChangeBox').open, '참여연구자·연구개발 계획·진행 기록·변경이력은 접혀 있다(변경이력은 2026-10-11 사용자 지정)');
+  assert.ok(!$('rdRosterBox').open && !$('rdPlanBox').open && !$('rdLogBox').open, '참여연구자·연구개발 계획·진행 기록은 접혀 있다');
   assert.ok($('rdBudgetBox').open, '예산만 펴져 있다');
-  assert.deepEqual([...$('rdBody').querySelectorAll(':scope > details > summary > span:first-of-type')].map((s) => s.textContent), ['예산', '참여연구자', '연구개발 계획', '진행 기록', '변경이력']);
+  assert.deepEqual([...$('rdBody').querySelectorAll(':scope > details > summary > span:first-of-type')].map((s) => s.textContent), ['예산', '참여연구자 및 행정지원', '연구개발 계획', '진행 기록', '변경 및 이력 관리']);
+  // 변경 및 이력 관리(2026-10-16 사용자 지정 — 변경사항 반영 카드가 접혀 있던 변경이력 칸을 대체): 진행 기록 아래 카드 하나 —
+  // 위는 rndgen 의 YAML 고치기(#rdgRevise), 아래는 변경이력(직접 적기 · 복사 · 목록). 손으로 적는 칸은 직접 적기를 누를 때만.
+  // 같은 날 사용자 지정 "접어라" — 다른 칸처럼 접힌 한 줄(아이콘 · 이름 · 변경이력 형편 · 꺾쇠)로 선다.
+  assert.equal($('rdChangeBox').tagName, 'DETAILS');
+  assert.ok(!$('rdChangeBox').open, '변경 및 이력 관리도 접혀 있다');
+  assert.equal($('rdChangeState').parentElement.tagName, 'SUMMARY', '변경이력 건수는 접힌 머리 줄에');
+  assert.equal($('rdChangeBox').previousElementSibling.id, 'rdLogBox');
+  assert.equal($('rdChangeTitle').textContent, '변경 및 이력 관리');
+  assert.ok($('rdChangeBox').contains($('rdgRevise')) && $('rdChangeBox').contains($('rdChanges')));
+  assert.ok($('rdgRevise').compareDocumentPosition($('rdChanges')) & window.Node.DOCUMENT_POSITION_FOLLOWING, 'YAML 고치기가 위, 변경이력이 아래');
+  assert.ok(hidden('rdChForm') && !hidden('rdChNew'));
   assert.ok(!$('rnd').textContent.includes('연구내역'), '"연구내역" 이라는 말은 화면에 없다');
   // R&D 설정(2026-10-11 사용자 지정) — 탭 맨 아래 접힌 한 줄 안에 rERP 집행내역 체크 · 원노트 공유 · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬
   assert.equal($('rnd').lastElementChild.id, 'rdSetBox');
@@ -330,7 +342,10 @@ t('지우기는 두 번', () => {
 });
 
 console.log('변경이력 — 손으로');
-t('구분·항목·전후·사유를 적고 기록하면 날짜 차례에 들어가고 칸은 비운다', () => {
+t('직접 적기로 연 칸에 구분·항목·전후·사유를 적고 기록하면 날짜 차례에 들어가고 칸은 비우고 닫는다', () => {
+  $('rdChNew').click();
+  assert.ok(!hidden('rdChForm') && hidden('rdChNew'), '직접 적기를 누르면 적는 칸이 열리고 단추는 숨는다');
+  assert.equal($('rdChAdd').textContent, '기록');
   type($('rdChDate'), '2026-09-20');
   $('rdChKind').value = '연구내용';
   type($('rdChItem'), '2차년도 목표');
@@ -342,17 +357,25 @@ t('구분·항목·전후·사유를 적고 기록하면 날짜 차례에 들어
   assert.equal($('rdChangeState').textContent, '3건 · 사유 없음 1');
   assert.equal($('rdChKind').value, '예산');
   assert.equal($('rdChItem').value, '');
+  assert.ok(hidden('rdChForm') && !hidden('rdChNew'), '기록하면 칸이 닫힌다');
+  $('rdChNew').click();
   $('rdChAdd').click();
   assert.equal(chItems().length, 3, '빈 채로는 안 된다');
   assert.match(status(), /항목이나 변경 전·후를 적으세요/);
+  assert.ok(!hidden('rdChForm'), '못 적으면 칸은 열린 채');
+  $('rdChCancel').click();
+  assert.ok(hidden('rdChForm') && !hidden('rdChNew'), '취소하면 닫힌다');
 });
 t('고치기·지우기(두 번)', () => {
   q('#rdChanges li:last-child [data-edit]').click();
+  assert.ok(!hidden('rdChForm'), '줄의 고치기도 적는 칸을 연다');
   assert.equal($('rdChItem').value, '2차년도 목표');
   assert.equal($('rdChKind').value, '연구내용');
+  assert.equal($('rdChAdd').textContent, '저장');
   type($('rdChAfter'), '12.5kV');
   $('rdChAdd').click();
   assert.equal(chItems().at(-1)[3], '10kV→12.5kV');
+  assert.ok(hidden('rdChForm'));
   const del = q('#rdChanges li:last-child [data-del]');
   del.click();
   assert.equal(chItems().length, 3);
@@ -372,7 +395,9 @@ t('예산 정보가 없는 2차년도를 누르면 넘어간다 — 1차년도�
   assert.ok(hidden('rdBody'), '예산·참여연구자·연구개발 계획·진행 기록·변경이력·요약 복사는 없다');
   assert.ok(!hidden('rdYearEmpty'));
   assert.match($('rdYearEmpty').textContent, /^2차년도 — 예산 정보가 들어 있지 않습니다\. 아래 R&D 설정의 연구개발계획서 YAML 넣기에/);
+  // YAML 고치기(rndgen — 2026-10-16)는 변경 및 이력 관리 카드 안이라 기록 칸과 함께 숨는다(이 카드와 함께 서지 않는다).
   assert.equal($('rdYearEmpty').nextElementSibling.id, 'rdBody', '까닭 카드는 상태 줄 아래, 숨은 기록 칸 자리 위');
+  assert.ok($('rdBody').contains($('rdgRevise')));
   assert.ok($('rdSetBox').open, 'R&D 설정이 저절로 펴진다');
   assert.ok($('rdSetBox').contains($('rdIntake')), 'YAML 넣는 칸이 그 안에');
   // 예산이 든 1차년도로 돌아오면 기록 칸이 다시 서고, 저절로 편 설정은 도로 접힌다.
@@ -1206,6 +1231,229 @@ await ta('계획서를 다시 넣으면 올린 페이지를 저절로 고친다(
   $('rdResCopy').click();
   await until(() => copied.length === before + 1);
   assert.match(copied.at(-1), /^https:\/\/krclass-my\.sharepoint\.com\/.*\n\[연구내용 페이지 ID\] 1-b{32}!\d+-/);
+});
+
+await ta('행정지원 — 참여연구자 칸 안에서 사람을 더하고 이름·맡은 일·공문 참조를 적으면 과제에 남고 머리 줄에 보인다. 빈 줄은 저장소에서 다시 읽을 때 빠진다(2026-10-16)', async () => {
+  const type = (node, v) => { node.value = v; node.dispatchEvent(new window.Event('input', { bubbles: true })); };
+  const row = () => $('rdSupport').querySelector('li:last-child');
+  assert.match($('rdSupportNote').textContent, /공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다/);
+  $('rdSupportAdd').click();
+  assert.equal($('rdSupport').children.length, 1);
+  assert.ok(row().querySelector('[data-k="ref"]').checked, '새 사람은 공문 참조가 켜져 있다');
+  type(row().querySelector('[data-k="name"]'), '홍길동');
+  type(row().querySelector('[data-k="role"]'), '행정 담당');
+  assert.match($('rdRosterState').textContent, / · 행정지원 1명 · 공문 참조 홍길동$/);
+  $('rdSupportAdd').click();
+  type(row().querySelector('[data-k="name"]'), '이몽룡');
+  const ref = row().querySelector('[data-k="ref"]');
+  ref.checked = false;
+  ref.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.match($('rdRosterState').textContent, / · 행정지원 2명 · 공문 참조 홍길동$/);
+  $('rdSupportAdd').click();
+  await wait(500);
+  const saved = () => store.rndBook.projects.find((x) => x.id === store.rndBook.current.project);
+  assert.deepEqual(saved().support.slice(0, 2), [{ name: '홍길동', role: '행정 담당', ref: true }, { name: '이몽룡', role: '', ref: false }]);
+  assert.deepEqual(normalizeBook(store.rndBook).projects.find((x) => x.id === store.rndBook.current.project).support.length, 2, '이름을 적지 않은 줄은 다시 읽을 때 빠진다');
+  $('rdSupport').querySelector('li:first-child [data-drop]').click();
+  assert.deepEqual([...$('rdSupport').querySelectorAll('[data-k="name"]')].map((x) => x.value), ['이몽룡', '']);
+  assert.match($('rdRosterState').textContent, / · 행정지원 1명$/);
+  // 뒤의 시험이 보는 머리 줄을 그대로 두도록 비운다.
+  for (let i = 0; i < 5 && $('rdSupport').querySelector('[data-drop]'); i++) $('rdSupport').querySelector('[data-drop]').click();
+  assert.equal($('rdSupport').children.length, 0);
+  await wait(500);
+});
+
+console.log('과제 더하기 카드(rndgen)의 손잡이 — 2026-10-16 사용자 지정: "sscb 버튼 누르면 그리 안감, + 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출"');
+const projId = (alias) => panel.book().projects.find((x) => x.alias === alias)?.id;
+const addChip = () => q('#rdProjects [data-add]');
+const chipOf = (name) => [...$('rdProjects').querySelectorAll('[data-proj]')].find((b) => b.textContent === name);
+await ta('새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 폼이 닫히고 그 과제가 선다 — 폼 동안 과제 칩은 꺼지고 ＋ 칩이 켜진다(rndgen 이 없으면 ＋ 는 폼)', async () => {
+  assert.equal(chips().at(-1)[0], 'TEST');
+  assert.equal(chips().at(-1)[1], true);
+  addChip().click();
+  assert.ok(!hidden('rdForm'));
+  assert.equal($('rdFormTitle').textContent, '새 과제');
+  assert.deepEqual(chips().filter((c) => c[1]), [], '폼 동안 켜진 과제 칩이 없다');
+  assert.ok(addChip().classList.contains('active'));
+  assert.equal(addChip().getAttribute('aria-pressed'), 'true');
+  chipOf('TEST').click();   // 보고 있던 TEST — 전에는 아무 일도 없었다
+  assert.ok(hidden('rdForm'));
+  assert.ok(!hidden('rdHead'));
+  assert.ok(!hidden('rdBody'));
+  assert.equal(chips().at(-1)[1], true);
+  assert.ok(!addChip().classList.contains('active'));
+  assert.equal(addChip().getAttribute('aria-pressed'), 'false');
+  // 고치기 폼도 같다 — 칩이 꺼지고(＋ 는 켜지지 않는다), 칩을 누르면 닫힌다.
+  $('rdEdit').click();
+  assert.ok(!hidden('rdForm'));
+  assert.deepEqual(chips().filter((c) => c[1]), []);
+  assert.ok(!addChip().classList.contains('active'));
+  chipOf('TEST').click();
+  assert.ok(hidden('rdForm'));
+  assert.equal(chips().at(-1)[1], true);
+  assert.equal(panel.book().projects.length, 4, '폼을 닫았을 뿐 과제는 그대로');
+});
+
+const seenViews = [];
+const adds = [];
+const intakes = [];
+const deletes = [];
+await ta('훅을 달면 ＋·과제 없음 카드의 과제 더하기는 더하기 카드(onAdd)로 — 덮개(setOverlay add) 동안 머리·몸통이 숨고 ＋ 가 켜지며, 다른 칩을 누르면 덮개를 닫고 그리 간다', async () => {
+  panel.onView((v) => seenViews.push(v));
+  panel.onAdd((target) => adds.push(target));
+  panel.onIntake((result, texts, meta) => intakes.push({ result, texts, meta }));
+  panel.onDelete((id) => deletes.push(id));
+  const test = projId('TEST');
+  assert.deepEqual(panel.current(), { project: panel.book().projects.find((x) => x.id === test), n: 1 });
+  const v = panel.view();
+  assert.deepEqual([v.project.id, v.n, v.editing, v.overlay, v.yearEmpty], [test, 1, false, null, false]);
+  assert.equal(v.snapshot.rev, 'r2');
+  addChip().click();
+  assert.deepEqual(adds, [{}]);
+  assert.ok(hidden('rdForm'), '훅이 있으면 폼을 열지 않는다');
+  $('rdEmptyAdd').click();
+  assert.deepEqual(adds, [{}, {}]);
+  // 덮개 — rndgen 의 openAdd 가 부르는 것
+  let closed = 0;
+  panel.setOverlay('add', () => { closed++; });
+  assert.ok(hidden('rdHead') && hidden('rdBody') && hidden('rdYearEmpty'));
+  assert.ok(hidden('rdEmpty'));
+  assert.deepEqual(chips().filter((c) => c[1]), []);
+  assert.ok(addChip().classList.contains('active'));
+  assert.equal(seenViews.at(-1).overlay, 'add', 'paintAll 끝에 훅이 view 를 받는다');
+  assert.equal(panel.view().overlay, 'add');
+  // 같은 과제 칩 — 덮개를 닫고(닫는 쪽을 한 번 부름) 그 과제가 다시 선다
+  chipOf('TEST').click();
+  assert.equal(closed, 1);
+  assert.equal(panel.view().overlay, null);
+  assert.ok(!hidden('rdHead') && !hidden('rdBody'));
+  assert.equal(chips().at(-1)[1], true);
+  // 다른 과제 칩 — 덮개를 닫고 그 과제로
+  panel.setOverlay('add', () => { closed++; });
+  q('#rdProjects [data-proj]').click();
+  assert.equal(closed, 2);
+  assert.equal(chips()[0][1], true);
+  assert.equal(seenViews.at(-1).project.alias, '차단기 과제');
+  // 끄기(null) 는 닫는 쪽을 부르지 않는다
+  panel.setOverlay('add', () => { closed++; });
+  panel.setOverlay(null);
+  assert.equal(closed, 2);
+  assert.ok(!hidden('rdHead'));
+  // 덮개를 켜면 열린 폼은 닫힌다(폼과 덮개는 하나만)
+  $('rdEdit').click();
+  assert.ok(!hidden('rdForm'));
+  panel.setOverlay('add', () => { closed++; });
+  assert.ok(hidden('rdForm'));
+  assert.equal(panel.view().editing, false);
+  // 직접 적기 — 덮개를 (닫는 쪽 없이) 걷고 새 과제 폼
+  panel.addManually();
+  assert.equal(closed, 2);
+  assert.equal(panel.view().overlay, null);
+  assert.ok(!hidden('rdForm'));
+  assert.equal($('rdFormTitle').textContent, '새 과제');
+  assert.equal(seenViews.at(-1).editing, true, '폼을 열어도 훅이 받는다');
+  assert.ok(addChip().classList.contains('active'));
+  $('rdFCancel').click();
+  assert.ok(hidden('rdForm'));
+  // pick — 그 과제·차년도로
+  panel.pick(test, 1);
+  assert.equal(chips().at(-1)[1], true);
+  assert.equal(panel.view().n, 1);
+});
+
+await ta('빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기" — 그 과제·차년도로 더하기 카드를 연다(훅이 없으면 새 과제 폼)', async () => {
+  // 예산 정보가 없는(회색 점선) 차년도가 있는 과제를 찾는다 — 앞의 시험들이 넣은 것에 따라 다르다.
+  let mvdc = '';
+  let empty = 0;
+  let was = 0;
+  for (const p of panel.book().projects) {
+    panel.pick(p.id);
+    const off = q('#rdYears [data-year].off');
+    if (off) { mvdc = p.id; empty = Number(off.dataset.year); was = panel.view().n; break; }
+  }
+  assert.ok(mvdc, '빈 차년도가 있는 과제');
+  panel.pick(mvdc, empty);
+  assert.equal(panel.view().yearEmpty, true);
+  assert.ok(!hidden('rdYearEmpty'));
+  assert.match($('rdYearEmpty').textContent, /R&D 설정의 연구개발계획서 YAML 넣기에/, 'YAML 넣는 길도 그대로 적혀 있다');
+  const btn = q('#rdYearEmpty [data-rdg-extract]');
+  assert.equal(btn.textContent, '사업계획서에서 이 차년도 뽑기');
+  assert.equal(btn.closest('details'), null, '접힌 칸 뒤에 두지 않는다');
+  btn.click();
+  assert.deepEqual(adds.at(-1), { projectId: mvdc, n: empty });
+  panel.onAdd(null);
+  q('#rdYearEmpty [data-rdg-extract]').click();
+  assert.ok(!hidden('rdForm'));
+  $('rdFCancel').click();
+  panel.onAdd((target) => adds.push(target));
+  panel.pick(mvdc, was);
+  panel.pick(projId('TEST'), 1);
+  assert.equal(chips().at(-1)[1], true);
+});
+
+await ta('intake 는 결과를 돌려주고(종류·과제·차년도·판·들어갔는가) onIntake 훅을 부른다 · setAlias · 과제를 지우면 onDelete', async () => {
+  const before = intakes.length;
+  // 더 오래된 판(r0 — TEST 1차년도에는 r2 가 있다)은 들어가지 않는다 — applied false
+  const old = await panel.intake([{ name: 'KR_test.yaml', text: fx('snapshot_r0.yaml') }], { source: 'file' });
+  assert.equal(old.ok, true);
+  assert.deepEqual({ ...old.results[0], summary: '' }, { name: 'KR_test.yaml', kind: 'snapshot', label: '연구개발계획서 스냅샷', summary: '', projectId: projId('TEST'), n: 1, rev: 'r0', applied: false });
+  assert.match(old.results[0].summary, /이미 r2 가 들어 있어/);
+  assert.equal(old.lines.length, 1);
+  assert.deepEqual(intakes.slice(before).map((x) => x.meta), [{ source: 'file', summary: '' }]);
+  // 새 과제의 스냅샷 — 과제가 서고 applied true. 훅은 넣은 글과 source·summary 를 받는다
+  const text = fx('snapshot_r0.yaml').replace('과제명: 시험용 직류 차단기 개발', '과제명: 시험용 새 과제').replaceAll('RS-2026-00000001', 'RS-2026-00000077');
+  const texts = [{ name: 'KR_시험용_새_과제.yaml', text }];
+  const res = await panel.intake(texts, { source: 'extract', summary: '' });
+  const made = panel.book().projects.find((x) => x.name === '시험용 새 과제');
+  assert.ok(made);
+  assert.deepEqual([res.ok, res.error, res.results.length], [true, '', 1]);
+  assert.deepEqual({ ...res.results[0], summary: '' }, { name: 'KR_시험용_새_과제.yaml', kind: 'snapshot', label: '연구개발계획서 스냅샷', summary: '', projectId: made.id, n: 1, rev: 'r0', applied: true });
+  assert.match(res.results[0].summary, /^과제 만듦: 시험용 새 과제 · 1차년도/);
+  assert.equal(intakes.at(-1).result, res);
+  assert.equal(intakes.at(-1).texts, texts);
+  assert.deepEqual(intakes.at(-1).meta, { source: 'extract', summary: '' });
+  // 모르는 YAML — 들어간 것이 없으면 훅은 부르지 않는다
+  const n = intakes.length;
+  const bad = await panel.intake([{ name: 'x.yaml', text: 'a: 1' }]);
+  assert.deepEqual([bad.ok, bad.results.length, intakes.length], [false, 0, n]);
+  assert.match(bad.error, /^x\.yaml: 아는 모양의 YAML 이 아닙니다/);
+  // 별칭 — 비었거나 겹치면 붙이지 않는다(대소문자 무시)
+  assert.deepEqual(panel.setAlias(made.id, ' '), { ok: false, error: '별칭을 적으세요 — 예) SSCB' });
+  assert.deepEqual(panel.setAlias(made.id, 'test'), { ok: false, error: '같은 별칭의 과제가 있습니다 — 시험용 직류 차단기 개발' });
+  assert.deepEqual(panel.setAlias('없는 과제', 'NEWX'), { ok: false, error: '과제를 찾지 못했습니다' });
+  assert.deepEqual(panel.setAlias(made.id, 'NEWX'), { ok: true, error: '' });
+  assert.ok(chips().some((c) => c[0] === 'NEWX'));
+  assert.ok(logs.some((l) => l.text === 'R&D 과제 별칭: 시험용 새 과제 → NEWX'));
+  // 지우기(두 번) → onDelete(그 과제 id)
+  panel.pick(made.id, 1);
+  $('rdEdit').click();
+  $('rdFDel').click();
+  $('rdFDel').click();
+  assert.deepEqual(deletes, [made.id]);
+  assert.equal(panel.book().projects.length, 4);
+  panel.pick(projId('TEST'), 1);
+  assert.equal(chips().at(-1)[0], 'TEST');
+  assert.equal(chips().at(-1)[1], true);
+  // 다른 훅이 없으면(통합 앞) 손잡이의 download·readAsset 은 만들 때 받은 것 그대로
+  await panel.download('x', 'a.yaml', 'text/yaml');
+  assert.deepEqual(downloads.at(-1), { text: 'x', name: 'a.yaml', type: 'text/yaml' });
+  assert.match(await panel.readAsset('rnd/skills.json'), /rnd-kr-extract/);
+});
+
+t('더하기·변경사항 카드가 놓인 파일의 전파를 멈춰도 YAML 넣기 칸의 "놓기" 표시는 거둔다(잡는 단계)', () => {
+  const host = $('rdgRevise');
+  const stop = (e) => e.stopPropagation();
+  host.addEventListener('drop', stop);
+  $('rdIntake').classList.add('over');
+  const ev = new window.Event('drop', { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: { types: ['Files'], files: [] } });
+  host.dispatchEvent(ev);
+  host.removeEventListener('drop', stop);
+  assert.ok(!$('rdIntake').classList.contains('over'));
+  panel.onView(null);
+  panel.onAdd(null);
+  panel.onIntake(null);
+  panel.onDelete(null);
 });
 
 console.log('다시 열기');

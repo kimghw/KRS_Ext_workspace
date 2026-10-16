@@ -7,7 +7,7 @@ import {
   BOOK_KEY, MAX_PROJECTS, MAX_YEARS, BUDGET_ITEMS, CHANGE_KINDS,
   periodOf, periodText, isYmd, amountOf, comma, won, shortWon,
   yearsOf, yearNo, currentYear, yearState, yearLabel,
-  blankYear, normalizeYear, normalizeProject, normalizeRefs, refsText, normalizeBook, viewYear, yearBook, aliasOwner, fileLog, noteLogs,
+  blankYear, normalizeYear, normalizeProject, normalizeRefs, refsText, normalizeSupport, supportRefs, supportText, SUPPORT_MAX, normalizeBook, viewYear, yearBook, aliasOwner, fileLog, noteLogs,
   budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst,
   fromGongmun, mergeProjects, exportJson, exportName, importJson, restoreBook, summaryText, parseRoster, parseSections,
   budgetTsv, entryText, logLines, changeLine, changeLines,
@@ -182,8 +182,21 @@ t('normalizeProject — 날짜 칸이 비면 연구기간 글에서, 앞선 종�
   assert.equal(normalizeProject({ name: 'a', start: '2026-01-01', end: '2027-01-01', period: '2000.01.01 ~ 2001.01.01' }).start, '2026-01-01', '날짜 칸이 이긴다');
   assert.equal(normalizeProject({ name: 'a', start: '2027-01-01', end: '2026-01-01' }).end, '');
   assert.equal(normalizeProject({ name: 'a', end: '2026-01-01' }).end, '', '시작일 없이 종료일만은 버린다');
-  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, years: {} });
+  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', job: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+  assert.equal(normalizeProject({ name: 'a', job: ' RND00202026 ' }).job, 'RND00202026', 'Job Id(전자결재 과제 찾기 — 2026-10-16)는 과제번호와 따로');
   assert.notEqual(normalizeProject(null).refs, normalizeProject(null).refs, '참조자 칸은 과제마다 새 객체');
+  assert.notEqual(normalizeProject(null).support, normalizeProject(null).support, '행정지원도 과제마다 새 배열');
+});
+t('행정지원(support) — 이름·맡은 일·공문 참조(적지 않으면 참조), 빈 이름·같은 이름(공백 무시)은 버림, 열 명까지. 참조를 켠 사람만 supportRefs, 한 줄 글은 supportText(2026-10-16)', () => {
+  const p = normalizeProject({ name: 'a', support: [
+    { name: ' 홍길동 ', role: '행정 담당' }, { name: '이몽룡', role: '연구지원', ref: false }, { name: '홍 길동', role: '중복' }, { name: '' }, '글', null,
+  ] });
+  assert.deepEqual(p.support, [{ name: '홍길동', role: '행정 담당', ref: true }, { name: '이몽룡', role: '연구지원', ref: false }]);
+  assert.deepEqual(supportRefs(p), ['홍길동']);
+  assert.equal(supportText(p.support), '홍길동(행정 담당·참조), 이몽룡(연구지원)');
+  assert.equal(normalizeSupport(Array.from({ length: 14 }, (_, i) => ({ name: `사람${i}` }))).length, SUPPORT_MAX);
+  assert.deepEqual([normalizeSupport('x'), supportRefs(null), supportText(null)], [[], [], '']);
+  assert.match(summaryText({ ...p, start: '2026-04-01', end: '2029-12-31' }, 1, '2026-10-16'), /\n행정지원: 홍길동\(행정 담당·참조\), 이몽룡\(연구지원\)\n/);
 });
 t('공문 참조자(refs) — 공문 종류마다 이름들. 배열이나 쉼표·가운뎃점·줄바꿈 글, 같은 이름은 한 번, 빈 종류는 버림, 종류 열 개·이름 스무 명까지', () => {
   assert.deepEqual(normalizeRefs({ 구매: ['이몽룡', ' 이몽룡 ', ''], 교육: '성춘향, 홍길동·이도령\n성춘향', 출장: [], 외부활동: '', ' ': ['x'], purchase: 7 }),

@@ -121,8 +121,7 @@ export const ACTIONS = {
         "purchase",
         "edu",
         "trip",
-        "outside",
-        "setup"
+        "outside"
       ],
       "preset": {
         "me": {
@@ -198,7 +197,9 @@ export const ACTIONS = {
         "erp.fetch",
         "note.sync",
         "research.share",
-        "skills.zip"
+        "skills.zip",
+        "extract",
+        "revise"
       ],
       "preset": {
         "today": {
@@ -212,7 +213,18 @@ export const ACTIONS = {
       },
       "llm": {
         "task": "rnd",
-        "mode": "none"
+        "mode": "per-kind",
+        "partial": false,
+        "input": "rnd",
+        "title": "R&D {종류}",
+        "consumer": {
+          "module": "rndgen/llm.js",
+          "export": "askRndTask"
+        },
+        "next": "답(YAML 전문)을 rndgen/yaml.js 가 검사·마무리하고 미리보기 뒤 사람이 누르면 rnd.intake(장부 넣기)와 rndYamlText 저장이 뒤따른다",
+        "role": "당신은 한국선급(KR) 연구개발 과제의 연구개발계획서 스냅샷 YAML(KR_<과제>.yaml)을 다루는 도우미입니다. 이번 일: {종류}. 답은 YAML 글과 몇 개의 짧은 칸뿐입니다 — 파일을 만들거나 폴더를 다루지 않습니다.",
+        "rules": [],
+        "fields": {}
       }
     },
     "room": {
@@ -2757,7 +2769,7 @@ export const ACTIONS = {
         "project": {
           "from": "ctx:project",
           "type": "object",
-          "desc": "고른 과제(이름·별명·번호·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year — 공문 탭이 R&D 탭의 과제에서 고른 것. 과제 내용 3000자가 들어 있어 로그에서 뺀다)",
+          "desc": "고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year — 공문 탭이 R&D 탭의 과제에서 고른 것. 과제 내용 3000자가 들어 있어 로그에서 뺀다)",
           "log": false
         },
         "kindTitle": {
@@ -2986,6 +2998,23 @@ export const ACTIONS = {
             "본부장"
           ]
         },
+        "lead": {
+          "type": "string",
+          "label": "과제 책임자",
+          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자(preset.me) 본인이면 합의를 넣지 않는다",
+          "read": "과제 책임자 이름",
+          "llm": false,
+          "ui": true,
+          "max": 40
+        },
+        "refs": {
+          "type": "tags",
+          "label": "참조자",
+          "desc": "결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.구매. 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음",
+          "read": "참조자 이름들",
+          "llm": false,
+          "ui": true
+        },
         "setting": {
           "type": "object",
           "label": "문서설정",
@@ -3137,7 +3166,7 @@ export const ACTIONS = {
         "project": {
           "from": "ctx:project",
           "type": "object",
-          "desc": "고른 과제(이름·별명·번호·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 과제 내용 3000자가 들어 있어 로그에서 뺀다",
+          "desc": "고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 과제 내용 3000자가 들어 있어 로그에서 뺀다",
           "log": false
         },
         "kindTitle": {
@@ -3357,6 +3386,23 @@ export const ACTIONS = {
             "본부장"
           ]
         },
+        "lead": {
+          "type": "string",
+          "label": "과제 책임자",
+          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자 본인이면 합의를 넣지 않는다",
+          "read": "과제 책임자 이름",
+          "llm": false,
+          "ui": true,
+          "max": 40
+        },
+        "refs": {
+          "type": "tags",
+          "label": "참조자",
+          "desc": "결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.교육. 빈 목록이면 참조 없음",
+          "read": "참조자 이름들",
+          "llm": false,
+          "ui": true
+        },
         "setting": {
           "type": "object",
           "label": "문서설정",
@@ -3508,7 +3554,7 @@ export const ACTIONS = {
         "project": {
           "from": "ctx:project",
           "type": "object",
-          "desc": "고른 과제(이름·별명·번호·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 로그에서 뺀다",
+          "desc": "고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 로그에서 뺀다",
           "log": false
         },
         "kindTitle": {
@@ -3681,6 +3727,23 @@ export const ACTIONS = {
             "소장",
             "본부장"
           ]
+        },
+        "lead": {
+          "type": "string",
+          "label": "과제 책임자",
+          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자 본인이면 합의를 넣지 않는다",
+          "read": "과제 책임자 이름",
+          "llm": false,
+          "ui": true,
+          "max": 40
+        },
+        "refs": {
+          "type": "tags",
+          "label": "참조자",
+          "desc": "결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.출장. 빈 목록이면 참조 없음",
+          "read": "참조자 이름들",
+          "llm": false,
+          "ui": true
         },
         "setting": {
           "type": "object",
@@ -4183,174 +4246,6 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "뒤 탭에 신고서를 쓴다(제목·신고서 칸·문서설정·결재선·첨부 — 차수 칸이 없는 양식이라 제목만). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다"
-    },
-    "gongmun.setup": {
-      "id": "gongmun.setup",
-      "domain": "gongmun",
-      "kind": "setup",
-      "title": "공문 설정 채우기",
-      "status": "planned",
-      "confirm": false,
-      "effect": "draft",
-      "log": "gongmun-setup",
-      "summary": "공문 설정 채우기",
-      "preset": {
-        "me": {
-          "from": "me",
-          "desc": "기안자(내 이름 — 결재선의 기안, 과제책임자가 본인이면 합의를 뺀다)",
-          "required": true
-        },
-        "today": {
-          "from": "today",
-          "desc": "오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리)"
-        },
-        "setup": {
-          "from": "storage:gongmunPreset",
-          "type": "object",
-          "desc": "지금의 공문 설정(부서·부서장·소장·본부장·문서번호 부서 — mergeSetup 의 preset. 조각에 없는 칸은 그대로 둔다)"
-        }
-      },
-      "fields": {
-        "patch": {
-          "type": "object",
-          "label": "조각",
-          "desc": "공문 설정에 얹을 조각(레시피 registries/setup.yaml 의 keys — 말하지 않은 칸은 없다). 과제 없이 사람·별명·연구기간·내용만 오면 지금 고른 과제(ctx.current) 몫이다",
-          "read": "붙여 넣은 글에서 읽은 공문 설정의 값 — 적힌 것만, 추측하지 않습니다",
-          "llm": true,
-          "ui": true,
-          "fields": {
-            "projects": {
-              "type": "list",
-              "desc": "과제 — 글에 나온 과제마다 한 줄(이름·번호·책임자·별명·연구기간·개요·내용). 열 개까지(src/rnd.js MAX_PROJECTS 와 같은 한도 — 2026-10-10 사용자 지정)",
-              "read": "과제. 글에 나온 과제마다 한 줄 — 과제가 나오지 않았으면 null",
-              "max": 10,
-              "item": {
-                "name": {
-                  "type": "string",
-                  "required": true,
-                  "desc": "과제명(전자결재 과제 찾기에 그대로 쓴다)",
-                  "read": "과제명(글에 적힌 그대로)",
-                  "example": "MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발",
-                  "max": 200
-                },
-                "code": {
-                  "type": "string",
-                  "desc": "과제번호",
-                  "read": "과제번호",
-                  "example": "RND-20-2026",
-                  "max": 40
-                },
-                "lead": {
-                  "type": "string",
-                  "desc": "과제책임자(품의의 합의자 — 이름만)",
-                  "read": "과제책임자 이름 — 직급·존칭은 뗀다",
-                  "example": "박기도",
-                  "max": 40
-                },
-                "alias": {
-                  "type": "string",
-                  "desc": "과제 별명(교육·출장 품의 제목에 들어간다)",
-                  "read": "과제 별명(약칭) — 글에 \"별명\"·\"약칭\" 으로 적혀 있을 때만",
-                  "example": "차단기 과제",
-                  "max": 60
-                },
-                "period": {
-                  "type": "string",
-                  "desc": "연구기간(본문 과제 개요에 들어간다)",
-                  "read": "연구기간 — 글에 적힌 그대로",
-                  "example": "2026.04.01 ~ 2029.12.31",
-                  "max": 60
-                },
-                "about": {
-                  "type": "string",
-                  "desc": "과제 개요(본문 첫 줄 — \"…을 수행하고 있습니다\" 로 끝나는 한 구절)",
-                  "read": "과제 개요 — 글에 과제의 목적이 적혀 있을 때만",
-                  "max": 300
-                },
-                "content": {
-                  "type": "string",
-                  "desc": "과제 내용(연구목표·연구내용 — 품의 사유를 쓰는 근거)",
-                  "read": "과제 내용 — 요약하지 않고 글에 적힌 그대로",
-                  "max": 3000
-                }
-              }
-            },
-            "dept": {
-              "type": "string",
-              "desc": "기안 부서",
-              "read": "기안 부서",
-              "example": "연구본부 수소전기추진연구팀",
-              "max": 100
-            },
-            "lead": {
-              "type": "string",
-              "desc": "과제 없이 과제책임자(합의자)만 적었을 때 그 이름 — 지금 고른 과제의 합의자가 된다",
-              "read": "과제를 말하지 않고 과제책임자(합의자)만 적었을 때 그 이름",
-              "max": 40
-            },
-            "content": {
-              "type": "string",
-              "desc": "과제 없이 과제 내용만 붙여 넣었을 때 그 글 — 지금 고른 과제의 내용이 된다",
-              "read": "과제를 말하지 않고 과제 내용(연구목표·연구내용)만 붙여 넣었을 때 그 글",
-              "max": 3000
-            },
-            "alias": {
-              "type": "string",
-              "desc": "과제 없이 별명만 적었을 때 — 지금 고른 과제의 별명",
-              "read": "과제를 말하지 않고 과제 별명만 적었을 때 그 별명",
-              "max": 60
-            },
-            "period": {
-              "type": "string",
-              "desc": "과제 없이 연구기간만 적었을 때 — 지금 고른 과제의 연구기간",
-              "read": "과제를 말하지 않고 연구기간만 적었을 때 그 기간",
-              "max": 60
-            },
-            "head": {
-              "type": "string",
-              "desc": "부서장 이름(품의의 결재자)",
-              "read": "부서장 이름(품의의 결재자)",
-              "example": "노길태",
-              "max": 40
-            }
-          }
-        },
-        "reply": {
-          "type": "string",
-          "desc": "무엇을 채웠는지 한 문장(LLM 의 답 — 화면 칸이 아니다)",
-          "read": "무엇을 채웠는지 한국어 한 문장",
-          "llm": true,
-          "ui": false,
-          "max": 300
-        }
-      },
-      "checks": [],
-      "rules": [],
-      "llm": {
-        "tasks": [
-          {
-            "task": "gongmunSetup",
-            "fills": "patch"
-          }
-        ]
-      },
-      "runner": "gongmun.setup",
-      "uses": [
-        {
-          "module": "src/gongmun.js",
-          "export": "mergeSetup"
-        },
-        {
-          "module": "src/gongmun.js",
-          "export": "parseSetupLocal"
-        },
-        {
-          "module": "src/llm.js",
-          "export": "gongmunSetupSmart"
-        }
-      ],
-      "then": [],
-      "next": "mergeSetup 의 결과(rows·preset·done·skipped)를 패널이 공문 설정 칸에 그리고 저장소(gongmunPreset·gongmunProjects)에 담는다. done·skipped 가 상태 줄의 말이다"
     },
     "home.evidence": {
       "id": "home.evidence",
@@ -5118,12 +5013,22 @@ export const ACTIONS = {
         "code": {
           "type": "string",
           "label": "과제번호",
-          "desc": "과제번호(rERP 잇기의 열쇠)",
+          "desc": "과제번호(rERP 잇기의 열쇠 — 국가과제 번호 RS-… 일 수 있다)",
           "read": "과제번호",
           "llm": true,
           "ui": true,
           "example": "RND-20-2026",
           "max": 40
+        },
+        "job": {
+          "type": "string",
+          "label": "Job Id",
+          "desc": "전자결재 공문의 과제 찾기 번호(R&D PMS 의 Project_ID — RND00202026 꼴). 비우면 공문 작성 때 책임자·과제명 유사도로 고른다(src/gmwrite.js)",
+          "read": "사내 과제 Job Id(RND00202026 · RND-20-2026 꼴). 국가과제 번호(RS-…)는 아니다. 적혀 있지 않으면 null",
+          "llm": true,
+          "ui": true,
+          "example": "RND00202026",
+          "max": 20
         },
         "lead": {
           "type": "string",
@@ -5729,6 +5634,324 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "묶은 바이트를 내려받고(download) 상태 줄에 크기를 적는다. 목록(rnd/skills.json)을 못 읽으면 묶지 않는다"
+    },
+    "rnd.extract": {
+      "id": "rnd.extract",
+      "domain": "rnd",
+      "kind": "extract",
+      "title": "사업계획서에서 스냅샷 YAML 뽑기",
+      "status": "planned",
+      "confirm": true,
+      "effect": "draft",
+      "log": "rnd",
+      "summary": "R&D 스냅샷 뽑기 {stage}차년도",
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 차년도(오늘이 든 것)·변경이력 날짜·zip 이름"
+        },
+        "me": {
+          "from": "me",
+          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+        }
+      },
+      "fields": {
+        "yaml": {
+          "type": "string",
+          "required": true,
+          "label": "스냅샷 YAML",
+          "desc": "사업계획서에서 뽑은 당해 차년도 KR 스냅샷 YAML 전문(KR_<과제>.yaml 의 본문 — 코드 펜스 없음)",
+          "read": "스냅샷 YAML 전문 — [스킬 규칙 2] structured_output.md 의 키 구조(meta · 연구개발내용 · 예산) 그대로, 한국선급(KR) 행·블록과 당해 차년도 행만. 코드 펜스(```)·설명·머리말 없이 YAML 글만 적습니다",
+          "llm": true,
+          "ui": true,
+          "max": 120000
+        },
+        "alias": {
+          "type": "string",
+          "label": "별칭 제안",
+          "desc": "과제 별칭 제안(칩·머리에 과제명 대신 보이는 약어 — 사람이 고친다. 이미 있는 과제면 장부의 별칭을 쓴다)",
+          "read": "과제의 짧은 약어(영문 대문자 또는 한글 2~10자 — SSCB·PEMFC 꼴). 문서에 약어가 있으면 그것, 없으면 과제명에서 짓습니다",
+          "llm": true,
+          "ui": true,
+          "example": "SSCB",
+          "max": 60
+        },
+        "stage": {
+          "type": "integer",
+          "label": "뽑은 차년도",
+          "desc": "뽑은 차년도 번호(meta.차년도 와 같은 수) — 코드가 meta.차년도·파일 머리 주석을 이 차년도로 맞춘다",
+          "read": "뽑은 차년도의 번호(2차년도면 2) — meta.차년도 에 적은 것과 같은 수",
+          "llm": true,
+          "ui": true,
+          "example": 2,
+          "min": 1,
+          "max": 20
+        },
+        "warnings": {
+          "type": "string",
+          "label": "경고",
+          "desc": "못 찾은 블록·원문끼리 어긋난 값·추정한 것 — \" / \" 로 이은 한 글(미리보기에 보인다)",
+          "read": "못 찾은 블록·원문끼리 어긋난 값·추정한 것을 \" / \" 로 이은 한 글. 없으면 null",
+          "llm": true,
+          "ui": true,
+          "example": "8-3 (4) 간접비 세부 표를 찾지 못함 / 표지의 총연구개발비 합계가 연차별 합과 다름",
+          "max": 3000
+        },
+        "file": {
+          "type": "file",
+          "label": "원본 문서",
+          "desc": "넣은 사업계획서(이름·형식만 — 바이트·고른 쪽의 작은 PDF 는 실행 때 ctx 로)",
+          "read": "이 칸은 사용자의 말로 채우지 않습니다 — 사용자가 끌어다 놓거나 고른 문서 그대로입니다",
+          "llm": false,
+          "ui": true
+        },
+        "stageWanted": {
+          "type": "integer",
+          "label": "고른 차년도",
+          "desc": "화면에서 고른 차년도(비면 자동 — LLM 이 오늘이 든 차년도를 고른다. 빈 차년도 카드에서 열면 그 차년도)",
+          "read": "사용자가 \"N차년도\" 를 집어 말했을 때만 그 번호. 아니면 null(오늘이 든 차년도)",
+          "llm": false,
+          "ui": true,
+          "min": 1,
+          "max": 20
+        },
+        "projectId": {
+          "type": "string",
+          "label": "과제 id",
+          "desc": "대상 과제의 id(빈 차년도 카드에서 열었을 때 — ＋ 로 열면 비고, 뽑은 과제명·과제번호가 장부의 과제와 같으면 그 과제로 들어간다)",
+          "read": "대상 과제의 id. 새 과제면 null",
+          "llm": false,
+          "ui": true,
+          "max": 40
+        }
+      },
+      "checks": [],
+      "rules": [
+        "출력 yaml 은 [스킬 규칙 2] structured_output.md 의 키 구조 그대로인 스냅샷 YAML 전문입니다 — 코드 펜스·설명 없이 YAML 글만 적습니다. meta.과제명 은 표지의 과제명을 글자 그대로 적습니다. 표지에서 과제명을 찾지 못하면 이 문서에서는 스냅샷을 뽑지 못한 것입니다 — yaml 에는 찾은 것만 적고 warnings 첫머리에 \"과제명을 찾지 못함\" 과 까닭을 적습니다.",
+        "한국선급(KR) 행·블록만 넣습니다(타 기관 행·블록은 뺍니다 — meta.표지 의 과제 식별 필드만 예외). 당해 차년도 행만 넣습니다 — 연차는 키로 두되(연차: N차년도 · 목표치: {N차년도: …}) 값은 그 한 연차뿐입니다. [스킬 규칙 1] extract_fields.yaml 의 include 만 넣고 exclude 는 빼며, fields 가 false 인 블록은 키째 뺍니다.",
+        "금액은 수로 적습니다(쉼표와 \"천원\" 을 뗌) — 단위는 예산.단위: 천원 입니다. 합계·소계·총액은 원문의 합계 행에 적힌 값만 옮깁니다(새로 더하지 않습니다). 모르는 값은 null 입니다. 당해 연차분이 원문에 없는 블록은 명시적 빈 블록(- 연차: N차년도 · 참여자: [] · 소계: null)으로 둡니다.",
+        "차년도: 입력의 \"뽑을 차년도\" 에 N차년도가 적혀 있으면 그 차년도입니다. \"오늘이 든 차년도\" 라고 적혀 있으면 표지의 연차별 연구개발기간 표에서 오늘 날짜가 든 차년도를 고릅니다(표를 읽을 수 없으면 입력의 \"장부 기준 오늘이 든 차년도\" 를 씁니다). 문서가 기준으로 삼은 연차와 다르면 오늘 기준을 택하고 warnings 에 적습니다. 고른 차년도를 meta.차년도(N차년도)와 stage(수 N)에 같이 적습니다.",
+        "meta 에는 과제명 · 수행기관(한국선급(KR)) · 단계 · 차년도 · 연차범위 · 연차별기간 · 기간 · 연구개발과제번호 · 협약일(YYYY-MM-DD, 있으면) · 표지 블록을 넣습니다. meta.rev · meta.source 와 파일 첫 줄의 머리 주석(# [N차년도 최초] …)은 코드가 적으니 넣지 않아도 됩니다(넣어도 됩니다).",
+        "스킬 문서의 절차(RND_PROJECT 폴더 · _source 이동 · md 변환 · 에이전트 · /rnd-kr-history init · year_slice.py 실행 · JSON 사본)는 무시합니다 — 여기서는 YAML 글 하나만 냅니다. 파일을 만들거나 도구를 부르지 않습니다.",
+        "첨부한 PDF 의 쪽은 입력 글의 \"— N쪽 —\" 표시와 같은 쪽입니다(표의 칸은 PDF 그림으로, 글자는 입력 글로 봅니다). 입력에 없는 쪽의 값을 지어내지 않습니다 — 찾지 못한 값은 null, 찾지 못한 블록은 빈 블록으로 두고 warnings 에 적습니다.",
+        "alias 는 과제의 짧은 약어입니다(영문 대문자 또는 한글 2~10자 — SSCB · PEMFC 꼴). 문서에 약어가 있으면 그것을, 없으면 과제명에서 짓습니다.",
+        "warnings 는 못 찾은 블록 · 원문끼리 어긋난 값 · 추정한 것을 \" / \" 로 잇습니다. 없으면 null 입니다."
+      ],
+      "llm": true,
+      "task": "rnd.extract",
+      "runner": "rnd.extract",
+      "uses": [
+        {
+          "module": "rndgen/llm.js",
+          "export": "askRndTask"
+        },
+        {
+          "module": "src/rndyaml.js",
+          "export": "kindOf"
+        },
+        {
+          "module": "src/rndyaml.js",
+          "export": "readSnapshot"
+        },
+        {
+          "module": "rndgen/source.js",
+          "export": "readDocument"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "checkExtracted"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "finalizeExtracted"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "previewApply"
+        }
+      ],
+      "then": [],
+      "next": "미리보기(과제명·차년도·비목별 예산·참여연구자·경고)와 별칭 칸을 보인다 → 사람이 \"넣기\" 를 누르면 rnd.intake(장부 넣기 — rnd.yaml 과 같은 길)·rndYamlText 저장·setAlias 가 뒤따른다. \"YAML 파일로 저장\" 은 내려받기뿐이다"
+    },
+    "rnd.revise": {
+      "id": "rnd.revise",
+      "domain": "rnd",
+      "kind": "revise",
+      "title": "변경사항으로 YAML 고치기",
+      "status": "planned",
+      "confirm": true,
+      "effect": "draft",
+      "log": "rnd",
+      "summary": "R&D YAML 고치기 {summary}",
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 차년도(오늘이 든 것)·변경이력 날짜·zip 이름"
+        },
+        "me": {
+          "from": "me",
+          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+        }
+      },
+      "fields": {
+        "yaml": {
+          "type": "string",
+          "required": true,
+          "label": "고친 YAML",
+          "desc": "변경사항을 반영한 YAML 전문(기준 YAML 의 키 구조·주석·차례 그대로 — 코드 펜스 없음)",
+          "read": "변경사항이 말한 곳만 고친 YAML 전문 — [기준 YAML] 의 키 구조·주석·차례를 그대로 두고, 코드 펜스(```)·설명 없이 YAML 글만 적습니다",
+          "llm": true,
+          "ui": true,
+          "max": 120000
+        },
+        "summary": {
+          "type": "string",
+          "required": true,
+          "label": "변경분 한 줄",
+          "desc": "무엇을 바꿨는지 한 줄 — 파일 머리의 \"# 변경분:\" 에 그대로 들어간다",
+          "read": "무엇을 바꿨는지 한국어 한 줄(경로 · 전 → 후, 여럿이면 \" · \" 로 잇습니다)",
+          "llm": true,
+          "ui": true,
+          "example": "예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가",
+          "max": 300
+        },
+        "changes": {
+          "type": "list",
+          "label": "바뀐 곳",
+          "desc": "바꾼 곳마다 경로와 전·후 값(글) — 미리보기의 바뀐 곳 목록과 견준다",
+          "read": "바꾼 곳마다 한 줄 — 경로와 바꾸기 전·후의 값(글로). 바꾼 곳이 없으면 빈 목록",
+          "llm": true,
+          "ui": true,
+          "max": 50,
+          "item": {
+            "path": {
+              "type": "string",
+              "required": true,
+              "desc": "바꾼 칸의 경로",
+              "read": "바꾼 칸의 경로 — 목록은 [연차]·[성명] 처럼 그 줄의 열쇠로 적습니다(예: 예산.비목별[2차년도].직접비.연구재료비)",
+              "max": 200
+            },
+            "before": {
+              "type": "string",
+              "desc": "바꾸기 전의 값(글)",
+              "read": "바꾸기 전의 값(글로). 새로 넣은 칸이면 null",
+              "max": 500
+            },
+            "after": {
+              "type": "string",
+              "desc": "바꾼 뒤의 값(글)",
+              "read": "바꾼 뒤의 값(글로). 뺀 칸이면 null",
+              "max": 500
+            }
+          }
+        },
+        "warnings": {
+          "type": "string",
+          "label": "경고",
+          "desc": "모호해서 바꾸지 않은 것·기준 YAML 에 해당 칸이 없는 것 — \" / \" 로 이은 한 글(미리보기에 보인다)",
+          "read": "모호해서 바꾸지 않은 것 · 기준 YAML 에 해당 칸이 없어 바꾸지 않은 것 · 다시 맞춘 합계를 \" / \" 로 이은 한 글. 없으면 null",
+          "llm": true,
+          "ui": true,
+          "max": 3000
+        },
+        "projectId": {
+          "type": "string",
+          "label": "과제 id",
+          "desc": "고치는 과제의 id(보고 있는 과제)",
+          "read": "이 칸은 사용자의 말로 채우지 않습니다 — 보고 있는 과제입니다",
+          "llm": false,
+          "ui": true,
+          "max": 40
+        },
+        "n": {
+          "type": "integer",
+          "label": "차년도",
+          "desc": "고치는 차년도(보고 있는 차년도)",
+          "read": "이 칸은 사용자의 말로 채우지 않습니다 — 보고 있는 차년도입니다",
+          "llm": false,
+          "ui": true,
+          "min": 1,
+          "max": 20
+        },
+        "text": {
+          "type": "string",
+          "label": "변경 글",
+          "desc": "사람이 붙여 넣은 변경 내용(메일·공문·메모·표 — 2만 자에서 자른다)",
+          "read": "사용자가 붙여 넣은 변경 내용 그대로",
+          "llm": false,
+          "ui": true,
+          "max": 20000
+        },
+        "files": {
+          "type": "list",
+          "label": "붙인 문서",
+          "desc": "변경 내용으로 붙인 문서(이름·형식만 — 글자는 rndgen/source.js 가 뽑아 입력 글에 싣는다)",
+          "read": "이 칸은 사용자의 말로 채우지 않습니다 — 사용자가 붙인 문서 그대로입니다",
+          "llm": false,
+          "ui": true,
+          "max": 6,
+          "item": {
+            "name": {
+              "type": "string",
+              "desc": "문서 이름",
+              "read": "문서 이름",
+              "max": 200
+            },
+            "type": {
+              "type": "string",
+              "desc": "문서 형식(MIME)",
+              "read": "문서 형식",
+              "max": 100
+            }
+          }
+        }
+      },
+      "checks": [],
+      "rules": [
+        "[기준 YAML] 의 키 구조 · 주석 · 차례를 그대로 두고 [변경사항](과 붙인 문서 글자)이 말한 곳만 고친 YAML 전문을 yaml 에 냅니다 — 코드 펜스 · 설명 없이 YAML 글만 적습니다.",
+        "금액은 수로 적습니다(쉼표 · 단위 글자를 뗌) — 단위는 기준 YAML 의 예산.단위 를 따릅니다(변경 글의 금액이 다른 단위 — 원 등 — 면 기준 단위로 바꿔 적습니다).",
+        "합계 · 소계 · 총액은 변경사항이 말하지 않았어도 그 아래 값이 바뀌었으면 다시 더해 맞춥니다(기준 YAML 안의 값으로만 — 이것이 사업계획서 뽑기와 다른 점입니다). 다시 맞춘 합계도 changes 에 적습니다.",
+        "meta.rev 와 파일 머리 주석(# [재생성 rN] … · # 변경분: …)은 코드가 적으니 바꾸지 않습니다.",
+        "참여연구자가 바뀌면 예산.참여연구자인건비 의 참여자 줄과 소계, 비목별의 인건비를 함께 고칩니다.",
+        "변경사항이 모호하거나 기준 YAML 에 해당 칸이 없으면 바꾸지 말고 warnings 에 적습니다. 변경사항에 없는 값을 지어내지 않습니다.",
+        "summary 는 \"예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가\" 꼴의 한 줄입니다.",
+        "changes 는 바꾼 곳마다 한 줄 — path(목록은 [연차] · [성명] 처럼 그 줄의 열쇠로) · before · after(글로) 입니다. 새로 넣은 칸의 before, 뺀 칸의 after 는 null 입니다."
+      ],
+      "llm": true,
+      "task": "rnd.revise",
+      "runner": "rnd.revise",
+      "uses": [
+        {
+          "module": "rndgen/llm.js",
+          "export": "askRndTask"
+        },
+        {
+          "module": "src/rndyaml.js",
+          "export": "kindOf"
+        },
+        {
+          "module": "src/rndyaml.js",
+          "export": "readSnapshot"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "bookToSnapshot"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "finalizeRevised"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "diffYaml"
+        },
+        {
+          "module": "rndgen/yaml.js",
+          "export": "previewApply"
+        }
+      ],
+      "then": [],
+      "next": "미리보기(변경분 한 줄·다음 판·구조 차이·새로 생길 변경이력 줄·경고)를 보인다 → 사람이 \"반영\" 을 누르면 rnd.intake(장부 넣기)·rndYamlText 저장이 뒤따른다. \"YAML 파일로 저장\" 은 내려받기뿐이다"
     },
     "room.search": {
       "id": "room.search",
@@ -7549,7 +7772,7 @@ export const ACTIONS = {
       "domain": "trip",
       "kind": "lodge",
       "title": "사후정산 숙박 줄 손질",
-      "status": "planned",
+      "status": "live",
       "confirm": true,
       "effect": "write",
       "log": "trip",
@@ -7565,7 +7788,7 @@ export const ACTIONS = {
         },
         "tripMe": {
           "from": "ctx:tripMe",
-          "desc": "여비계산서 목록 화면이 아는 내 이름 — 출장자 번호(trseq)를 고른다"
+          "desc": "여비계산서 목록 화면이 아는 내 이름 — 패널이 이 이름으로 출장자 번호(trseq)를 고른다(어댑터는 쓰지 않는다)"
         }
       },
       "fields": {
@@ -7584,7 +7807,7 @@ export const ACTIONS = {
           "type": "string",
           "required": true,
           "label": "출장자 번호",
-          "desc": "내 출장자 번호(목록 줄 travelers[].trseq — 사후정산 입력 화면 주소에 든다)",
+          "desc": "내 출장자 번호(목록 줄 travelers[].trseq — attendpanel.js 의 trseqOf). 사후정산 입력 화면 주소에 든다 — 숙박비 내역은 이 번호가 있어야 서므로 누를 때는 늘 있다",
           "read": "내 출장자 번호. 모르면 null",
           "llm": true,
           "ui": true,
@@ -7595,7 +7818,7 @@ export const ACTIONS = {
           "type": "string",
           "required": true,
           "label": "숙박 줄 번호",
-          "desc": "바꿀 줄의 번호(lodge_seq — 화면의 줄)",
+          "desc": "바꿀 줄의 번호(lodge_seq — 화면의 줄). 어댑터가 ctx.lodge 의 줄 번호와 같은지 본다",
           "read": "바꿀 숙박 줄의 번호 — 숙박비 내역의 줄 그대로",
           "llm": true,
           "ui": true,
@@ -7620,7 +7843,7 @@ export const ACTIONS = {
         "reason": {
           "type": "string",
           "label": "상한 초과 사유",
-          "desc": "비고에 적을 사유(real·reason 일 때 — 비면 기본 문구 LODGE_OVER_REASON). 정산금액이 상한액을 넘는 줄은 사유가 필수다",
+          "desc": "비고에 적을 사유 — reason 은 비면 기본 문구(LODGE_OVER_REASON), real 은 비면 비고에 이미 있는 사유 → 적어 둔 사유(attendLodgeActual) → 기본 문구 차례다. cap·delete 에는 쓰지 않는다. 화면의 `상한` 버튼은 null 로, `비고에 저장` 은 칸에 적힌 사유(비면 기본 문구)로 짓는다. 정산금액이 상한액을 넘는 줄은 사유가 필수다",
           "read": "사용자가 말한 상한 초과 사유. 말하지 않았으면 null(기본 문구)",
           "llm": true,
           "ui": true,
@@ -7648,6 +7871,14 @@ export const ACTIONS = {
         {
           "module": "src/after.js",
           "export": "lodgeSettle"
+        },
+        {
+          "module": "lodgebox.js",
+          "export": "lodgeCapState"
+        },
+        {
+          "module": "lodgebox.js",
+          "export": "lodgeReasonOf"
         }
       ],
       "then": [],
@@ -7986,6 +8217,128 @@ export const ACTIONS = {
         "차량에는 좌석 정보가 없으므로 minSeats 는 항상 null 입니다. 지역도 가리지 않으므로 region 은 항상 null 입니다.",
         "\"2시간짜리\" 처럼 필요한 길이가 나오면 minHours 에 넣습니다.",
         "summary 는 사용자가 확인할 수 있게 해석 결과를 한 줄로 적습니다."
+      ]
+    },
+    "rnd.extract": {
+      "title": "R&D 사업계획서에서 스냅샷 YAML 뽑기",
+      "kinds": [
+        "rnd"
+      ],
+      "consumer": {
+        "module": "rndgen/llm.js",
+        "export": "askRndTask"
+      },
+      "next": "답(YAML 전문)을 rndgen/yaml.js 가 검사·마무리하고 미리보기 뒤 사람이 누르면 rnd.intake(장부 넣기)와 rndYamlText 저장이 뒤따른다",
+      "role": "당신은 한국선급(KR) 연구개발 과제의 연구개발계획서 스냅샷 YAML(KR_<과제>.yaml)을 다루는 도우미입니다. 이번 일: 사업계획서에서 스냅샷 YAML 뽑기. 답은 YAML 글과 몇 개의 짧은 칸뿐입니다 — 파일을 만들거나 폴더를 다루지 않습니다.",
+      "fields": {
+        "yaml": {
+          "type": "string",
+          "required": true,
+          "label": "스냅샷 YAML",
+          "desc": "스냅샷 YAML 전문 — [스킬 규칙 2] structured_output.md 의 키 구조(meta · 연구개발내용 · 예산) 그대로, 한국선급(KR) 행·블록과 당해 차년도 행만. 코드 펜스(```)·설명·머리말 없이 YAML 글만 적습니다",
+          "max": 120000
+        },
+        "alias": {
+          "type": "string",
+          "label": "별칭 제안",
+          "desc": "과제의 짧은 약어(영문 대문자 또는 한글 2~10자 — SSCB·PEMFC 꼴). 문서에 약어가 있으면 그것, 없으면 과제명에서 짓습니다 (예: SSCB)",
+          "max": 60
+        },
+        "stage": {
+          "type": "integer",
+          "label": "뽑은 차년도",
+          "desc": "뽑은 차년도의 번호(2차년도면 2) — meta.차년도 에 적은 것과 같은 수 (예: 2)",
+          "min": 1,
+          "max": 20
+        },
+        "warnings": {
+          "type": "string",
+          "label": "경고",
+          "desc": "못 찾은 블록·원문끼리 어긋난 값·추정한 것을 \" / \" 로 이은 한 글. 없으면 null (예: 8-3 (4) 간접비 세부 표를 찾지 못함 / 표지의 총연구개발비 합계가 연차별 합과 다름)",
+          "max": 3000
+        }
+      },
+      "rules": [
+        "출력 yaml 은 [스킬 규칙 2] structured_output.md 의 키 구조 그대로인 스냅샷 YAML 전문입니다 — 코드 펜스·설명 없이 YAML 글만 적습니다. meta.과제명 은 표지의 과제명을 글자 그대로 적습니다. 표지에서 과제명을 찾지 못하면 이 문서에서는 스냅샷을 뽑지 못한 것입니다 — yaml 에는 찾은 것만 적고 warnings 첫머리에 \"과제명을 찾지 못함\" 과 까닭을 적습니다.",
+        "한국선급(KR) 행·블록만 넣습니다(타 기관 행·블록은 뺍니다 — meta.표지 의 과제 식별 필드만 예외). 당해 차년도 행만 넣습니다 — 연차는 키로 두되(연차: N차년도 · 목표치: {N차년도: …}) 값은 그 한 연차뿐입니다. [스킬 규칙 1] extract_fields.yaml 의 include 만 넣고 exclude 는 빼며, fields 가 false 인 블록은 키째 뺍니다.",
+        "금액은 수로 적습니다(쉼표와 \"천원\" 을 뗌) — 단위는 예산.단위: 천원 입니다. 합계·소계·총액은 원문의 합계 행에 적힌 값만 옮깁니다(새로 더하지 않습니다). 모르는 값은 null 입니다. 당해 연차분이 원문에 없는 블록은 명시적 빈 블록(- 연차: N차년도 · 참여자: [] · 소계: null)으로 둡니다.",
+        "차년도: 입력의 \"뽑을 차년도\" 에 N차년도가 적혀 있으면 그 차년도입니다. \"오늘이 든 차년도\" 라고 적혀 있으면 표지의 연차별 연구개발기간 표에서 오늘 날짜가 든 차년도를 고릅니다(표를 읽을 수 없으면 입력의 \"장부 기준 오늘이 든 차년도\" 를 씁니다). 문서가 기준으로 삼은 연차와 다르면 오늘 기준을 택하고 warnings 에 적습니다. 고른 차년도를 meta.차년도(N차년도)와 stage(수 N)에 같이 적습니다.",
+        "meta 에는 과제명 · 수행기관(한국선급(KR)) · 단계 · 차년도 · 연차범위 · 연차별기간 · 기간 · 연구개발과제번호 · 협약일(YYYY-MM-DD, 있으면) · 표지 블록을 넣습니다. meta.rev · meta.source 와 파일 첫 줄의 머리 주석(# [N차년도 최초] …)은 코드가 적으니 넣지 않아도 됩니다(넣어도 됩니다).",
+        "스킬 문서의 절차(RND_PROJECT 폴더 · _source 이동 · md 변환 · 에이전트 · /rnd-kr-history init · year_slice.py 실행 · JSON 사본)는 무시합니다 — 여기서는 YAML 글 하나만 냅니다. 파일을 만들거나 도구를 부르지 않습니다.",
+        "첨부한 PDF 의 쪽은 입력 글의 \"— N쪽 —\" 표시와 같은 쪽입니다(표의 칸은 PDF 그림으로, 글자는 입력 글로 봅니다). 입력에 없는 쪽의 값을 지어내지 않습니다 — 찾지 못한 값은 null, 찾지 못한 블록은 빈 블록으로 두고 warnings 에 적습니다.",
+        "alias 는 과제의 짧은 약어입니다(영문 대문자 또는 한글 2~10자 — SSCB · PEMFC 꼴). 문서에 약어가 있으면 그것을, 없으면 과제명에서 짓습니다.",
+        "warnings 는 못 찾은 블록 · 원문끼리 어긋난 값 · 추정한 것을 \" / \" 로 잇습니다. 없으면 null 입니다."
+      ]
+    },
+    "rnd.revise": {
+      "title": "R&D 변경사항으로 YAML 고치기",
+      "kinds": [
+        "rnd"
+      ],
+      "consumer": {
+        "module": "rndgen/llm.js",
+        "export": "askRndTask"
+      },
+      "next": "답(YAML 전문)을 rndgen/yaml.js 가 검사·마무리하고 미리보기 뒤 사람이 누르면 rnd.intake(장부 넣기)와 rndYamlText 저장이 뒤따른다",
+      "role": "당신은 한국선급(KR) 연구개발 과제의 연구개발계획서 스냅샷 YAML(KR_<과제>.yaml)을 다루는 도우미입니다. 이번 일: 변경사항으로 YAML 고치기. 답은 YAML 글과 몇 개의 짧은 칸뿐입니다 — 파일을 만들거나 폴더를 다루지 않습니다.",
+      "fields": {
+        "yaml": {
+          "type": "string",
+          "required": true,
+          "label": "고친 YAML",
+          "desc": "변경사항이 말한 곳만 고친 YAML 전문 — [기준 YAML] 의 키 구조·주석·차례를 그대로 두고, 코드 펜스(```)·설명 없이 YAML 글만 적습니다",
+          "max": 120000
+        },
+        "summary": {
+          "type": "string",
+          "required": true,
+          "label": "변경분 한 줄",
+          "desc": "무엇을 바꿨는지 한국어 한 줄(경로 · 전 → 후, 여럿이면 \" · \" 로 잇습니다) (예: 예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가)",
+          "max": 300
+        },
+        "changes": {
+          "type": "list",
+          "label": "바뀐 곳",
+          "desc": "바꾼 곳마다 한 줄 — 경로와 바꾸기 전·후의 값(글로). 바꾼 곳이 없으면 빈 목록",
+          "max": 50,
+          "item": {
+            "path": {
+              "type": "string",
+              "required": true,
+              "label": "바꾼 칸의 경로",
+              "desc": "바꾼 칸의 경로 — 목록은 [연차]·[성명] 처럼 그 줄의 열쇠로 적습니다(예: 예산.비목별[2차년도].직접비.연구재료비)",
+              "max": 200
+            },
+            "before": {
+              "type": "string",
+              "label": "바꾸기 전의 값",
+              "desc": "바꾸기 전의 값(글로). 새로 넣은 칸이면 null",
+              "max": 500
+            },
+            "after": {
+              "type": "string",
+              "label": "바꾼 뒤의 값",
+              "desc": "바꾼 뒤의 값(글로). 뺀 칸이면 null",
+              "max": 500
+            }
+          }
+        },
+        "warnings": {
+          "type": "string",
+          "label": "경고",
+          "desc": "모호해서 바꾸지 않은 것 · 기준 YAML 에 해당 칸이 없어 바꾸지 않은 것 · 다시 맞춘 합계를 \" / \" 로 이은 한 글. 없으면 null",
+          "max": 3000
+        }
+      },
+      "rules": [
+        "[기준 YAML] 의 키 구조 · 주석 · 차례를 그대로 두고 [변경사항](과 붙인 문서 글자)이 말한 곳만 고친 YAML 전문을 yaml 에 냅니다 — 코드 펜스 · 설명 없이 YAML 글만 적습니다.",
+        "금액은 수로 적습니다(쉼표 · 단위 글자를 뗌) — 단위는 기준 YAML 의 예산.단위 를 따릅니다(변경 글의 금액이 다른 단위 — 원 등 — 면 기준 단위로 바꿔 적습니다).",
+        "합계 · 소계 · 총액은 변경사항이 말하지 않았어도 그 아래 값이 바뀌었으면 다시 더해 맞춥니다(기준 YAML 안의 값으로만 — 이것이 사업계획서 뽑기와 다른 점입니다). 다시 맞춘 합계도 changes 에 적습니다.",
+        "meta.rev 와 파일 머리 주석(# [재생성 rN] … · # 변경분: …)은 코드가 적으니 바꾸지 않습니다.",
+        "참여연구자가 바뀌면 예산.참여연구자인건비 의 참여자 줄과 소계, 비목별의 인건비를 함께 고칩니다.",
+        "변경사항이 모호하거나 기준 YAML 에 해당 칸이 없으면 바꾸지 말고 warnings 에 적습니다. 변경사항에 없는 값을 지어내지 않습니다.",
+        "summary 는 \"예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가\" 꼴의 한 줄입니다.",
+        "changes 는 바꾼 곳마다 한 줄 — path(목록은 [연차] · [성명] 처럼 그 줄의 열쇠로) · before · after(글로) 입니다. 새로 넣은 칸의 before, 뺀 칸의 after 는 null 입니다."
       ]
     },
     "search.room": {

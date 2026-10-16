@@ -1,14 +1,14 @@
 # 교육품의(연구업무추진품의) 작성 — 교육 안내문·신청 확인서·교육비 견적서를 읽어(gongmun.edu) 초안을 만들고 과제 내용으로 교육사유를 쓴(gongmunReason.edu) 뒤,
 # 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc). 제목은 "[과제 별명] 수행을 위한 [교육|온라인교육] 품의"(2026-10-07 사용자 지정 — 교육 구분은
 # 교육장소·교육기관으로 정한다, eduModeOf). 첨부는 교육 견적서와 교육 내용 둘이다(2026-10-07·10-08 사용자 지정).
-# 어댑터(gongmun.write): writePlan('edu', { title, body, draft, form, setting, rank } = rec.input, { me, preset: setup, project, today } = rec.preset) → writeGongmun(plan, { files: ctx.files, … }).
+# 어댑터(gongmun.write): writePlan('edu', { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me, preset: setup, project, today } = rec.preset) → writeGongmun(plan, { files: ctx.files, … }).
 id: gongmun.edu
 title: 교육품의 작성
 summary: '{preset.kindTitle} · {title}'
 preset:
   # 불투명 객체 — 키는 src/gongmun.js normalizePreset 의 dept·head·director·chief·docNo. 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다.
   setup:     { from: storage:gongmunPreset, type: object, required: true, desc: '공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다)' }
-  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 과제 내용 3000자가 들어 있어 로그에서 뺀다, log: false }
+  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 과제 내용 3000자가 들어 있어 로그에서 뺀다, log: false }
   kindTitle: { value: 교육품의, desc: 갈래 이름 — 활동 로그 한 줄에 쓴다 }
 fields:
   form:
@@ -49,6 +49,9 @@ fields:
     label: 전결권자
     desc: 이 공문에서 사람이 고른 전결권자 직책. 비면 규정대로(연구비집행 — 금액 구간)
     read: '사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)'
+  # 결재선의 합의자·참조자 — 문서설정의 결재선 줄에 보이던 사람(적는 곳은 R&D 탭 — 꼴은 purchase.yaml 의 lead·refs 와 같다)
+  lead: { type: string, max: 40, label: 과제 책임자, desc: '합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자 본인이면 합의를 넣지 않는다', read: 과제 책임자 이름, llm: false }
+  refs: { type: tags, label: 참조자, desc: '결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.교육. 빈 목록이면 참조 없음', read: 참조자 이름들, llm: false }
   setting:
     type: object
     label: 문서설정

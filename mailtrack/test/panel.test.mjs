@@ -66,7 +66,8 @@ function makeBook() {
         key: 'baz.com', counted: true,
         attachments: [{ ...att('a4', 'big.xlsx', { size: 30_000_000 }), stored: false, missing: true }, { ...att('a5', '회신서_baz.docx'), stored: true, missing: false }],
       }),
-      reply('r5', { name: '', address: 'x@qux.com' }, { key: 'qux.com', kind: 'auto', subject: '자동 회신: 견적 양식 회신 부탁' }),
+      // r5 는 메일 보안(block@krs.co.kr)이 붙잡아 둔 메일의 알림을 푼 것(via block) — 칩 "보안 인증 대기".
+      reply('r5', { name: '', address: 'x@qux.com' }, { key: 'qux.com', kind: 'auto', subject: '자동 회신: 견적 양식 회신 부탁', via: 'block' }),
       // 옛 형식(.xls) 첨부 — 병합 칸에 잠근 줄로만 보인다(합칠 수 없는 까닭과 함께).
       reply('r6', { name: '', address: 'someone@other.com' }, { attachments: [{ ...att('a6', '견적_old.xls'), stored: true, missing: false }] }),
     ],
@@ -589,9 +590,16 @@ t('양식이 없는 메일은 병합 칸이 없다 · 뒤로', () => {
 t('목록을 누르면 상세 — 머리(제목·받는 사람·참조) · 상태 줄 · 받을 곳 표와 단추', () => {
   card('A').click();
   assert.ok(hidden('mtListBox') && !hidden('mtDetail'));
+  const cards = [...$('mtDetail').children].filter((n) => n.classList.contains('card'));
+  assert.ok(cards[0].contains($('mtHeader')) && cards[1] === $('mtSent') && cards[2].contains($('mtExpect')),
+    '보낸 메일 → 보낸 메일·첨부 → 수신처별 회신 차례(2026-10-16 사용자 지정)');
   assert.equal($('mtHeader').querySelector('.mt-title').textContent, '견적 양식 회신 부탁');
   assert.match($('mtHeader').textContent, /김철수 <a@foo\.com>, c@bar\.com/);
   assert.match($('mtHeader').textContent, /참조박영희 <kim@krs\.co\.kr>/);
+  const fold = $('mtHeader').querySelector('details.mt-meta-fold');
+  assert.ok(fold && !fold.open && fold.contains($('mtHeader').querySelector('.mt-meta')) && fold.contains($('mtHeader').querySelector('[data-act="web"]')),
+    '보낸 날·받는 사람·참조·Outlook 링크는 접혀 선다(2026-10-16 사용자 지정)');
+  assert.match(fold.querySelector('summary').textContent, / · 받는 사람 2명 · 참조 1명$/);
   assert.equal($('mtStatus').textContent, '3/5 · 진행 중 · 제외 1');
   const btns = (key) => [...expRow(key).querySelectorAll('button')].map((b) => b.textContent);
   assert.deepEqual(btns('bar.com'), ['완료로 표시', '제외']);
@@ -605,10 +613,17 @@ await ta('Outlook 에서 열기 — webLink 를 새 탭으로', async () => {
   $('mtHeader').querySelector('[data-act="web"]').click();
   assert.equal(opened.at(-1), 'https://outlook.office365.com/owa/?ItemID=A');
 });
+await ta('접힌 받는 사람 칸을 펼친다(다음 검사가 다시 그려도 펼친 채인지 본다)', async () => {
+  const fold = $('mtHeader').querySelector('.mt-meta-fold');
+  const toggled = new Promise((r) => fold.addEventListener('toggle', r, { once: true }));
+  fold.open = true;
+  await toggled;
+});
 await ta('받을 곳 단추 → sync.expect(itemId, key, state) — 되돌리기·포함은 \'auto\'(손 표시를 풀고 회신대로), 다시 그려 N/M 이 바뀐다', async () => {
   expBtn('bar.com', '완료로 표시').click();
   await until(() => $('mtStatus').textContent.startsWith('4/5'));
   assert.ok(expRow('bar.com').querySelector('.mt-manual'));
+  assert.ok($('mtHeader').querySelector('.mt-meta-fold').open, '펼친 받는 사람 칸은 다시 그려도 펼친 채');
   expBtn('zed.com', '포함').click();
   await until(() => $('mtStatus').textContent.startsWith('4/6'));
   expBtn('bar.com', '되돌리기').click();
@@ -636,8 +651,9 @@ const reviewBtn = (rid, state) => replyCard(rid).querySelector(`[data-act="revie
 t('회신 카드 — 종류 칩 · 확인 칩(확인 필요/수락/거부) · 집계됨, 수락/거부는 지금 상태가 아닌 쪽만, 받을 곳이 없으면 수락 잠김, 후보·대상 아님에는 연결', () => {
   assert.equal($('mtReplyCount').textContent, '6');
   assert.deepEqual(['r1', 'r2', 'r3', 'r4', 'r5', 'r6'].map(chipsOf), [
-    ['회신', '수락'], ['후보', '확인 필요'], ['배달 실패', '확인 필요'], ['회신', '확인 필요', '집계됨'], ['자동 회신', '확인 필요'], ['대상 아님', '확인 필요'],
+    ['회신', '수락'], ['후보', '확인 필요'], ['배달 실패', '확인 필요'], ['회신', '확인 필요', '집계됨'], ['자동 회신', '확인 필요', '보안 인증 대기'], ['대상 아님', '확인 필요'],
   ]);
+  assert.match(replyCard('r5').querySelector('.mt-chip.held').title, /block@krs\.co\.kr.*\[수신\]/, '붙잡힌 회신 칩의 풀이 — 알림에서 [수신] 을 누르면 원 메일이 온다');
   const acts = (rid) => [...replyCard(rid).querySelectorAll('[data-act="review"]')].map((b) => `${b.textContent}${b.disabled ? '(잠김)' : ''}`);
   assert.deepEqual(['r1', 'r2', 'r3', 'r4', 'r5', 'r6'].map(acts), [['거부'], ['수락', '거부'], ['수락(잠김)', '거부'], ['수락', '거부'], ['수락', '거부'], ['수락(잠김)', '거부']]);
   assert.ok(replyCard('r1').classList.contains('accepted') && replyCard('r4').classList.contains('pending'));
@@ -661,7 +677,7 @@ await ta('수락/거부 → sync.review(itemId, replyId, state) — 거부하면
   assert.deepEqual(mergeRows().find((r) => r[0] === '견적_foo.xlsx').slice(1, 3), [true, false], '수락하면 다시 고를 수 있다');
   reviewBtn('r5', 'accepted').click();
   await until(() => $('mtStatus').textContent.startsWith('4/5'), '자동 회신 수락');
-  assert.deepEqual(chipsOf('r5'), ['자동 회신', '수락'], '자동 회신도 수락하면 센다');
+  assert.deepEqual(chipsOf('r5'), ['자동 회신', '수락', '보안 인증 대기'], '자동 회신도 수락하면 센다(어디서 왔는지 칩은 남는다)');
   reviewBtn('r5', 'rejected').click();
   await until(() => $('mtStatus').textContent.startsWith('3/5'), '자동 회신 거부');
   assert.deepEqual(callsOf(s, 'review'), [['review', 'A', 'r1', 'rejected'], ['review', 'A', 'r1', 'accepted'], ['review', 'A', 'r5', 'accepted'], ['review', 'A', 'r5', 'rejected']]);
@@ -828,7 +844,7 @@ await ta('본문·첨부 모두 zip — 요약 · 메일ID.json · 메일마다 
   assert.match(text(0), /^제목: 견적 양식 회신 부탁\n메일 ID: A\n/, '요약 머리에 보낸 메일의 ID');
   assert.match(text(0), /상태: 3\/5 · 진행 중/);
   assert.match(text(0), /· a@foo\.com · reply · 수락 · 셈 · RE: 견적 양식 회신 부탁 · 메일 ID: r1$/m, '요약에 회신의 확인 상태와 메일 ID');
-  assert.match(text(0), /· x@qux\.com · auto · 거부 · .* · 메일 ID: r5$/m);
+  assert.match(text(0), /· x@qux\.com · auto · 거부 · 보안 인증 대기\(block@krs\.co\.kr 알림\) · .* · 메일 ID: r5$/m);
   assert.match(text(0), /메일ID\.json 과 각 본문\.txt 머리에/);
   // 메일ID.json — 2026-10-15 사용자 지정 "내용이나 첨부 파일 다운받을 수 있는 id도 같이 다운받게": 메일 ID·첨부 ID 와 zip 안 경로, 다시 받을 도구.
   const ids = JSON.parse(text(1));
@@ -852,6 +868,8 @@ await ta('본문·첨부 모두 zip — 요약 · 메일ID.json · 메일마다 
   assert.equal(r4.key, 'baz.com');
   assert.equal(r4.review, 'pending');
   assert.equal(r4.counted, true);
+  assert.equal('via' in r4, false);
+  assert.equal(ids.replies.find((r) => r.messageId === 'r5').via, 'block', '붙잡힌 회신은 via');
   assert.equal(noDay(r4.folder), '04_baz.com_D');
   assert.equal(noDay(r4.body), '04_baz.com_D/본문.txt');
   assert.deepEqual(r4.attachments.map((a) => [a.attachmentId, a.name, a.file && noDay(a.file), a.missing === true]), [['a4', 'big.xlsx', null, true], ['a5', '회신서_baz.docx', '04_baz.com_D/회신서_baz.docx', false]]);

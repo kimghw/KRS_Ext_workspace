@@ -12,6 +12,7 @@
 
 import { normalizeBook, newItem, sinceOf, sourceOf, isoTime, timeOf, toAddr, attachmentsOf, downloadable, DAY_MS } from './model.js';
 import { matchAll, applyReplies, setExpect, linkReply, unlinkReply, setCounted, setReview } from './match.js';
+import { isNotice, mayMatch, unwrapNotice } from './block.js';
 
 const str = (x) => (typeof x === 'string' ? x : x == null ? '' : String(x));
 const uniq = (list) => [...new Set((Array.isArray(list) ? list : [list]).map(str).filter(Boolean))];
@@ -177,12 +178,22 @@ export function createSync({ outlook, book, vault, merge = null, now = () => Dat
       const fallback = inboxFallback();
       const got = await outlook.run(async (api) => {
         // 어댑터가 임시보관·나(excludeFrom)를 이미 거르지만 옛 서버·대체 도구에도 같게 한 번 더(내 메일은 classify 가 self 로도 버린다).
-        const mails = (await api.fetchInbox({ since, top: 500, excludeFrom: me ? [me] : [], useHeaders: b.settings.useHeaders, fallback })) || [];
+        const raw = (await api.fetchInbox({ since, top: 500, excludeFrom: me ? [me] : [], useHeaders: b.settings.useHeaders, fallback })) || [];
+        // 메일 보안(block@krs.co.kr)이 붙잡아 둔 외부 메일은 받은 편지함에 없고 인증 요청 알림만 온다 — 원 제목이 기다리는 항목과 닿는 알림만 본문을 받아
+        // 원 메일(보낸 사람·제목)로 풀어 같이 잇는다(block.js, 2026-10-16 사용자 지정). 본문이 안 오면 아래 첨부 목록처럼 이번 갱신을 접는다.
+        const notices = raw.filter((m) => m && !known.has(m.id) && isNotice(m) && mayMatch(m, items));
+        const noticeMetas = notices.length ? ((await api.attachmentMeta(notices.map((m) => m.id))) || []).filter(Boolean) : [];
+        const noticeBy = new Map(noticeMetas.map((m) => [m.id, m]));
+        const mails = noticeBy.size ? raw.map((m) => (m && noticeBy.has(m.id) ? unwrapNotice(m, noticeBy.get(m.id).body) || m : m)) : raw;
         // 설정 requireAccept 면 새 회신을 세지 않고(확인 필요로만) 사람의 수락을 기다린다.
         const { linked, unmatched } = matchAll(mails.filter((m) => m && m.isDraft !== true), items, { me, known, autoCount: !b.settings.requireAccept });
         if (!linked.length) return { fetched: mails.length, linked, unmatched, metas: [], dl: NO_DOWNLOAD };
-        // 본문·첨부 목록이 안 오면 이번 갱신을 접는다 — syncedUntil 이 그대로라 다음 갱신이 같은 메일을 다시 잇는다.
-        const metas = ((await api.attachmentMeta(linked.map((l) => l.reply.id))) || []).filter(Boolean);
+        // 본문·첨부 목록이 안 오면 이번 갱신을 접는다 — syncedUntil 이 그대로라 다음 갱신이 같은 메일을 다시 잇는다. 알림은 위에서 받은 것을 쓴다.
+        const ask = linked.map((l) => l.reply.id).filter((id) => !noticeBy.has(id));
+        const metas = [
+          ...linked.map((l) => noticeBy.get(l.reply.id)).filter(Boolean),
+          ...(ask.length ? ((await api.attachmentMeta(ask)) || []).filter(Boolean) : []),
+        ];
         const dl = await downloadFor(api, metas, errors);
         return { fetched: mails.length, linked, unmatched, metas, dl };
       });

@@ -420,6 +420,44 @@ await ta('refresh — 겹쳐 부르면 같은 갱신 하나(세션 하나)', asy
   assert.equal(a, b);
   assert.equal(ctx.outlook.runs, 1);
 });
+await ta('refresh — 메일 보안(block@krs.co.kr)의 인증 요청 알림: 제목이 닿는 것만 본문을 받아 원 보낸 사람·제목으로 풀어 잇는다(via block), 스팸 리포트·딴 제목은 받지 않는다', async () => {
+  const BLOCK = 'block@krs.co.kr';
+  const TAIL = ' [인증 요청] 본 메일은 인증 요청 메일 입니다. [Certification request] This is an authentication request mail.';
+  const html = '<div>Secure Mail</div><div>┃Mail Information</div><table><tbody><tr><td>Subject </td><td>RE: 2026 실적 자료 요청 </td></tr><tr><td>From </td><td>park@bar.org </td></tr>'
+    + `<tr><td>To </td><td>${ME} </td></tr><tr><td>Date </td><td>2026-10-12 10:00 </td></tr></tbody></table><table><tbody><tr><td>Envelope From </td><td>park@bar.org </td></tr>`
+    + '<tr><td>Header From </td><td>&quot;박&quot; </td></tr></tbody></table>';
+  const blockMail = (id, subject, extra = {}) => inboxMail(id, A(BLOCK, BLOCK), { subject, conversationId: 'conv-' + id, receivedAt: '2026-10-12T01:00:00Z', ...extra });
+  const inbox = [
+    INBOX[0],
+    blockMail('n1', 'RE: 2026 실적 자료 요청' + TAIL),
+    blockMail('n2', 'Product Release Notes' + TAIL),
+    blockMail('n3', '[AntiSpam] 스팸 리포트 (10/12자 01시)'),
+  ];
+  const metas = { ...R_METAS, n1: { id: 'n1', subject: inbox[1].subject, from: A(BLOCK), to: [A(ME)], receivedAt: '2026-10-12T01:00:00Z', hasAttachments: false, body: { contentType: 'html', content: html }, attachments: [] } };
+  const ctx = await registered({ outlook: { inbox, metas, files: R_FILES } });
+  const r = await ctx.sync.refresh();
+  assert.deepEqual([r.ok, r.fetched, r.linked, r.unmatched], [true, 4, 2, 2]);
+  assert.deepEqual(names(ctx.outlook.calls), ['run', 'fetchInbox', 'attachmentMeta', 'attachmentMeta', 'downloadAll'], '한 세션');
+  assert.deepEqual(ctx.outlook.calls[2][1], ['n1'], '제목이 닿는 알림만 본문을 받는다(n2 딴 제목, n3 스팸 리포트)');
+  assert.deepEqual(ctx.outlook.calls[3][1], ['r1'], '알림의 본문은 다시 묻지 않는다');
+  const it = ctx.book.state.items[0];
+  const n1 = it.replies.find((x) => x.id === 'n1');
+  assert.deepEqual([n1.via, n1.from, n1.subject, n1.key, n1.kind, n1.counted, n1.review, n1.bodyStored, n1.attachments, n1.receivedAt],
+    ['block', { name: '박', address: 'park@bar.org' }, 'RE: 2026 실적 자료 요청', 'bar.org', 'reply', true, 'pending', true, [], '2026-10-12T01:00:00Z']);
+  assert.equal('via' in it.replies.find((x) => x.id === 'r1'), false);
+  assert.deepEqual(it.expect.map((e) => [e.key, e.state, e.by]), [['foo.com', 'done', 'kim@foo.com'], ['addr:lee@krs.co.kr', 'open', ''], ['bar.org', 'done', 'park@bar.org']]);
+  assert.equal((await ctx.vault.getBody('s1', 'n1')).content, html, '본문은 알림 그대로(패널은 글자로만 보인다)');
+
+  ctx.outlook.reset();
+  const again = await ctx.sync.refresh({ force: true });
+  assert.deepEqual([again.ok, again.linked], [true, 0]);
+  assert.deepEqual(names(ctx.outlook.calls), ['run', 'fetchInbox'], '이미 이은 알림은 본문을 다시 받지 않는다');
+
+  const failing = await registered({ outlook: { inbox: inbox.slice(1), metas } });
+  failing.outlook.data.fail = { attachmentMeta: toolError('timeout', '응답 없음') };
+  const rf = await failing.sync.refresh();
+  assert.deepEqual([rf.ok, rf.kind, failing.book.state.items[0].replies], [false, 'timeout', []], '알림 본문이 안 오면 이번 갱신을 접는다(다음 갱신이 다시)');
+});
 await ta('probe → 받은 메일 도구(test_handler)가 없다고 하면 갱신은 대체 도구(mail_fetch_filter)로, 설정에서 서버를 바꾸면 다시 본다', async () => {
   const ctx = await registered({ outlook: { inbox: INBOX, metas: R_METAS, files: R_FILES, probe: { ...PROBE_OK, ok: true, tools: ['mail_fetch_filter'], has: { ...PROBE_OK.has, inbox: false, inboxFallback: true } } } });
   const p = await ctx.sync.probe();

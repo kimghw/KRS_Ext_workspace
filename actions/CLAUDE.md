@@ -6,7 +6,9 @@
 
 - **`spec/<갈래>/<종류>.yaml` 이 정본**이다 — 행위 하나에 파일 하나, 칸마다 `read`(LLM 에게 가는 인라인 프롬프트)와 `preset`(사전설정). `spec/<갈래>/_domain.yaml` 은 갈래 공통(LLM 작업 모드·공통 규칙·공통 사전설정).
 - `spec.js` 는 **생성물**이다 — 고치지 않는다. YAML 을 고친 뒤 `node tools/gen-actions.mjs`(`npm run gen` 에도 든다). 어긋나면 `actions/test/spec.test.mjs` 가 빨갛다.
+- 패널의 **설정 → 일반 → 행위 명세**가 `spec/` 의 YAML 원본을 갈래 → 종류로 보여 준다(읽기만 — `src/specview.js`, 목록은 `ACTIONS` 에서). 갈래 폴더를 새로 만들면 `src/specview.js` 의 `DOMAIN_ORDER` 에 자리를 준다(없으면 맨 끝).
 - LLM 작업(`attend`·`search.room`·`search.car`)은 여기서 만들어 `src/input.js` 의 `TASKS` 에 합쳐진다. 공문의 작업(`gongmun.<갈래>`·`gongmunReason.<갈래>`)은 레시피(`recipes/gongmun` → `src/gmrecipe.js`)의 것을 **가리키기만** 한다 — 공문 초안 칸은 YAML 에 다시 적지 않고 `draft: { from: recipe }` 로 펼친다. `recipes/gongmun` 은 여기서 고치지 않는다.
+- R&D 의 LLM 작업 `rnd.extract`(사업계획서 → 그 차년도 스냅샷 YAML)·`rnd.revise`(변경 글 → 고친 YAML)도 여기서 만들어 `TASKS` 에 합쳐진다(per-kind, status planned — 2026-10-16). 디스패처 전이라 패널 `rndgen/` 이 `rndgen/llm.js askRndTask` 로 askClaude 를 바로 부른다. 두 작업의 한도(effort·max_tokens·입력 길이·시간·API 스트리밍)는 `src/tasktune.js` 에 있고 다른 작업은 그대로다.
 
 ## 경계
 

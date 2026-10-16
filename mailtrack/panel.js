@@ -2,7 +2,8 @@
 // "받을 곳" 으로 세우고, 받은 메일에서 회신을 찾아 이어 N/M 으로 센다. 찾기·잇기·저장·병합은 sync(mailtrack/sync.js)가 하고 여기는 그것을 화면에 잇기만 한다.
 //
 //   머리(연결 칩 · 새로고침 · 등록 + · 마지막 갱신 · 진행 중/완료) → 등록 대화(보낸 메일 고르기) → 목록(메일마다 N/M 배지와 받을 곳 칩)
-//   → 상세(회신 현황 옆 추적 끝내기 · 받을 곳 표 · 보낸 메일 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
+//   → 상세(회신 현황 옆 추적 끝내기 · 보낸 메일·첨부 · 받을 곳 표 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
+//   보낸 메일 머리 바로 아래에 그 첨부, 그 다음에 수신처별 회신 — 2026-10-16 사용자 지정 "보낸메일, 보낸 메일 첨부가 있어야 하고 그 다음 수신처별 회신".
 //   MCP 주소·내 메일 주소·연결 확인은 connRoot(패널 설정의 연결 갈래 — 2026-10-16 사용자 지정 "연결에는 mcp 서버 내용")가 있으면 거기에 그린다(connTemplate).
 //   목록 줄마다 오른쪽 아래 "지우기"(두 번 눌러 확인) — 2026-10-15 사용자 지정 "종료 기능이 없네" · "등록한 메일을 취소하는 기능이 안보임": 접힌 칸에 숨기지 않는다.
 // 회신 확인(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지"): 새로 이어진 회신은 "확인 필요" 로 서고 머리·목록에 그 수를 보인다. 수락하면 세고(받을 곳 완료),
@@ -33,6 +34,8 @@ const STATE_TEXT = { open: '기다림', done: '완료', excluded: '제외' };
 const REVIEW_STATES = ['pending', 'accepted', 'rejected'];
 const REVIEW_TEXT = { pending: '확인 필요', accepted: '수락', rejected: '거부' };
 const REVIEW_TIP = { pending: '새로 이어진 회신 — 수락하거나 거부해 주세요', accepted: '받은 것으로 친 회신', rejected: '받은 것으로 치지 않은 회신 — 받을 곳은 다시 기다립니다' };
+/** 메일 보안(block@krs.co.kr)이 붙잡아 둔 회신(block.js) — 알림에서 보낸 사람·제목을 읽어 이은 것이라 본문은 알림이고 첨부는 아직 없다. */
+const HELD_TIP = '메일 보안(block@krs.co.kr)이 인증을 기다리며 붙잡아 둔 회신입니다 — 알림 메일에서 보낸 사람·제목을 읽어 이었습니다. Outlook에서 알림을 열어 [수신]을 누르면 원 메일이 받은 편지함에 오고, 새로고침이 본문·첨부와 함께 따로 잇습니다';
 const MIME_ZIP = 'application/zip';
 /**
  * 양식 갈래마다 병합하지 못하는 같은 집안의 형식 — 옛 이진 형식(.xls·.doc)과 매크로·서식 파일(ooxml/merge.js mergeKind 가 받지 않는 것).
@@ -91,8 +94,8 @@ export function createMailPanel({
     conn: { state: 'idle', text: '', authUrl: '' }, probe: null, probeFail: '', probeRun: null, refreshRun: null, bg: null, tick: null,
     // 보는 곳 — 목록(list) 또는 상세(detail, itemId).
     view: 'list', itemId: null,
-    // 상세에서 펼친 본문(보낸 메일 sentOpen · 회신 openBodies), 금고에서 읽어 둔 본문·첨부(cache — 지금 보는 메일 것만), 서버에 저장한 경로(paths).
-    sentOpen: false, openBodies: new Set(), cache: null, paths: {},
+    // 상세에서 펼친 것(보낸 메일 머리의 받는 사람 칸 metaOpen · 본문 sentOpen · 회신 openBodies), 금고에서 읽어 둔 본문·첨부(cache — 지금 보는 메일 것만), 서버에 저장한 경로(paths).
+    metaOpen: false, sentOpen: false, openBodies: new Set(), cache: null, paths: {},
     // 병합 — 고른 양식(첨부 id), 사람이 끈 회신 첨부(`${messageId}\u0001${attachmentId}` — 새로 온 것은 켜진 채로 선다), 도는 중인가.
     mergeTpl: '', mergeOff: new Set(), merging: false,
     // 등록 대화 — 열렸는가, 불러온 보낸 메일(SentHead[]), 고른 id, 거르기 글, 불러오는 차례(늦게 온 옛 응답은 버린다), 등록 중인가.
@@ -372,6 +375,7 @@ export function createMailPanel({
     closeReg();
     st.view = 'detail';
     st.itemId = id;
+    st.metaOpen = false;
     st.sentOpen = false;
     st.openBodies = new Set();
     st.cache = null;
@@ -399,14 +403,18 @@ export function createMailPanel({
     const s = statusOf(it);
     const addrs = (list) => (list || []).map((a) => esc(a.name && a.name !== a.address ? `${a.name} <${a.address}>` : a.address || a.name || '')).join(', ');
     const web = safeUrl(it.webLink);
+    // 보낸 날·받는 사람·참조·Outlook 링크는 접어 둔다(2026-10-16 사용자 지정 "이 부분은 접어줘") — 접힌 줄에 날짜와 사람 수만.
+    const brief = `${fmtTime(it.sentAt)} · 받는 사람 ${(it.to || []).length}명${it.cc?.length ? ` · 참조 ${it.cc.length}명` : ''}`;
     el.header.innerHTML = '<div class="mt-header-label">보낸 메일</div>'
       + `<h3 class="mt-title">${esc(it.subject || '(제목 없음)')}</h3>`
+      + `<details class="mt-meta-fold"${st.metaOpen ? ' open' : ''}><summary>${esc(brief)}</summary>`
       + '<dl class="mt-meta">'
       + `<dt>보낸 날</dt><dd>${esc(fmtTime(it.sentAt))}</dd>`
       + `<dt>받는 사람</dt><dd>${addrs(it.to) || '—'}</dd>`
       + (it.cc?.length ? `<dt>참조</dt><dd>${addrs(it.cc)} <span class="mt-cc-note" title="참조는 받을 곳이 아닙니다 — 받는 사람의 회신만 셉니다">(세지 않음)</span></dd>` : '')
       + '</dl>'
-      + (web ? `<button type="button" class="small ghost mt-web" data-act="web" data-url="${esc(web)}">Outlook에서 열기${icon('external')}</button>` : '');
+      + (web ? `<button type="button" class="small ghost mt-web" data-act="web" data-url="${esc(web)}">Outlook에서 열기${icon('external')}</button>` : '')
+      + '</details>';
     el.status.textContent = `${s.responded}/${s.expected} · ${s.done ? '완료' : '진행 중'}${s.excluded ? ` · 제외 ${s.excluded}` : ''}${it.closed ? ' · 닫음' : ''}`;
     el.status.classList.toggle('done', !!s.done);
     el.progress.max = Math.max(1, s.expected);
@@ -476,7 +484,7 @@ export function createMailPanel({
     // missing 은 서버가 정말 바이트를 주지 않은 것(sync 가 짐작하지 않고 어댑터가 알린 것)만 — 그것만 "서버에 저장" 으로 받는다.
     // stored:false 인데 missing 이 아닌 것은 파일이 아닌 첨부(메일 첨부 등)라 받을 길이 없다.
     const act = path
-      ? `<span class="mt-path" title="서버 PC 에 저장된 곳">${esc(path)}</span><button type="button" class="small ghost" data-act="copy-path" data-path="${esc(path)}">경로 복사</button>`
+      ? `<span class="mt-path" title="서버 PC 에 저장된 곳: ${esc(path)}">${esc(path)}</span><button type="button" class="small ghost" data-act="copy-path" data-path="${esc(path)}">경로 복사</button>`
       : a.missing
         ? '<button type="button" class="small ghost" data-act="server" title="큰 첨부는 서버가 확장으로 보내 주지 않습니다 — 서버 PC 의 downloads/mailtrack 에 저장합니다">서버에 저장</button>'
         : a.stored === false
@@ -486,7 +494,7 @@ export function createMailPanel({
     const kind = ['xlsx', 'docx', 'pptx', 'pdf'].includes(ext) ? ext : 'file';
     return `<li class="mt-att" data-msg="${esc(messageId)}" data-att="${esc(a.id)}">`
       + `<span class="mt-file-icon" data-kind="${kind}" aria-hidden="true">${icon('file')}</span>`
-      + `<div class="mt-att-info"><span class="mt-att-name">${esc(a.name || '(이름 없음)')}</span><div class="mt-att-meta">`
+      + `<div class="mt-att-info"><span class="mt-att-name" title="${esc(a.name || '')}">${esc(a.name || '(이름 없음)')}</span><div class="mt-att-meta">`
       + (tpl ? '<span class="mt-chip tpl" title="회신을 이 양식으로 합칠 수 있습니다">양식</span>' : '')
       + `<span class="mt-att-size">${esc(sizeText(a.size))}</span></div></div>${act}</li>`;
   }
@@ -538,7 +546,8 @@ export function createMailPanel({
       + `<span class="mt-date">${esc(fmtTime(r.receivedAt))}</span>`
       + `<div class="mt-reply-labels"><span class="mt-chip ${k.cls}">${k.text}</span>`
       + `<span class="mt-chip ${review}" title="${REVIEW_TIP[review]}">${REVIEW_TEXT[review]}</span>`
-      + `${r.counted && review === 'pending' ? '<span class="mt-chip counted" title="받을 곳을 완료로 센 회신 — 거부하면 다시 기다립니다">집계됨</span>' : ''}</div></div>`
+      + `${r.counted && review === 'pending' ? '<span class="mt-chip counted" title="받을 곳을 완료로 센 회신 — 거부하면 다시 기다립니다">집계됨</span>' : ''}`
+      + `${r.via === 'block' ? `<span class="mt-chip held" title="${HELD_TIP}">보안 인증 대기</span>` : ''}</div></div>`
       + `<div class="mt-reply-subj">${esc(r.subject || '(제목 없음)')}</div>`
       + '<div class="mt-reply-acts">'
       + `${accept}${reject}`
@@ -1195,6 +1204,10 @@ export function createMailPanel({
       const b = closest(e, '[data-act="web"]');
       if (b) openUrl(b.dataset.url);
     });
+    // 다시 그려도 펼친 채로 — toggle 은 거품이 일지 않아 잡는 단계에서 듣는다.
+    el.header.addEventListener('toggle', (e) => {
+      if (e.target.classList?.contains('mt-meta-fold')) st.metaOpen = e.target.open;
+    }, true);
     el.expect.addEventListener('click', onExpectClick);
     el.sentBody.addEventListener('click', toggleSentBody);
     el.sentAtts.addEventListener('click', (e) => {
@@ -1360,14 +1373,14 @@ const TEMPLATE = `
       <progress id="mtProgress" class="mt-progress" value="0" max="1" aria-label="수신처 회신 진행률"></progress>
     </div>
   </div>
-  <section class="mt-sec card" aria-label="받을 곳">
-    <div class="mt-sec-head"><h3 class="mt-h">수신처별 회신</h3><span class="mt-section-note">도메인·주소 기준</span></div>
-    <table id="mtExpect" class="mt-expect" aria-label="수신처별 회신 상태"></table>
-  </section>
   <section id="mtSent" class="mt-sec card" aria-label="보낸 메일">
     <div class="mt-sec-head"><h3 class="mt-h">보낸 메일 · 첨부</h3><button type="button" id="mtSentBody" class="small ghost" aria-expanded="false" aria-controls="mtSentText">본문 보기</button></div>
     <pre id="mtSentText" class="mt-body hidden"></pre>
-    <ul id="mtSentAtts" class="mt-atts"></ul>
+    <ul id="mtSentAtts" class="mt-atts mt-atts-thin"></ul>
+  </section>
+  <section class="mt-sec card" aria-label="받을 곳">
+    <div class="mt-sec-head"><h3 class="mt-h">수신처별 회신</h3><span class="mt-section-note">도메인·주소 기준</span></div>
+    <table id="mtExpect" class="mt-expect" aria-label="수신처별 회신 상태"></table>
   </section>
   <section class="mt-sec card" aria-label="회신">
     <div class="mt-sec-head"><h3 class="mt-h">받은 회신 <span id="mtReplyCount" class="count"></span></h3><span class="mt-section-note">최신순</span></div>
@@ -1672,6 +1685,7 @@ function idsOf(it, replies, { mcpUrl, at, folders, bodyPath, filePath, attsOf })
     sent: mail(it.id, it, { internetMessageId: it.internetMessageId || '', subject: it.subject || '', from: it.from?.address || '', sentAt: it.sentAt || '' }),
     replies: replies.map((r) => mail(r.id, r, {
       subject: r.subject || '', from: r.from?.address || '', receivedAt: r.receivedAt || '', key: r.key || null, kind: r.kind || 'reply', review: reviewOf(r), counted: r.counted === true,
+      ...(r.via ? { via: r.via } : {}),
     })),
   };
 }
@@ -1691,7 +1705,7 @@ function summaryText(it) {
     ...(it.expect || []).map((e) => `- ${e.label || e.key} · ${STATE_TEXT[stateOf(e)]}${e.by ? ` · ${e.by}` : ''}${e.doneAt ? ` · ${fmtDay(e.doneAt)}` : ''} (${(e.addresses || []).join(', ')})`),
     '',
     '[회신]',
-    ...(it.replies || []).map((r) => `- ${fmtTime(r.receivedAt)} · ${r.from?.address || ''} · ${r.kind} · ${REVIEW_TEXT[reviewOf(r)]}${r.counted ? ' · 셈' : ''} · ${r.subject || ''} · 메일 ID: ${r.id}`),
+    ...(it.replies || []).map((r) => `- ${fmtTime(r.receivedAt)} · ${r.from?.address || ''} · ${r.kind} · ${REVIEW_TEXT[reviewOf(r)]}${r.counted ? ' · 셈' : ''}${r.via === 'block' ? ' · 보안 인증 대기(block@krs.co.kr 알림)' : ''} · ${r.subject || ''} · 메일 ID: ${r.id}`),
     '',
     `(메일 ID·첨부 ID 는 ${IDS_FILE} 과 각 본문.txt 머리에 — 서버에서 본문·첨부를 다시 받을 때 씁니다)`,
   ];

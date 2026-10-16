@@ -1,5 +1,5 @@
 // 공문 어댑터(actions/runners/gongmun.js) — 기록 → writePlan·writeGongmun 의 인자 변환(갈래는 entry 에서, 입력 칸 그대로, preset.setup → ctx.preset,
-// me·project·today) · 첨부 이름 ↔ ctx.files 검사 · ok 판정(안 된 단계가 없을 때) · gongmun.setup 은 planned 라 등록하지 않는다 ·
+// me·project·today) · 첨부 이름 ↔ ctx.files 검사 · ok 판정(안 된 단계가 없을 때) · 공문 갈래는 네 종류뿐(공문 설정은 종류마다의 preset.setup) ·
 // 얼린 기록으로 진짜 writePlan 이 돌고 화면 상태를 바로 넣던 예전 길과 같은 계획이 나온다.
 //
 // 명세는 생성물(actions/spec.js)의 진짜 gongmun.* 를 쓴다 — 칸 이름·사전설정 키가 어긋나면 여기서 드러난다.
@@ -50,41 +50,31 @@ const OUT_INPUT = {
 };
 
 /** 가짜 writePlan·writeGongmun 을 끼운 디스패처 — 무엇을 받았는지(calls)와 로그 한 줄을 본다. spec 을 주면 그 명세로. */
-function make({ result = RESULT, plan = { fake: 'plan' }, spec = ACTIONS, mergeSetup = null } = {}) {
-  const calls = { plan: [], write: [], setup: [] };
+function make({ result = RESULT, plan = { fake: 'plan' }, spec = ACTIONS } = {}) {
+  const calls = { plan: [], write: [] };
   const log = [];
   const d = createDispatcher({ spec, log: (e) => log.push(e), now: () => NOW });
   registerGongmun(d, {
     writePlan: (kind, input, ctx) => { calls.plan.push({ kind, input, ctx }); return plan; },
     writeGongmun: async (p, opts) => { calls.write.push({ plan: p, opts }); return result; },
-    ...(mergeSetup ? { mergeSetup: (...args) => { calls.setup.push(args); return mergeSetup(...args); } } : {}),
   });
   return { d, calls, log };
 }
 
 console.log('등록');
-t('gongmun.write 를 등록한다 — 같은 디스패처에 두 번은 throw. gongmun.setup 은 planned 라 등록하지 않는다(그 이름을 뒤에 등록할 수 있다)', () => {
+t('gongmun.write 를 등록한다 — 같은 디스패처에 두 번은 throw. 공문 갈래는 네 종류뿐이고 모두 gongmun.write 로 돈다', () => {
   const { d } = make();
-  assert.equal(ACTIONS.actions['gongmun.setup'].status, 'planned');
   assert.throws(() => registerGongmun(d), /gongmun\.write 는 이미 등록/);
-  assert.doesNotThrow(() => d.register('gongmun.setup', async () => ({})));
-  for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside']) assert.equal(ACTIONS.actions[id].runner, 'gongmun.write', id);
+  const ids = ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside'];
+  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'outside']);
+  assert.deepEqual(Object.keys(ACTIONS.actions).filter((id) => id.startsWith('gongmun.')), ids);
+  for (const id of ids) assert.equal(ACTIONS.actions[id].runner, 'gongmun.write', id);
 });
-await ta('gongmun.setup 이 live 인 명세라면 mergeSetup 어댑터가 선다 — (ctx.rows, preset.setup, input.patch, { current: ctx.current }), confirm 없이 돈다', async () => {
-  const live = { ...ACTIONS, actions: { ...ACTIONS.actions, 'gongmun.setup': { ...ACTIONS.actions['gongmun.setup'], status: 'live' } } };
-  const merged = { rows: [{ name: '과제' }], preset: SETUP, done: ['dept'], skipped: [] };
-  const { d, calls, log } = make({ spec: live, mergeSetup: () => merged });
-  assert.throws(() => d.register('gongmun.setup', async () => ({})), /이미 등록/);
-  const { record } = d.build('gongmun.setup', { input: { patch: { dept: '새 부서', head: '홍길동' } }, preset: { me: '김거화', today: '2026-10-16', setup: SETUP } });
-  const rows = [{ name: '지금 줄' }];
-  assert.equal(await d.run(record, { rows, current: '지금 과제' }), merged);
-  assert.equal(calls.setup.length, 1);
-  const [gotRows, gotPreset, gotPatch, gotOpts] = calls.setup[0];
-  assert.equal(gotRows, rows);
-  assert.deepEqual(gotPreset, SETUP);
-  assert.deepEqual([gotPatch.dept, gotPatch.head], ['새 부서', '홍길동']);
-  assert.deepEqual(gotOpts, { current: '지금 과제' });
-  assert.deepEqual([log[0].kind, log[0].ok], ['gongmun-setup', true]);
+t('공문 설정은 따로 된 행위가 아니라 종류마다의 사전설정 setup 이다(저장소 gongmunPreset, 없으면 관문이 막는다 — 채우던 채팅 칸은 2026-10-09 에 뺐다)', () => {
+  for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside']) {
+    const { from, type, required } = ACTIONS.actions[id].preset.setup;
+    assert.deepEqual({ from, type, required }, { from: 'storage:gongmunPreset', type: 'object', required: true }, id);
+  }
 });
 
 console.log('기록 짓기');
@@ -94,8 +84,9 @@ t('build — 기록에 kind 는 없다(행위 ID 에 든다). 제목은 다듬�
   assert.deepEqual(notes, []);
   assert.equal(record.action, 'gongmun.purchase');
   assert.ok(!('kind' in record.input) && !('kind' in record));
-  assert.deepEqual(Object.keys(record.input).sort(), ['attach', 'body', 'draft', 'form', 'rank', 'setting', 'title']);
+  assert.deepEqual(Object.keys(record.input).sort(), ['attach', 'body', 'draft', 'form', 'lead', 'rank', 'refs', 'setting', 'title']);
   assert.deepEqual([record.input.title, record.input.rank, record.input.form], ['연구 데이터 저장용 모니터 구매 품의', null, 'KR_EA_Research_Task']);
+  assert.deepEqual([record.input.lead, record.input.refs], [null, null], '합의자·참조자를 주지 않으면 null — writePlan 이 고른 과제의 것을 쓴다');
   assert.deepEqual(record.input.setting, { retention: '36', docNo: '8100', receiver: null, scope: null, emergency: null, approvingOpen: null, drm: null, tag: null });
   assert.deepEqual(record.input.attach, INPUT.attach);
   assert.deepEqual([record.input.draft.gist, record.input.draft.total, record.input.draft.items, record.input.draft.attach, record.input.draft.currency],
@@ -116,7 +107,7 @@ t('build — 관문이 막는 것: 전결권자가 직책 밖 · 제목 99자 �
 });
 
 console.log('돌리기 — 인자 변환');
-await ta('gongmun.write — writePlan 은 (entry.kind, 입력 여섯 칸, { me, preset: setup, project, today }), writeGongmun 은 (계획, { files, onStep, onTab, dry }). 결과는 그대로', async () => {
+await ta('gongmun.write — writePlan 은 (entry.kind, 입력 여덟 칸, { me, preset: setup, project, today }), writeGongmun 은 (계획, { files, onStep, onTab, dry }). 결과는 그대로', async () => {
   const plan = { planned: true };
   const { d, calls, log } = make({ plan });
   const { record } = d.build('gongmun.purchase', { input: INPUT, preset: PRESET });
@@ -126,8 +117,10 @@ await ta('gongmun.write — writePlan 은 (entry.kind, 입력 여섯 칸, { me, 
   assert.equal(res, RESULT, '실행기 결과를 그대로 돌려준다');
   assert.equal(calls.plan.length, 1);
   assert.equal(calls.plan[0].kind, 'purchase', '갈래는 기록이 아니라 명세(entry.kind)에서');
-  assert.deepEqual(Object.keys(calls.plan[0].input).sort(), ['body', 'draft', 'form', 'rank', 'setting', 'title'], 'attach 는 writePlan 에 가지 않는다');
-  assert.deepEqual(calls.plan[0].input, { title: record.input.title, body: record.input.body, draft: record.input.draft, form: record.input.form, setting: record.input.setting, rank: null });
+  assert.deepEqual(Object.keys(calls.plan[0].input).sort(), ['body', 'draft', 'form', 'lead', 'rank', 'refs', 'setting', 'title'], 'attach 는 writePlan 에 가지 않는다');
+  assert.deepEqual(calls.plan[0].input, {
+    title: record.input.title, body: record.input.body, draft: record.input.draft, form: record.input.form, setting: record.input.setting, rank: null, lead: null, refs: null,
+  });
   assert.deepEqual(calls.plan[0].ctx, { me: '김거화', preset: SETUP, project: PROJECT, today: '2026-10-16' }, 'ctx.preset 자리에 공문 설정(setup)');
   assert.equal(calls.write.length, 1);
   assert.equal(calls.write[0].plan, plan);
@@ -212,6 +205,22 @@ await ta('얼린 기록으로 진짜 writePlan 이 돌고, 화면 상태를 바�
   await d.run(record, { confirmed: record.hash, files: FILES });
   assert.deepEqual([plans[0].values.title, plans[0].setting.docNo, plans[0].setting.retention, plans[0].line.agree, plans[0].line.approvers, plans[0].line.rank],
     ['연구 데이터 저장용 모니터 구매 품의', '8100', '36', ['박기도'], ['노길태'], '팀장']);
+  assert.deepEqual(plans[0].line.refs, ['홍길동'], '기록에 참조자가 없으면 과제의 것(계획서 YAML 의 공문.참조자.구매)');
+});
+await ta('기록의 과제 책임자·참조자(문서설정의 두 칸 — 과제마다)가 과제의 것을 이긴다 — 책임자가 기안자 본인이면 합의는 빠지고, 빈 참조자 목록은 참조 없음(2026-10-16)', async () => {
+  const d = createDispatcher({ spec: ACTIONS, now: () => NOW });
+  const plans = [];
+  registerGongmun(d, { writeGongmun: async (plan) => { plans.push(plan); return RESULT; } });
+  const run = async (line) => {
+    const { record } = d.build('gongmun.purchase', { input: { ...INPUT, ...line }, preset: PRESET });
+    await d.run(record, { confirmed: record.hash, files: FILES });
+    return [plans.at(-1).line.agree, plans.at(-1).line.refs, record.input.lead, record.input.refs];
+  };
+  assert.deepEqual(await run({ lead: '성춘향', refs: ['이몽룡', ' 이몽룡 ', '변학도'] }), [['성춘향'], ['이몽룡', '변학도'], '성춘향', ['이몽룡', '변학도']]);
+  assert.deepEqual(await run({ lead: '김거화', refs: [] }), [[], [], '김거화', []], '본인이 책임자면 합의 없음 · 빈 목록은 참조 없음');
+  assert.deepEqual((await run({ lead: '', refs: null })).slice(0, 2), [['박기도'], ['홍길동']], '빈 책임자·참조자는 과제의 것');
+  const { record } = d.build('gongmun.outside', { input: OUT_INPUT, preset: OUT_PRESET });
+  assert.ok(!('lead' in record.input) && !('refs' in record.input), '외부활동(과제를 고르지 않음)에는 두 칸이 없다');
 });
 
 console.log(`\n통과 ${pass}건`);

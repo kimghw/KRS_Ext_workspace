@@ -13,14 +13,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { TASKS as SPEC_TASKS, systemPrompt } from '../src/input.js';
+import { tuneOf, DEFAULT_TUNE, limitOf } from '../src/tasktune.js';
 import { gitStatus, gitPull } from './gitsync.mjs';
 
 // 2026-10-05 사용자 지정: "모두 opus 5.5로 변경해줘" — 그 전에는 빨리 답하는 claude-haiku-4-5 였다(2026-10-03).
 const MODEL = 'claude-opus-5-5';
-// 생각의 깊이(effort). Opus 5.5 는 생각을 끌 수 없고 생각 토큰의 상한(MAX_THINKING_TOKENS — haiku 때는 1024 를 줬다)도 받지 않는다
-// — 깊이는 이것으로만 정한다. 값을 읽어 칸을 채우는 일이라 가장 낮은 단계로 둔다(빠르고, 판단은 모델이 필요한 만큼 생각한다).
-// 확장의 API 길(src/ai.js 의 EFFORT)과 같은 값이다.
-const EFFORT = 'low';
+// 생각의 깊이(effort)·입력 글의 한도·기다리는 시간은 작업마다 src/tasktune.js 에서 온다(확장의 API 길 src/ai.js 와 같은 표).
+// Opus 5.5 는 생각을 끌 수 없고 생각 토큰의 상한(MAX_THINKING_TOKENS — haiku 때는 1024 를 줬다)도 받지 않는다 — 깊이는 effort 로만 정한다.
+// 값을 읽어 칸을 채우는 일이라 기본은 가장 낮은 단계(low)·입력 2만 자·60초(첨부 120초)이고, R&D 스냅샷 뽑기·YAML 고치기(rnd.extract·rnd.revise)만
+// medium·15만 자·10분이다.
+// 프롬프트를 인자(-p)로 넘기는 길에서 이보다 긴 글은 표준 입력으로 보낸다 — Windows 는 명령줄 전체(지시문·따옴표 이스케이프 포함)를 32,767자까지만
+// 받는다(rnd 작업의 15만 자 입력). 기본 작업(입력 2만 자 + 첨부 경로 여섯 줄까지)은 여기에 닿지 않아 전처럼 인자로 간다.
+const ARG_PROMPT_MAX = 24_000;
 // 메시지에 바로 실을 수 있는 그림 형식과 크기(API 는 그림 하나를 base64 5MB 까지 받는다). 그 밖의 것은 파일로 내려 Read 도구로 읽게 한다.
 const DIRECT_IMAGE = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const DIRECT_IMAGE_MAX = 3.5 * 1024 * 1024;
@@ -33,9 +37,9 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const cliEnv = () => ({ ...process.env, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' });
 
 // 작업과 지시문은 입력 명세(input.yaml → src/inputspec.js)와 공문 레시피(gongmun.<갈래> → src/gmrecipe.js)에서 온다. 확장의 API 길(src/ai.js)과 같은 지시문이고,
-// 이 길에는 구조화 출력이 없으므로 JSON 만 내라는 말을 덧붙인다. 돌려준 답은 확장이 같은 명세로 검증한다.
+// 이 길에는 구조화 출력이 없으므로 JSON 만 내라는 말을 덧붙인다. 돌려준 답은 확장이 같은 명세로 검증한다. tune 은 작업마다의 한도(src/tasktune.js).
 const TASKS = Object.fromEntries(Object.keys(SPEC_TASKS).map((name) =>
-  [name, { system: systemPrompt(name, { jsonOnly: true }) }]));
+  [name, { system: systemPrompt(name, { jsonOnly: true }), tune: tuneOf(name) }]));
 
 /* ------------------------------------------------------------- 호출 기록 */
 
@@ -217,11 +221,13 @@ const attachBlock = (f) => ({ type: f.type === 'application/pdf' ? 'document' : 
  *    (2026-10-03 같은 영수증 한 장: 아래 길 77초 → 이 길 15초쯤). 글자만 뽑아 보내는 증빙(첨부 없음)도 이 길로 간다.
  *  - 아니면: 첨부를 임시 폴더에 내려 두고 Read 도구로 읽게 한다. 모델이 두 차례 돈다(도구 부르기 + 답) — 전부터 쓰던 길이고,
  *    바로 싣지 못하는 첨부와 direct 가 안 되는 CLI 에서 쓴다.
+ * task.tune(src/tasktune.js)이 없으면 기본 한도(DEFAULT_TUNE — low·60초/120초)다.
  * @returns {{args: string[], stdin: string, env: object, limitMs: number, cleanup: Function}}
  */
 export function cliCall(task, input, files = [], { direct = false } = {}) {
+  const tune = task.tune || DEFAULT_TUNE;
   // 기본 에이전트 프롬프트를 빼면 캐시 토큰이 38K -> 4K 로 줄고 지시도 잘 따른다
-  const common = ['--model', MODEL, '--effort', EFFORT, '--system-prompt', task.system, '--exclude-dynamic-system-prompt-sections'];
+  const common = ['--model', MODEL, '--effort', tune.effort, '--system-prompt', task.system, '--exclude-dynamic-system-prompt-sections'];
   if (direct) {
     const line = JSON.stringify({ type: 'user', message: { role: 'user', content: [...files.map(attachBlock), { type: 'text', text: input }] } });
     return {
@@ -229,14 +235,16 @@ export function cliCall(task, input, files = [], { direct = false } = {}) {
         // 그림을 보고 답만 하면 된다 — 사용자 설정(훅·MCP·스킬·플러그인)은 싣지 않고 도구도 주지 않는다.
         // 세션 기록도 남기지 않는다(영수증 그림이 기록 파일에 쌓이지 않게).
         '--safe-mode', '--strict-mcp-config', '--no-session-persistence', '--tools', ''],
-      stdin: `${line}\n`, env: cliEnv(), limitMs: files.length ? 120_000 : 60_000, cleanup: () => {},
+      stdin: `${line}\n`, env: cliEnv(), limitMs: limitOf(tune, files), cleanup: () => {},
     };
   }
   const { paths, cleanup } = stageFiles(files);
   const prompt = paths.length ? `${input}\n\n첨부 파일(Read 도구로 열어서 보세요):\n${paths.map((p) => `- ${p}`).join('\n')}` : input;
+  // 아주 긴 프롬프트(rnd 작업)는 인자 대신 표준 입력으로 — -p 뒤에 글이 없으면 CLI 가 표준 입력을 프롬프트로 읽는다.
+  const viaStdin = prompt.length > ARG_PROMPT_MAX;
   return {
     args: [
-      '-p', prompt,
+      '-p', ...(viaStdin ? [] : [prompt]),
       '--output-format', 'json',
       ...common,
       // 첨부가 있을 때만 Read 를 열어 준다 — 그 파일을 보라는 뜻이다. 나머지 도구는 늘 막는다.
@@ -244,7 +252,7 @@ export function cliCall(task, input, files = [], { direct = false } = {}) {
       'WebFetch', 'WebSearch', 'Task',
       ...(paths.length ? ['--allowedTools', 'Read'] : []),
     ],
-    stdin: '', env: cliEnv(), limitMs: paths.length ? 120_000 : 60_000, cleanup,
+    stdin: viaStdin ? prompt : '', env: cliEnv(), limitMs: limitOf(tune, paths), cleanup,
   };
 }
 
@@ -497,7 +505,8 @@ export async function handle(msg, { run = runClaude, log = writeLog, tail = tail
     ...(files.length ? { files: files.map((f) => `${f.name} (${f.type}, ${Math.round((f.dataUrl.length * 3) / 4 / 1024)}KB)`) } : {}) };
   // 증빙과 공문 문서는 글자를 먼저 뽑는다(TEXT_FIRST) — PDF 는 뽑은 글자만 보내고, 그림은 OCR 글자를 그림과 같이 보낸다. 뽑은 글자는
   // 기록에 남기지 않는다(어떻게 읽었는지 read 만 남긴다).
-  let call = { input: input.slice(0, 20000), files, read: [], lean: false };
+  // 입력 글은 작업의 한도(tune.inputMax — 기본 2만 자, rnd 작업 15만 자)에서 자른다.
+  let call = { input: input.slice(0, task.tune.inputMax), files, read: [], lean: false };
   // 어디서 시간이 갔는지도 남긴다 — textMs 는 글자 뽑기(PDF 글자 층·OCR), cli 는 claude 를 부른 차례마다의 시간(runClaude).
   let textMs = null;
   if (TEXT_FIRST.has(msg.task) && files.length) {

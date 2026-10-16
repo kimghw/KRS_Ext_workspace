@@ -177,6 +177,38 @@ t('과제책임자가 기안자 본인이면 합의는 뺀다 — 본인이 아�
 t('결재선에 이미 있는 사람은 참조에서 뺀다', () => {
   assert.deepEqual(approvalLine({ ...CTX, project: { ...PROJECT, refs: { 구매: '박기도, 홍길동, 노길태' } }, kind: 'purchase' }).refs, ['홍길동']);
 });
+t('lead·refs 를 주면(공문 기록의 두 칸) 과제의 것 대신 — 빈 책임자는 과제의 것, 빈 참조자 목록은 참조 없음, null 은 과제의 것', () => {
+  const line = approvalLine({ ...CTX, kind: 'purchase', lead: '성춘향', refs: ['변학도', '노길태'] });
+  assert.deepEqual(line.steps.map((s) => `${s.role} ${s.name}`), ['기안 김거화', '합의 성춘향', '결재 노길태']);
+  assert.deepEqual(line.refs, ['변학도'], '결재선에 선 사람은 여기서도 뺀다');
+  assert.deepEqual(approvalLine({ ...CTX, kind: 'purchase', lead: '', refs: [] }).steps[1].name, '박기도');
+  assert.deepEqual(approvalLine({ ...CTX, kind: 'purchase', refs: [] }).refs, []);
+  assert.deepEqual(approvalLine({ ...CTX, kind: 'purchase', refs: null }).refs, ['홍길동', '이몽룡']);
+  assert.deepEqual(approvalLine({ ...CTX, kind: 'purchase', lead: '김 거화' }).steps.map((s) => s.role), ['기안', '결재'], '기안자 본인이면 합의 없음(공백 무시)');
+  assert.deepEqual(approvalLine({ ...CTX, kind: 'outside', lead: '성춘향', refs: ['변학도'] }).steps.map((s) => s.role), ['기안', '결재'], '외부활동은 둘 다 없다');
+});
+
+console.log('행정지원 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람(2026-10-16)');
+t('projectRefs — 공문 참조를 켠 행정지원이 먼저, 그 뒤에 YAML 의 이 갈래 참조자. 갈래를 가리지 않고 같은 이름은 한 번, 갈래를 모르면 비운다', () => {
+  const p = { refs: { 구매: ['이몽룡', '홍길동'] }, support: [{ name: '홍길동', role: '행정 담당', ref: true }, { name: '변학도', role: '연구지원', ref: false }, { name: '' }] };
+  assert.deepEqual(projectRefs(p, 'purchase'), ['홍길동', '이몽룡']);
+  assert.deepEqual(projectRefs(p, 'edu'), ['홍길동'], '교육에는 YAML 에 적힌 것이 없어도 행정지원은 든다');
+  assert.deepEqual(projectRefs(p, 'trip'), ['홍길동']);
+  assert.deepEqual(projectRefs(p, ''), []);
+  assert.deepEqual(projectRefs({ support: [{ name: '심청' }] }, 'purchase'), ['심청'], 'ref 를 적지 않았으면 참조로 본다');
+});
+t('approvalLine — 행정지원의 참조자도 결재선에 선 사람(합의·결재)은 뺀다. 외부활동은 참조 없음', () => {
+  const project = { ...PROJECT, refs: {}, support: [{ name: '박기도', ref: true }, { name: '홍길동', ref: true }] };
+  assert.deepEqual(approvalLine({ ...CTX, project, kind: 'edu' }).refs, ['홍길동']);
+  assert.deepEqual(approvalLine({ ...CTX, project, kind: 'outside' }).refs, []);
+});
+t('rndProjects — R&D 과제의 행정지원이 공문의 과제로 따라온다', () => {
+  const book = normalizeBook({ projects: [{ id: 'p1', name: 'A', support: [{ name: '홍길동', role: '행정 담당' }, { name: '홍 길동' }, { name: ' ' }] }] });
+  assert.deepEqual(book.projects[0].support, [{ name: '홍길동', role: '행정 담당', ref: true }], '같은 이름(공백 무시)·빈 이름은 버린다');
+  const [a] = rndProjects(book, [], '2026-10-16');
+  assert.deepEqual(a.support, [{ name: '홍길동', role: '행정 담당', ref: true }]);
+  assert.deepEqual(projectRefs(a, 'purchase'), ['홍길동']);
+});
 
 console.log('공문 만들기');
 t('구매 — 기본 양식의 첫 줄·요약·품목·합계·계정·첨부', () => {
@@ -192,15 +224,20 @@ t('구매 — 기본 양식의 첫 줄·요약·품목·합계·계정·첨부',
   assert.ok(lines.includes('        - 수량 : 1대'));
   assert.ok(lines.includes('    (2) 구매품 : 모니터암'));
   assert.ok(!lines.some((l) => /\[사양\]|\[수량\]/.test(l)), '빠져도 되는 칸은 줄째 빠진다');
-  assert.ok(lines.includes('나. 구매금액 : 989,000원 (VAT 포함)'));
-  assert.ok(lines.includes('라. 구매계정 : 연구활동비(연구실운용비)'));
+  // 가. 과제 개요(2026-10-16 사용자 지정: "구매양식에 과제 개요가 들어가 있질 않음") — 교육·출장과 같은 네 줄, 비어도 되는 칸(번호·기간·책임자)은 빈 줄째 빠진다.
+  const at = lines.indexOf('가. 과제 개요');
+  assert.ok(at > 0, '아래 다음에 가. 과제 개요');
+  assert.deepEqual(lines.slice(at + 1, at + 4), [`    (1) 과 제 명 : ${PROJECT.name}`, '    (2) 과제번호 : RND-20-2026', '    (3) 과제책임자 : 박기도'], '연구기간이 없으면 그 줄은 빠지고 차례를 잇는다');
+  assert.equal(lines[at + 4], '나. 구매 내역');
+  assert.ok(lines.includes('다. 구매금액 : 989,000원 (VAT 포함)'));
+  assert.ok(lines.includes('마. 구매계정 : 연구활동비(연구실운용비)'));
   assert.equal(lines.at(-1), '    1. 견적서 1부.  끝.');
   assert.deepEqual(c.missing, []);
 });
 t('과제 개요·계정을 적어 두면 그것을 쓴다', () => {
   const c = compose('purchase', blankDraft('purchase'), { ...CTX, project: { ...PROJECT, about: '친환경 선박용 MVDC 차단기 개발을 수행하고 있습니다', account: '연구재료비' } });
   assert.match(c.body, /^1\. 연구본부 수소전기추진연구팀은 친환경 선박용 MVDC 차단기 개발을 수행하고 있습니다\./);
-  assert.match(c.body, /라\. 구매계정 : 연구재료비\n마\. 용도 : \[용도\]/);
+  assert.match(c.body, /마\. 구매계정 : 연구재료비\n바\. 용도 : \[용도\]/);
   assert.match(c.body, /구매계정 : 연구재료비/);
   assert.deepEqual(c.missing.sort(), ['구매사유', '업체', '요약', '용도', '품목요지', '합계'].sort());
 });
@@ -303,7 +340,7 @@ t('외부활동 — 신고서 칸마다 넣을 값(writePlan) — 숫자 칸은 
   assert.deepEqual(pick(plan.values.names, ['contact', 'contactTel', 'yearTotal', 'note']), {
     contact: { name: '담당부서(담당자)', need: true }, contactTel: { name: '담당자 연락처', need: true }, yearTotal: { name: '당해 연도 사례금 누적 합계', need: true }, note: { name: '비고', need: false },
   });
-  assert.deepEqual(plan.values.job, { name: '', code: '' }, '과제를 넣지 않는다(신고서에 과제 칸이 없다)');
+  assert.deepEqual(plan.values.job, { name: '', code: '', lead: '' }, '과제를 넣지 않는다(신고서에 과제 칸이 없다)');
   assert.deepEqual([plan.line.approvers, plan.line.agree, plan.line.rank], [['노길태'], [], '팀장'], '과제책임자 합의 없이 담당 → 팀장(지난 신고서)');
   assert.deepEqual(pick(plan.setting, ['retention', 'retentionText', 'tag', 'docNo']), { retention: '36', retentionText: '3년', tag: '외부활동', docNo: '8100' });
   assert.equal(draftValue({ kind: 'date', from: ['to', 'from'] }, { from: '2026-11-05', to: '' }), '2026-11-05', '종료일이 비면 시작일');
@@ -322,9 +359,11 @@ t('외부활동 — 남은 것(신고서의 필수 칸 — 과제는 묻지 않�
     [{ label: '요청 공문', files: ['a.png'] }, { label: '활동 자료', files: ['b.png'] }]);
   assert.equal(attachName('outside', { org: '부산대학교 조선해양공학과' }, '2026-10-08'), '요청공문_부산대학교조선해양공학과_2026-10-08.pdf');
 });
-t('구매 — 제목·본문은 그대로(원본에서도 과제 개요를 빼는 lean 목적)', () => {
+t('구매 — 제목은 그대로, 본문은 교육·출장처럼 가. 과제 개요부터(원본은 과제 개요를 빼는 lean 목적이었다 — 2026-10-16 사용자 지정으로 넣음)', () => {
   assert.equal(DEFAULT_TEMPLATES.purchase.title, '{품목요지} 구매 품의');
-  assert.ok(!DEFAULT_TEMPLATES.purchase.body.includes('과제 개요'));
+  const block = (kind) => DEFAULT_TEMPLATES[kind].body.split('\n').filter((l) => /과제 개요$|과 제 명|과제번호|연구기간|과제책임자/.test(l));
+  assert.deepEqual(block('purchase'), block('edu'), '과제 개요 다섯 줄은 교육과 같다');
+  assert.deepEqual(block('purchase'), block('trip'), '출장과도 같다');
 });
 t('남은 것 — 과제·부서장·합의자·용도·구매사유', () => {
   assert.deepEqual(needs('purchase', blankDraft('purchase'), { preset: {}, project: null, projects: [] }),
@@ -686,8 +725,8 @@ console.log('R&D 탭의 과제 — 연구 내용으로 사유 쓰기·에이전�
       { name: '계획서 없는 과제', lead: '홍길동', content: '공문 설정에 적은 과제 내용' }];
     const [a, b] = rndProjects(book, preset, TODAY);
     assert.deepEqual({ ...a, content: a.content.slice(0, 11) }, {
-      name: 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발', alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도', period: '2026.04.01 ~ 2029.12.31',
-      about: '차단기 과제를 수행하고 있습니다', content: '[연구개발 계획 — ', account: '연구재료비', refs: { 구매: ['이몽룡'] }, rnd: { id: 'p1', year: 1, plan: 1, logs: 1 },
+      name: 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발', alias: 'SSCB', code: 'RS-2026-0001', job: '', lead: '박기도', period: '2026.04.01 ~ 2029.12.31',
+      about: '차단기 과제를 수행하고 있습니다', content: '[연구개발 계획 — ', account: '연구재료비', refs: { 구매: ['이몽룡'] }, support: [], rnd: { id: 'p1', year: 1, plan: 1, logs: 1 },
     });
     assert.deepEqual([b.lead, b.content, b.rnd.plan, b.refs], ['홍길동', '공문 설정에 적은 과제 내용', 0, {}], '연구 내용이 없으면 공문 설정의 과제 내용 — 참조자는 YAML 에만 있어 줄에서 채우지 않는다');
     assert.deepEqual(approvalLine({ me: '김거화', preset: PRESET, project: a, kind: 'purchase' }).refs, ['이몽룡'], 'R&D 과제의 참조자가 결재선에 선다');
@@ -814,7 +853,9 @@ console.log('레시피(recipes/gongmun) — 위임전결·문서설정·쓸 것'
     assert.equal(plan.values.title.length, 99);
     assert.ok(plan.values.title.startsWith('모니터 - 구매 품의'), plan.values.title);
     assert.equal(plan.values.html, '<div>1. 사유 - 시험</div><div><br></div><div style="text-align:center;">------------ 아   래 ------------</div>');
-    assert.deepEqual([plan.values.degree, plan.values.job], ['1', { name: FULL.name, code: FULL.code }]);
+    assert.deepEqual([plan.values.degree, plan.values.job], ['1', { name: FULL.name, code: FULL.code, lead: FULL.lead }]);
+    assert.deepEqual(writePlan('purchase', { title: 't', body: 'b' }, { me: '김거화', preset: PRESET, project: { ...project, job: 'RND00202026' } }).values.job.code, 'RND00202026',
+      'R&D 탭에서 고른 Job Id 가 과제번호보다 먼저다(2026-10-16)');
     assert.equal(plan.setting.docNo, '8100');
     assert.equal(plan.setting.tag, '차단기 과제', '검색 키워드는 고른 과제의 별명');
     assert.deepEqual(plan.line, { approvers: ['노길태'], agree: ['박기도'], refs: ['홍길동', '이몽룡'], missing: [], rank: '팀장', team: '수소전기추진연구팀' });

@@ -1,0 +1,114 @@
+/* R&D 탭의 과제 더하기 카드(#rdgAdd)와 변경 및 이력 관리 카드의 YAML 고치기 몫(#rdgRevise) — rndgen/panel.js 가 그린다.
+   모양은 sidepanel.css 의 .card · button.primary/.ghost/.small · .rnd .rd-drop(점선 상자) · .rnd .rd-meta(이름|값 격자)를 따르고,
+   여기는 .rnd .rdg… 선택자만 둔다(sidepanel.css 는 고치지 않는다). 글 칸·고르기의 꼴은 sidepanel.css 의 .rnd input/select/textarea 를 그대로 쓴다. */
+
+.rnd .rdg-add { position: relative; margin-bottom: 12px; padding: 10px 14px 14px; }
+/* 더하기 카드는 덮개라 머리 카드(.rd-head)처럼 파란 기운의 테두리. */
+.rnd .rdg-add { border-color: color-mix(in srgb, var(--pick) 25%, var(--line)); }
+/* YAML 고치기는 변경 및 이력 관리 카드(#rdChangeBox — sidepanel.css 의 .rd-change)의 위쪽 몫이라 틀·옆 여백은 그 카드 것이다. 문서를 끌어 오면 이 몫에만 파란 테. */
+.rnd .rdg-revise { position: relative; padding-bottom: 12px; }
+.rnd .rdg-revise.over { border-radius: 10px; outline: 2px solid color-mix(in srgb, var(--pick) 45%, transparent); outline-offset: 4px; }
+
+/* 머리 — 제목 · 대상(과제 · 차년도) 또는 기준 줄 · 닫기. */
+.rnd .rdg-head { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-bottom: 8px; }
+.rnd .rdg-head strong { flex: none; font-size: 14px; font-weight: 650; }
+.rnd .rdg-target {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 1px 8px; border-radius: 7px; background: var(--pick-soft); color: var(--pick); font-size: 12px; font-weight: 650;
+}
+/* 기준 줄 — 카드 이름 바로 아래 한 줄. 이름 옆에 붙어 있을 때 잘려 보이던 것(2026-10-16)이라 길면 접어 넘긴다. */
+.rnd .rdg-base { margin: -4px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.rnd .rdg-base.lossy { color: color-mix(in srgb, var(--mine) 70%, var(--fg)); }
+.rnd .rdg-close { flex: none; width: 28px; min-height: 28px; margin-left: auto; padding: 5px; border-radius: 8px; background: transparent; color: var(--muted); }
+.rnd .rdg-close svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.rnd .rdg-close:hover { background: var(--surface-soft); color: var(--fg); }
+
+/* 넣는 곳 — R&D 설정의 YAML 넣기(.rd-drop)와 같은 점선 상자. 탭 어디에 놓아도 가는 그 칸과 달리 이 카드에 놓은 것만 받는다. */
+.rnd .rdg-drop {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 72px; padding: 10px 12px; border: 1.5px dashed color-mix(in srgb, var(--pick) 55%, var(--line)); border-radius: 12px;
+  background: var(--pick-soft); text-align: center; cursor: pointer;
+}
+.rnd .rdg-drop input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rnd .rdg-drop:hover, .rnd .rdg-drop.over { border-color: var(--pick); background: color-mix(in srgb, var(--pick) 16%, var(--surface)); }
+.rnd .rdg-drop:has(input[type="file"]:focus-visible) { outline: 2px solid var(--pick); outline-offset: 2px; }
+.rnd .rdg-drop-lead { display: inline-flex; align-items: center; gap: 6px; color: var(--pick); font-size: 13px; font-weight: 650; }
+.rnd .rdg-drop-lead svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.rnd .rdg-drop-how { color: var(--muted); font-size: 11px; line-height: 1.5; word-break: keep-all; }
+.rnd .rdg-drop-note { color: var(--faint); font-size: 11px; line-height: 1.5; word-break: keep-all; }
+.rnd .rdg[aria-busy="true"] .rdg-drop { opacity: .65; cursor: progress; }
+
+/* 한 줄 — 차년도 고르기 · 직접 적기 / 문서 붙이기 · 붙인 문서 · YAML 고치기. */
+.rnd .rdg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
+.rnd .rdg-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.rnd .rdg-field select { width: auto; min-width: 12em; min-height: 32px; padding: 4px 8px; }
+.rnd .rdg-row #rdgManual { margin-left: auto; }
+
+/* 알림 줄 — 비면 자리를 차지하지 않는다. 바쁠 때는 앞에 도는 고리(움직임을 줄이는 설정이면 멈춤). */
+.rnd .rdg-msg { margin: 8px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.rnd .rdg-msg:empty { display: none; }
+.rnd .rdg-msg.error { color: var(--danger); }
+.rnd .rdg[aria-busy="true"] .rdg-msg:not(.error)::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px;
+  border: 1.5px solid var(--pick); border-right-color: transparent; border-radius: 50%; animation: rdg-spin .8s linear infinite;
+}
+@keyframes rdg-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rnd .rdg[aria-busy="true"] .rdg-msg:not(.error)::before { animation: none; } }
+
+/* 미리보기 — 읽은 것 한 줄 · 이름|값 격자(비목 표·경고 포함) · 별칭 · YAML 원문(접힘) · 단추 줄(늘 보인다). */
+.rnd .rdg-preview { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.rnd .rdg-read { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.rnd .rdg-summary { margin: 0 0 6px; font-size: 13px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }
+.rnd .rdg-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0 0 10px; font-size: 12px; line-height: 1.5; }
+.rnd .rdg-meta div { display: contents; }
+.rnd .rdg-meta dt { color: var(--muted); }
+.rnd .rdg-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rnd .rdg-budget { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.rnd .rdg-budget td { padding: 0 14px 1px 0; vertical-align: top; }
+.rnd .rdg-budget td:last-child { padding-right: 0; text-align: right; }
+.rnd .rdg-budget tr.sum td { padding-top: 2px; border-top: 1px solid var(--line); font-weight: 650; }
+.rnd .rdg-warns { margin: 0; padding-left: 16px; }
+.rnd .rdg-warns, .rnd .rdg-warn { color: color-mix(in srgb, var(--mine) 60%, var(--fg)); }
+.rnd .rdg-warn { margin: 0 0 8px; padding: 6px 9px; border-radius: 10px; background: color-mix(in srgb, var(--mine) 12%, var(--surface)); font-size: 12px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.rnd .rdg-warn:empty { display: none; }
+
+.rnd .rdg-alias { display: flex; flex-direction: column; gap: 4px; max-width: 20em; margin: 0 0 8px; }
+.rnd .rdg-alias > span { color: var(--muted); font-size: 12px; }
+.rnd .rdg-alias .req { margin-left: 3px; color: var(--danger); font-size: 10px; font-weight: 700; }
+.rnd .rdg-alias input[readonly] { color: var(--muted); cursor: default; }
+
+/* YAML 원문 — 접는 것은 이것뿐(내용이지 행위가 아니다). 단추는 접힌 칸 밖. */
+.rnd .rdg-yaml { margin: 0 0 4px; }
+.rnd .rdg-yaml > summary { min-height: 30px; font-size: 12px; }
+.rnd .rdg-yaml textarea {
+  min-height: 220px; font-family: ui-monospace, "D2Coding", monospace; font-size: 12px; line-height: 1.45;
+  white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2;
+}
+.rnd .rdg-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* 변경사항 — 글 칸 · 문서 붙이기(작은 유령 단추 꼴의 label) · 붙인 문서 칩(×로 뺀다) · YAML 고치기. */
+.rnd .rdg-change { min-height: 64px; }
+.rnd .rdg-attach {
+  position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 8px; border-radius: 9px;
+  color: var(--muted); font-size: 14px; cursor: pointer; transition: background .16s ease;
+}
+.rnd .rdg-attach:hover { background: var(--surface-soft); color: var(--fg); }
+.rnd .rdg-attach svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.rnd .rdg-attach input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rnd .rdg-attach:has(input[type="file"]:focus-visible) { outline: 2px solid var(--pick); outline-offset: 2px; }
+.rnd .rdg-attach:has(input[type="file"]:disabled) { opacity: .42; cursor: default; }
+.rnd .rdg-files { display: flex; flex: 1 1 8em; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.rnd .rdg-file {
+  display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding: 1px 3px 1px 8px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-soft); font-size: 12px;
+}
+.rnd .rdg-file > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rdg-file button { flex: none; width: 20px; min-height: 20px; padding: 0; border-radius: 50%; background: transparent; color: var(--faint); font-size: 14px; line-height: 1; }
+.rnd .rdg-file button:hover { background: var(--line); color: var(--danger); }
+.rnd .rdg-go { margin-left: auto; }
+
+/* 구조 차이·새로 남을 변경이력 — 줄마다 한 줄, 길면 접어 넘긴다. */
+.rnd .rdg-sub { margin: 8px 0 2px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.rnd .rdg-diff, .rnd .rdg-changelog { margin: 0 0 6px; padding-left: 18px; font-size: 12px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+.rnd .rdg-diff li, .rnd .rdg-changelog li { overflow-wrap: anywhere; }
+.rnd .rdg-diff li::marker, .rnd .rdg-changelog li::marker { color: var(--pick); }

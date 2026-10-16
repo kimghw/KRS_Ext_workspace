@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\" \"actions/test/*.test.mjs\" \"mailtrack/test/*.test.mjs\" \"doctext/test/*.test.mjs\" gmail/gmail.test.mjs",
+    "test": "node --test \"test/*.test.mjs\" \"actions/test/*.test.mjs\" \"mailtrack/test/*.test.mjs\" \"doctext/test/*.test.mjs\" \"rndgen/test/*.test.mjs\" gmail/gmail.test.mjs",
     "gen": "node tools/refdata.mjs gen",
     "check": "node tools/refdata.mjs check",
     "refdata": "node tools/refdata.mjs",

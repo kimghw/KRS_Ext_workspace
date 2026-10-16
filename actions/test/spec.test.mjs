@@ -13,7 +13,7 @@ import { parse } from 'yaml';
 
 import { readActions, checkActions, buildActions, build, render, RUNNERS, toYaml, exampleRecord, parseFrom, recipeDraftFields } from '../../tools/gen-actions.mjs';
 import { ACTIONS } from '../spec.js';
-import { promptOf } from '../../src/input.js';
+import { promptOf, schemaOf } from '../../src/input.js';
 import { KINDS, SUBS, FLEX_TIMES, FLEX_DAYS, flexTimesFor, MAX_TRIP_DAYS, DEFAULT_START, blankForm, fieldsFor, FORMS, CANCEL_FORMS } from '../../src/attend.js';
 import { TRANSPORTS, DEFAULT_TRANSPORT, TRAIN_GRADES, DEFAULT_GRADE } from '../../src/travel.js';
 import { REASONS, RELATIONS, CASH_KINDS } from '../../src/welfare.js';
@@ -508,6 +508,53 @@ t('회의실·차량 예약 기록의 칸은 실행자의 payload 가 내는 모
   assert.deepEqual(Object.keys(ACTIONS.actions['car.reserve'].fields), ['car', 'carValue', 'date', 'start', 'end', 'endDate', 'title', 'place', 'passenger']);
   assert.ok(ACTIONS.actions['car.reserve'].fields.place.required && !ACTIONS.actions['car.reserve'].fields.title.required, '차량은 행선지가 필수, 사용목적은 아니다');
   assert.ok(ACTIONS.actions['room.reserve'].fields.title.required, '회의실은 회의주제가 필수');
+});
+
+console.log('R&D 의 LLM 작업 — rnd.extract(사업계획서 → 스냅샷 YAML)·rnd.revise(변경사항 → YAML 전문). per-kind, 패널(rndgen/llm.js)이 askClaude 를 바로 부른다');
+t('갈래 rnd 는 per-kind 이고 extract·revise 두 종류만 LLM 을 켠다 — 나머지 종류는 llm: false(작업 없음)', () => {
+  const dom = ACTIONS.domains.rnd;
+  assert.deepEqual([dom.llm.mode, dom.llm.partial, dom.llm.input, dom.llm.consumer], ['per-kind', false, 'rnd', { module: 'rndgen/llm.js', export: 'askRndTask' }]);
+  assert.deepEqual(dom.kinds.slice(-2), ['extract', 'revise']);
+  assert.deepEqual(actionsOf('rnd').filter((a) => a.llm).map((a) => [a.id, a.task]), [['rnd.extract', 'rnd.extract'], ['rnd.revise', 'rnd.revise']]);
+  assert.deepEqual(Object.keys(ACTIONS.tasks).filter((k) => k.startsWith('rnd')).sort(), ['rnd.extract', 'rnd.revise']);
+  for (const id of ['rnd.extract', 'rnd.revise']) {
+    const a = ACTIONS.actions[id];
+    assert.deepEqual([a.status, a.confirm, a.effect, a.log, a.runner], ['planned', true, 'draft', 'rnd', id], id);
+    assert.deepEqual(a.uses.slice(0, 1), [{ module: 'rndgen/llm.js', export: 'askRndTask' }], id);
+  }
+});
+t('답 칸(계약서 §2.1) — 이름·차례·형·필수·한도가 고정이고 화면 칸은 llm: false 다', () => {
+  const shape = (fields) => Object.entries(fields).map(([k, f]) => [k, f.type, !!f.required, f.min ?? null, f.max ?? null]);
+  const ex = ACTIONS.tasks['rnd.extract'];
+  const rv = ACTIONS.tasks['rnd.revise'];
+  assert.deepEqual(shape(ex.fields), [['yaml', 'string', true, null, 120000], ['alias', 'string', false, null, 60], ['stage', 'integer', false, 1, 20], ['warnings', 'string', false, null, 3000]]);
+  assert.deepEqual(shape(rv.fields), [['yaml', 'string', true, null, 120000], ['summary', 'string', true, null, 300], ['changes', 'list', false, null, 50], ['warnings', 'string', false, null, 3000]]);
+  assert.deepEqual(shape(rv.fields.changes.item), [['path', 'string', true, null, 200], ['before', 'string', false, null, 500], ['after', 'string', false, null, 500]]);
+  // 관문 초안 모드는 max 를 넘는 글을 말없이 자른다(기본 2000) — YAML 전문 칸은 한도를 꼭 둔다.
+  for (const task of [ex, rv]) assert.ok(task.fields.yaml.max >= 120000);
+  const ui = (id) => Object.entries(ACTIONS.actions[id].fields).filter(([, f]) => !f.llm).map(([k, f]) => [k, f.type]);
+  assert.deepEqual(ui('rnd.extract'), [['file', 'file'], ['stageWanted', 'integer'], ['projectId', 'string']]);
+  assert.deepEqual(ui('rnd.revise'), [['projectId', 'string'], ['n', 'integer'], ['text', 'string'], ['files', 'list']]);
+  // 구조화 출력 스키마는 모든 칸을 required 로 둔다(없는 값은 null) — 목록의 줄도.
+  for (const task of [ex, rv]) assert.deepEqual(schemaOf(task).required, Object.keys(task.fields));
+  assert.deepEqual(schemaOf(rv).properties.changes.anyOf[0].items.required, ['path', 'before', 'after']);
+});
+t('작업의 제목·역할은 종류 title 로 채우고 consumer 는 rndgen/llm.js 의 askRndTask(함수 선언)다', () => {
+  for (const [name, kind] of [['rnd.extract', 'extract'], ['rnd.revise', 'revise']]) {
+    const task = ACTIONS.tasks[name];
+    const title = ACTIONS.actions[`rnd.${kind}`].title;
+    assert.equal(task.title, `R&D ${title}`);
+    assert.ok(task.role.includes(`이번 일: ${title}.`), task.role);
+    assert.deepEqual([task.kinds, task.consumer, task.partial, task.variants], [['rnd'], { module: 'rndgen/llm.js', export: 'askRndTask' }, undefined, undefined]);
+  }
+  assert.match(read('rndgen/llm.js'), /^export async function askRndTask\b/m);
+});
+t('지시문 — 뽑기는 KR·당해 차년도·합계를 새로 더하지 않음·stage·절차 무시, 고치기는 말한 곳만·합계 다시 맞춤·meta.rev 는 코드', () => {
+  const ex = promptOf(ACTIONS.tasks['rnd.extract']);
+  for (const s of ['한국선급(KR) 행·블록만', '당해 차년도 행만', '새로 더하지 않습니다', 'stage(수 N)', '스킬 문서의 절차', '— N쪽 —', 'warnings 는']) assert.ok(ex.includes(s), s);
+  const rv = promptOf(ACTIONS.tasks['rnd.revise']);
+  for (const s of ['말한 곳만 고친 YAML 전문', '다시 더해 맞춥니다', 'meta.rev 와 파일 머리 주석', '예산.참여연구자인건비', 'summary 는', 'changes 는']) assert.ok(rv.includes(s), s);
+  assert.equal(cli('--prompt', 'rnd.extract').stdout, `${ex}\n`);
 });
 
 console.log(`\n통과 ${pass}건`);
