@@ -11,7 +11,9 @@
 // 외부활동은 외부강의등 신고서(칸이 정해진 폼)다(2026-10-15 사용자 지정) — 과제를 고르지 않고, 직급·당월 누적·당해 연도 누적·총 시간과 요청인의 대표자·담당자는
 // 공문 이력의 지난 신고서와 다른 칸으로 셈해 채우며(outsideAuto), 공문 탭의 본문은 넣을 칸의 미리보기다(고쳐도 신고서에 들어가지 않는다).
 //
-// 양식(eclass 양식·제목 틀·본문 틀)과 공문 설정(부서·부서장·소장·본부장·문서번호 부서·참조자·과제 — R&D 탭에 과제가 있으면 그 과제들)은 이 탭 아래의 접힌 칸에서 고친다.
+// 양식(eclass 양식·제목 틀·본문 틀)과 공문 설정(부서·부서장·소장·본부장·문서번호 부서·과제 — R&D 탭에 과제가 있으면 그 과제들)은 이 탭 아래의 접힌 칸에서 고친다.
+// 참조자 칸은 없다(2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이 다르므로 전역 설정에 둘 수 없다") — 과제의 계획서 YAML(공문.참조자)에
+// 공문 종류별로 적고, 결재선에 고른 과제·고른 갈래의 참조자가 선다(src/gongmun.js 의 projectRefs). 적혀 있지 않으면 비운다.
 // 갈래·틀·칸·위임전결·문서설정의 원본은 레시피(recipes/gongmun)다.
 
 import {
@@ -19,7 +21,7 @@ import {
   KIND_KEY, PRESET_KEY, PROJECTS_KEY, TEMPLATES_KEY, DRAFT_KEY, RND_EXTRA_KEY,
   templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
-  mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, moreLead,
+  mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, projectRefs, moreLead,
   writePlan, docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, outsideAuto,
 } from './src/gongmun.js';
 import {
@@ -27,7 +29,7 @@ import {
 } from './src/gmlist.js';
 import { SEARCH_KEY, AGENT_KIND, DIRS, DIR_LABEL, DIR_BOXES, DIR_TITLE, CUSTOM, parseQuery, periodOf, filterRows, sameRead, normalizeSearch } from './src/gmsearch.js';
 import { writeGongmun, showTab } from './src/gmwrite.js';
-import { BOOK_KEY, normalizeBook, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
+import { BOOK_KEY, normalizeBook, refsText, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
 import { SET_KEY as RND_SET_KEY } from './src/rnderp.js';
 import { budgetCheck, budgetText, budgetTitle, itemOf } from './src/gmbudget.js';
 import PLAN from './rerp/plan.js';
@@ -103,7 +105,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     receiver: $('gmReceiver'), scope: $('gmScope'), emergency: $('gmEmergency'), approvingOpen: $('gmApprovingOpen'), drm: $('gmDrm'), tag: $('gmTag'), setReset: $('gmSetReset'),
     tplBox: $('gmTplBox'), tplState: $('gmTplState'), tplForm: $('gmTplForm'), tplFormId: $('gmTplFormId'),
     tplTitle: $('gmTplTitle'), tplBody: $('gmTplBody'), tplReset: $('gmTplReset'), vars: $('gmVars'),
-    presetBox: $('gmPresetBox'), presetState: $('gmPresetState'), dept: $('gmDept'), head: $('gmHead'), refs: $('gmRefs'),
+    presetBox: $('gmPresetBox'), presetState: $('gmPresetState'), dept: $('gmDept'), head: $('gmHead'),
     director: $('gmDirector'), chief: $('gmChief'), docNo: $('gmDocNo'), docNoHint: $('gmDocNoHint'),
     projList: $('gmProjList'), projAdd: $('gmProjAdd'), projCount: $('gmProjCount'),
     // 공문 이력 — 작업 카드 아래의 접힌 칸(eclass 기안함에서 읽은 내 공문, src/gmlist.js)과 작성 내용 탭의 사례비 누계 줄(외부활동).
@@ -1166,9 +1168,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       ? bit('연구 내용', [p.rnd.plan ? `연구개발 계획 ${p.rnd.plan}차년도` : '', p.rnd.logs ? `진행 기록 ${p.rnd.logs}건` : ''].filter(Boolean).join(' · ') || (p.content ? `${p.content.length.toLocaleString('ko-KR')}자` : ''),
         '연구 내용 없음 — R&D 탭에 계획서 YAML·진행 기록을 넣으면 사유가 과제에 맞게 써집니다')
       : bit('내용', p.content ? `${p.content.length.toLocaleString('ko-KR')}자` : '', '과제 내용 없음 — 사유가 일반적으로 써집니다');
+    // 참조자는 이 과제의 이 갈래에 적힌 사람(과제 YAML 의 공문.참조자) — 있을 때만 보인다. 없으면 참조 없이 쓴다(2026-10-15).
+    const refs = projectRefs(p, st.kind);
     el.projInfo.innerHTML = '<strong>과제 기본 내용</strong>'
       + [bit('별명', p.alias, '별명 없음 — 제목에 과제명이 들어갑니다'), bit('번호', p.code, '번호 없음'), bit('기간', p.period, '연구기간 없음'),
-        bit('책임자', p.lead, '책임자 없음 — 합의자가 빕니다'), research].join('')
+        bit('책임자', p.lead, '책임자 없음 — 합의자가 빕니다'), ...(refs.length ? [bit('참조자', refs.join(', '), '')] : []), research].join('')
       + (p.rnd ? '<button type="button" class="ghost small" data-act="rnd">R&amp;D 탭</button>'
         : `<button type="button" class="ghost small" data-act="preset" data-name="${escapeHtml(p.name)}">고치기</button>`);
   }
@@ -2113,13 +2117,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.director.value = st.preset.director;
     el.chief.value = st.preset.chief;
     el.docNo.value = st.preset.docNo;
-    el.refs.value = st.preset.refs.join(', ');
     paintDocNoHint();
     paintRows();
   }
 
   function paintPresetState() {
-    // 접힌 줄에는 결재선에 설 사람(부서장·소장·본부장)만 보인다(2026-10-09 사용자 지정: "부서장,소장,본부장까지만 표기"). 참조·과제 수는 펴면 보인다.
+    // 접힌 줄에는 결재선에 설 사람(부서장·소장·본부장)만 보인다(2026-10-09 사용자 지정: "부서장,소장,본부장까지만 표기"). 과제 수는 펴면 보인다.
     const p = st.preset;
     el.presetState.textContent = `부서장 ${p.head || '없음'}${p.director ? ` · 소장 ${p.director}` : ''}${p.chief ? ` · 본부장 ${p.chief}` : ''}`;
     // R&D 탭과 이어져 있으면 그 과제 수, 아니면 여기 적은 과제 수. 한도(열 개)는 정해 둔 몫이 아니라 적지 않는다 — 다 차면 더하기 단추가 잠기며 말한다
@@ -2164,7 +2167,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
    * 공문에만 쓰는 개요·계정 칸을 둔다. p 는 rndProjects 의 것(빈 칸은 공문 설정의 같은 과제 줄에서 채운 값이다).
    */
   function linkedHtml(p) {
-    const meta = [p.code, p.lead ? `책임자 ${p.lead}` : '', p.period,
+    // 공문 참조자(과제 YAML 의 공문.참조자 — 공문 종류마다)는 여기 보이기만 한다. 적는 곳은 YAML 이다(2026-10-15).
+    const meta = [p.code, p.lead ? `책임자 ${p.lead}` : '', Object.keys(p.refs || {}).length ? `참조자 ${refsText(p.refs)}` : '', p.period,
       p.rnd.plan ? `연구개발 계획 ${p.rnd.plan}차년도` : '', p.rnd.logs ? `진행 기록 ${p.rnd.logs}건` : ''].filter(Boolean).join(' · ');
     const field = ([k, ph]) => `<input type="text" data-x="${k}" class="wide" value="${escapeHtml(p[k] || '')}" placeholder="${escapeHtml(ph)}" `
       + `aria-label="${escapeHtml(ph.split(' —')[0])}" autocomplete="off" />`;
@@ -2194,10 +2198,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintPresetState();
   }
 
-  /** 부서·부서장·참조자를 고쳤을 때. 결재선이 바로 바뀐다. */
+  /** 부서·부서장·소장·본부장·문서번호 부서를 고쳤을 때. 결재선이 바로 바뀐다. */
   function onPresetInput() {
     st.preset = normalizePreset({
-      dept: el.dept.value, head: el.head.value, refs: el.refs.value, director: el.director.value, chief: el.chief.value, docNo: el.docNo.value,
+      dept: el.dept.value, head: el.head.value, director: el.director.value, chief: el.chief.value, docNo: el.docNo.value,
     });
     savePreset();
     paintPresetState();
@@ -2360,7 +2364,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       node.addEventListener('change', onTplInput);
     }
     el.tplReset.addEventListener('click', resetTpl);
-    for (const node of [el.dept, el.head, el.refs, el.director, el.chief, el.docNo]) node.addEventListener('input', onPresetInput);
+    for (const node of [el.dept, el.head, el.director, el.chief, el.docNo]) node.addEventListener('input', onPresetInput);
     el.docNoHint.addEventListener('change', onDocNoPick);
     el.projList.addEventListener('input', onRowInput);
     el.projList.addEventListener('click', onRowClick);

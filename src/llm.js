@@ -165,7 +165,7 @@ export async function gongmunSmart(source, ctx, opts) {
 }
 
 /**
- * 공문 탭의 채팅 칸 — 붙여 넣은 글(과제 목록 표·메모)에서 공문 설정 조각(과제·과제책임자(합의자)·부서장·참조자)을 뽑는다
+ * 공문 탭의 채팅 칸 — 붙여 넣은 글(과제 목록 표·메모)에서 공문 설정 조각(과제·과제책임자(합의자)·부서장 — 참조자는 과제 YAML 의 공문.참조자라 받지 않는다)을 뽑는다
  * (공문 레시피 registries/setup.yaml 의 gongmunSetup). Claude 가 닿지 않으면 규칙 해석(src/gongmun.js 의 parseSetupLocal)으로 내려간다.
  * 얹는 것은 src/gongmun.js 의 mergeSetup 이다.
  * @param {{preset?: object, projects?: object[], current?: string}} now 지금 등록된 공문 설정과 초안에서 고른 과제

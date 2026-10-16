@@ -1033,7 +1033,7 @@ console.log('공문 탭');
     const want = [['gmKinds', 'click'], ['gmFile', 'change'], ['gmCapture', 'click'], ['gmManual', 'click'],
       ['gmReset', 'click'], ['gmCut', 'click'], ['gmAgentGo', 'click'], ['gmAgentInput', 'keydown'], ['gmMoreFields', 'input'], ['gmPick', 'click'], ['gmProjects', 'click'], ['gmFields', 'input'], ['gmTitle', 'input'], ['gmBody', 'input'], ['gmRegen', 'click'],
       ['gmWrite', 'click'], ['gmRank', 'change'], ['gmRetention', 'change'], ['gmDocNoOne', 'input'], ['gmSetReset', 'click'], ['gmSavePdf', 'click'], ['gmTplForm', 'change'], ['gmTplTitle', 'input'],
-      ['gmTplBody', 'input'], ['gmTplReset', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmRefs', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
+      ['gmTplBody', 'input'], ['gmTplReset', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
       ['gmProjList', 'input'], ['gmEvidenceToggle', 'click'], ['gmWorkspaceToggle', 'click'], ['gmViewTabs', 'click'], ['gmViewTabs', 'keydown'], ['gmCompare', 'click'], ['gongmun', 'dragover'], ['gongmun', 'drop'],
       ['gmFeeSum', 'click'], ['gmHistBox', 'toggle'], ['gmHistSpan', 'click'], ['gmHistAll', 'click'], ['gmHistRefresh', 'click'], ['gmHistList', 'click'],
       ['gmSearchGo', 'click'], ['gmSearchText', 'keydown'], ['gmSearchDir', 'click'], ['gmSearchSpan', 'click'], ['gmSearchList', 'click']];
@@ -1135,18 +1135,18 @@ console.log('공문 탭');
   type(doc.getElementById('gmDocNo'), '');
   type(doc.getElementById('gmDept'), '');
 
-  // 공문 설정에 부서장·참조자와 과제 한 줄을 적는다(과제책임자가 합의자).
+  // 공문 설정에 부서장과 과제 한 줄을 적는다(과제책임자가 합의자). 참조자 칸은 없다(2026-10-15 — 참조자는 과제 YAML 의 공문.참조자).
   type(doc.getElementById('gmHead'), '노길태');
-  type(doc.getElementById('gmRefs'), '홍길동, 이몽룡');
   doc.getElementById('gmProjAdd').click();
   const PROJECT = 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발';
   type(doc.querySelector('#gmProjList [data-k="name"]'), PROJECT);
   type(doc.querySelector('#gmProjList [data-k="code"]'), 'RND-20-2026');
   type(doc.querySelector('#gmProjList [data-k="lead"]'), '박기도');
   await settle(480);
-  t('적은 과제·과제책임자(합의자)·부서장·참조자가 공문 설정에 저장된다', () => {
+  t('적은 과제·과제책임자(합의자)·부서장이 공문 설정에 저장된다 — 참조자 칸은 없다', () => {
     assert.deepEqual(store.gongmunProjects, [{ name: PROJECT, alias: '', code: 'RND-20-2026', lead: '박기도', period: '', about: '', content: '', account: '' }]);
-    assert.deepEqual(store.gongmunPreset, { dept: '', head: '노길태', refs: ['홍길동', '이몽룡'], director: '', chief: '', docNo: '' });
+    assert.deepEqual(store.gongmunPreset, { dept: '', head: '노길태', director: '', chief: '', docNo: '' });
+    assert.equal(doc.getElementById('gmRefs'), null, '참조자 칸은 없다 — 과제 YAML 의 공문.참조자(2026-10-15)');
     assert.equal(doc.getElementById('gmHead').value, '노길태');
     assert.equal(doc.querySelector('#gmProjList [data-k="lead"]').value, '박기도');
   });
@@ -1172,10 +1172,10 @@ console.log('공문 탭');
     assert.equal(doc.getElementById('gmViewRead').title, '직접 입력');
     assert.equal(doc.activeElement, field('gist'), '열린 읽은 칸에 포커스가 간다');
   });
-  t('결재선 — 기안자 → 합의자(과제책임자) → 결재자(부서장) · 참조자', () => {
+  t('결재선 — 기안자 → 합의자(과제책임자) → 결재자(부서장). 공문 설정의 과제에는 참조자가 없다(참조자는 R&D 과제의 YAML 에만)', () => {
     const line = doc.getElementById('gmLine').textContent;
     assert.match(line, /기안자김거화→합의자박기도과제책임자→결재자노길태부서장/);
-    assert.match(line, /참조자홍길동, 이몽룡/);
+    assert.ok(!/참조/.test(line));
   });
 
   type(field('gist'), '34인치 모니터');
@@ -1412,10 +1412,10 @@ console.log('공문 탭');
     const setting = ran.find((r) => r.name === 'pageDialog' && r.args[0] === 'setting:fill').args[1];
     assert.deepEqual([setting.docNo, setting.retention, setting.receiver, setting.scopeCode], ['8100', '120', '내부결재', 'YNN']);
     const pressed = ran.filter((r) => r.name === 'pageDialog' && r.args[0] === 'line:press').map((r) => r.args[1]);
-    assert.deepEqual(pressed, ['btnAPP', 'btnAGR', 'btnREF', 'btnREF']);
+    assert.deepEqual(pressed, ['btnAPP', 'btnAGR'], '공문 설정의 과제에는 참조자가 없어 참조 단추를 누르지 않는다(R&D 과제의 YAML 참조자는 뒤의 교육 작성에서)');
     assert.deepEqual(dialogTree, {
       line: [{ name: '김거화', role: '결재' }, { name: '박기도', role: '합의' }, { name: '노길태', role: '결재' }],
-      refs: [{ name: '홍길동', role: '참조' }, { name: '이몽룡', role: '참조' }],
+      refs: [],
     });
     assert.ok(ran.some((r) => r.name === 'pageDialog' && r.args[0] === 'line:save'), '검증된 결재선은 저장한다');
   });
@@ -1771,9 +1771,10 @@ console.log('공문 탭 — 구매·교육·출장은 갈래 아래의 과제 �
   const B = '선박용 수소 연료전지 추진 시스템 실증';
   const { window, store } = await boot({
     mode: 'gongmun', gongmunKind: 'purchase', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
+    // 참조자는 과제의 YAML(공문.참조자)에서 온 것 — 공문 종류마다(2026-10-15). SSCB 의 구매는 이몽룡·박기도(합의자라 참조에서 빠짐), 수소추진에는 없다.
     rndBook: { projects: [
-      { id: 'p1', name: A, alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도' },
+      { id: 'p1', name: A, alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도', refs: { 구매: ['이몽룡', '박기도'], 교육: ['성춘향'] } },
       { id: 'p2', name: B, alias: '수소추진', code: 'RS-2026-0002', lead: '홍길동' },
     ] },
   });
@@ -1803,17 +1804,22 @@ console.log('공문 탭 — 구매·교육·출장은 갈래 아래의 과제 �
   });
   doc.getElementById('gmManual').click();
   await settle();
-  t('문서 없이 쓰면 먼저 고른 과제로 초안이 시작한다 — 과제 기본 내용·합의자가 그 과제의 것', () => {
+  t('문서 없이 쓰면 먼저 고른 과제로 초안이 시작한다 — 과제 기본 내용·합의자가 그 과제의 것. 참조자가 적혀 있지 않은 과제는 참조 없이', () => {
     assert.ok(!doc.getElementById('gmDraft').classList.contains('hidden'));
     assert.match(doc.getElementById('gmProjInfo').textContent, /별명 수소추진.*번호 RS-2026-0002/);
+    assert.ok(!/참조자/.test(doc.getElementById('gmProjInfo').textContent));
     assert.match(doc.getElementById('gmLine').textContent, /합의자홍길동/);
+    assert.equal(doc.querySelector('#gmLine .gm-refs'), null);
   });
   chip('SSCB').click();
   await settle();
-  t('초안이 있을 때 과제 줄에서 바꾸면 초안의 과제가 바뀐다', () => {
+  t('초안이 있을 때 과제 줄에서 바꾸면 초안의 과제가 바뀐다 — 참조자는 그 과제의 YAML 에 구매로 적힌 사람(합의자는 뺌)', () => {
     assert.deepEqual(chips(), [['SSCB', true], ['수소추진', false]]);
     assert.match(doc.getElementById('gmProjInfo').textContent, /별명 SSCB/);
+    assert.match(doc.getElementById('gmProjInfo').textContent, /참조자 이몽룡/);
     assert.match(doc.getElementById('gmLine').textContent, /합의자박기도/);
+    assert.equal(doc.querySelector('#gmLine .gm-refs').textContent, '참조자이몽룡');
+    assert.match(doc.querySelector('#gmProjList .gm-proj-linked[data-rnd="p1"] .gm-linked-meta').textContent, /책임자 박기도 · 참조자 구매 이몽룡, 박기도 \/ 교육 성춘향$/, '공문 설정의 R&D 과제 줄에는 YAML 의 참조자가 보이기만 한다');
   });
   doc.querySelector('#gmKinds [data-kind="edu"]').click();
   t('초안이 없는 다른 갈래로 가도 마지막에 고른 과제가 켜져 있다', () => {
@@ -1911,7 +1917,7 @@ console.log('공문 탭 — 교육: 견적서에 교육 내용 캡처를 더 넣
   };
   const saved = {
     mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: 'MVDC 차단기 개발', code: 'RND-20-2026', lead: '박기도', about: '', content: 'MVDC 선내 전력망용 전력변환기 설계·시험', account: '' }],
   };
   const { window, calls, store } = await boot(saved, { fetchImpl });
@@ -2167,7 +2173,7 @@ console.log('공문 탭 — 구매: 쇼핑몰 화면을 넣으면 가격과 그 
   };
   const saved = {
     mode: 'gongmun', gongmunKind: 'purchase', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: 'MVDC 차단기 개발', code: 'RND-20-2026', lead: '박기도', about: '', content: '', account: '' }],
   };
   const { window, calls, store } = await boot(saved, { fetchImpl });
@@ -2294,7 +2300,7 @@ console.log('공문 탭 — 구매: 읽은 문서는 읽은 내용 탭에, 작�
   const NAME = 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발';
   const saved = {
     mode: 'gongmun', gongmunKind: 'purchase', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: '공문 설정에만 있는 과제', lead: '홍길동' }],
     rndBook: { projects: [{ id: 'p1', name: NAME, alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도', start, end,
       years: { 1: { logs: [{ date: start, title: '연구개발 계획', key: 'plan', text: '■ 개발목표\n1. 10kV 반도체 차단기 시제품 설계' }] } } }] },
@@ -2453,7 +2459,7 @@ console.log('공문 탭 — 보고 있는 탭 통째로 캡처해 읽기(2026-10
   };
   const saved = {
     mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', about: '', content: 'AI 도구를 설계 검토에 활용', account: '' }],
   };
   const { window, calls } = await boot(saved, { fetchImpl });
@@ -2623,7 +2629,7 @@ console.log('공문 탭 — 부분 골라 캡처(2026-10-08 "탭이 아니라 �
   };
   const saved = {
     mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', about: '', content: '차단기 설계', account: '' }],
   };
   const { window, calls } = await boot(saved, { fetchImpl });
@@ -2791,8 +2797,10 @@ console.log('공문 탭 — 원본 첨부(2026-10-15 사용자 지정: "첨부�
   };
   const saved = {
     mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', about: '', content: 'MVDC 선내 전력망용 전력변환기 설계·시험', account: '' }],
+    // 같은 과제가 R&D 탭에도 — 참조자는 그 과제의 YAML(공문.참조자)에서 교육으로 적힌 사람(2026-10-15). 박기도는 합의자라 참조에서 빠진다.
+    rndBook: { projects: [{ id: 'p1', name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', refs: { 교육: ['이몽룡', '박기도'], 구매: ['성춘향'] } }] },
   };
   const { window, calls } = await boot(saved, { fetchImpl });
   const doc = window.document;
@@ -2868,6 +2876,13 @@ console.log('공문 탭 — 원본 첨부(2026-10-15 사용자 지정: "첨부�
     assert.match(li.textContent, /교육계획서\.docx · 참가신청서\.hwp$/);
     assert.match(doc.getElementById('gmStatus').textContent, /^뒤 탭에 공문을 썼습니다\(첨부까지\)/);
   });
+  t('결재선의 참조자는 R&D 과제의 YAML 에 교육으로 적힌 사람 — 합의자(박기도)는 빼고, 구매에 적힌 사람은 들지 않는다(2026-10-15 사용자 지정)', () => {
+    assert.deepEqual(tree, {
+      line: [{ name: '김거화', role: '결재' }, { name: '박기도', role: '합의' }, { name: '노길태', role: '결재' }],
+      refs: [{ name: '이몽룡', role: '참조' }],
+    });
+    assert.equal(doc.querySelector('#gmLine .gm-refs').textContent, '참조자이몽룡');
+  });
   Object.assign(window.chrome.tabs, { create: keep.create, update: keep.update });
   window.chrome.scripting.executeScript = keep.exec;
 }
@@ -2892,7 +2907,7 @@ console.log('공문 탭 — 메일 첨부 끌어 넣기(2026-10-15 사용자 지
   };
   const saved = {
     mode: 'gongmun', gongmunKind: 'edu', apiKey: 'sk-ant-test', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', about: '', content: 'MVDC 전력변환기 설계', account: '' }],
   };
   const { window } = await boot(saved, { fetchImpl });
@@ -4330,7 +4345,7 @@ console.log('공문 탭 — 구매·교육·출장의 비용을 R&D 과제의 �
   const at = Date.now() - 60_000;
   const { window } = await boot({
     mode: 'gongmun', gongmunKind: 'purchase', myName: '김거화',
-    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태', refs: [] },
+    gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
     rndBook: { projects: [
       { id: 'p1', name: A, alias: 'SSCB', code: 'RS-2026-0001', lead: '박기도', start, end, years: { 1: {
         budget: [{ id: 'r1', item: '연구활동비', plan: 43700000, used: 19712839, erpKey: 'R1|연구활동비' }],

@@ -5,12 +5,14 @@
 // - 스냅샷: 과제(과제명·과제번호·책임자·연구기간·차년도 끊는 기준)와 그 차년도의 예산(비목별, 천원 → 원), 연구개발 계획(목표·내용·성능목표·
 //   결과물·일정)과 참여연구자를 연구내역 두 줄로. 같은 차년도에 다시 넣으면(r1·r2 재생성본) 달라진 비목·계획·참여연구자를 변경이력에
 //   남긴다 — 처음 넣는 것은 기준선이라 남기지 않는다(손으로 적어 둔 계획이 있던 줄은 빼고). 사유는 파일 머리의 "변경분:" 주석.
+//   스냅샷의 `공문.참조자`(공문 종류 → 이름들 — 손으로 적는 블록)는 과제의 공문 참조자가 된다(2026-10-15 사용자 지정: 참조자는 과제 쪽 YAML 에
+//   공문 종류별로) — 블록이 있을 때만 통째로 바꾸고(비어 있으면 비운다), 없으면 과제의 것을 둔다. 변경이력에는 남기지 않는다(연구 변경이 아니다).
 // - 이력 파일: `project: SSCB   # 과제명` 줄의 값(과제 약어)이 별칭인 과제, 아니면 주석의 과제명으로 찾고, 없으면 보고 있는 과제에 넣는다.
 //   과제명으로 찾은 과제에 별칭이 없으면 그 약어를 별칭으로 붙인다. rev 마다 변경이력 한 줄.
 // 들여온 줄에는 key 가 붙어 같은 파일을 다시 넣어도 겹치지 않는다.
 
 import {
-  MAX_PROJECTS, isYmd, yearNo, amountOf, won, todayStr, newId, normalizeProject, projectChanges, yearBook, aliasOwner,
+  MAX_PROJECTS, isYmd, yearNo, amountOf, won, todayStr, newId, normalizeProject, normalizeRefs, projectChanges, yearBook, aliasOwner,
 } from './rnd.js';
 
 export const UNIT = Object.freeze({ 천원: 1000, 원: 1, 백만원: 1e6 });
@@ -209,8 +211,11 @@ export function readSnapshot(obj) {
   const main = str(cover.주관연구개발기관?.기관명 || m.주관연구개발기관);
   const note = [str(cover.중앙행정기관), biz, main ? `주관 ${main}` : ''].filter(Boolean).join(' · ');
   const mul = UNIT[str(obj?.예산?.단위)] ?? 1000;
+  // 공문 참조자 — 파일의 `공문.참조자`({ 구매: [이름, …], 교육: "이름, 이름", … }). 블록이 있을 때만 refs 를 돌려준다(applySnapshot 이 그때만 바꾼다).
+  const gm = obj?.공문 && typeof obj.공문 === 'object' && !Array.isArray(obj.공문) ? obj.공문 : null;
+  const refs = gm && Object.hasOwn(gm, '참조자') ? normalizeRefs(gm.참조자) : null;
   return {
-    project: { name, code, lead, start, end, calendar, note },
+    project: { name, code, lead, start, end, calendar, note, ...(refs ? { refs } : {}) },
     n, rev: str(m.rev), date: isYmd(str(m.협약일)) ? str(m.협약일) : '',
     budget: readBudget(obj?.예산, n, mul), plan: readPlan(obj?.연구개발내용, n), roster: readRoster(obj?.예산?.참여연구자인건비, n, mul),
   };
@@ -255,6 +260,7 @@ export function applySnapshot(book, snap, { today = todayStr(), header = { tag: 
   const reason = header.changed || (snap.rev ? `${snap.rev} 스냅샷 반영` : '스냅샷 반영');
   const report = { project: null, created: false, n: snap.n, rev: snap.rev, older: '', budget: 0, changes: [], logs: [] };
   let p = findProject(book, snap.project);
+  const refsBefore = JSON.stringify(p?.refs || {});
   const had = p?.years[snap.n]?.snapshot?.rev || '';
   if (p && revNo(snap.rev) >= 0 && revNo(snap.rev) < revNo(had)) {
     book.current.project = p.id;
@@ -269,6 +275,8 @@ export function applySnapshot(book, snap, { today = todayStr(), header = { tag: 
   } else {
     const draft = { ...p };
     for (const k of ['code', 'lead', 'note']) if (!draft[k] && snap.project[k]) draft[k] = snap.project[k];
+    // 공문 참조자는 파일에 블록이 있을 때만 — 그것이 정본이라 통째로(비어 있으면 비운다).
+    if (snap.project.refs) draft.refs = snap.project.refs;
     // 연구기간·차년도 끊는 기준은 계획서가 정본이다.
     if (snap.project.start) {
       draft.start = snap.project.start;
@@ -329,6 +337,10 @@ export function applySnapshot(book, snap, { today = todayStr(), header = { tag: 
       report.changes.push(c);
     }
   }
+
+  // 공문 참조자(공문.참조자 블록)가 달라졌으면 알린다 — 변경이력은 아니다(연구 변경이 아니라 공문 결재선의 일).
+  const refsAfter = JSON.stringify(p.refs || {});
+  if (refsAfter !== refsBefore) report.logs.push(`공문 참조자 ${refsBefore === '{}' ? '넣음' : refsAfter === '{}' ? '비움' : '고침'}`);
 
   y.snapshot = { rev: snap.rev, date: today, file, items: snap.budget.map((b) => b.item) };
   return report;

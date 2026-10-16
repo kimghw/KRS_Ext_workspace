@@ -113,8 +113,9 @@ export const SENT = Object.freeze([
     conversationId: 'CONV-SENT1', internetMessageId: '<SENT1@krs.co.kr>', hasAttachments: true,
     bodyPreview: '안녕하세요. 첨부 조사표를 작성해 10월 10일까지 회신 바랍니다.',
     body: { contentType: 'html', content: '<html><body><p>안녕하세요.</p><p>첨부 조사표를 작성해 10월 10일까지 회신 바랍니다.</p></body></html>' },
-    toRecipients: [ea('a@foo.com', '에이'), ea('B@Bar.co.kr', '비')],
-    ccRecipients: [ea('c@foo.com', '씨'), ea('d@krs.co.kr', '디')],
+    // 받을 곳은 To 에서만 선다(참조는 추적하지 않는다) — c@foo.com 은 참조라 foo.com 의 주소에 들지 않고, d@krs.co.kr 은 받는 사람이라 주소 키.
+    toRecipients: [ea('a@foo.com', '에이'), ea('B@Bar.co.kr', '비'), ea('d@krs.co.kr', '디')],
+    ccRecipients: [ea('c@foo.com', '씨')],
   }),
   message({
     id: IDS.sent2, subject: SUBJECT2, from: ME_RAW, parentFolderId: 'FOLDER-SENT',

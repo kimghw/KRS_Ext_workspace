@@ -7,7 +7,7 @@ import {
   BOOK_KEY, MAX_PROJECTS, MAX_YEARS, BUDGET_ITEMS, CHANGE_KINDS,
   periodOf, periodText, isYmd, amountOf, comma, won, shortWon,
   yearsOf, yearNo, currentYear, yearState, yearLabel,
-  blankYear, normalizeYear, normalizeProject, normalizeBook, viewYear, yearBook, aliasOwner, fileLog, noteLogs,
+  blankYear, normalizeYear, normalizeProject, normalizeRefs, refsText, normalizeBook, viewYear, yearBook, aliasOwner, fileLog, noteLogs,
   budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst,
   fromGongmun, mergeProjects, exportJson, exportName, importJson, restoreBook, summaryText, parseRoster, parseSections,
   budgetTsv, entryText, logLines, changeLine, changeLines,
@@ -182,7 +182,21 @@ t('normalizeProject — 날짜 칸이 비면 연구기간 글에서, 앞선 종�
   assert.equal(normalizeProject({ name: 'a', start: '2026-01-01', end: '2027-01-01', period: '2000.01.01 ~ 2001.01.01' }).start, '2026-01-01', '날짜 칸이 이긴다');
   assert.equal(normalizeProject({ name: 'a', start: '2027-01-01', end: '2026-01-01' }).end, '');
   assert.equal(normalizeProject({ name: 'a', end: '2026-01-01' }).end, '', '시작일 없이 종료일만은 버린다');
-  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', lead: '', start: '', end: '', note: '', calendar: false, years: {} });
+  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, years: {} });
+  assert.notEqual(normalizeProject(null).refs, normalizeProject(null).refs, '참조자 칸은 과제마다 새 객체');
+});
+t('공문 참조자(refs) — 공문 종류마다 이름들. 배열이나 쉼표·가운뎃점·줄바꿈 글, 같은 이름은 한 번, 빈 종류는 버림, 종류 열 개·이름 스무 명까지', () => {
+  assert.deepEqual(normalizeRefs({ 구매: ['이몽룡', ' 이몽룡 ', ''], 교육: '성춘향, 홍길동·이도령\n성춘향', 출장: [], 외부활동: '', ' ': ['x'], purchase: 7 }),
+    { 구매: ['이몽룡'], 교육: ['성춘향', '홍길동', '이도령'], purchase: ['7'] });
+  assert.deepEqual([normalizeRefs(null), normalizeRefs('이몽룡'), normalizeRefs(['이몽룡'])], [{}, {}, {}]);
+  const many = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`종류${i}`, ['a']]));
+  assert.equal(Object.keys(normalizeRefs(many)).length, 10);
+  assert.equal(normalizeRefs({ 구매: Array.from({ length: 25 }, (_, i) => `사람${i}`) }).구매.length, 20);
+  assert.equal(normalizeProject({ name: 'a', refs: { 구매: '이몽룡' } }).refs.구매[0], '이몽룡');
+  assert.deepEqual(normalizeProject({ name: 'a', refs: 'x' }).refs, {});
+  assert.equal(refsText({ 구매: ['홍길동', '이몽룡'], 교육: ['성춘향'] }), '구매 홍길동, 이몽룡 / 교육 성춘향');
+  assert.equal(refsText({}), '');
+  assert.equal(refsText(null), '');
 });
 t('normalizeBook — 이름 없는 과제는 버리고 열 개까지, current 는 있는 과제·차년도만', () => {
   const raw = {

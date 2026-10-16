@@ -1,8 +1,9 @@
-// 메일 탭(회신 추적)의 화면. 내가 보낸 메일을 골라 등록하면 받는 사람·참조자를 도메인(내 도메인은 주소)마다 "받을 곳" 으로 세우고,
-// 받은 메일에서 회신을 찾아 이어 N/M 으로 센다. 찾기·잇기·저장·병합은 sync(mailtrack/sync.js)가 하고 여기는 그것을 화면에 잇기만 한다.
+// 메일 탭(회신 추적)의 화면. 내가 보낸 메일을 골라 등록하면 받는 사람(To — 참조는 추적하지 않는다, 2026-10-15 사용자 지정)을 도메인(내 도메인은 주소)마다
+// "받을 곳" 으로 세우고, 받은 메일에서 회신을 찾아 이어 N/M 으로 센다. 찾기·잇기·저장·병합은 sync(mailtrack/sync.js)가 하고 여기는 그것을 화면에 잇기만 한다.
 //
 //   머리(연결 칩 · 새로고침 · 등록 + · 마지막 갱신 · 진행 중/완료) → 등록 대화(보낸 메일 고르기) → 목록(메일마다 N/M 배지와 받을 곳 칩)
-//   → 상세(받을 곳 표 · 보낸 메일 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
+//   → 상세(회신 현황 옆 추적 끝내기 · 받을 곳 표 · 보낸 메일 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
+//   목록 줄마다 오른쪽 아래 "지우기"(두 번 눌러 확인) — 2026-10-15 사용자 지정 "종료 기능이 없네" · "등록한 메일을 취소하는 기능이 안보임": 접힌 칸에 숨기지 않는다.
 // 회신 확인(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지"): 새로 이어진 회신은 "확인 필요" 로 서고 머리·목록에 그 수를 보인다. 수락하면 세고(받을 곳 완료),
 // 거부하면 세지 않아 받을 곳은 다시 기다림이 되며 병합 칸에서도 빠진다(잠긴 줄). 설정 requireAccept 를 켜면 회신이 와도 수락해야 센다.
 //
@@ -328,11 +329,14 @@ export function createMailPanel({
     const atts = (it.attachments || []).filter((a) => !a.isInline).length;
     const replies = (it.replies || []).length;
     const pending = pendingOf(it);
-    return `<li><button type="button" class="mt-item${s.done ? ' done' : ''}${it.closed ? ' closed' : ''}" data-id="${esc(it.id)}" title="${esc(it.subject || '')}">`
+    // 지우기 단추는 줄 단추의 형제(단추 안에 단추는 못 둔다) — 줄 오른쪽 아래에 겹쳐 놓고, 두 번 눌러 확인한다(removeItem).
+    return `<li class="mt-row"><button type="button" class="mt-item${s.done ? ' done' : ''}${it.closed ? ' closed' : ''}" data-id="${esc(it.id)}" title="${esc(it.subject || '')}">`
       + `<span class="mt-item-top"><span class="mt-subj">${esc(it.subject || '(제목 없음)')}</span>${badge}</span>`
       + `<span class="mt-item-meta">${it.closed ? '닫음 · ' : ''}${esc(fmtDay(it.sentAt))} 보냄 · 첨부 ${atts} · 회신 ${replies}${pending ? ` · <span class="mt-pending">확인 필요 ${pending}</span>` : ''}</span>`
       + (keys ? `<span class="mt-keys">${keys}</span>` : '')
-      + '</button></li>';
+      + '</button>'
+      + `<button type="button" class="small ghost mt-item-remove" data-id="${esc(it.id)}" aria-label="등록 지우기: ${esc(it.subject || '(제목 없음)')}" title="이 메일의 등록과 받아 둔 본문·첨부를 지웁니다(메일함은 그대로)">지우기</button>`
+      + '</li>';
   }
 
   function keyChip(e) {
@@ -380,7 +384,7 @@ export function createMailPanel({
       + '<dl class="mt-meta">'
       + `<dt>보낸 날</dt><dd>${esc(fmtTime(it.sentAt))}</dd>`
       + `<dt>받는 사람</dt><dd>${addrs(it.to) || '—'}</dd>`
-      + (it.cc?.length ? `<dt>참조</dt><dd>${addrs(it.cc)}</dd>` : '')
+      + (it.cc?.length ? `<dt>참조</dt><dd>${addrs(it.cc)} <span class="mt-cc-note" title="참조는 받을 곳이 아닙니다 — 받는 사람의 회신만 셉니다">(세지 않음)</span></dd>` : '')
       + '</dl>'
       + (web ? `<button type="button" class="small ghost mt-web" data-act="web" data-url="${esc(web)}">Outlook에서 열기${icon('external')}</button>` : '');
     el.status.textContent = `${s.responded}/${s.expected} · ${s.done ? '완료' : '진행 중'}${s.excluded ? ` · 제외 ${s.excluded}` : ''}${it.closed ? ' · 닫음' : ''}`;
@@ -420,7 +424,7 @@ export function createMailPanel({
     });
     el.expect.innerHTML = rows.length
       ? `<thead><tr><th scope="col">받을 곳</th><th scope="col">주소</th><th scope="col">상태</th><th scope="col"><span class="sr-only">바꾸기</span></th></tr></thead><tbody>${rows.join('')}</tbody>`
-      : '<tbody><tr><td class="hint">받을 곳이 없습니다 — 받는 사람·참조가 나뿐인 메일입니다</td></tr></tbody>';
+      : '<tbody><tr><td class="hint">받을 곳이 없습니다 — 받는 사람이 나뿐인 메일입니다(참조는 세지 않습니다)</td></tr></tbody>';
   }
 
   /** 금고에서 읽은 본문 하나를 글자로(HTML 은 태그를 뗀다). 아직 못 읽었으면 null. */
@@ -847,14 +851,17 @@ export function createMailPanel({
     }));
   }
 
-  /** 본문(글자)·첨부를 메일마다 폴더로 묶은 zip — 보낸 메일은 00, 회신은 받은 차례로 01·02 …, 맨 위에 요약.txt. */
+  /**
+   * 본문(글자)·첨부를 메일마다 폴더로 묶은 zip — 보낸 메일은 00, 회신은 받은 차례로 01·02 …, 맨 위에 요약.txt 와 메일ID.json
+   * (메일 ID·첨부 ID — 서버에서 본문·첨부를 다시 받을 때 쓴다. 2026-10-15 사용자 지정 "내용이나 첨부 파일 다운받을 수 있는 id도 같이 다운받게").
+   */
   async function allZip() {
     const it = itemOf(st.itemId);
     if (!it) return;
     el.allZip.disabled = true;
     try {
       const [bodies, files] = await Promise.all([bodiesOf(it.id), filesOf(it.id)]);
-      const entries = zipEntries(it, bodies, files);
+      const entries = zipEntries(it, bodies, files, { mcpUrl: settingsOf().mcpUrl, at: now() });
       const bytes = buildZip(entries, { date: new Date(now()) });
       const name = `${safeBase(it.subject)}_메일_${ymd(now())}.zip`;
       await save({ name, bytes, mime: MIME_ZIP });
@@ -869,11 +876,11 @@ export function createMailPanel({
     }
   }
 
-  async function removeItem() {
-    const it = itemOf(st.itemId);
+  /** 등록 지우기 — 상세의 단추(기본)나 목록 줄의 지우기 단추(it·btn 을 받는다). 어느 쪽이든 두 번 눌러 확인한다. */
+  async function removeItem(it = itemOf(st.itemId), btn = el.remove) {
     if (!it) return;
-    if (!confirmTwice(el.remove, '한 번 더 누르면 지웁니다')) return;
-    el.remove.disabled = true;
+    if (!confirmTwice(btn, '한 번 더 누르면 지웁니다')) return;
+    btn.disabled = true;
     try {
       const ret = await sync.remove(it.id);
       absorb(ret);
@@ -888,7 +895,7 @@ export function createMailPanel({
     } catch (e) {
       fail('등록 지우기', e);
     } finally {
-      el.remove.disabled = false;
+      btn.disabled = false;
     }
   }
 
@@ -1155,6 +1162,8 @@ export function createMailPanel({
     el.regCancel.addEventListener('click', closeReg);
     el.reg.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeReg(); });
     el.list.addEventListener('click', (e) => {
+      const r = closest(e, '.mt-item-remove[data-id]');
+      if (r) return removeItem(itemOf(r.dataset.id), r);
       const b = closest(e, '.mt-item[data-id]');
       if (b) openDetail(b.dataset.id);
     });
@@ -1192,7 +1201,7 @@ export function createMailPanel({
       const on = !it.closed;
       act(el.close, on ? '추적 끝내기' : '다시 추적', () => sync.close(it.id, on), on ? '추적을 끝냈습니다 — 새로고침에서 이 메일의 회신은 찾지 않습니다' : '다시 추적합니다');
     });
-    el.remove.addEventListener('click', removeItem);
+    el.remove.addEventListener('click', () => removeItem());
     el.url.addEventListener('change', onUrlChange);
     el.userEmail.addEventListener('change', onUserEmailChange);
     el.sentDays.addEventListener('change', () => {
@@ -1304,7 +1313,7 @@ const TEMPLATE = `
   <div class="mt-overview card">
     <div id="mtHeader" class="mt-header"></div>
     <div class="mt-progress-area">
-      <div class="mt-progress-head"><span class="mt-progress-label">회신 현황</span><p id="mtStatus" class="mt-status"></p></div>
+      <div class="mt-progress-head"><span class="mt-progress-label">회신 현황</span><div class="mt-progress-tools"><p id="mtStatus" class="mt-status"></p><button type="button" id="mtClose" class="small ghost mt-close hidden" title="추적을 끝낸 메일은 새로고침에서 회신을 찾지 않습니다(기록은 남고, 다시 추적으로 되돌립니다)">추적 끝내기</button></div></div>
       <progress id="mtProgress" class="mt-progress" value="0" max="1" aria-label="수신처 회신 진행률"></progress>
     </div>
   </div>
@@ -1337,13 +1346,10 @@ const TEMPLATE = `
   </section>
   <div class="mt-foot card">
     <button type="button" id="mtAllZip" class="small mt-export" title="보낸 메일·회신의 본문(글자)과 첨부를 메일마다 폴더로 묶어 내려받습니다">${icon('download')}<span class="mt-button-label">본문·첨부 모두 받기</span><span class="mt-zip-label">ZIP</span></button>
-    <details class="mt-manage">
-      <summary>추적 관리</summary>
-      <div class="mt-manage-actions">
-        <button type="button" id="mtClose" class="small ghost hidden" title="닫은 메일은 새로고침에서 회신을 찾지 않습니다(기록은 남습니다)">추적 끝내기</button>
-        <button type="button" id="mtRemove" class="small ghost mt-remove" title="이 메일의 등록과 확장에 받아 둔 본문·첨부를 지웁니다(메일함은 그대로)">등록 지우기</button>
-      </div>
-    </details>
+    <div class="mt-manage-actions">
+      <span class="mt-manage-hint">등록과 받아 둔 본문·첨부만 지웁니다 — 메일함은 그대로</span>
+      <button type="button" id="mtRemove" class="small ghost mt-remove" title="이 메일의 등록과 확장에 받아 둔 본문·첨부를 지웁니다(메일함은 그대로)">등록 지우기</button>
+    </div>
   </div>
 </div>
 <details id="mtSettings" class="mt-settings card">
@@ -1529,8 +1535,16 @@ export function safeName(name, fallback = '파일') {
 }
 const safeBase = (subject) => safeName(subject, '메일').slice(0, 60).trim() || '메일';
 
-/** zip 에 넣을 항목들 — 본문은 글자(본문.txt — 메일의 HTML 을 그대로 내려 두지 않는다), 첨부는 바이트 그대로. 같은 이름은 (2)·(3) 을 붙인다. */
-function zipEntries(it, bodies, files) {
+/** zip 맨 위의 ID 목록 파일 이름 — 메일 ID(message_id)·첨부 ID(attachment_id)로 서버에서 본문·첨부를 다시 받을 수 있게. */
+export const IDS_FILE = '메일ID.json';
+/** 금고 키와 같은 잇는 글자(store/vault.js 의 SEP — import 하지 않는다). */
+const SEP = '\u0001';
+
+/**
+ * zip 에 넣을 항목들 — 맨 위에 요약.txt 와 메일ID.json(보낸 메일·회신마다 메일 ID·대화 ID·첨부 ID 와 zip 안의 경로 — 서버에서 다시 받을 때 그대로 넣는 값),
+ * 본문은 글자(본문.txt — 머리에 메일 ID 와 첨부 ID, 메일의 HTML 을 그대로 내려 두지 않는다), 첨부는 바이트 그대로. 같은 이름은 (2)·(3) 을 붙인다.
+ */
+function zipEntries(it, bodies, files, { mcpUrl = MCP_URL_DEFAULT, at = Date.now() } = {}) {
   const folders = new Map([[it.id, '00_보낸 메일']]);
   const replies = [...(it.replies || [])].sort((a, b) => String(a.receivedAt || '').localeCompare(String(b.receivedAt || '')));
   replies.forEach((r, i) => {
@@ -1545,18 +1559,64 @@ function zipEntries(it, bodies, files) {
     return p;
   };
   const dirOf = (messageId) => folders.get(messageId) || `기타_${safeName(messageId, 'mail').slice(-12)}`;
-  const entries = [{ name: uniq('요약.txt'), data: summaryText(it) }];
+  // 메일의 첨부 목록(장부) — 본문.txt 머리와 메일ID.json 에 첨부 ID 를 적는다. 본문 속 그림은 첨부가 아니다.
+  const attsOf = (messageId) => ((messageId === it.id ? it.attachments : replies.find((r) => r.id === messageId)?.attachments) || []).filter((a) => a && a.id && !a.isInline);
+  const summaryName = uniq('요약.txt');
+  const idsName = uniq(IDS_FILE);
+  const bodyPath = new Map(); // 메일 id → zip 안 본문 경로
+  const filePath = new Map(); // 메일 id + 첨부 id → zip 안 첨부 경로
+  const entries = [];
   for (const b of bodies) {
     const content = String(b.content ?? '');
     const text = /html/i.test(String(b.contentType || '')) ? htmlToText(content) : content;
-    const head = [`제목: ${b.subject || ''}`, `보낸 사람: ${b.from?.name || ''} <${b.from?.address || ''}>`, `날짜: ${fmtTime(b.receivedAt)}`].join('\n');
-    entries.push({ name: uniq(`${dirOf(b.messageId)}/본문.txt`), data: `${head}\n\n${text}\n` });
+    const atts = attsOf(b.messageId);
+    const head = [
+      `제목: ${b.subject || ''}`, `보낸 사람: ${b.from?.name || ''} <${b.from?.address || ''}>`, `날짜: ${fmtTime(b.receivedAt)}`, `메일 ID: ${b.messageId || ''}`,
+      ...(atts.length ? ['첨부:', ...atts.map((a) => `- ${a.name || '(이름 없음)'} · 첨부 ID: ${a.id}`)] : []),
+    ].join('\n');
+    const name = uniq(`${dirOf(b.messageId)}/본문.txt`);
+    if (b.messageId && !bodyPath.has(b.messageId)) bodyPath.set(b.messageId, name);
+    entries.push({ name, data: `${head}\n\n${text}\n` });
   }
   for (const f of files) {
     const bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes || []);
-    entries.push({ name: uniq(`${dirOf(f.messageId)}/${safeName(f.name)}`), data: bytes });
+    const name = uniq(`${dirOf(f.messageId)}/${safeName(f.name)}`);
+    if (f.messageId && f.attachmentId) filePath.set(`${f.messageId}${SEP}${f.attachmentId}`, name);
+    entries.push({ name, data: bytes });
   }
-  return entries;
+  const ids = idsOf(it, replies, { mcpUrl, at, folders, bodyPath, filePath, attsOf });
+  return [{ name: summaryName, data: summaryText(it) }, { name: idsName, data: `${JSON.stringify(ids, null, 2)}\n` }, ...entries];
+}
+
+/**
+ * 메일ID.json 의 내용 — 보낸 메일(sent)과 회신(replies)마다 messageId(= MCP 의 message_id)·conversationId 와 첨부마다 attachmentId(= attachment_id).
+ * file 은 zip 안의 경로(없으면 null — 서버가 주지 않은 큰 첨부(missing)·파일이 아닌 첨부는 ID 로 다시 받는다), body 는 본문.txt 의 경로. howTo 는 다시 받을 때 부를 도구.
+ */
+function idsOf(it, replies, { mcpUrl, at, folders, bodyPath, filePath, attsOf }) {
+  const attList = (messageId) => attsOf(messageId).map((a) => ({
+    attachmentId: a.id, name: a.name || '', size: Number.isFinite(+a.size) ? +a.size : null, contentType: a.contentType || '',
+    file: filePath.get(`${messageId}${SEP}${a.id}`) || null,
+    ...(a.missing ? { missing: true } : {}), ...(a.serverPath ? { serverPath: a.serverPath } : {}),
+  }));
+  const mail = (messageId, m, extra) => ({
+    messageId, conversationId: m.conversationId || '', ...extra, webLink: m.webLink || '',
+    folder: folders.get(messageId) || '', body: bodyPath.get(messageId) || null, attachments: attList(messageId),
+  });
+  return {
+    v: 1,
+    madeAt: new Date(at).toISOString(),
+    note: '메일 ID(message_id)·첨부 ID(attachment_id)는 Outlook MCP 서버(mcpUrl)에서 본문·첨부를 다시 받을 때 그대로 넣는 값입니다. file 이 null 인 첨부는 이 zip 에 없습니다 — ID 로 받으세요.',
+    mcpUrl: mcpUrl || MCP_URL_DEFAULT,
+    howTo: {
+      body: 'mail_query_if_emaidID { message_ids: [messageId] }',
+      attachmentList: 'mail_attachment_meta { message_ids: [messageId] }',
+      attachment: 'mail_attachment_download [{ message_id: messageId, attachment_id: attachmentId }] (save_file:true 면 서버 PC 에 저장, file_path 를 돌려줌)',
+    },
+    sent: mail(it.id, it, { internetMessageId: it.internetMessageId || '', subject: it.subject || '', from: it.from?.address || '', sentAt: it.sentAt || '' }),
+    replies: replies.map((r) => mail(r.id, r, {
+      subject: r.subject || '', from: r.from?.address || '', receivedAt: r.receivedAt || '', key: r.key || null, kind: r.kind || 'reply', review: reviewOf(r), counted: r.counted === true,
+    })),
+  };
 }
 
 function summaryText(it) {
@@ -1564,6 +1624,7 @@ function summaryText(it) {
   const addr = (a) => (a.name && a.name !== a.address ? `${a.name} <${a.address}>` : a.address || '');
   const lines = [
     `제목: ${it.subject || ''}`,
+    `메일 ID: ${it.id || ''}`,
     `보낸 날: ${fmtTime(it.sentAt)}`,
     `받는 사람: ${(it.to || []).map(addr).join(', ')}`,
     ...(it.cc?.length ? [`참조: ${it.cc.map(addr).join(', ')}`] : []),
@@ -1573,7 +1634,9 @@ function summaryText(it) {
     ...(it.expect || []).map((e) => `- ${e.label || e.key} · ${STATE_TEXT[stateOf(e)]}${e.by ? ` · ${e.by}` : ''}${e.doneAt ? ` · ${fmtDay(e.doneAt)}` : ''} (${(e.addresses || []).join(', ')})`),
     '',
     '[회신]',
-    ...(it.replies || []).map((r) => `- ${fmtTime(r.receivedAt)} · ${r.from?.address || ''} · ${r.kind} · ${REVIEW_TEXT[reviewOf(r)]}${r.counted ? ' · 셈' : ''} · ${r.subject || ''}`),
+    ...(it.replies || []).map((r) => `- ${fmtTime(r.receivedAt)} · ${r.from?.address || ''} · ${r.kind} · ${REVIEW_TEXT[reviewOf(r)]}${r.counted ? ' · 셈' : ''} · ${r.subject || ''} · 메일 ID: ${r.id}`),
+    '',
+    `(메일 ID·첨부 ID 는 ${IDS_FILE} 과 각 본문.txt 머리에 — 서버에서 본문·첨부를 다시 받을 때 씁니다)`,
   ];
   return `${lines.join('\n')}\n`;
 }

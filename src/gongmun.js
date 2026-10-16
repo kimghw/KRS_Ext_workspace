@@ -162,13 +162,16 @@ export function namesOf(value) {
 }
 
 /**
- * 공문 설정 — 부서(본문 첫 줄), 부서장(결재 — 위임전결의 팀장), 참조자, 소장·본부장(전결권자가 그 위일 때 결재선에 선다), 문서번호 부서
+ * 공문 설정 — 부서(본문 첫 줄), 부서장(결재 — 위임전결의 팀장), 소장·본부장(전결권자가 그 위일 때 결재선에 선다), 문서번호 부서
  * (문서설정의 Doc No. 코드 — 비면 레시피 settings.yaml 의 teams 표에서 부서 이름으로 찾는다). 실명은 공개 저장소(레시피)에 두지 않고 여기에만 둔다.
+ * 부서장·소장·본부장은 어느 공문이든 같은 사람이라 전역이다. 참조자는 여기 없다(2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이
+ * 다르므로 전역 설정에 둘 수 없다") — 과제의 YAML 에 공문 종류별로 적고(src/rnd.js 의 refs) 결재선이 그 과제·그 갈래의 것을 읽는다(projectRefs).
+ * 예전 저장분의 refs 는 버린다.
  */
 export function normalizePreset(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   return {
-    dept: text(r.dept, 100).trim(), head: text(r.head, 40).trim(), refs: namesOf(r.refs),
+    dept: text(r.dept, 100).trim(), head: text(r.head, 40).trim(),
     director: text(r.director, 40).trim(), chief: text(r.chief, 40).trim(), docNo: text(r.docNo, 8).replace(/\D/g, ''),
   };
 }
@@ -236,6 +239,7 @@ export function rndContent(project, today = '') {
  * 별칭(제목)·과제번호·책임자(합의자)·연구기간(과제 개요)은 그 과제의 것이고, 과제 내용은 연구 내용(rndContent)이다. 개요·계정은 공문 설정에서
  * 그 과제 몫으로 적은 것(extra — normalizeRndExtra)이고, 적은 적이 없으면 공문 설정의 같은 과제(sameProject) 줄의 것이다. R&D 쪽에 비어 있는
  * 별칭·번호·책임자·연구기간·내용도 그 줄에서 채운다. rnd 는 화면이 보여 줄 근거의 형편(과제 id·올해 차년도·계획을 가져온 차년도·진행 기록 수)이다.
+ * refs 는 그 과제의 공문 참조자({ 공문 종류: 이름[] } — 계획서 YAML 의 공문.참조자, src/rnd.js)다. 공문 설정의 과제 줄에는 없다 — YAML 에만 적는다(2026-10-15).
  * @param {{projects?: object[]}} book src/rnd.js 의 normalizeBook 을 지난 장부
  * @param {object[]} [preset] 공문 공문 설정의 과제(gongmunProjects)
  * @param {object} [extra] R&D 과제마다 공문에만 쓰는 값(gongmunRndExtra)
@@ -251,6 +255,7 @@ export function rndProjects(book, preset = [], today = '', extra = {}) {
       name: p.name, alias: p.alias || same?.alias || '', code: p.code || same?.code || '', lead: p.lead || same?.lead || '',
       period: periodText(p) || same?.period || '', about: own ? own.about : same?.about || '', content: got.text || same?.content || '',
       account: own ? own.account : same?.account || '',
+      refs: p.refs && typeof p.refs === 'object' ? p.refs : {},
       rnd: { id: p.id, year: got.year, plan: got.plan, logs: got.logs },
     };
   });
@@ -660,14 +665,16 @@ const personOf = (s) => String(s ?? '').trim().replace(TITLE_RE, '').replace(TIT
 
 /**
  * 붙여 넣은 글에서 공문 설정 조각을 규칙으로 읽는다 — Claude 가 닿지 않을 때(레시피 registries/setup.yaml 의 gongmunSetup 과 같은 모양).
- * 읽는 꼴: 표를 복사한 줄(탭·| 로 나뉜 과제명·과제번호·책임자), "과제: …, 책임자 ○○○", "부서장 ○○○", "참조 ○○○, ○○○", "부서 …",
+ * 읽는 꼴: 표를 복사한 줄(탭·| 로 나뉜 과제명·과제번호·책임자), "과제: …, 책임자 ○○○", "부서장 ○○○", "부서 …",
  * 그리고 과제 줄 뒤의 "내용: …"(연구목표·연구내용 — 사유를 만드는 근거)·"개요: …"(본문 첫 줄). 과제로 볼 근거(번호·책임자·"과제" 표시·
- * 표의 여러 칸)가 없는 글은 과제로 받지 않는다 — 인사말이 과제가 되면 안 된다.
+ * 표의 여러 칸)가 없는 글은 과제로 받지 않는다 — 인사말이 과제가 되면 안 된다. "참조 ○○○" 줄은 받지 않고 넘긴다(참조자는 과제 YAML 의 공문.참조자 —
+ * 2026-10-15) — 답에 그렇다고 적는다.
  * @returns {{patch: object, reply: string}}
  */
 export function parseSetupLocal(text) {
   const patch = {};
   const projects = [];
+  let refsSeen = false;
   for (const raw of String(text ?? '').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
@@ -685,8 +692,8 @@ export function parseSetupLocal(text) {
     }
     m = line.match(/^(?:부서장|팀장|결재자?)\s*[:：=]?\s*(.+)$/);
     if (m) { patch.head = personOf(m[1].split(/[,，]/)[0]); continue; }
-    m = line.match(/^참조자?\s*[:：=]?\s*(.+)$/);
-    if (m) { patch.refs = namesOf(m[1]).map(personOf).filter(Boolean).join(', '); continue; }
+    // 참조자는 여기서 받지 않는다 — 과제 YAML 의 공문.참조자(2026-10-15). 줄은 넘기고(과제 줄로 잘못 읽히지 않게) 답에 말한다.
+    if (/^참조자?\s*[:：=]?\s*\S/.test(line)) { refsSeen = true; continue; }
     m = line.match(/^(?:기안\s*)?부서\s*[:：=]?\s*(.+)$/);
     if (m) { patch.dept = m[1].trim(); continue; }
     const cells = line.split(/\t|\s*[|│]\s*|\s{2,}|\s*[,，;]\s*/).map((c) => c.trim()).filter(Boolean);
@@ -714,10 +721,11 @@ export function parseSetupLocal(text) {
   const bits = [
     projects.length ? `과제 ${Math.min(projects.length, MAX_PROJECTS)}개${leads ? '와 합의자' : ''}` : '',
     patch.lead ? '합의자' : '', patch.alias ? '과제 별명' : '', patch.period ? '연구기간' : '',
-    patch.head ? '부서장' : '', patch.refs ? '참조자' : '', patch.dept ? '부서' : '',
+    patch.head ? '부서장' : '', patch.dept ? '부서' : '',
   ].filter(Boolean);
   const over = projects.length > MAX_PROJECTS ? ` 과제는 ${MAX_PROJECTS}개까지라 나머지 ${projects.length - MAX_PROJECTS}개는 뺐습니다.` : '';
-  return { patch, reply: bits.length ? `${bits.join(' · ')}를 채웠습니다.${over}` : '' };
+  const refsNote = refsSeen ? '참조자는 공문 설정이 아니라 과제 YAML(공문.참조자)에 공문 종류별로 적습니다 — 넘겼습니다.' : '';
+  return { patch, reply: bits.length ? `${bits.join(' · ')}를 채웠습니다.${over}${refsNote ? ` ${refsNote}` : ''}` : refsNote };
 }
 
 const keyOf = (s) => String(s ?? '').replace(/\s/g, '').toLowerCase();
@@ -728,7 +736,7 @@ const CURRENT_KEYS = [['lead', '합의자'], ['alias', '과제 별명'], ['perio
 
 /**
  * 채팅으로 받은 조각(레시피 registries/setup.yaml 의 gongmunSetup)을 공문 설정에 얹는다. 과제는 이름이나 번호가 같은 것을 고치고, 없으면 빈 줄에
- * 넣거나 더한다(MAX_PROJECTS 개까지 — 넘치는 것은 skipped). 조각에 없는 칸은 그대로 둔다. 참조자는 조각의 목록으로 바꾼다.
+ * 넣거나 더한다(MAX_PROJECTS 개까지 — 넘치는 것은 skipped). 조각에 없는 칸은 그대로 둔다. 조각의 refs 는 받지 않는다(참조자는 과제 YAML — 2026-10-15).
  * 과제 없이 사람만 왔으면(patch.lead) 지금 고른 과제(current)의 합의자로 넣는다 — 고른 과제가 없으면 skipped 에 적는다.
  * @param {object[]} rows 공문 설정 칸의 과제 줄(이름을 아직 적지 않은 줄도 있다)
  * @param {{current?: string}} [opts] current 는 초안에서 고른 과제의 이름
@@ -765,7 +773,7 @@ export function mergeSetup(rows, preset, patch = {}, { current = '' } = {}) {
   }
   if (String(patch?.dept ?? '').trim()) { next.dept = String(patch.dept).trim(); done.push(`부서 ${next.dept}`); }
   if (String(patch?.head ?? '').trim()) { next.head = personOf(patch.head); done.push(`부서장(결재자) ${next.head}`); }
-  if (patch?.refs != null && String(patch.refs).trim()) { next.refs = namesOf(patch.refs).map(personOf).filter(Boolean); done.push(`참조자 ${next.refs.join(', ')}`); }
+  if (patch?.refs != null && String(patch.refs).trim()) skipped.push('참조자(공문 설정이 아니라 과제 YAML 의 공문.참조자에 공문 종류별로 적습니다)');
   return { rows: out, preset: normalizePreset(next), done, skipped };
 }
 
@@ -781,6 +789,7 @@ const same = (a, b) => !!a && !!b && String(a).replace(/\s/g, '') === String(b).
  *
  * 결재는 부서장(팀장)부터 위임전결의 전결권자까지 아래에서 위로 선다 — 마지막 결재자가 전결이다(delegationOf, 2026-10-08 사용자 지정
  * "위임전결도 같이 입력"). 갈래(kind)를 주지 않으면 부서장 전결이다. 공문 설정에 이름이 없는 직책은 missing 에 남는다 — 화면이 채우라고 보인다.
+ * 참조자는 고른 과제의 이 갈래에 적힌 사람(projectRefs — 과제 YAML 의 공문.참조자)이다. 결재선에 이미 선 사람은 참조에서 뺀다.
  * @param {{kind?: string, draft?: object, rank?: string}} [opts] rank 는 이 공문에서 고른 전결권자(비면 규정대로)
  * @returns {{steps: {role:string, name:string, why?:string}[], refs: string[], notes: string[], missing: string[], delegation: object|null}}
  */
@@ -788,8 +797,9 @@ export function approvalLine({ me = '', preset = {}, project = null, kind = '', 
   const p = normalizePreset(preset);
   const notes = [];
   const steps = [{ role: '기안', name: me || '나' }];
-  // 과제를 고르지 않는 갈래(외부강의등 신고서)는 합의가 없다 — 담당 → 팀장(지난 신고서의 결재선).
-  const lead = KINDS[kind]?.project === false ? '' : String(project?.lead || '').trim();
+  // 과제를 고르지 않는 갈래(외부강의등 신고서)는 합의가 없다 — 담당 → 팀장(지난 신고서의 결재선). 과제의 참조자도 없다.
+  const picks = KINDS[kind]?.project !== false;
+  const lead = picks ? String(project?.lead || '').trim() : '';
   if (lead && same(lead, me)) notes.push('과제책임자가 기안자라 합의는 뺐습니다');
   else if (lead) {
     steps.push({ role: '합의', name: lead, why: '과제책임자' });
@@ -802,7 +812,21 @@ export function approvalLine({ me = '', preset = {}, project = null, kind = '', 
     if (name) steps.push({ role: '결재', name, why: RANK_WHY[r] || r });
     else missing.push(r);
   }
-  return { steps, refs: p.refs.filter((n) => !steps.some((s) => same(s.name, n))), notes, missing, delegation };
+  const refs = picks ? projectRefs(project, kind) : [];
+  return { steps, refs: refs.filter((n) => !steps.some((s) => same(s.name, n))), notes, missing, delegation };
+}
+
+/**
+ * 이 과제의 이 갈래에 적힌 참조자 — 과제의 refs({ 공문 종류: 이름[] }, 연구개발계획서 YAML 의 공문.참조자 — src/rnd.js 의 normalizeRefs)에서 갈래의
+ * 키(purchase)·이름(구매)·제목(구매품의)으로 찾는다(공백·대소문자는 보지 않는다). 적혀 있지 않으면 빈 목록 — 참조 없이 쓴다(2026-10-15 사용자 지정:
+ * "어떤 과제의 어떤 공문에 누구를 참조할지" YAML 에 명시적으로 적고, 적혀 있지 않으면 비운다).
+ */
+export function projectRefs(project, kind = '') {
+  const map = project?.refs && typeof project.refs === 'object' ? project.refs : {};
+  const keys = [kind, KINDS[kind]?.label, KINDS[kind]?.title].filter(Boolean).map(keyOf);
+  if (!keys.length) return [];
+  const hit = Object.entries(map).find(([k]) => keys.includes(keyOf(k)));
+  return hit ? namesOf(hit[1]) : [];
 }
 
 /* ------------------------------------------------------------ 위임전결 */

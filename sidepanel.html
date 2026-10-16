@@ -334,8 +334,7 @@
             <div><label for="gmDirector" class="gm-label">소장 <small>소장 전결일 때</small></label><input type="text" id="gmDirector" placeholder="예) 송강현" autocomplete="off" /></div>
             <div><label for="gmChief" class="gm-label">본부장 <small>본부장 전결일 때</small></label><input type="text" id="gmChief" placeholder="예) 김대헌" autocomplete="off" /></div>
           </div>
-          <label for="gmRefs" class="gm-label">참조자</label>
-          <input type="text" id="gmRefs" placeholder="예) 홍길동, 이몽룡" autocomplete="off" />
+          <!-- 참조자 칸은 없다 — 공문마다·과제마다 달라 과제의 계획서 YAML(공문.참조자)에 공문 종류별로 적는다(2026-10-15 사용자 지정). R&D 과제 줄에 보이기만 한다. -->
           <div class="gm-proj-head"><span class="gm-label">과제 <span id="gmProjCount" class="count"></span></span><button type="button" id="gmProjAdd" class="ghost small">과제 더하기</button></div>
           <ul id="gmProjList" class="gm-proj-list"></ul>
         </div>

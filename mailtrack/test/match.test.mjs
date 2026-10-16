@@ -14,9 +14,9 @@ const MIN = 60 * 1000;
 const at = (base, deltaMin = 0) => new Date(Date.parse(base) + deltaMin * MIN).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 const SENT1 = '2026-10-10T01:00:00Z';
-/** 보낸 메일 하나 → 장부 항목(To: foo.com 둘·lee@krs.co.kr, CC: bar.org). */
+/** 보낸 메일 하나 → 장부 항목(To: foo.com 둘·lee@krs.co.kr·bar.org, CC: cc.example — 참조는 받을 곳이 아니다). */
 const mkItem = (id = 'sent-1', extra = {}) => newItem({
-  id, subject: '실적 자료 요청', from: A(ME, '나'), to: [A('kim@foo.com', '김'), A('choi@foo.com'), A('lee@krs.co.kr', '이')], cc: [A('park@bar.org')],
+  id, subject: '실적 자료 요청', from: A(ME, '나'), to: [A('kim@foo.com', '김'), A('choi@foo.com'), A('lee@krs.co.kr', '이'), A('park@bar.org')], cc: [A('cho@cc.example')],
   sentAt: SENT1, conversationId: 'conv-' + id, internetMessageId: `<${id}@krs.co.kr>`, ...extra,
 }, null, { me: ME, now: 0 });
 /** 받은 메일(MailHead 꼴). */
@@ -66,6 +66,7 @@ t('keyOf — 도메인 키(하위 도메인 포함), 주소 키, 대리 발송(s
   assert.equal(keyOf(mail('a', 'x@notfoo.com'), it), null, '끝만 같은 다른 도메인은 아니다');
   assert.equal(keyOf(mail('a', 'Lee@KRS.co.kr'), it), 'addr:lee@krs.co.kr');
   assert.equal(keyOf(mail('a', 'jung@krs.co.kr'), it), null, '받는 사람에 없던 같은 회사 사람은 대상 아님');
+  assert.equal(keyOf(mail('a', 'cho@cc.example'), it), null, '참조(CC)로만 받은 사람도 대상 아님 — 받을 곳은 To 에서만(2026-10-15 "참조는 추적을 하지 않아")');
   assert.equal(keyOf(mail('a', 'assistant@other.com', { sender: A('assistant@other.com'), from: A('park@bar.org') }), it), 'bar.org');
   assert.equal(keyOf(mail('a', 'x@other.com', { sender: A('park@bar.org') }), it), 'bar.org', 'from 으로 못 찾으면 sender');
   assert.equal(keyOf(mail('a', 'kim@foo.com'), { expect: [] }), null);
@@ -112,6 +113,7 @@ t('matchAll — 갈래: 사람의 답(점수 ≥ 2)은 세고, 키 없는 답은
   const mails = [
     mail('r-kim', A('kim@foo.com', '김'), { conversationId: 'conv-sent-1', hasAttachments: true }),
     mail('r-out', 'jung@krs.co.kr', { conversationId: 'conv-sent-1' }),
+    mail('r-cc', 'cho@cc.example', { conversationId: 'conv-sent-1' }),
     mail('r-cand', 'park@bar.org', { subject: '실적 자료 요청 건 질문' }),
     mail('r-auto', 'lee@krs.co.kr', { subject: '자동 회신: 실적 자료 요청', conversationId: 'conv-sent-1' }),
     mail('r-ndr', 'postmaster@foo.com', { subject: 'Undeliverable: 실적 자료 요청', conversationId: 'conv-sent-1' }),
@@ -120,7 +122,7 @@ t('matchAll — 갈래: 사람의 답(점수 ≥ 2)은 세고, 키 없는 답은
   ];
   const { linked, unmatched } = matchAll(mails, [it], { me: ME });
   const by = Object.fromEntries(linked.map((l) => [l.reply.id, l]));
-  assert.deepEqual(Object.keys(by), ['r-kim', 'r-out', 'r-cand', 'r-auto', 'r-ndr']);
+  assert.deepEqual(Object.keys(by), ['r-kim', 'r-out', 'r-cc', 'r-cand', 'r-auto', 'r-ndr']);
   assert.equal(unmatched, 1, '점수 0 하나(내 메일은 세지 않는다)');
   assert.ok(linked.every((l) => l.itemId === 'sent-1'));
   assert.deepEqual(by['r-kim'].reply, {
@@ -129,6 +131,7 @@ t('matchAll — 갈래: 사람의 답(점수 ≥ 2)은 세고, 키 없는 답은
   });
   const k = (id) => [by[id].reply.kind, by[id].reply.key, by[id].reply.counted, by[id].reply.score];
   assert.deepEqual(k('r-out'), ['reply', null, false, 3], '대상 아님');
+  assert.deepEqual(k('r-cc'), ['reply', null, false, 3], '참조자의 답은 같은 대화라도 대상 아님 — 저장은 하되 세지 않는다');
   assert.deepEqual(k('r-cand'), ['candidate', 'bar.org', false, 1]);
   assert.deepEqual(k('r-auto'), ['auto', 'addr:lee@krs.co.kr', false, 3]);
   assert.deepEqual(k('r-ndr'), ['ndr', 'foo.com', false, 3], '그 회사의 postmaster 면 키는 찾지만 세지 않는다');

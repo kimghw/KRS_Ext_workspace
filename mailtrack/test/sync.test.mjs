@@ -114,7 +114,7 @@ const toolError = (kind, message, extra = {}) => Object.assign(new Error(message
 // ── 자료(가짜 주소만) ───────────────────────────────────────────────────
 const SENT_AT = '2026-10-10T01:00:00Z';
 const S1 = {
-  id: 's1', subject: '2026 실적 자료 요청', from: A(ME, '나'), sender: A(ME), to: [A('kim@foo.com', '김'), A('lee@krs.co.kr', '이')], cc: [A('park@bar.org', '박')],
+  id: 's1', subject: '2026 실적 자료 요청', from: A(ME, '나'), sender: A(ME), to: [A('kim@foo.com', '김'), A('lee@krs.co.kr', '이'), A('park@bar.org', '박')], cc: [A('cho@cc.example', '조')],
   sentAt: SENT_AT, receivedAt: SENT_AT, conversationId: 'conv-s1', internetMessageId: '<s1@krs.co.kr>', hasAttachments: true, isDraft: false,
   body: { contentType: 'html', content: '<p>양식을 채워 주세요</p>' }, preview: '양식을 채워 주세요', webLink: 'https://outlook/s1',
 };
@@ -218,7 +218,8 @@ await ta('register — 한 세션에서 상세 → 첨부 목록 → 바이트(�
   const b = book.state;
   assert.equal(b.me, ME, '처음 등록 — 보낸 메일의 보낸 주소가 나');
   const it = b.items[0];
-  assert.deepEqual(it.expect.map((e) => e.key), ['foo.com', 'addr:lee@krs.co.kr', 'bar.org']);
+  assert.deepEqual(it.expect.map((e) => e.key), ['foo.com', 'addr:lee@krs.co.kr', 'bar.org'], '받는 사람(To)에서만 — 참조(cc.example)는 받을 곳이 아니다');
+  assert.deepEqual(it.cc.map((a) => a.address), ['cho@cc.example'], '참조는 항목에 남아 상세에 보인다');
   assert.deepEqual(it.attachments.map((a) => [a.id, a.stored, a.missing]), [['tpl', true, false], ['big', false, true]], '인라인 그림은 빠지고, 큰 파일은 어댑터가 알린 대로 missing');
   assert.deepEqual(it.templates, [{ attachmentId: 'tpl', name: '실적양식.xlsx', kind: 'xlsx', stored: true }]);
   assert.deepEqual([it.registeredAt, it.synced, it.status.expected], ['2026-10-15T09:00:00Z', false, 3]);

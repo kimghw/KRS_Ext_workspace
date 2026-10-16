@@ -73,6 +73,7 @@ t('과제·차년도·연구기간(1월 1일 기준)·예산(천원 → 원, 0 �
   assert.deepEqual(s.project, {
     name: '시험용 직류 차단기 개발', code: 'RS-2026-00000001', lead: '홍길동', start: '2026-04-01', end: '2029-12-31', calendar: true,
     note: '산업통상부 · 조선해양산업기술개발사업 · 주관 가나전기',
+    refs: { 구매: ['이몽룡'], 교육: ['성춘향'] },
   });
   assert.equal(s.n, 1);
   assert.equal(s.rev, 'r0');
@@ -115,6 +116,31 @@ t('협약일 기준 과제(3월 말에 끝남)는 시작일부터 한 해씩, �
   assert.deepEqual(s.budget, [{ item: '인건비', plan: 1234 }]);
 });
 
+t('공문 참조자 — 파일의 공문.참조자(공문 종류 → 이름들)가 과제의 refs 로. 블록이 없으면 refs 를 돌려주지 않는다(2026-10-15 사용자 지정)', () => {
+  const base = { meta: { 과제명: 'Z', 기간: '2026-04 ~ 2027-03' } };
+  assert.ok(!('refs' in readSnapshot(base).project));
+  assert.deepEqual(readSnapshot({ ...base, 공문: { 참조자: { 구매: '이몽룡, 성춘향', 교육: ['홍길동'], 출장: [] } } }).project.refs, { 구매: ['이몽룡', '성춘향'], 교육: ['홍길동'] });
+  assert.deepEqual(readSnapshot({ ...base, 공문: { 참조자: null } }).project.refs, {}, '비어 있는 블록은 빈 참조자');
+  assert.deepEqual(readSnapshot({ ...base, 공문: {} }).project, readSnapshot(base).project, '참조자 키가 없으면 블록이 없는 것');
+  assert.deepEqual(readSnapshot({ ...base, 공문: '참조자' }).project, readSnapshot(base).project);
+});
+t('공문 참조자 — 블록이 있는 스냅샷은 그것으로 통째로 바꾸고(비어 있으면 비움), 없는 스냅샷은 과제의 것을 둔다. 변경이력에는 남기지 않는다', () => {
+  const b = normalizeBook({ projects: [{ id: 'x', name: 'Z', refs: { 구매: ['옛사람'] } }] });
+  const snap = (gm) => readSnapshot({ meta: { 과제명: 'Z', 기간: '2026-04 ~ 2027-03', rev: 'r1' }, ...(gm === undefined ? {} : { 공문: gm }) });
+  let rep = applySnapshot(b, snap(undefined), { today: TODAY });
+  assert.deepEqual([b.projects[0].refs, rep.logs], [{ 구매: ['옛사람'] }, []], '블록이 없으면 그대로');
+  rep = applySnapshot(b, snap({ 참조자: { 교육: '성춘향' } }), { today: TODAY });
+  assert.deepEqual([b.projects[0].refs, rep.logs], [{ 교육: ['성춘향'] }, ['공문 참조자 고침']], '블록이 있으면 통째로');
+  assert.deepEqual(b.projects[0].years[1].changes, []);
+  rep = applySnapshot(b, snap({ 참조자: { 교육: ['성춘향'] } }), { today: TODAY });
+  assert.deepEqual(rep.logs, [], '같으면 조용하다');
+  rep = applySnapshot(b, snap({ 참조자: {} }), { today: TODAY });
+  assert.deepEqual([b.projects[0].refs, rep.logs], [{}, ['공문 참조자 비움']]);
+  const fresh = normalizeBook(null);
+  rep = applySnapshot(fresh, snap({ 참조자: { 구매: ['이몽룡'] } }), { today: TODAY });
+  assert.deepEqual([fresh.projects[0].refs, rep.logs], [{ 구매: ['이몽룡'] }, ['공문 참조자 넣음']], '새 과제도');
+});
+
 console.log('장부에 넣기 — 스냅샷');
 {
   const book = normalizeBook(null);
@@ -123,11 +149,12 @@ console.log('장부에 넣기 — 스냅샷');
     assert.ok(rep.created);
     assert.equal(rep.n, 1);
     assert.equal(rep.budget, 4);
-    assert.deepEqual(rep.logs, ['연구개발 계획 — 1차년도 넣음', '참여연구자 — 1차년도 넣음']);
+    assert.deepEqual(rep.logs, ['연구개발 계획 — 1차년도 넣음', '참여연구자 — 1차년도 넣음', '공문 참조자 넣음']);
     assert.deepEqual(rep.changes, []);
     const p = book.projects[0];
     assert.equal(rep.project, p);
     assert.deepEqual([p.code, p.lead, p.start, p.end, p.calendar], ['RS-2026-00000001', '홍길동', '2026-04-01', '2029-12-31', true]);
+    assert.deepEqual(p.refs, { 구매: ['이몽룡'], 교육: ['성춘향'] }, '공문 참조자(공문.참조자 블록)도 과제에');
     assert.equal(book.current.project, p.id);
     assert.equal(book.current.year[p.id], 1);
     const y = p.years[1];
@@ -264,7 +291,7 @@ console.log('한 번에 — applyYaml');
   t('스냅샷 → 레지스트리(주석의 과제명으로 찾음) → r2 스냅샷 → 예산 이력(같은 변경에는 사유만 붙임) → 참여연구원 이력', () => {
     const a = applyYaml(book, parse(fx('snapshot_r0.yaml')), { text: fx('snapshot_r0.yaml'), file: 'KR_test.yaml', today: TODAY });
     assert.equal(a.kind, 'snapshot');
-    assert.equal(a.summary, '과제 만듦: 시험용 직류 차단기 개발 · 1차년도 · 비목 4개 · 연구개발 계획 — 1차년도 넣음 · 참여연구자 — 1차년도 넣음');
+    assert.equal(a.summary, '과제 만듦: 시험용 직류 차단기 개발 · 1차년도 · 비목 4개 · 연구개발 계획 — 1차년도 넣음 · 참여연구자 — 1차년도 넣음 · 공문 참조자 넣음');
     const b = applyYaml(book, parse(fx('revisions.yaml')), { text: fx('revisions.yaml'), current: null, today: TODAY });
     assert.equal(b.summary, 'TEST 1차년도 · 변경이력 3건 넣음 · 별칭 TEST 붙임', '주석의 과제명으로 찾은 과제에 별칭이 없으면 project: 값(과제 약어)을 별칭으로');
     assert.equal(book.projects[0].alias, 'TEST');

@@ -47,8 +47,8 @@ t('mailOf: Graph 전체 메시지 → MailFull (받는 사람·참조 소문자,
   const m = mailOf(G.MESSAGES[G.IDS.sent1]);
   assert.deepEqual(m, {
     id: G.IDS.sent1, subject: G.SUBJECT, from: { name: G.ME_NAME, address: G.ME }, sender: { name: G.ME_NAME, address: G.ME },
-    to: [{ name: '에이', address: 'a@foo.com' }, { name: '비', address: 'b@bar.co.kr' }],
-    cc: [{ name: '씨', address: 'c@foo.com' }, { name: '디', address: 'd@krs.co.kr' }],
+    to: [{ name: '에이', address: 'a@foo.com' }, { name: '비', address: 'b@bar.co.kr' }, { name: '디', address: 'd@krs.co.kr' }],
+    cc: [{ name: '씨', address: 'c@foo.com' }],
     sentAt: '2026-10-01T00:30:10Z', receivedAt: '2026-10-01T00:30:12Z', conversationId: 'CONV-SENT1', internetMessageId: '<SENT1@krs.co.kr>',
     hasAttachments: true, isDraft: false, preview: G.MESSAGES[G.IDS.sent1].bodyPreview, webLink: G.MESSAGES[G.IDS.sent1].webLink,
     body: { contentType: 'html', content: G.MESSAGES[G.IDS.sent1].body.content },
@@ -103,8 +103,8 @@ await ta('listSent: mail_query_url 인자 그대로 · 서버가 안 주는 제�
   const h1 = heads[1];
   assert.deepEqual({ id: h1.id, subject: h1.subject, from: h1.from, receivedAt: h1.receivedAt, preview: h1.preview },
     { id: G.IDS.sent1, subject: G.SUBJECT, from: { name: G.ME_NAME, address: G.ME }, receivedAt: '2026-10-01T00:30:12Z', preview: G.MESSAGES[G.IDS.sent1].bodyPreview });
-  assert.deepEqual(h1.to.map((a) => a.address), ['a@foo.com', 'b@bar.co.kr']);
-  assert.deepEqual(h1.cc.map((a) => a.address), ['c@foo.com', 'd@krs.co.kr']);
+  assert.deepEqual(h1.to.map((a) => a.address), ['a@foo.com', 'b@bar.co.kr', 'd@krs.co.kr']);
+  assert.deepEqual(h1.cc.map((a) => a.address), ['c@foo.com']);
   assert.equal(fake.sessions, 1, '목록과 상세를 세션 하나로');
   assert.equal(fake.requests.at(-1).method, 'DELETE');
 });
@@ -198,7 +198,7 @@ await ta('attachmentMeta: 인자 · 평평한 from · 첨부 목록(odataType) �
   assert.deepEqual(list.map((m) => m.id), [G.IDS.x, G.IDS.sent1]);
   const s1 = list[1];
   assert.deepEqual(s1.from, { name: G.ME_NAME, address: G.ME });
-  assert.deepEqual(s1.to.map((a) => a.address), ['a@foo.com', 'b@bar.co.kr']);
+  assert.deepEqual(s1.to.map((a) => a.address), ['a@foo.com', 'b@bar.co.kr', 'd@krs.co.kr']);
   assert.equal(s1.body.contentType, 'html');
   assert.deepEqual(s1.attachments.map((a) => a.id), ['ATT-s1-xlsx', 'ATT-s1-docx', 'ATT-s1-img']);
   assert.deepEqual(s1.attachments[1], { id: 'ATT-s1-docx', name: '안내문.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 8_500_000, isInline: false, odataType: FILE_ATTACHMENT });

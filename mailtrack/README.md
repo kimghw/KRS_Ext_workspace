@@ -1,6 +1,6 @@
 # mailtrack/ — 메일 탭(회신 추적)
 
-KRS WORKSPACE 사이드패널의 **메일** 탭. 내가 보낸 메일을 등록해 두면 받는 사람·참조를 조직(도메인)마다 "받을 곳" 으로 세우고, 받은 메일에서 회신을 찾아
+KRS WORKSPACE 사이드패널의 **메일** 탭. 내가 보낸 메일을 등록해 두면 받는 사람(To — 참조는 추적하지 않는다)을 조직(도메인)마다 "받을 곳" 으로 세우고, 받은 메일에서 회신을 찾아
 **N/M** 으로 세며, 회신의 본문·첨부를 한곳에 모으고, 양식(xlsx·docx)으로 받은 회신을 한 파일로 합친다.
 
 > 2026-10-15 사용자 지정(원문): "별도 폴더에 작성합니다. 근태---------------현황에서 메일수신 기능을 추가 합니다. mcp 를 이용해야하고.. 내가 보낸 메일에서 받는사람
@@ -52,7 +52,13 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 - 첨부는 파일 아이콘·전체 이름·용량·내려받기로 구분한다. 회신 카드의 칩은 종류(회신·후보·자동 회신·배달 실패·대상 아님) 옆에 **확인 상태**(확인 필요 · 수락 · 거부)가 서고,
   저절로 센 것은 **집계됨**. 단추 **수락**(센다 — 받을 곳 완료)·**거부**(세지 않는다 — 받을 곳은 다시 기다림, 병합 칸에서는 잠긴 줄)는 지금 상태가 아닌 쪽만 보인다.
   머리의 요약과 목록의 메일 줄에 **확인 필요 n** 이 선다(닫은 메일은 빼고).
-- **본문·첨부 모두 받기**로 ZIP을 저장한다. **추적 관리**를 펼치면 추적 끝내기·등록 지우기가 나온다. 삭제는 기존처럼 두 번 눌러 확인한다.
+- **본문·첨부 모두 받기**로 ZIP을 저장한다 — 맨 위에 `요약.txt` 와 **`메일ID.json`**(보낸 메일·회신마다 `messageId`·`conversationId`·`webLink` 와 첨부마다 `attachmentId`,
+  ZIP 안의 경로 `body`·`file`(없으면 null — 큰 첨부·파일 아닌 첨부), `mcpUrl` 과 다시 받을 도구 `howTo`), 메일마다 폴더(`00_보낸 메일`, `01_도메인_날짜` …)에 `본문.txt`(머리에
+  제목·보낸 사람·날짜·**메일 ID**·첨부마다 **첨부 ID**)와 첨부 바이트. 2026-10-15 사용자 지정 "메일 수신후 다운로드 받을 때 … 내용이나 첨부 파일 다운받을 수 있는 id도 같이 다운받게" —
+  ID 는 `mail_query_if_emaidID`(본문)·`mail_attachment_meta`(첨부 목록)·`mail_attachment_download`(`{message_id, attachment_id}`)에 그대로 넣는 값이다.
+  **추적 끝내기**는 회신 현황(진행률) 줄 오른쪽에 바로 보인다(2026-10-15 사용자 지정 "종료 기능이 없네" — 접힌 칸에 있어 안 보였다). 끝낸 메일은 상태에 **닫음**이 붙고
+  새로고침에서 회신을 찾지 않으며, 같은 자리의 **다시 추적**으로 되돌린다. **등록 지우기**는 상세 맨 아래 ZIP 단추 밑에 바로 보이고(접힌 "추적 관리" 는 없앴다 — 같은 날
+  "등록한 메일을 취소하는 기능이 안보임"), 목록에서도 줄마다 오른쪽 아래 **지우기**로 지운다. 어느 쪽이든 두 번 눌러 확인한다(한 번 누르면 "한 번 더 누르면 지웁니다").
 - 상세 진입·목록 복귀 시 키보드 포커스를 옮기며 본문 접기 버튼과 진행률에는 접근성 정보를 붙인다. 스타일은 `panel.css`의 `.mail` 범위에 둔다.
 
 ## MCP 도구와 서버 소스에서 확인한 것 (2026-10-15, `E:\dev\KR_MS365_mcp` 읽기만)
@@ -79,7 +85,10 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 
 ## 받을 곳·회신·완료 규칙
 
-1. **받을 곳(expectOf)** — To → CC 차례로 주소를 소문자로 모으고 나·빈 주소를 뺀다. 도메인 ≠ 내 도메인이면 키 `foo.com`(같은 도메인 여러 명은 `addresses` 로 한 키).
+1. **받을 곳(expectOf)** — **받는 사람(To)의 주소만** 소문자로 모으고 나·빈 주소를 뺀다. **참조(CC)는 받을 곳이 아니다**(2026-10-15 사용자 지정 "참조는 추적을 하지 않아.
+   받는 사람 뿐이야." — 항목의 `cc` 에 남아 상세에 `(세지 않음)` 으로 보이기만 하고, 참조로만 받은 사람의 답은 같은 대화라도 키가 없어 "대상 아님"). 참조에서도 받을 곳을
+   세우던 v1 장부는 읽을 때 To 의 받을 곳만 남기고(같은 회사 참조자 주소도 `addresses` 에서 뺀다, 지운 곳의 회신은 대상 아님) `v:2` 로 올린다 — To 를 모르는 항목은 그대로.
+   도메인 ≠ 내 도메인이면 키 `foo.com`(같은 도메인 여러 명은 `addresses` 로 한 키).
    내 도메인이면 `ownByAddress`(기본 켬)일 때 **주소마다** `addr:x@krs.co.kr`, 끄면 도메인 키. 첫 등장 차례. 나(`book.me`)는 첫 등록 때 보낸 메일의 보낸 주소.
 2. **분류(classify)** — 보낸 사람이 나 → `self`(버림). postmaster·mailer-daemon·no-reply·bounce·`MicrosoftExchange…` 또는 배달 실패 제목 → `ndr`. 자동 회신·부재 중·out of office 제목
    또는 `Auto-Submitted: auto-*` → `auto`. 나머지 `reply`.
@@ -101,7 +110,7 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 
 ## 저장
 
-- **장부** `chrome.storage.local["mailtrackBook"]` — `{ v:1, me, settings:{ mcpUrl, userEmail, sentDays, windowDays, ownByAddress, useHeaders, autoRefreshMin, requireAccept }, items, syncedUntil, lastSync }`.
+- **장부** `chrome.storage.local["mailtrackBook"]` — `{ v:2, me, settings:{ mcpUrl, userEmail, sentDays, windowDays, ownByAddress, useHeaders, autoRefreshMin, requireAccept }, items, syncedUntil, lastSync }`.
   항목은 보낸 메일 하나(받을 곳·회신 메타·첨부 메타·양식·상태·닫음). 회신에는 `review`(pending·accepted·rejected)·`reviewedAt` — 없는 옛 회신은 `pending` 으로 선다.
   패널을 열 때마다 통째로 읽으니 바이트는 넣지 않는다. 고치기는 `book.update` 의 줄에 서서 하나씩.
 - **금고** IndexedDB `krsMailtrack` v1 — `bodies`(키 `항목\u0001메일`), `files`(키 `항목\u0001메일\u0001첨부`), 둘 다 index `itemId`. 증빙 보관함의 `krsWorkspace`(v1)와 **따로** —
@@ -152,7 +161,7 @@ node mailtrack/test/<파일>.test.mjs        # 하나만
 | `sync.test.mjs` | 등록(한 세션·주의/오류 나누기)·갱신(창·새로 이어진 것만·던지지 않음)·수동 조작·지우기·서버에 저장·병합 호출 — 기록은 금고 정리 실패만 |
 | `store.test.mjs` | 장부의 줄 세우기·onChange, 금고(메모리·가짜 IndexedDB) |
 | `xlsx.test.mjs` · `docx.test.mjs` | 병합 — 검사용 Office 바이트(`fixtures/office.mjs`)와 패키지 검사(`checkPackage`) |
-| `panel.test.mjs` | 화면 — 흉내 sync 로 칩·등록 대화(주의는 흐린 한 줄)·목록·상세·병합(지원하지 않는 형식 줄)·zip·설정·오류 |
+| `panel.test.mjs` | 화면 — 흉내 sync 로 칩·등록 대화(주의는 흐린 한 줄)·목록·상세·병합(지원하지 않는 형식 줄)·zip(요약·메일ID.json 의 메일 ID·첨부 ID·경로·본문.txt 머리)·설정·오류 |
 | `index.test.mjs` | 조립 — import·만들기·`wire()` 만으로는 chrome·indexedDB·fetch 를 건드리지 않음, 진짜 모듈 + 가짜 MCP 서버로 등록 → 갱신 → 병합(진짜 xlsx) → 서버에 저장, 한 일마다 기록 한 줄 |
 
 `test/wiring.test.mjs` 는 jsdom(indexedDB·네트워크 없음)에서 `sidepanel.js` 를 통째로 import 한다 — 이 폴더의 어느 파일도 import·생성 시점에 chrome·indexedDB·fetch·DecompressionStream 을 건드리면 안 된다.

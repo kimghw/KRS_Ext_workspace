@@ -90,6 +90,12 @@
 .mail .mt-key { display: inline-block; max-width: 100%; padding: 2px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .mail .mt-key.done { background: color-mix(in srgb, var(--free) 48%, var(--surface)); border-color: color-mix(in srgb, var(--free-line) 65%, var(--line)); color: var(--fg); }
 .mail .mt-key.excluded { border-style: dashed; color: var(--muted); text-decoration: line-through; }
+/* 줄마다 지우기 — 줄 단추의 형제를 오른쪽 아래에 겹친다. 메타·칩 줄은 그만큼 오른쪽을 비워 두고, 확인 글(한 번 더 누르면 지웁니다)은 불투명해 잠깐 겹쳐도 읽힌다. */
+.mail .mt-row { position: relative; }
+.mail .mt-row .mt-item-meta, .mail .mt-row .mt-keys { padding-right: 60px; }
+.mail button.mt-item-remove { position: absolute; right: 10px; bottom: 11px; min-height: 24px; padding: 2px 8px; border: 1px solid transparent; border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; line-height: 18px; }
+.mail button.mt-item-remove:hover { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); color: var(--danger); }
+.mail button.mt-item-remove.armed { border-color: transparent; background: var(--danger); color: #fff; font-weight: 600; }
 .mail .mt-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; padding: 28px 20px; color: var(--muted); font-size: 13px; line-height: 1.7; text-align: center; }
 .mail .mt-empty strong { color: var(--fg); font-size: 15px; font-weight: 650; }
 .mail .mt-empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 4px; border: 1px solid color-mix(in srgb, var(--pick) 14%, var(--line)); border-radius: 14px; background: var(--pick-soft); color: var(--pick); }
@@ -116,7 +122,7 @@
 .mail .mt-overview { overflow: hidden; }
 .mail .mt-header { padding: 17px 16px 15px; }
 .mail .mt-header-label { display: block; margin: 0 0 7px; color: var(--muted); font-size: 12px; font-weight: 550; }
-.mail .mt-title { margin: 0 0 14px; color: var(--fg); font-size: 20px; font-weight: 720; line-height: 1.45; letter-spacing: -.45px; overflow-wrap: anywhere; }
+.mail .mt-title { margin: 0 0 12px; color: var(--fg); font-size: 15px; font-weight: 700; line-height: 1.45; letter-spacing: -.2px; overflow-wrap: anywhere; }
 .mail .mt-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; margin: 0; font-size: 12px; }
 .mail .mt-meta dt { color: var(--muted); white-space: nowrap; }
 .mail .mt-meta dd { min-width: 0; margin: 0; color: var(--fg); overflow-wrap: anywhere; }
@@ -124,6 +130,9 @@
 .mail button.mt-web { padding: 5px 0; color: var(--pick); }
 .mail .mt-progress-area { padding: 12px 16px 15px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--pick-soft) 34%, var(--surface)); }
 .mail .mt-progress-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 10px; margin-bottom: 9px; }
+.mail .mt-progress-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; margin-left: auto; }
+.mail button.mt-close { min-height: 26px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 550; }
+.mail button.mt-close:hover { border-color: color-mix(in srgb, var(--pick) 35%, var(--line)); color: var(--fg); }
 .mail .mt-progress-label { color: var(--muted); font-size: 12px; font-weight: 550; }
 .mail .mt-status { margin: 0; color: var(--pick); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .mail .mt-status.done { color: var(--fg); }
@@ -160,6 +169,8 @@
 .mail .mt-expect .mt-btns button[data-state="done"] { background: var(--pick-soft); color: var(--pick); }
 .mail .mt-who { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
 .mail .mt-manual { display: inline-block; padding: 0 4px; border: 1px dotted var(--muted); border-radius: 4px; color: var(--muted); font-size: 12px; line-height: 18px; }
+/* 상세 머리의 참조 줄 — 참조는 받을 곳이 아니라는 표시(2026-10-15 사용자 지정 "참조는 추적을 하지 않아"). */
+.mail .mt-cc-note { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
 /* 본문과 파일. */
 .mail .mt-body { max-height: 360px; margin: 10px 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); color: var(--fg); font-family: inherit; font-size: 13px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -220,12 +231,10 @@
 .mail .mt-export { width: 100%; min-height: 38px; border: 1px solid color-mix(in srgb, var(--pick) 24%, var(--line)); background: var(--pick-soft); color: var(--pick); font-weight: 650; }
 .mail .mt-export:hover { background: color-mix(in srgb, var(--pick) 13%, var(--surface)); }
 .mail .mt-zip-label { padding: 0 5px; border: 1px solid color-mix(in srgb, var(--pick) 25%, var(--line)); border-radius: 5px; font-size: 12px; font-weight: 650; line-height: 19px; }
-.mail .mt-manage { padding-top: 2px; }
-.mail .mt-manage > summary { display: flex; align-items: center; gap: 8px; min-height: 34px; color: var(--muted); font-size: 12px; font-weight: 550; cursor: pointer; list-style: none; }
-.mail .mt-manage > summary::-webkit-details-marker { display: none; }
-.mail .mt-manage > summary::after, .mail .mt-settings > summary::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: auto; margin-right: 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .15s ease; }
-.mail .mt-manage[open] > summary::after, .mail .mt-settings[open] > summary::after { transform: rotate(225deg); }
-.mail .mt-manage-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; padding-top: 8px; border-top: 1px solid var(--line); }
+.mail .mt-settings > summary::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: auto; margin-right: 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .15s ease; }
+.mail .mt-settings[open] > summary::after { transform: rotate(225deg); }
+.mail .mt-manage-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.mail .mt-manage-hint { flex: 1 1 180px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .mail button.mt-remove { color: var(--danger); }
 .mail button.mt-remove:hover { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
 .mail button.mt-remove.armed { color: #fff; }
@@ -254,7 +263,7 @@
   .mail .mt-head-tools button { padding-left: 8px; padding-right: 8px; }
   .mail .mt-heading h2, .mail h2.mt-heading { font-size: 17px; }
   .mail .mt-header { padding: 15px 13px 13px; }
-  .mail .mt-title { font-size: 19px; }
+  .mail .mt-title { font-size: 14px; }
   .mail .mt-progress-area { padding-left: 13px; padding-right: 13px; }
   .mail .mt-field { flex-wrap: wrap; gap: 6px; }
   .mail .mt-field > span:first-child { width: 100%; }

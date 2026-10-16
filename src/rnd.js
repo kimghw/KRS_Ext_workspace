@@ -7,6 +7,9 @@
 // 예산 **계획**을 고치거나 비목을 빼면, 과제의 책임자·연구기간을 고치면 변경이력에 저절로 한 줄이 남는다(auto) — 사유만 사람이 적는다.
 // 집행액은 쓰는 대로 바뀌는 값이라 변경이 아니다.
 //
+// 과제에는 **공문 참조자**(refs — 공문 종류마다 이름들)도 둔다. 연구개발계획서 YAML 의 `공문.참조자`(src/rndyaml.js)에서 오고, 공문 탭이 그 과제·그 공문
+// 종류의 사람을 결재선의 참조자로 넣는다(src/gongmun.js 의 projectRefs — 2026-10-15 사용자 지정: 참조자는 공문마다·과제마다 달라 전역 공문 설정에 둘 수 없다).
+//
 // 과제 목록은 공문 탭의 공문 설정(gongmunProjects — 과제명·별명·과제번호·책임자·연구기간 글)에서 가져올 수 있다.
 // 과제번호(없으면 과제명)가 같으면 같은 과제로 보고 빈 칸만 채운다(mergeProjects). 여기 담은 것은 이 브라우저에만 남으니
 // JSON 으로 내보내고(exportJson) 들여올(importJson) 수 있다.
@@ -22,7 +25,7 @@ export const BUDGET_ITEMS = Object.freeze(['인건비', '연구시설·장비비
 /** 변경이력의 구분. 저절로 남는 줄은 예산(계획·비목)·연구기간·연구진(과제책임자)이다. */
 export const CHANGE_KINDS = Object.freeze(['예산', '연구내용', '연구기간', '연구진', '기타']);
 /** calendar 는 차년도를 1월 1일에 끊는 과제(산업부 과제처럼 첫 해만 협약일~12.31, 그 뒤는 해마다) — 아니면 시작일부터 한 해씩. */
-export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', lead: '', start: '', end: '', note: '', calendar: false, years: {} });
+export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, years: {} });
 
 const text = (v, max = 2000) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').slice(0, max).trim() : '');
 const pad = (n) => String(n).padStart(2, '0');
@@ -192,12 +195,35 @@ export function normalizeYear(raw) {
   return y;
 }
 
+/** 공문 참조자의 한도 — 공문 종류 열 개, 종류마다 이름 스무 명(공문 탭의 namesOf 와 같다). */
+const REFS_MAX_KINDS = 10;
+const REFS_MAX_NAMES = 20;
+/**
+ * 공문 참조자 — { [공문 종류]: 이름[] }. 연구개발계획서 YAML 의 `공문.참조자`(src/rndyaml.js)에서 오고, 공문 탭이 그 과제의 그 공문 종류에 적힌 사람을
+ * 결재선의 참조자로 넣는다(src/gongmun.js 의 projectRefs — 2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이 다르므로 전역 설정에 둘 수 없다").
+ * 종류 이름은 적힌 그대로(앞뒤 공백만 뗌 — 구매·교육·출장이나 purchase·edu·trip), 이름은 배열이나 쉼표·가운뎃점·줄바꿈으로 나눈 글. 이름이 없는 종류는 버린다.
+ */
+export function normalizeRefs(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const kind = text(k, 40);
+    if (!kind || Object.keys(out).length >= REFS_MAX_KINDS) continue;
+    const list = Array.isArray(v) ? v : String(v ?? '').split(/[,，·\n;]+/);
+    const names = [...new Set(list.map((s) => text(String(s ?? ''), 40)).filter(Boolean))].slice(0, REFS_MAX_NAMES);
+    if (names.length) out[kind] = names;
+  }
+  return out;
+}
+/** 공문 참조자를 한 줄로 — "구매 홍길동, 이몽룡 / 교육 성춘향". 없으면 빈 글. */
+export const refsText = (refs) => Object.entries(refs || {}).map(([k, v]) => `${k} ${(v || []).join(', ')}`).join(' / ');
+
 /**
  * 저장된 과제를 지금 모양으로. start·end 는 날짜 칸이고, period 는 공문 탭에서 오는 "2026.04.01 ~ 2029.12.31" 글 —
- * 날짜 칸이 비었을 때만 글에서 읽는다. 시작일보다 앞선 종료일은 버린다.
+ * 날짜 칸이 비었을 때만 글에서 읽는다. 시작일보다 앞선 종료일은 버린다. refs 는 공문 참조자(normalizeRefs).
  */
 export function normalizeProject(raw) {
-  const p = { ...EMPTY_PROJECT, years: {} };
+  const p = { ...EMPTY_PROJECT, refs: {}, years: {} };
   if (!raw || typeof raw !== 'object') return p;
   p.id = text(raw.id, 40) || newId();
   p.name = text(raw.name, 200);
@@ -210,6 +236,7 @@ export function normalizeProject(raw) {
   if (!p.start || (p.end && p.end < p.start)) p.end = '';
   p.note = text(raw.note, 1000);
   p.calendar = raw.calendar === true;
+  p.refs = normalizeRefs(raw.refs);
   const years = raw.years && typeof raw.years === 'object' ? raw.years : {};
   for (const [k, v] of Object.entries(years)) {
     const n = Number(k);
@@ -521,6 +548,7 @@ export function summaryText(project, n, today = todayStr()) {
   lines.push(`과제명: ${project.name}`);
   if (project.code) lines.push(`과제번호: ${project.code}`);
   if (project.lead) lines.push(`과제책임자: ${project.lead}`);
+  if (Object.keys(project.refs || {}).length) lines.push(`공문 참조자: ${refsText(project.refs)}`);
   if (project.start) lines.push(`연구기간: ${periodText(project)} (총 ${ys.length}차년도)`);
   if (project.note) lines.push(`비고: ${project.note}`);
 

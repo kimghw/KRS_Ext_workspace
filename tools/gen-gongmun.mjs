@@ -11,7 +11,7 @@
 //     registries/settings.yaml     문서설정(프로파일·부서 코드·선택지)
 //     registries/reading.yaml      문서 읽기의 공통 지시문(역할·문서 종류·첨부 파일 종류·요약·견적서 오릴 칸·규칙)
 //     registries/writing.yaml      사유 쓰기의 공통 지시문(역할·답 한 줄·규칙)
-//     registries/setup.yaml        공문 설정 채우기의 지시문(과제·과제책임자·부서장·참조자)
+//     registries/setup.yaml        공문 설정 채우기의 지시문(과제·과제책임자·부서장 — 참조자는 받지 않는다, 과제 YAML 의 공문.참조자)
 //     registries/vars.yaml         틀의 공통 자리(부서·과제명·첨부 …)의 뜻
 //     <유닛>/forms/<폼>/manifest.yaml · fieldmap.yaml
 //     <유닛>/forms/<폼>/purposes/<목적>/purpose.yaml · body_spec.yaml · attach_rules.yaml
@@ -507,7 +507,7 @@ export function writeTaskOf(purpose, writing) {
 /** 공문 설정 채우기 작업(gongmunSetup) — 부분 수정이다(말하지 않은 칸은 빠진다). */
 export function setupTaskOf(setup) {
   return {
-    title: '공문 공문 설정(과제·과제책임자·과제 별명·연구기간·부서장·참조자) 조각',
+    title: '공문 공문 설정(과제·과제책임자·과제 별명·연구기간·부서장) 조각',
     kinds: ['gongmun'],
     partial: true,
     consumer: { module: 'src/gongmun.js', export: 'mergeSetup' },

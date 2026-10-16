@@ -43,7 +43,8 @@ export function classify(mail, { me = '' } = {}) {
 
 /**
  * 이 메일의 보낸 사람이 채우는 기대 키 — 주소 키(addr:주소)·그 주소가 든 키·도메인 키(하위 도메인 mail.foo.com 도 foo.com) 차례.
- * from 으로 못 찾으면 sender(대리 발송)로 한 번 더. 없으면 null — 받는 사람에 없던 곳에서 온 답("대상 아님").
+ * from 으로 못 찾으면 sender(대리 발송)로 한 번 더. 없으면 null — 받는 사람에 없던 곳에서 온 답("대상 아님"). 참조(CC)로만 받은 사람도 여기다
+ * (받을 곳은 To 에서만 선다 — model.js expectOf).
  */
 export function keyOf(mail, item) {
   const ex = Array.isArray(item?.expect) ? item.expect : [];

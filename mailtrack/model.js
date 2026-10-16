@@ -1,9 +1,11 @@
 // 메일 수신(회신 추적)의 장부 꼴과 순수 로직 — 등록한 보낸 메일(TrackedItem)·받는 사람에서 뽑은 기대 키(Expect)·상태(N/M)·양식 가리기·갱신 조회 창.
 //
 // 2026-10-15 사용자 지정: "내가 보낸 메일에서 받는사람 참조자 또는 메일주소가 도메인이 같은 경우 이를 식별해서 등록 … 같은 도메인 메일 수신이
-// 보낸 거랑 같으면 완료 … 이 숫자를 관리". 그래서 받는 사람(To·CC)을 **도메인 하나 = 기대 키 하나**로 묶고(외부 회사는 누가 답하든 그 회사가
+// 보낸 거랑 같으면 완료 … 이 숫자를 관리". 그래서 받는 사람을 **도메인 하나 = 기대 키 하나**로 묶고(외부 회사는 누가 답하든 그 회사가
 // 답한 것), 내 도메인(krs.co.kr)은 같은 회사 사람끼리 묶으면 다 한 키가 돼 버리므로 기본으로 **주소마다** 따로 센다(ownByAddress, 설정에서 끔).
 // 그 숫자가 status 의 responded/expected 이고, 다 차면 done(완료).
+// 같은 날 사용자 지정 "참조는 추적을 하지 않아. 받는 사람 뿐이야." — 받을 곳은 **받는 사람(To)에서만** 세운다. 참조(CC)는 항목에 남겨 보이기만 하고
+// 기대 키가 되지 않으며, 참조로만 받은 사람의 답은 키가 없어 "대상 아님"(match.js keyOf)이다. v1 장부의 참조에서 세운 받을 곳은 normalizeBook 이 지운다.
 //
 // 여기는 chrome·IndexedDB·네트워크를 모른다 — 장부 읽고 쓰기는 store/book.js, 본문·첨부 바이트는 store/vault.js, 부르는 순서는 sync.js.
 // 회신을 어느 항목·어느 키에 잇는지(분류·점수·연결·수동 덮어쓰기)는 match.js.
@@ -18,7 +20,8 @@
 
 /** 장부의 chrome.storage 키 — store/book.js 의 BOOK_KEY 와 같은 값(서로 import 하지 않는다). */
 export const BOOK_KEY = 'mailtrackBook';
-export const BOOK_VERSION = 1;
+/** 장부 꼴의 판. 2 = 받을 곳을 받는 사람(To)에서만 세운다 — v1 장부의 참조(CC)에서 세운 받을 곳은 읽을 때 지운다(normalizeBook). */
+export const BOOK_VERSION = 2;
 /**
  * 설정 기본값. sentDays: 등록 대화의 보낸 메일 기간 · windowDays: 갱신 조회를 이보다 앞으로는 넓히지 않는다(오래 열어 둔 항목 하나가 매번 석 달치를 긁지 않게)
  * · ownByAddress: 내 도메인 받는 사람은 주소마다 센다 · useHeaders: 받은 메일의 internetMessageHeaders(In-Reply-To·References·Auto-Submitted)도 받아 본다
@@ -82,18 +85,19 @@ export function normalizeSubject(s) {
 }
 
 /**
- * 받는 사람(To → CC 차례) → 기대 키. me(글 또는 글 목록 — 나와 내 별칭)와 빈 주소·겹친 주소는 뺀다. 첫 등장 차례를 지킨다.
+ * 받는 사람(To) → 기대 키. me(글 또는 글 목록 — 나와 내 별칭)와 빈 주소·겹친 주소는 뺀다. 첫 등장 차례를 지킨다.
+ * 참조(CC)는 받지 않는다 — 2026-10-15 사용자 지정 "참조는 추적을 하지 않아. 받는 사람 뿐이야." (newItem 은 cc 를 항목에 남겨 보이기만 한다).
  * 외부 도메인은 도메인 하나가 키 하나(같은 회사 여러 명은 addresses 로 모은다 — 그 회사 누구든 답하면 완료).
  * 내 도메인은 ownByAddress(기본 켬)면 주소마다 'addr:<주소>' — 같은 회사 사람끼리는 각자 답해야 하는 일이 대부분이라서.
  * 도메인이 없는 주소(X500 등)도 주소 키로 둔다(도메인 '' 로 묶으면 서로 다른 사람이 한 키가 된다).
  */
-export function expectOf({ to = [], cc = [], me = '', ownByAddress = true } = {}) {
+export function expectOf({ to = [], me = '', ownByAddress = true } = {}) {
   const mine = new Set((Array.isArray(me) ? me : [me]).map(lower).filter(Boolean));
   const myDomain = domainOf([...mine][0] || '');
   const out = [];
   const byKey = new Map();
   const seen = new Set();
-  for (const a of [...arr(to), ...arr(cc)].map(toAddr)) {
+  for (const a of arr(to).map(toAddr)) {
     if (!a.address || mine.has(a.address) || seen.has(a.address)) continue;
     seen.add(a.address);
     const d = domainOf(a.address);
@@ -202,15 +206,32 @@ export function normalizeSettings(raw) {
   };
 }
 
-/** 장부 꼴 맞추기 — 없거나 깨진 것은 기본값, 같은 id 의 항목은 앞의 것만, 항목마다 status 를 다시 센다. 두 번 불러도 같다(store/book.js 가 읽을 때·쓸 때 부른다). */
+/**
+ * v1 장부의 항목 → 받을 곳을 받는 사람(To)에서만 남긴다(참조는 추적하지 않는다 — 2026-10-15 사용자 지정). 받을 곳마다 주소를 To 의 것만 남기고 빈 곳은 지우며,
+ * 지운 곳에 이어졌던 회신은 키를 떼어 "대상 아님"(세지 않음)으로 둔다. To 를 모르는 항목(빈 목록)은 가를 수 없어 그대로 둔다. 두 번 해도 같다.
+ */
+function toOnlyExpect(item) {
+  const to = new Set(item.to.map((a) => a.address));
+  if (!to.size) return item;
+  const expect = item.expect.map((e) => ({ ...e, addresses: e.addresses.filter((a) => to.has(a)) })).filter((e) => e.addresses.length);
+  const keys = new Set(expect.map((e) => e.key));
+  const replies = item.replies.map((r) => (r.key === null || keys.has(r.key) ? r : { ...r, key: null, counted: false }));
+  return withStatus({ ...item, expect, replies });
+}
+
+/**
+ * 장부 꼴 맞추기 — 없거나 깨진 것은 기본값, 같은 id 의 항목은 앞의 것만, 항목마다 status 를 다시 센다. 두 번 불러도 같다(store/book.js 가 읽을 때·쓸 때 부른다).
+ * 판(v)이 2 보다 낮은 장부(없으면 1)는 참조에서 세운 받을 곳을 지우고(toOnlyExpect) 판을 올린다.
+ */
 export function normalizeBook(raw) {
   const o = obj(raw);
   const ls = obj(o.lastSync);
+  const upgrade = num(o.v, 1) < 2 ? toOnlyExpect : (it) => it;
   return {
     v: BOOK_VERSION,
     me: lower(o.me),
     settings: normalizeSettings(o.settings),
-    items: uniqBy(arr(o.items).map(normalizeItem).filter(Boolean), 'id'),
+    items: uniqBy(arr(o.items).map(normalizeItem).filter(Boolean).map(upgrade), 'id'),
     syncedUntil: str(o.syncedUntil),
     lastSync: { at: num(ls.at), ok: ls.ok === true, error: str(ls.error), fetched: num(ls.fetched), linked: num(ls.linked), kind: str(ls.kind) },
   };
@@ -218,8 +239,8 @@ export function normalizeBook(raw) {
 
 /**
  * 보낸 메일 하나 → 새 항목. full 은 등록 상세(mail_query_if_emaidID — To·CC·conversationId 가 여기만 있다), meta 는 mail_attachment_meta(첨부 목록).
- * 기대 키에서는 me 와 이 메일의 보낸 주소를 함께 뺀다(다른 별칭으로 보냈어도 나는 기다릴 사람이 아니다). 양식은 내 첨부 중 xlsx·docx — 받은 바이트로
- * 병합한다(stored 는 금고에 넣은 뒤 sync 가 켠다).
+ * 기대 키는 받는 사람(To)에서만 — cc 는 항목에 남겨 상세에 보이기만 한다(참조는 추적하지 않는다). me 와 이 메일의 보낸 주소를 함께 뺀다
+ * (다른 별칭으로 보냈어도 나는 기다릴 사람이 아니다). 양식은 내 첨부 중 xlsx·docx — 받은 바이트로 병합한다(stored 는 금고에 넣은 뒤 sync 가 켠다).
  */
 export function newItem(full, meta, { me = '', now = Date.now(), ownByAddress = true } = {}) {
   const f = obj(full);
@@ -233,7 +254,7 @@ export function newItem(full, meta, { me = '', now = Date.now(), ownByAddress = 
     id: str(f.id), conversationId: str(f.conversationId), internetMessageId: str(f.internetMessageId), subject, subjectKey: normalizeSubject(subject),
     sentAt: str(f.sentAt) || str(f.receivedAt), registeredAt: isoTime(now), webLink: str(f.webLink),
     from, to, cc,
-    expect: expectOf({ to, cc, me: [lower(me), from.address].filter(Boolean), ownByAddress }),
+    expect: expectOf({ to, me: [lower(me), from.address].filter(Boolean), ownByAddress }),
     replies: [], attachments, templates, status: null, synced: false, closed: false, note: '',
   });
 }

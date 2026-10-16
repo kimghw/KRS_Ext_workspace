@@ -18,11 +18,11 @@ const A = (address, name = '') => ({ name, address });
 console.log('장부 꼴');
 t('키·버전·설정 기본값 — 계획서 3.2 그대로', () => {
   assert.equal(BOOK_KEY, 'mailtrackBook');
-  assert.equal(BOOK_VERSION, 1);
+  assert.equal(BOOK_VERSION, 2, '2 = 받을 곳을 받는 사람(To)에서만 세운다');
   assert.deepEqual({ ...DEFAULTS }, { mcpUrl: 'http://localhost:5001/mcp', userEmail: '', sentDays: 30, windowDays: 90, ownByAddress: true, useHeaders: false, autoRefreshMin: 10, requireAccept: false });
 });
 t('normalizeBook — 없거나 깨진 것은 기본값', () => {
-  const empty = { v: 1, me: '', settings: { ...DEFAULTS }, items: [], syncedUntil: '', lastSync: { at: 0, ok: false, error: '', fetched: 0, linked: 0, kind: '' } };
+  const empty = { v: 2, me: '', settings: { ...DEFAULTS }, items: [], syncedUntil: '', lastSync: { at: 0, ok: false, error: '', fetched: 0, linked: 0, kind: '' } };
   assert.deepEqual(normalizeBook(undefined), empty);
   assert.deepEqual(normalizeBook('망가짐'), empty);
   assert.deepEqual(normalizeBook([1, 2]), empty);
@@ -47,6 +47,36 @@ t('normalizeBook — 같은 id 는 앞의 것만, id 없는 항목은 버림, �
   assert.deepEqual(it.expect.map((e) => [e.key, e.kind, e.label, e.state]), [['foo.com', 'domain', 'foo.com', 'done'], ['addr:kim@krs.co.kr', 'address', 'kim@krs.co.kr', 'open']]);
   assert.deepEqual(normalizeBook(b), b, '멱등');
   assert.deepEqual(normalizeBook(JSON.parse(JSON.stringify(b))), b, 'JSON 왕복(chrome.storage)에도 같다');
+});
+t('normalizeBook — v1 장부(참조에서도 받을 곳을 세우던 때)는 받는 사람(To)의 받을 곳만 남기고 v2 로 올린다(2026-10-15 "참조는 추적을 하지 않아")', () => {
+  const item = {
+    id: 'old', subject: '견적 송부', sentAt: '2026-10-15T06:06:00Z', from: A(ME), to: [A('cs@foo.com')], cc: [A('a@krs.co.kr'), A('b@krs.co.kr'), A('x@foo.com')],
+    expect: [
+      { key: 'foo.com', kind: 'domain', label: 'foo.com', addresses: ['cs@foo.com', 'x@foo.com'], state: 'open' },
+      { key: 'addr:a@krs.co.kr', kind: 'address', label: 'A', addresses: ['a@krs.co.kr'], state: 'done', manual: true, by: 'a@krs.co.kr' },
+      { key: 'addr:b@krs.co.kr', kind: 'address', label: 'B', addresses: ['b@krs.co.kr'], state: 'excluded', manual: true },
+    ],
+    replies: [
+      { id: 'r-a', from: A('a@krs.co.kr'), key: 'addr:a@krs.co.kr', kind: 'reply', score: 3, counted: true, review: 'accepted' },
+      { id: 'r-cs', from: A('cs@foo.com'), key: 'foo.com', kind: 'reply', score: 3, counted: true, review: 'accepted' },
+      { id: 'r-x', from: A('z@zed.com'), key: null, kind: 'reply', score: 3, counted: false },
+    ],
+  };
+  for (const v of [undefined, 1]) {
+    const b = normalizeBook({ v, me: ME, items: [item] });
+    const it = b.items[0];
+    assert.equal(b.v, 2);
+    assert.deepEqual(it.expect.map((e) => [e.key, e.addresses, e.state]), [['foo.com', ['cs@foo.com'], 'open']], `v=${v}: 참조에서 세운 곳은 지우고 같은 회사 참조자 주소도 뺀다`);
+    assert.deepEqual(it.replies.map((r) => [r.id, r.key, r.counted]), [['r-a', null, false], ['r-cs', 'foo.com', true], ['r-x', null, false]], '지운 곳의 회신은 대상 아님');
+    assert.deepEqual(it.cc.map((a) => a.address), ['a@krs.co.kr', 'b@krs.co.kr', 'x@foo.com'], 'cc 는 보이도록 남긴다');
+    assert.deepEqual(it.status, { expected: 1, responded: 0, excluded: 0, done: false });
+    assert.deepEqual(normalizeBook(b), b, '올린 뒤에는 그대로');
+    assert.deepEqual(normalizeBook(JSON.parse(JSON.stringify(b))), b);
+  }
+  const kept = normalizeBook({ v: 2, me: ME, items: [item] }).items[0];
+  assert.deepEqual(kept.expect.map((e) => e.key), ['foo.com', 'addr:a@krs.co.kr', 'addr:b@krs.co.kr'], 'v2 장부는 건드리지 않는다');
+  const blind = normalizeBook({ v: 1, me: ME, items: [{ ...item, to: [] }] }).items[0];
+  assert.deepEqual(blind.expect.map((e) => e.key), ['foo.com', 'addr:a@krs.co.kr', 'addr:b@krs.co.kr'], 'To 를 모르는 항목은 가를 수 없어 그대로');
 });
 t('normalizeItem — 회신·첨부·양식 꼴, 인라인 첨부는 빠짐, serverPath 는 남김', () => {
   const it = normalizeItem({
@@ -91,8 +121,7 @@ t('normalizeSubject — RE:/FW:/회신:/전달:/[외부] 머리표를 반복해 
 console.log('받는 사람 → 기대 키');
 t('expectOf — 외부는 도메인 하나가 키 하나(여러 명은 addresses), 내 도메인은 주소마다, 첫 등장 차례', () => {
   const ex = expectOf({
-    to: [A('kim@foo.com', '김'), A('lee@krs.co.kr', '이'), A('park@bar.org')],
-    cc: [A('choi@foo.com'), A('jung@krs.co.kr')],
+    to: [A('kim@foo.com', '김'), A('lee@krs.co.kr', '이'), A('park@bar.org'), A('choi@foo.com'), A('jung@krs.co.kr')],
     me: ME,
   });
   assert.deepEqual(ex.map((e) => e.key), ['foo.com', 'addr:lee@krs.co.kr', 'bar.org', 'addr:jung@krs.co.kr']);
@@ -100,14 +129,18 @@ t('expectOf — 외부는 도메인 하나가 키 하나(여러 명은 addresses
   assert.deepEqual([ex[1].kind, ex[1].label, ex[1].addresses], ['address', '이', ['lee@krs.co.kr']], '주소 키의 이름표는 사람 이름(없으면 주소)');
   assert.equal(ex[3].label, 'jung@krs.co.kr');
 });
+t('expectOf — 참조(CC)는 받을 곳이 아니다(2026-10-15 "참조는 추적을 하지 않아. 받는 사람 뿐이야.") — cc 를 줘도 보지 않는다', () => {
+  const ex = expectOf({ to: [A('kim@foo.com', '김')], cc: [A('choi@foo.com'), A('park@bar.org'), A('jung@krs.co.kr')], me: ME });
+  assert.deepEqual(ex.map((e) => [e.key, e.addresses]), [['foo.com', ['kim@foo.com']]], '같은 회사 참조자도 addresses 에 들지 않는다');
+  assert.deepEqual(expectOf({ cc: [A('park@bar.org')], me: ME }), [], '참조만 있는 메일은 기다릴 곳이 없다');
+});
 t('expectOf — ownByAddress:false 면 내 도메인도 도메인 키 하나', () => {
-  const ex = expectOf({ to: [A('lee@krs.co.kr'), A('kim@foo.com')], cc: [A('jung@krs.co.kr')], me: ME, ownByAddress: false });
+  const ex = expectOf({ to: [A('lee@krs.co.kr'), A('kim@foo.com'), A('jung@krs.co.kr')], me: ME, ownByAddress: false });
   assert.deepEqual(ex.map((e) => [e.key, e.kind, e.addresses]), [['krs.co.kr', 'domain', ['lee@krs.co.kr', 'jung@krs.co.kr']], ['foo.com', 'domain', ['kim@foo.com']]]);
 });
-t('expectOf — 나·빈 주소·겹친 주소(대소문자 무시)는 뺀다, To 에서 본 주소는 CC 에서 다시 세지 않는다', () => {
+t('expectOf — 나·빈 주소·겹친 주소(대소문자 무시)는 뺀다', () => {
   const ex = expectOf({
-    to: [A('ME@KRS.CO.KR'), A(''), { emailAddress: { name: '김', address: 'Kim@Foo.com' } }, 'kim@foo.com'],
-    cc: [A('KIM@FOO.COM'), A('lee@krs.co.kr'), A('Lee@KRS.co.kr')],
+    to: [A('ME@KRS.CO.KR'), A(''), { emailAddress: { name: '김', address: 'Kim@Foo.com' } }, 'kim@foo.com', A('KIM@FOO.COM'), A('lee@krs.co.kr'), A('Lee@KRS.co.kr')],
     me: 'Me@Krs.Co.Kr',
   });
   assert.deepEqual(ex.map((e) => [e.key, e.addresses]), [['foo.com', ['kim@foo.com']], ['addr:lee@krs.co.kr', ['lee@krs.co.kr']]]);
@@ -152,13 +185,14 @@ const META = {
     { id: 'att-d', name: '참고 양식.docx', contentType: 'x', size: 10, isInline: false, odataType: '#microsoft.graph.referenceAttachment' },
   ],
 };
-t('newItem — 상세의 To·CC 로 기대 키, 내 첨부의 xlsx·docx 가 양식(바이트 받을 수 있는 것만), 인라인 그림은 빠짐', () => {
+t('newItem — 상세의 To 로 기대 키(CC 는 보이기만), 내 첨부의 xlsx·docx 가 양식(바이트 받을 수 있는 것만), 인라인 그림은 빠짐', () => {
   const it = newItem(FULL, META, { me: ME, now: Date.parse('2026-10-15T00:00:00Z'), ownByAddress: true });
   assert.equal(it.id, 'sent-1');
   assert.deepEqual([it.conversationId, it.internetMessageId, it.subjectKey, it.sentAt, it.registeredAt, it.webLink], ['conv-1', '<sent-1@krs.co.kr>', '2026 실적 자료 요청', '2026-10-10T01:00:00Z', '2026-10-15T00:00:00Z', FULL.webLink]);
   assert.deepEqual(it.from, { name: '나', address: ME });
-  assert.deepEqual(it.cc.map((a) => a.address), ['choi@foo.com', ME], 'cc 는 메일 그대로(나 포함) — 기대 키에서만 뺀다');
+  assert.deepEqual(it.cc.map((a) => a.address), ['choi@foo.com', ME], 'cc 는 메일 그대로(나 포함) 보이기만 — 받을 곳이 되지 않는다');
   assert.deepEqual(it.expect.map((e) => e.key), ['foo.com', 'addr:lee@krs.co.kr']);
+  assert.deepEqual(it.expect[0].addresses, ['kim@foo.com'], '참조의 choi@foo.com 은 foo.com 의 주소에도 들지 않는다');
   assert.deepEqual(it.attachments.map((a) => [a.id, a.stored, a.missing]), [['att-x', false, false], ['att-p', false, false], ['att-d', false, false]]);
   assert.deepEqual(it.templates, [{ attachmentId: 'att-x', name: '실적양식.xlsx', kind: 'xlsx', stored: false }]);
   assert.deepEqual(it.replies, []);

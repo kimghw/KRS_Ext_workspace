@@ -13,7 +13,7 @@ import {
   BOOK_KEY, MAX_PROJECTS, CHANGE_KINDS, BUDGET_ITEMS, normalizeBook, normalizeProject, projectOf, aliasOwner, viewYear, yearBook, yearsOf, currentYear, yearLabel, yearState,
   periodText, dot, todayStr, isYmd, amountOf, comma, shortWon, budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst, newId,
   fromGongmun, mergeProjects, restoreBook, exportJson, exportName, importJson, summaryText, parseRoster, parseSections, fileLog, noteLogs,
-  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand,
+  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand, refsText,
 } from './src/rnd.js';
 import { SET_KEY, normalizeSet, includeNames, isHidden, nameKey, projectRecs, pickYearRec, candidates, linkOf, isLive, isFresh, fetchSnapshot, applySnapshot, erpExtras, erpHead, clock as erpClock } from './src/rnderp.js';
 // kr_ext_rerp 에서 옮긴 것(rerp/ — 출처·갱신 규칙은 rerp/README.md): rERP 호출(erp), 예상 비용 저장소와 입력 처리(PLAN), 과제집행비율 표(budgetTable), 원노트 동기화 배선(createPlusSync).
@@ -200,6 +200,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const meta = [['과제명', p.name]];
     if (p.code) meta.push(['과제번호', p.code]);
     if (p.lead) meta.push(['책임자', p.lead]);
+    // 공문 참조자(계획서 YAML 의 공문.참조자 — 공문 종류마다)는 보이기만 한다. 적는 곳은 YAML 이고 공문 탭이 결재선에 쓴다(2026-10-15).
+    if (Object.keys(p.refs || {}).length) meta.push(['공문 참조자', refsText(p.refs)]);
     meta.push(['연구기간', p.start ? `${periodText(p)} (총 ${ys.length}차년도${p.calendar ? ' · 1월 1일 기준' : ''})` : '미정 — 과제 고치기에서 시작일·종료일을 적으세요']);
     if (p.note) meta.push(['비고', p.note]);
     el.meta.innerHTML = meta.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join('');

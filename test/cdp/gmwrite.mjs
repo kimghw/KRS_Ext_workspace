@@ -4,6 +4,8 @@
 //                             [--lead <과제책임자>] [--refs <참조자,참조자>] [--code <과제번호>] [--director <소장>] [--title <제목>] [--total <합계>]
 //                             [--attach <파일,파일>] [--live]
 //
+// --refs 는 그 과제의 이 갈래(--kind)의 참조자다 — 패널에서는 과제 YAML 의 공문.참조자에서 오고 공문 설정에는 없다(2026-10-15). 외부활동은 과제가 없어 참조도 없다.
+//
 // 미리: 디버그 포트(기본 9333, CDP_PORT)를 연 KRS 크롬이 eclass 에 로그인돼 있어야 한다. --new 면 새 공문 창을 직접 열고(GET) 끝나면 저장 없이 닫는다.
 // 없으면 열려 있는 새 공문 창(먼저 찾은 것)에 쓴다 — 하룻밤 둔 창은 결재선 화면이 비어 쓸 수 없다(2026-10-09 실측).
 // 기본은 dry — 과제(Job Id)·제목·차수·본문은 창에 들어가지만(저장은 안 된 채) 문서설정·결재선은 넣어 보고 다시 읽기만 하고 **확인·저장하지 않고**,
@@ -31,8 +33,9 @@ const files = (args.attach || '').split(',').map((s) => s.trim()).filter(Boolean
 }));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const kind = args.kind || 'purchase';
-const project = args.project ? { name: args.project, code: args.code || '', lead: args.lead || '', alias: '', rnd: { year: 1 } } : null;
-const preset = { dept: args.dept || '', head: args.head, director: args.director || '', refs: (args.refs || '').split(/[,\s]+/).filter(Boolean) };
+const refs = (args.refs || '').split(/[,\s]+/).filter(Boolean);
+const project = args.project ? { name: args.project, code: args.code || '', lead: args.lead || '', alias: '', refs: refs.length ? { [kind]: refs } : {}, rnd: { year: 1 } } : null;
+const preset = { dept: args.dept || '', head: args.head, director: args.director || '' };
 const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 // 외부강의등 신고서의 시험 초안 — 칸마다 [시험] 이 보이게. 숫자만 받는 칸은 0·1.
 const OUTSIDE_DRAFT = {

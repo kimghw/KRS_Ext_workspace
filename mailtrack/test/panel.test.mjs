@@ -811,7 +811,7 @@ await ta('병합이 실패하면 보고 줄 · 알림 줄 · 기록에', async (
 });
 
 console.log('모두 zip · 지우기');
-await ta('본문·첨부 모두 zip — 요약 · 메일마다 폴더(보낸 메일 00, 회신은 받은 차례) · 본문은 글자', async () => {
+await ta('본문·첨부 모두 zip — 요약 · 메일ID.json · 메일마다 폴더(보낸 메일 00, 회신은 받은 차례) · 본문은 글자(머리에 메일 ID·첨부 ID)', async () => {
   $('mtAllZip').click();
   await until(() => downloads.at(-1)?.name?.endsWith('.zip'));
   const d = downloads.at(-1);
@@ -819,17 +819,54 @@ await ta('본문·첨부 모두 zip — 요약 · 메일마다 폴더(보낸 메
   assert.equal(d.mime, 'application/zip');
   const entries = readZip(d.bytes);
   const names = entries.map((e) => e.name);
-  assert.deepEqual(names.map((x) => x.replace(/_2026101\d/, '_D')), [
-    '요약.txt', '00_보낸 메일/본문.txt', '01_foo.com_D/본문.txt', '04_baz.com_D/본문.txt',
+  const noDay = (x) => x.replace(/_2026101\d/, '_D');
+  assert.deepEqual(names.map(noDay), [
+    '요약.txt', '메일ID.json', '00_보낸 메일/본문.txt', '01_foo.com_D/본문.txt', '04_baz.com_D/본문.txt',
     '00_보낸 메일/견적양식.xlsx', '01_foo.com_D/견적_foo.xlsx', '04_baz.com_D/회신서_baz.docx',
   ]);
   const text = (i) => new TextDecoder().decode(entries[i].data);
+  assert.match(text(0), /^제목: 견적 양식 회신 부탁\n메일 ID: A\n/, '요약 머리에 보낸 메일의 ID');
   assert.match(text(0), /상태: 3\/5 · 진행 중/);
-  assert.match(text(0), /· a@foo\.com · reply · 수락 · 셈 · /, '요약에 회신의 확인 상태');
-  assert.match(text(0), /· x@qux\.com · auto · 거부 · /);
-  assert.match(text(2), /회신입니다 <b>굵게<\/b>\n끝/);
-  assert.doesNotMatch(text(2), /__pwned|<script|onerror/);
-  assert.deepEqual([...entries[5].data], [5, 6, 7]);
+  assert.match(text(0), /· a@foo\.com · reply · 수락 · 셈 · RE: 견적 양식 회신 부탁 · 메일 ID: r1$/m, '요약에 회신의 확인 상태와 메일 ID');
+  assert.match(text(0), /· x@qux\.com · auto · 거부 · .* · 메일 ID: r5$/m);
+  assert.match(text(0), /메일ID\.json 과 각 본문\.txt 머리에/);
+  // 메일ID.json — 2026-10-15 사용자 지정 "내용이나 첨부 파일 다운받을 수 있는 id도 같이 다운받게": 메일 ID·첨부 ID 와 zip 안 경로, 다시 받을 도구.
+  const ids = JSON.parse(text(1));
+  assert.equal(ids.v, 1);
+  assert.equal(ids.mcpUrl, 'http://localhost:5001/mcp');
+  assert.match(ids.howTo.body, /^mail_query_if_emaidID /);
+  assert.match(ids.howTo.attachment, /^mail_attachment_download /);
+  assert.equal(ids.sent.messageId, 'A');
+  assert.equal(ids.sent.conversationId, 'c-A');
+  assert.equal(ids.sent.internetMessageId, '<A@krs>');
+  assert.equal(ids.sent.webLink, 'https://outlook.office365.com/owa/?ItemID=A');
+  assert.equal(ids.sent.folder, '00_보낸 메일');
+  assert.equal(ids.sent.body, '00_보낸 메일/본문.txt');
+  // 보낸 첨부 — 받아 둔 양식은 zip 안 경로, 금고에 없는 것·큰 것(missing)·파일 아닌 첨부는 null(ID 로 다시 받는다), 본문 속 그림(i1)은 없다.
+  assert.deepEqual(ids.sent.attachments.map((a) => [a.attachmentId, a.name, a.file, a.missing === true]), [
+    ['t1', '견적양식.xlsx', '00_보낸 메일/견적양식.xlsx', false], ['t2', '회신서.docx', null, false], ['s3', '안내.pdf', null, true], ['s4', '전달한 메일', null, false],
+  ]);
+  assert.deepEqual(ids.replies.map((r) => r.messageId), ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'], '회신은 받은 차례');
+  const r4 = ids.replies.find((r) => r.messageId === 'r4');
+  assert.equal(r4.from, 'b@baz.com');
+  assert.equal(r4.key, 'baz.com');
+  assert.equal(r4.review, 'pending');
+  assert.equal(r4.counted, true);
+  assert.equal(noDay(r4.folder), '04_baz.com_D');
+  assert.equal(noDay(r4.body), '04_baz.com_D/본문.txt');
+  assert.deepEqual(r4.attachments.map((a) => [a.attachmentId, a.name, a.file && noDay(a.file), a.missing === true]), [['a4', 'big.xlsx', null, true], ['a5', '회신서_baz.docx', '04_baz.com_D/회신서_baz.docx', false]]);
+  const r3 = ids.replies.find((r) => r.messageId === 'r3');
+  assert.equal(r3.body, null, '본문을 받지 않은 회신은 body 가 null');
+  assert.deepEqual(r3.attachments, []);
+  assert.doesNotMatch(text(1), /__pwned|<script|onerror/);
+  // 본문.txt 머리 — 메일 ID 와 첨부 ID 줄.
+  assert.match(text(2), /^메일 ID: A$/m);
+  assert.match(text(2), /^첨부:\n- 견적양식\.xlsx · 첨부 ID: t1\n- 회신서\.docx · 첨부 ID: t2\n- 안내\.pdf · 첨부 ID: s3\n- 전달한 메일 · 첨부 ID: s4\n\n/m, '보낸 메일의 첨부 ID(본문 속 그림은 빼고)');
+  assert.match(text(3), /^메일 ID: r1$/m);
+  assert.match(text(3), /^- 견적_foo\.xlsx · 첨부 ID: a1$/m);
+  assert.match(text(3), /회신입니다 <b>굵게<\/b>\n끝/);
+  assert.doesNotMatch(text(3), /__pwned|<script|onerror/);
+  assert.deepEqual([...entries[6].data], [5, 6, 7]);
 });
 await ta('등록 지우기는 두 번 — 한 번 누르고 기다리면 되돌아가고, 잇달아 두 번이면 sync.remove 하고 목록으로', async () => {
   $('mtRemove').click();
@@ -847,6 +884,27 @@ await ta('등록 지우기는 두 번 — 한 번 누르고 기다리면 되돌�
   assert.ok(hidden('mtDetail'));
   assert.equal(card('A'), null);
   assert.equal($('mtMsg').textContent, '등록을 지웠습니다: 견적 양식 회신 부탁');
+});
+await ta('목록 줄의 지우기(상세에 들어가지 않고) — 같은 두 번 확인, 줄만 빠지고 목록에 머문다', async () => {
+  const rm = $('mtList').querySelector('.mt-item-remove[data-id]');
+  assert.ok(rm, '줄마다 지우기 단추');
+  const id = rm.dataset.id;
+  const subject = card(id).querySelector('.mt-subj').textContent;
+  assert.equal(rm.textContent, '지우기');
+  assert.equal(rm.closest('.mt-item'), null, '줄 단추 안에 단추를 두지 않는다');
+  rm.click();
+  assert.equal(rm.textContent, '한 번 더 누르면 지웁니다');
+  assert.ok(rm.classList.contains('armed'));
+  assert.ok(hidden('mtDetail'), '지우기를 눌러도 상세가 열리지 않는다');
+  assert.equal(callsOf(s, 'remove').length, 1);
+  await wait(150);
+  assert.equal(rm.textContent, '지우기');
+  rm.click();
+  rm.click();
+  await until(() => callsOf(s, 'remove').length === 2 && card(id) === null);
+  assert.deepEqual(callsOf(s, 'remove').at(-1), ['remove', id]);
+  assert.ok(!hidden('mtListBox') && hidden('mtDetail'));
+  assert.equal($('mtMsg').textContent, `등록을 지웠습니다: ${subject}`);
 });
 
 console.log('메일 설정');

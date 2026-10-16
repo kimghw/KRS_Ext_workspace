@@ -116,7 +116,9 @@ await ta('등록 — 보낸 메일을 골라 등록하면 장부·금고에 들�
   assert.equal(book.me, G.ME, '보낸 메일의 보낸 주소가 곧 나(소문자)');
   assert.equal(book.items.length, 1);
   const it = book.items[0];
-  assert.deepEqual(it.expect.map((e) => e.key), ['foo.com', 'bar.co.kr', 'addr:d@krs.co.kr'], '외부는 도메인 하나로, 내 도메인은 주소마다');
+  assert.deepEqual(it.expect.map((e) => [e.key, e.addresses]), [['foo.com', ['a@foo.com']], ['bar.co.kr', ['b@bar.co.kr']], ['addr:d@krs.co.kr', ['d@krs.co.kr']]],
+    '받는 사람(To)만 — 외부는 도메인 하나로, 내 도메인은 주소마다, 참조(c@foo.com)는 foo.com 의 주소에도 들지 않는다');
+  assert.deepEqual(it.cc.map((a) => a.address), ['c@foo.com'], '참조는 항목에 남아 보이기만');
   assert.deepEqual(it.templates.map((t) => [t.name, t.kind, t.stored]), [['조사표.xlsx', 'xlsx', true], ['안내문.docx', 'docx', false]]);
 
   const reg = logsOf(/^메일 등록/);
