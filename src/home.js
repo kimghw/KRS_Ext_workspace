@@ -1203,8 +1203,8 @@ export function createHomeCard(doc, deps = {}) {
     const warn = [];
     if (!name) {
       warn.push(nameNote
-        ? `이름을 e-Class 에서 읽지 못했습니다(${nameNote}). 예약 패널의 "설정 및 연결"에 이름을 넣으면 예약자 이름으로도 찾습니다`
-        : '이름을 넣으면 예약자 이름으로도 찾습니다 — 예약 패널의 "설정 및 연결"');
+        ? `이름을 e-Class 에서 읽지 못했습니다(${nameNote}). 예약 패널 머리의 톱니 "설정 → 일반"에 이름을 넣으면 예약자 이름으로도 찾습니다`
+        : '이름을 넣으면 예약자 이름으로도 찾습니다 — 예약 패널 머리의 톱니 "설정 → 일반"');
     }
     if (cache.skippedDates?.length) warn.push(skippedText(cache));
     if (cache.unread?.length) warn.push(`⚠ ${cache.unread.length}일은 아예 읽지 못했습니다`);

@@ -248,20 +248,46 @@ button.pk-del:hover { color: var(--danger); }
 .ak-time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ak-seat { flex: none; font-size: 11px; color: var(--muted); }
 .ak-kind { flex: none; padding: 1px 6px; border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-size: 11px; }
-.settings { margin-top: 14px; padding: 0 14px; border-radius: 14px; }
+/* 설정 화면(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게") — 머리의 톱니로 열면 .app 에 settings-open 이 붙어 머리·설정·바닥글만 남고
+   탭 줄·탭 내용은 숨는다(sidepanel.js showSettings). 갈래(일반 · LLM · 연결)는 머리 줄의 탭(.set-tab)이고 한 번에 하나만 보인다(.set-pane[hidden]). */
+.app.settings-open > :not(.app-header):not(.settings):not(.footer-note) { display: none; }
+.settings { padding: 0 16px 14px; }
+.settings-head { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+.set-tabs { display: flex; flex: 1; min-width: 0; gap: 2px; }
+.set-tab { flex: none; min-height: 46px; margin-bottom: -1px; padding: 10px 12px; border-radius: 0; background: transparent; border-bottom: 2px solid transparent; color: var(--muted); font-size: 14px; font-weight: 600; }
+.set-tab:hover { background: transparent; color: var(--fg); }
+.set-tab.active { color: var(--pick); border-bottom-color: var(--pick); }
+.settings-close { flex: none; }
+.set-pane { padding-top: 4px; }
+.set-pane[hidden] { display: none; }
+.set-lead { margin: 10px 0 2px; }
+.set-note { margin: -6px 0 10px; }
+.set-note:empty { display: none; }
+/* 머리의 새로고침은 결과를 예약 현황의 상태 줄(숨어 있다)에 적으니 설정 화면에서는 뗀다. */
+.app.settings-open #refresh { display: none; }
+/* 갈래 안의 덩이(로컬 CLI · API 키 · MCP 서버마다 하나) — 머리 줄(이름 + 배지·형편)과 몸통. 덩이 사이는 선 하나. */
+.set-block { padding: 12px 0; }
+.set-block + .set-block { border-top: 1px solid var(--line); }
+.set-block-head { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 4px; }
+.set-block-head > strong { flex: none; font-size: 14px; font-weight: 600; color: var(--fg); }
+.set-block-head > .badge, .set-block-head > .summary-detail { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-block > .hint { margin: 4px 0 0; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* 연결 갈래의 Teams·OneNote 줄 — 주소(바꾸지 않는다) · 배지 · 연결 확인. Outlook 은 메일 탭이 .conn-host 에 제 칸(mailtrack/panel.css .mt-conn)을 그린다. */
+.conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.conn-addr { flex: 1; min-width: 0; font: 12px/1.6 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.conn-host { margin-top: 2px; }
 .diag + .diag { border-top: 1px solid var(--line); }
 .diag summary { display: flex; align-items: center; gap: 9px; min-height: 43px; color: var(--muted); font-size: 14px; cursor: pointer; list-style: none; }
 .diag summary::-webkit-details-marker { display: none; }
 .diag summary > svg { width: 15px; height: 15px; }
 .diag summary::after { content: ""; width: 5px; height: 5px; margin: 0 3px; border-right: 1.4px solid var(--faint); border-bottom: 1.4px solid var(--faint); transform: rotate(-45deg); transition: transform .15s; }
-.diag[open] > summary::after, .sub[open] > summary::after { transform: rotate(45deg); }
+.diag[open] > summary::after { transform: rotate(45deg); }
 .summary-detail { margin-left: auto; font-size: 12px; color: var(--faint); }
 .details-content { padding: 0 0 14px 24px; }
-/* 세 칸(설정 및 연결 · 활동 로그 · 페이지 구조 캡처)을 `설정` 한 줄로 접어 둔 바깥 칸. 펼치면 안의 줄이 설정 글줄 아래로 들어가고,
-   그 안의 내용은 (.sub 처럼) 더 들이지 않아 글 너비가 지금과 같다. */
-.settings-body { padding-left: 24px; }
-.settings-body > .diag { border-top: 1px solid var(--line); }
-.settings-body > .diag > .details-content { padding-left: 0; }
+/* 일반 갈래 끝의 접는 두 칸(활동 로그 · 페이지 구조 캡처) — 체크 줄 뒤에 선을 긋고 서고, 안의 내용은 더 들이지 않는다. */
+.set-pane > .diag { border-top: 1px solid var(--line); }
+.set-pane > .diag > .details-content { padding-left: 0; }
 .key-row { display: block; margin-bottom: 6px; font-size: 14px; color: var(--muted); }
 /* 설정 안의 켜고 끄기 줄. 머리의 알약(.home-toggle)과 달리 본문 글줄에 맞춘다. */
 .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 14px; color: var(--fg); cursor: pointer; user-select: none; }
@@ -279,17 +305,12 @@ button.pk-del:hover { color: var(--danger); }
 .tab-pick:has(input:checked) { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 45%, var(--line)); }
 .tab-pick:hover { color: var(--fg); }
 
-/* 설정 안에 접어 둔 항목(로컬 CLI · API 키). 바깥 항목보다 낮고 아이콘이 없다. */
-.sub { border-top: 1px solid var(--line); }
-.sub > summary { min-height: 38px; }
-.sub > summary > strong { font-size: 14px; font-weight: 600; color: var(--fg); }
-.sub > summary > .badge { margin-left: auto; }
-.sub .details-content { padding: 0 0 10px; }
 .badge {
   font-size: 12px; padding: 1px 7px; border-radius: 8px;
   border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
 }
 .badge.on { color: var(--fg); background: var(--free); border-color: var(--free-line); }
+.badge.off { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
 #apiKey { width: 100%; font-size: 14px; }
 .hint { color: var(--muted); font-size: 14px; line-height: 1.7; }
 .grid-wrap > .hint { padding: 20px 12px; }

@@ -441,7 +441,7 @@ console.log('패널의 체크박스');
   const root = new URL('../', import.meta.url);
   const html = fs.readFileSync(new URL('sidepanel.html', root), 'utf8');
   const panel = fs.readFileSync(new URL('sidepanel.js', root), 'utf8');
-  t('설정 및 연결에 기본으로 켜진 체크박스가 있다', () =>
+  t('설정(일반)에 기본으로 켜진 체크박스가 있다', () =>
     assert.match(html, /<input type="checkbox" id="qualityYearKeep" checked \/>/));
   t('패널은 같은 열쇠(src/riskyear.js 의 ENABLE_KEY)로 저장한다', () => {
     assert.match(panel, /import \{ ENABLE_KEY as QYEAR_ENABLE_KEY, riskYearEnabled \} from '\.\/src\/riskyear\.js';/);

@@ -20,7 +20,7 @@ import { parseHtml } from './aspnet.js';
 import { findAnchor, ROOT_ID as MINE_ROOT_ID } from './home.js';
 import { CARD_STYLE, ICON, setChip } from './homecard.js';
 
-/** 카드를 쓸지. 패널의 "설정 및 연결" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
+/** 카드를 쓸지. 패널의 "설정 → 일반" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
 export const ENABLE_KEY = 'homeUncfm';
 export const unconfirmedEnabled = (value) => value !== false;
 /** 카드의 루트 요소 id. */

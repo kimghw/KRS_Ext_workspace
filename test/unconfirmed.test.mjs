@@ -471,7 +471,7 @@ console.log('확장 배선');
     const box = panel.getElementById('homeUncfm');
     assert.ok(box, '체크박스가 없다');
     assert.equal(box.hasAttribute('checked'), true);
-    assert.match(box.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   t('설정 이름', () => assert.equal(ENABLE_KEY, 'homeUncfm'));
 }

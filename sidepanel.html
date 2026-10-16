@@ -651,7 +651,7 @@
         <p id="mineEmpty" class="hint hidden">
           이 기간에 <strong>내 예약·근태로 확인된 건</strong>이 없습니다.<br>
           사이트는 본인 예약에만 수정·삭제 버튼을 붙이는데, 승인 상태에 따라 그 버튼이 없을 수 있습니다.
-          이름은 e-Class 홈을 열면 자동으로 채워집니다. 아래 <strong>설정 → 설정 및 연결</strong>에 직접 넣어도 예약자 이름으로 찾습니다.
+          이름은 e-Class 홈을 열면 자동으로 채워집니다. 머리의 톱니 <strong>설정 → 일반</strong>에 직접 넣어도 예약자 이름으로 찾습니다.
         </p>
       </div>
       <div class="statusline">
@@ -684,101 +684,125 @@
       </div>
       <p id="editNote" class="edit-note hidden"></p>
     </section>
-    <footer class="settings card">
-      <!-- 설정 및 연결 · 활동 로그 · 페이지 구조 캡처는 평소 볼 일이 드물어 `설정` 한 줄로 접어 둔다. 펼쳐야 세 칸이 보인다. -->
-      <details id="settingsBox" class="diag">
-        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>설정</span><span class="summary-detail">연결 · 활동 로그 · 진단</span></summary>
-        <div class="settings-body">
-          <details class="diag">
-            <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface)"/><circle cx="15" cy="17" r="3" fill="var(--surface)"/></svg><span>설정 및 연결</span><span class="summary-detail">탭 · 내 이름 · Teams · 공문 · API 키</span></summary>
-            <div class="details-content">
-              <!-- 보이는 탭 — 머리의 탭 줄에서 쓰지 않는 탭을 뗀다(src/tabpick.js, 저장은 tabsOff 에 숨긴 탭만).
-                   체크박스의 data-tab 은 sidepanel.js 의 모드 이름이고 차례는 탭 줄과 같다. 적어도 하나는 남는다. -->
-              <div id="tabPicks" class="tab-picks" role="group" aria-labelledby="tabPicksTitle" title="끈 탭은 머리의 탭 줄에서 사라지고, 남은 탭이 그 자리를 나눠 갖습니다. 보고 있던 탭을 끄면 보이는 첫 탭으로 옮기고, 적어도 하나는 남겨야 합니다. 꺼 둔 탭도 홈 카드에서 그 건을 누르면 그때만 나타납니다.">
-                <span id="tabPicksTitle" class="tab-picks-title">보이는 탭</span>
-                <label class="tab-pick"><input type="checkbox" data-tab="attend" checked />근태</label>
-                <label class="tab-pick"><input type="checkbox" data-tab="gongmun" checked />공문</label>
-                <label class="tab-pick"><input type="checkbox" data-tab="rnd" checked />R&amp;D</label>
-                <label class="tab-pick"><input type="checkbox" data-tab="mail" checked />메일</label>
-                <label class="tab-pick"><input type="checkbox" data-tab="room" checked />회의실</label>
-                <label class="tab-pick"><input type="checkbox" data-tab="car" checked />차량</label>
-                <label class="tab-pick"><input type="checkbox" data-tab="mine" checked />현황</label>
-              </div>
-              <label class="key-row" for="myName">내 이름 (내 예약 찾기용)</label>
-              <input type="text" id="myName" placeholder="예) 홍길동" autocomplete="off" spellcheck="false" />
-              <p class="hint">
-                예약자 이름으로도 <strong>내 예약</strong>을 찾는 데 씁니다. 비어 있으면 e-Class 홈을 열 때
-                머리글의 사용자 ID 로 인명을 찾아 자동으로 채우고(쪽지의 받는 사람 찾기와 같은 조회), 이 확장으로
-                예약해도 채워집니다. 직접 고친 이름은 그대로 둡니다.
-              </p>
-              <label class="check-row" title="인명 검색 결과의 인명 카드(Ext · Mobile · Task 줄)에 Teams 버튼을 붙입니다. 누르면 그 사람과의 Teams 1:1 채팅이 새 탭으로 열립니다. 끄면 열려 있는 검색 화면에서도 곧바로 사라집니다.">
-                <input type="checkbox" id="teamsButton" checked />
-                <span>인명 검색 카드에 <strong>Teams</strong> 버튼</span>
-              </label>
-              <label class="check-row" title="e-Class Quality 의 Context of KR · Risk/Opportunity Management 목록에서 연도 콤보로 고른 연도(예: 차년도 2027)를 기억해, 메뉴를 옮겨도 그 연도로 엽니다. 콤보 옆의 × 로 잊을 수 있습니다. 끄면 사이트가 정한 연도(올해)로 엽니다.">
-                <input type="checkbox" id="qualityYearKeep" checked />
-                <span>Quality 위험·기회 목록의 <strong>연도 유지</strong></span>
-              </label>
-              <!-- 체크박스마다 설명 문단은 두지 않는다. 무엇을 하는지는 줄의 툴팁(title)에 있다. -->
-              <label class="check-row" title="e-Class 홈의 WORKSPACE 카드 위에 DOC-Cruiser 의 접수 미확인 문서(Uncfm. Rcv DOC)를 한 줄로 보여줍니다. 펼치면 제목이 나오고, 제목을 누르면 그 문서 창이 열립니다. 목록만 읽고 문서는 대신 열지 않습니다.">
-                <input type="checkbox" id="homeUncfm" checked />
-                <span>홈에 <strong>접수 미확인 공문</strong> 카드</span>
-              </label>
-              <label class="check-row" title="DOC-Cruiser 의 미회람 문서(Non-circular documents)를 e-Class 홈을 열 때 하루에 한 번, 화면을 띄우지 않고 전부 열어 회람 처리합니다. 문서 내용은 읽어 주지 않습니다. 읽은 것으로 바뀐 문서는 되돌릴 수 없습니다.">
-                <input type="checkbox" id="docCirculate" />
-                <span>DOC-Cruiser <strong>미회람 문서</strong> 자동 열람</span>
-              </label>
-              <p class="hint" id="docCirculateState" role="status" hidden></p>
-              <!-- 아래 둘은 접어 둔다. 한 번 붙여 두면 다시 볼 일이 드물고, 배지만 보이면 충분하다. -->
-              <details class="sub">
-                <summary><strong>로컬 Claude CLI</strong><span id="cliState" class="badge">확인 중</span></summary>
-                <div class="details-content">
-                  <p class="hint">
-                    연결되면 API 키 없이 이미 로그인된 Claude Code 를 씁니다.
-                    연결되지 않았으면 <strong>연결 지침 복사</strong>를 눌러 Claude Code·Codex 에 붙여 넣으세요 —
-                    확장 폴더와 등록 방법이 적혀 있습니다.
-                  </p>
-                  <button id="cliCheck" class="ghost small">다시 확인</button>
-                  <button id="cliGuide" type="button" class="ghost small cli-guide-copy" hidden>연결 지침 복사</button>
-                </div>
-              </details>
-              <details class="sub">
-                <summary><strong>Anthropic API 키</strong><span id="apiKeyState" class="summary-detail">CLI 가 없을 때만</span></summary>
-                <div class="details-content">
-                  <input type="password" id="apiKey" aria-label="Anthropic API 키" placeholder="sk-ant-... (선택)" autocomplete="off" spellcheck="false" />
-                  <p class="hint">둘 다 없으면 <strong>말로 찾기</strong> 칸이 잠깁니다. 키는 이 브라우저에만 저장됩니다.</p>
-                </div>
-              </details>
-            </div>
-          </details>
-          <details id="logBox" class="diag">
-            <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span>활동 로그</span><span id="logCount" class="summary-detail">기록 없음</span></summary>
-            <div class="details-content">
-              <p class="hint">
-                예약·취소·수정, 근태 신청, 말로 찾기, 조회 실패를 이 브라우저에 최근 500건까지 남깁니다.
-                문제가 생기면 <strong>로그 복사</strong>를 눌러 개발자에게 붙여 넣어 주세요.
-                로컬 Claude 다리의 기록(<code>native\logs</code>)도 함께 담깁니다.
-                회의 주제와 이름이 들어 있습니다.
-              </p>
-              <div class="log-actions">
-                <button id="logCopy" class="primary small">로그 복사</button>
-                <button id="logSave" class="ghost small">파일로 저장</button>
-                <button id="logClear" class="ghost small" title="이 브라우저의 기록만 지웁니다. native\logs 는 그대로 둡니다">비우기</button>
-              </div>
-              <pre id="logOut" class="diag-out log-out" aria-label="최근 활동 (최신 것부터)"></pre>
-            </div>
-          </details>
-          <details class="diag">
-            <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></svg><span>페이지 구조 캡처</span><span class="summary-detail">진단</span></summary>
-            <div class="details-content">
-              <p class="hint">현황이 제대로 표시되지 않으면 로그인한 상태에서 페이지 구조를 저장해 개발자에게 전달해 주세요.</p>
-              <button id="capture" class="ghost wide">구조 캡처 저장</button>
-              <pre id="diagOut" class="diag-out" role="status"></pre>
-            </div>
-          </details>
+    <!-- 설정 화면(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게 … 설정 아래 일반/LLM/연결 이렇게 3가지로"). 머리의 톱니(settingsShortcut)를 누르면
+         탭 줄·탭 내용이 숨고 이 칸만 선다(sidepanel.js showSettings · sidepanel.css .app.settings-open). 갈래는 머리 줄의 세 탭(data-pane) —
+           일반: 보이는 탭 · 내 이름 · 켜고 끄기 네 줄 · 활동 로그 · 페이지 구조 캡처
+           LLM: Claude 에 닿는 길 전부 — 로컬 Claude CLI · Anthropic API 키 · 쓰는 모델
+           연결: 이 PC 의 KR_MS365_mcp 서버 — Outlook(메일 탭이 MCP 주소·내 메일 주소를 #connOutlook 에 그린다, mailtrack/panel.js connRoot) · Teams · OneNote
+         마지막에 본 갈래는 settingsPane 에 남는다. 비교작성 탭에서는 initCompareTab 이 hidden 을 붙여 통째로 숨긴다. -->
+    <section id="settingsBox" class="settings card" hidden aria-label="설정">
+      <div class="settings-head">
+        <nav id="settingsTabs" class="set-tabs" role="tablist" aria-label="설정 갈래">
+          <button id="setTabGeneral" class="set-tab active" type="button" role="tab" data-pane="general" aria-selected="true" aria-controls="setGeneral">일반</button>
+          <button id="setTabLlm" class="set-tab" type="button" role="tab" data-pane="llm" aria-selected="false" aria-controls="setLlm">LLM</button>
+          <button id="setTabConn" class="set-tab" type="button" role="tab" data-pane="conn" aria-selected="false" aria-controls="setConn">연결</button>
+        </nav>
+        <button id="settingsClose" class="ghost small settings-close" type="button" title="설정을 닫고 보던 탭으로 (Esc)">닫기</button>
+      </div>
+      <div id="setGeneral" class="set-pane" role="tabpanel" data-pane="general" aria-labelledby="setTabGeneral">
+        <!-- 보이는 탭 — 머리의 탭 줄에서 쓰지 않는 탭을 뗀다(src/tabpick.js, 저장은 tabsOff 에 숨긴 탭만).
+             체크박스의 data-tab 은 sidepanel.js 의 모드 이름이고 차례는 탭 줄과 같다. 적어도 하나는 남는다. -->
+        <div id="tabPicks" class="tab-picks" role="group" aria-labelledby="tabPicksTitle" title="끈 탭은 머리의 탭 줄에서 사라지고, 남은 탭이 그 자리를 나눠 갖습니다. 보고 있던 탭을 끄면 보이는 첫 탭으로 옮기고, 적어도 하나는 남겨야 합니다. 꺼 둔 탭도 홈 카드에서 그 건을 누르면 그때만 나타납니다.">
+          <span id="tabPicksTitle" class="tab-picks-title">보이는 탭</span>
+          <label class="tab-pick"><input type="checkbox" data-tab="attend" checked />근태</label>
+          <label class="tab-pick"><input type="checkbox" data-tab="gongmun" checked />공문</label>
+          <label class="tab-pick"><input type="checkbox" data-tab="rnd" checked />R&amp;D</label>
+          <label class="tab-pick"><input type="checkbox" data-tab="mail" checked />메일</label>
+          <label class="tab-pick"><input type="checkbox" data-tab="room" checked />회의실</label>
+          <label class="tab-pick"><input type="checkbox" data-tab="car" checked />차량</label>
+          <label class="tab-pick"><input type="checkbox" data-tab="mine" checked />현황</label>
         </div>
-      </details>
-    </footer>
+        <!-- 보이는 탭의 알림(마지막 하나는 못 끔) — 예약 현황의 상태 줄은 설정 화면이 열려 있으면 숨어 있어 여기 적는다(sidepanel.js settingsNote). -->
+        <p id="setNote" class="status set-note" role="status" aria-live="polite"></p>
+        <label class="key-row" for="myName">내 이름 (내 예약 찾기용)</label>
+        <input type="text" id="myName" placeholder="예) 홍길동" autocomplete="off" spellcheck="false" />
+        <p class="hint">
+          예약자 이름으로도 <strong>내 예약</strong>을 찾는 데 씁니다. 비어 있으면 e-Class 홈을 열 때
+          머리글의 사용자 ID 로 인명을 찾아 자동으로 채우고(쪽지의 받는 사람 찾기와 같은 조회), 이 확장으로
+          예약해도 채워집니다. 직접 고친 이름은 그대로 둡니다.
+        </p>
+        <label class="check-row" title="인명 검색 결과의 인명 카드(Ext · Mobile · Task 줄)에 Teams 버튼을 붙입니다. 누르면 그 사람과의 Teams 1:1 채팅이 새 탭으로 열립니다. 끄면 열려 있는 검색 화면에서도 곧바로 사라집니다.">
+          <input type="checkbox" id="teamsButton" checked />
+          <span>인명 검색 카드에 <strong>Teams</strong> 버튼</span>
+        </label>
+        <label class="check-row" title="e-Class Quality 의 Context of KR · Risk/Opportunity Management 목록에서 연도 콤보로 고른 연도(예: 차년도 2027)를 기억해, 메뉴를 옮겨도 그 연도로 엽니다. 콤보 옆의 × 로 잊을 수 있습니다. 끄면 사이트가 정한 연도(올해)로 엽니다.">
+          <input type="checkbox" id="qualityYearKeep" checked />
+          <span>Quality 위험·기회 목록의 <strong>연도 유지</strong></span>
+        </label>
+        <!-- 체크박스마다 설명 문단은 두지 않는다. 무엇을 하는지는 줄의 툴팁(title)에 있다. -->
+        <label class="check-row" title="e-Class 홈의 WORKSPACE 카드 위에 DOC-Cruiser 의 접수 미확인 문서(Uncfm. Rcv DOC)를 한 줄로 보여줍니다. 펼치면 제목이 나오고, 제목을 누르면 그 문서 창이 열립니다. 목록만 읽고 문서는 대신 열지 않습니다.">
+          <input type="checkbox" id="homeUncfm" checked />
+          <span>홈에 <strong>접수 미확인 공문</strong> 카드</span>
+        </label>
+        <label class="check-row" title="DOC-Cruiser 의 미회람 문서(Non-circular documents)를 e-Class 홈을 열 때 하루에 한 번, 화면을 띄우지 않고 전부 열어 회람 처리합니다. 문서 내용은 읽어 주지 않습니다. 읽은 것으로 바뀐 문서는 되돌릴 수 없습니다.">
+          <input type="checkbox" id="docCirculate" />
+          <span>DOC-Cruiser <strong>미회람 문서</strong> 자동 열람</span>
+        </label>
+        <p class="hint" id="docCirculateState" role="status" hidden></p>
+        <details id="logBox" class="diag">
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span>활동 로그</span><span id="logCount" class="summary-detail">기록 없음</span></summary>
+          <div class="details-content">
+            <p class="hint">
+              예약·취소·수정, 근태 신청, 말로 찾기, 조회 실패를 이 브라우저에 최근 500건까지 남깁니다.
+              문제가 생기면 <strong>로그 복사</strong>를 눌러 개발자에게 붙여 넣어 주세요.
+              로컬 Claude 다리의 기록(<code>native\logs</code>)도 함께 담깁니다.
+              회의 주제와 이름이 들어 있습니다.
+            </p>
+            <div class="log-actions">
+              <button id="logCopy" class="primary small">로그 복사</button>
+              <button id="logSave" class="ghost small">파일로 저장</button>
+              <button id="logClear" class="ghost small" title="이 브라우저의 기록만 지웁니다. native\logs 는 그대로 둡니다">비우기</button>
+            </div>
+            <pre id="logOut" class="diag-out log-out" aria-label="최근 활동 (최신 것부터)"></pre>
+          </div>
+        </details>
+        <details class="diag">
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></svg><span>페이지 구조 캡처</span><span class="summary-detail">진단</span></summary>
+          <div class="details-content">
+            <p class="hint">현황이 제대로 표시되지 않으면 로그인한 상태에서 페이지 구조를 저장해 개발자에게 전달해 주세요.</p>
+            <button id="capture" class="ghost wide">구조 캡처 저장</button>
+            <pre id="diagOut" class="diag-out" role="status"></pre>
+          </div>
+        </details>
+      </div>
+      <div id="setLlm" class="set-pane" role="tabpanel" data-pane="llm" aria-labelledby="setTabLlm" hidden>
+        <p class="hint set-lead">말로 찾기·말로 채우기·공문 읽기·HELP 가 Claude 에 닿는 길입니다. <strong>로컬 CLI → API 키</strong> 차례로 쓰고, 둘 다 없으면 규칙으로만 읽습니다. 모델은 <code id="llmModel"></code> 입니다.</p>
+        <div class="set-block">
+          <div class="set-block-head"><strong>로컬 Claude CLI</strong><span id="cliState" class="badge">확인 중</span></div>
+          <p class="hint">
+            연결되면 API 키 없이 이미 로그인된 Claude Code 를 씁니다.
+            연결되지 않았으면 <strong>연결 지침 복사</strong>를 눌러 Claude Code·Codex 에 붙여 넣으세요 —
+            확장 폴더와 등록 방법이 적혀 있습니다.
+          </p>
+          <div class="set-actions">
+            <button id="cliCheck" class="ghost small">다시 확인</button>
+            <button id="cliGuide" type="button" class="ghost small cli-guide-copy" hidden>연결 지침 복사</button>
+          </div>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>Anthropic API 키</strong><span id="apiKeyState" class="summary-detail">CLI 가 없을 때만</span></div>
+          <input type="password" id="apiKey" aria-label="Anthropic API 키" placeholder="sk-ant-... (선택)" autocomplete="off" spellcheck="false" />
+          <p class="hint">둘 다 없으면 <strong>말로 찾기</strong> 칸이 잠깁니다. 키는 이 브라우저에만 저장됩니다.</p>
+        </div>
+      </div>
+      <div id="setConn" class="set-pane" role="tabpanel" data-pane="conn" aria-labelledby="setTabConn" hidden>
+        <p class="hint set-lead">이 PC 에서 도는 <strong>KR_MS365_mcp</strong> 서버들입니다 — Microsoft 로그인은 서버가 합니다. 주소는 localhost · 127.0.0.1 만 됩니다. Claude 에 닿는 길(로컬 CLI·API 키)은 <strong>LLM</strong> 갈래에 있습니다.</p>
+        <div class="set-block">
+          <div class="set-block-head"><strong>Outlook MCP</strong><span class="summary-detail">메일 탭 — 보낸 메일의 회신 추적</span></div>
+          <!-- MCP 주소·내 메일 주소·연결 확인 — 메일 탭(mailtrack/panel.js)이 여기에 그린다(connRoot). 값은 메일 장부(mailtrackBook)의 설정이고, 나머지 메일 설정은 메일 탭에 남는다. -->
+          <div id="connOutlook" class="conn-host"></div>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>Teams MCP</strong><span class="summary-detail">여비증빙 송부 — 안 닿으면 쪽지로</span></div>
+          <div class="conn-row"><code id="connTeamsUrl" class="conn-addr"></code><span id="connTeamsState" class="badge">확인 전</span><button id="connTeamsCheck" type="button" class="ghost small">연결 확인</button></div>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>OneNote MCP</strong><span class="summary-detail">R&amp;D 탭 — 원노트 공유</span></div>
+          <div class="conn-row"><code id="connNoteUrl" class="conn-addr"></code><span id="connNoteState" class="badge">확인 전</span><button id="connNoteCheck" type="button" class="ghost small">연결 확인</button></div>
+        </div>
+        <p class="hint">Teams·OneNote 의 주소는 KR_MS365_mcp 가 정한 포트(5003 · 5005)라 여기서 바꾸지 않습니다. Outlook 주소만 바꿀 수 있습니다.</p>
+      </div>
+    </section>
     <p class="footer-note">좋은 회의의 시작, 여유 있는 공간.</p>
   </main>
   <script type="module" src="sidepanel.js"></script>

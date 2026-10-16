@@ -24,7 +24,7 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
    ├─ store/book.js   chrome.storage.local["mailtrackBook"] — 읽기·쓰기·줄 세운 update
    └─ store/vault.js  IndexedDB "krsMailtrack" — 본문(bodies)·첨부 바이트(files), 처음 쓸 때 연다
         ▼
- panel.js (+ panel.css)  #mail 안에 화면을 만든다 — 머리 칩·등록 대화·N/M 목록·상세·양식 병합·zip·설정. sync 를 주입받는다
+ panel.js (+ panel.css)  #mail 안에 화면을 만든다 — 머리 칩·등록 대화·N/M 목록·상세·양식 병합·zip·설정(MCP 주소·내 메일 주소·연결 확인은 connRoot 가 있으면 패널 설정의 연결 갈래에 — 2026-10-16). sync 를 주입받는다
         ▼
  ooxml/{zipread,xml,xlsx,docx,merge}.js  양식 + 회신 첨부들 → 한 파일 (sync.mergeFiles 가 처음 병합할 때 import)
 
@@ -78,10 +78,10 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 - **`attachment_contents` 에는 첨부 id 가 없다**(메일 id·`original_name` 뿐, 인라인 그림도 섞여 온다) → 첨부 목록과 **메일 id + 이름**(같은 이름은 Graph 차례)으로 짝지어 붙인다.
 - **큰 파일은 인라인으로 오지 않는다**(`$expand=attachments` 가 contentBytes 를 안 준 것은 서버가 조용히 건너뜀) → `missing` 으로 표시하고 화면의 `서버에 저장`(첨부 id 쌍 경로 —
   `save_file` 과 상관없이 늘 서버 PC 디스크에 저장하고 `file_path` 만 돌려줌)으로 받는다. 등록·갱신 결과에는 **주의(warnings)** 로 알린다(오류 아님).
-- **`test_handler` 는 `user_email` 을 버린다**(spec 에 없는 인자) → 받은 메일은 늘 서버 기본 사용자(auth.db)의 것. 설정의 `내 메일 주소` 는 다른 도구에만 실린다.
+- **`test_handler` 는 `user_email` 을 버린다**(spec 에 없는 인자) → 받은 메일은 늘 서버 기본 사용자(auth.db)의 것. 패널 설정 → 연결의 `내 메일 주소` 는 다른 도구에만 실린다.
 - `test_handler`·`mail_fetch_filter` 는 `/users/{me}/messages` = **모든 폴더**(보낸 편지함·임시보관함 포함)를 읽는다 → 임시보관·나를 서버와 어댑터 양쪽에서 거른다.
 - 인증이 풀리면 `{status:'auth_required', auth_url}`(목록 조회) 또는 "access token"·"토큰 획득 실패"·`no_authenticated_user`(상세·첨부) — `describe` 가 모두 `kind:'auth'` 로 모으고, `auth_url` 이 있으면 머리의 `열기` 가 로그인 창을 연다.
-- 서버는 `http://localhost:5001/mcp`(Streamable HTTP, CORS 없음) — manifest `host_permissions` 의 `http://localhost:5001/*` 로 부른다. 설정의 MCP 주소는 localhost·127.0.0.1 만 받는다.
+- 서버는 `http://localhost:5001/mcp`(Streamable HTTP, CORS 없음) — manifest `host_permissions` 의 `http://localhost:5001/*` 로 부른다. MCP 주소(패널 설정 → 연결)는 localhost·127.0.0.1 만 받는다.
 
 ## 받을 곳·회신·완료 규칙
 

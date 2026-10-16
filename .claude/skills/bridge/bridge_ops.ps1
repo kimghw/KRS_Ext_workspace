@@ -330,7 +330,7 @@ function Invoke-Restart([string]$Only) {
     $reads = $started -and (-not $reg -or $started -ge $reg)
     $stamp = if ($started) { $started.ToString('HH:mm:ss') } else { '?' }
     $with = if ($relaunch) { ", 인자: $relaunch" } else { '' }
-    $tail = if ($reads) { ' — 이제 등록을 읽습니다. 패널의 설정 및 연결에서 배지를 보세요' } else { '' }
+    $tail = if ($reads) { ' — 이제 등록을 읽습니다. 패널 머리의 톱니 설정 → LLM 에서 배지를 보세요' } else { '' }
     Write-Output "$($b.Label): 다시 띄웠습니다 (본체 시작 $stamp$with)$tail"
   }
 }

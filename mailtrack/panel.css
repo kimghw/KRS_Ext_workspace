@@ -8,9 +8,9 @@
 .mail button.primary { font-weight: 650; }
 .mail button > svg { width: 16px; height: 16px; }
 .mail select { max-width: 100%; min-height: 36px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }
-.mail input[aria-invalid="true"] { border-color: var(--danger) !important; }
+:is(.mail, .mt-conn) input[aria-invalid="true"] { border-color: var(--danger) !important; }
 .mail .card { border-radius: 16px; box-shadow: var(--shadow); }
-.mail .mt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+:is(.mail, .mt-conn) .mt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .mail .mt-none { margin: 4px 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
 .mail button.armed { background: var(--danger); color: #fff; }
 .mail button.armed:hover:not(:disabled) { background: var(--danger); color: #fff; filter: brightness(1.08); }
@@ -33,16 +33,16 @@
 .mail .mt-summary-open strong { color: var(--pick); }
 .mail .mt-connection { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .mail .mt-stamp { flex: 1 1 180px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.mail .mt-state { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 25px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-.mail .mt-state::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-.mail .mt-state[data-state="checking"]::before { background: var(--pick); animation: mtPulse .8s ease-in-out infinite alternate; }
-.mail .mt-state[data-state="ok"] { border-color: color-mix(in srgb, var(--free-line) 65%, var(--line)); background: color-mix(in srgb, var(--free) 46%, var(--surface)); color: var(--fg); }
-.mail .mt-state[data-state="ok"]::before { background: color-mix(in srgb, var(--free-line) 40%, var(--fg)); }
-.mail .mt-state[data-state="offline"], .mail .mt-state[data-state="error"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
-.mail .mt-state[data-state="offline"]::before, .mail .mt-state[data-state="error"]::before { background: var(--danger); }
-.mail .mt-state[data-state="auth"], .mail .mt-state[data-state="notool"] { color: var(--fg); background: color-mix(in srgb, var(--unknown) 15%, var(--surface)); border-color: color-mix(in srgb, var(--unknown) 50%, var(--line)); }
-.mail .mt-state[data-state="auth"]::before, .mail .mt-state[data-state="notool"]::before { background: var(--unknown); }
-.mail .mt-auth { color: var(--pick); background: var(--pick-soft); font-weight: 650; }
+:is(.mail, .mt-conn) .mt-state { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 25px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+:is(.mail, .mt-conn) .mt-state::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+:is(.mail, .mt-conn) .mt-state[data-state="checking"]::before { background: var(--pick); animation: mtPulse .8s ease-in-out infinite alternate; }
+:is(.mail, .mt-conn) .mt-state[data-state="ok"] { border-color: color-mix(in srgb, var(--free-line) 65%, var(--line)); background: color-mix(in srgb, var(--free) 46%, var(--surface)); color: var(--fg); }
+:is(.mail, .mt-conn) .mt-state[data-state="ok"]::before { background: color-mix(in srgb, var(--free-line) 40%, var(--fg)); }
+:is(.mail, .mt-conn) .mt-state[data-state="offline"], :is(.mail, .mt-conn) .mt-state[data-state="error"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
+:is(.mail, .mt-conn) .mt-state[data-state="offline"]::before, :is(.mail, .mt-conn) .mt-state[data-state="error"]::before { background: var(--danger); }
+:is(.mail, .mt-conn) .mt-state[data-state="auth"], :is(.mail, .mt-conn) .mt-state[data-state="notool"] { color: var(--fg); background: color-mix(in srgb, var(--unknown) 15%, var(--surface)); border-color: color-mix(in srgb, var(--unknown) 50%, var(--line)); }
+:is(.mail, .mt-conn) .mt-state[data-state="auth"]::before, :is(.mail, .mt-conn) .mt-state[data-state="notool"]::before { background: var(--unknown); }
+:is(.mail, .mt-conn) .mt-auth { color: var(--pick); background: var(--pick-soft); font-weight: 650; }
 .mail .mt-refresh.spin { color: var(--pick); }
 .mail .mt-refresh.spin svg { animation: mtRotate .9s linear infinite; }
 .mail .mt-msg { margin: 0 0 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); font-size: 12px; }
@@ -246,11 +246,11 @@
 .mail .mt-settings > summary::after { margin-left: 0; }
 .mail .mt-set-state { min-width: 0; margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
 .mail .mt-set-body { padding: 2px 0 14px; border-top: 1px solid var(--line); }
-.mail .mt-set-msg:empty { display: none; }
-.mail .mt-field { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 13px; }
-.mail .mt-field > span:first-child { flex: none; width: 7.5em; color: var(--muted); font-size: 12px; }
-.mail .mt-field input, .mail .mt-field select { flex: 1; min-width: 0; }
-.mail .mt-field input:not([type="checkbox"]) { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }
+:is(.mail, .mt-conn) .mt-set-msg:empty { display: none; }
+:is(.mail, .mt-conn) .mt-field { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 13px; }
+:is(.mail, .mt-conn) .mt-field > span:first-child { flex: none; width: 7.5em; color: var(--muted); font-size: 12px; }
+:is(.mail, .mt-conn) .mt-field input, :is(.mail, .mt-conn) .mt-field select { flex: 1; min-width: 0; }
+:is(.mail, .mt-conn) .mt-field input:not([type="checkbox"]) { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 13px; }
 .mail .mt-check { display: flex; align-items: flex-start; gap: 9px; margin: 10px 0; font-size: 12px; line-height: 1.7; cursor: pointer; }
 .mail .mt-check input { flex: none; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--pick); }
 .mail .mt-check > span { min-width: 0; overflow-wrap: anywhere; }
@@ -265,12 +265,12 @@
   .mail .mt-header { padding: 15px 13px 13px; }
   .mail .mt-title { font-size: 14px; }
   .mail .mt-progress-area { padding-left: 13px; padding-right: 13px; }
-  .mail .mt-field { flex-wrap: wrap; gap: 6px; }
-  .mail .mt-field > span:first-child { width: 100%; }
+  :is(.mail, .mt-conn) .mt-field { flex-wrap: wrap; gap: 6px; }
+  :is(.mail, .mt-conn) .mt-field > span:first-child { width: 100%; }
   .mail .mt-att { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; padding: 8px; }
   .mail .mt-file-icon { width: 30px; height: 35px; }
   .mail .mt-att > button { padding-left: 6px; padding-right: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mail *, .mail *::before, .mail *::after { animation: none !important; transition: none !important; }
+  :is(.mail, .mt-conn) *, :is(.mail, .mt-conn) *::before, :is(.mail, .mt-conn) *::after { animation: none !important; transition: none !important; }
 }

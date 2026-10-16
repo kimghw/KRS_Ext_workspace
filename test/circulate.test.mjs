@@ -533,7 +533,7 @@ console.log('확장 배선');
     const box = panel.getElementById('docCirculate');
     assert.ok(box, '체크박스가 없다');
     assert.equal(box.hasAttribute('checked'), false, '기본이 켜져 있다');
-    assert.match(box.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   // 설명 문단은 두지 않는다. 그래도 되돌릴 수 없다는 말은 그 줄의 툴팁에 남긴다.
   t('되돌릴 수 없다는 것을 그 줄의 툴팁에 적어 둔다', () =>

@@ -20,7 +20,7 @@ import { createVault } from './store/vault.js';
 import { createOutlook } from './mcp/outlook.js';
 
 /**
- * 메일 탭 하나를 조립한다. deps 는 panel.js createMailPanel 의 것(root · $ · escapeHtml · logEvent · flash · copyText · download · openTab · now · confirmMs)에
+ * 메일 탭 하나를 조립한다. deps 는 panel.js createMailPanel 의 것(root · connRoot · $ · escapeHtml · logEvent · flash · copyText · download · openTab · now · confirmMs)에
  * 검사용 바꿔 끼우기 몇 개를 더한 것 — 모두 생략할 수 있고, 생략하면 확장의 진짜 것(chrome.storage.local · IndexedDB · 전역 fetch)을 처음 쓸 때 본다.
  * @param {object} deps
  * @param {{get: Function, set: Function}} [deps.storage] 장부 저장소(기본 chrome.storage.local)
@@ -28,7 +28,7 @@ import { createOutlook } from './mcp/outlook.js';
  * @param {typeof fetch} [deps.fetch] MCP 를 부를 fetch(기본 전역 fetch — rerp/mcp.js 가 부를 때 본다)
  * @param {object} [deps.merge] ooxml/merge.js 모듈(기본은 처음 병합할 때 import)
  * @param {() => number} [deps.now] 시각 — sync 와 화면이 같이 쓴다
- * @returns {{ wire: () => void, show: () => Promise<void>, hide: () => void, reload: () => Promise<any>, state: () => object }}
+ * @returns {{ wire: () => void, show: () => Promise<void>, hide: () => void, reload: () => Promise<any>, loadSettings: () => Promise<void>, state: () => object }}
  */
 export function createMailPanel(deps = {}) {
   const { storage, vaultBackend, fetch, merge, ...view } = deps;

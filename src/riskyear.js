@@ -14,10 +14,10 @@
 // 쓰는 방식대로 줘야 한다 — Context 는 숫자(Year=2027), RiskManagement 는 base64 의 = 를 _ 로 바꾼 것(Year=MjAyNw__).
 // RiskManagement 에 숫자를 주면 KR Risk Assessment 의 New 가 hdnYear=2027 을 그대로 넘긴다.
 //
-// 쓸지 말지는 패널의 "설정 및 연결" 체크박스(storage 의 qualityYearKeep)를 따른다. 끄면 다시 열지도, 고른 연도를
+// 쓸지 말지는 패널의 "설정 → 일반" 체크박스(storage 의 qualityYearKeep)를 따른다. 끄면 다시 열지도, 고른 연도를
 // 기억하지도, 표시를 붙이지도 않는다 — 열려 있는 목록에서도 곧바로. 기억해 둔 연도는 지우지 않아 다시 켜면 이어진다.
 
-/** 연도 유지를 쓸지. 패널의 "설정 및 연결" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
+/** 연도 유지를 쓸지. 패널의 "설정 → 일반" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
 export const ENABLE_KEY = 'qualityYearKeep';
 export const riskYearEnabled = (value) => value !== false;
 /** 기억한 연도. 값이 없으면 사이트가 정한 연도(올해)로 연다. */

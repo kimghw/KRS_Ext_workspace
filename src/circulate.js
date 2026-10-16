@@ -9,7 +9,7 @@
 // 도는 자리는 e-Class 홈의 콘텐츠 스크립트다(home.js). 홈의 WORKSPACE 카드가 하루에 한 번 훑는 그 자리에서
 // 같이 돈다. 페이지와 같은 출처라 쿠키가 그냥 실린다.
 //
-// **기본은 꺼져 있다.** 읽지 않은 공문을 읽은 것으로 바꾸는 일이고 되돌릴 수 없다. 패널의 "설정 및 연결"
+// **기본은 꺼져 있다.** 읽지 않은 공문을 읽은 것으로 바꾸는 일이고 되돌릴 수 없다. 패널의 "설정 → 일반"
 // 에서 본인이 켠 브라우저에서만 돈다(storage 의 docCirculate).
 //
 // 이 확장의 다른 곳과 같이 **한 일을 다시 읽어 확인한다.** 다 연 뒤 목록을 다시 받아, 열었는데도 남아 있는
@@ -21,7 +21,7 @@ import { parseHtml } from './aspnet.js';
 import { todayStr } from './parse.js';
 import { createLogbook, stamp } from './logbook.js';
 
-/** 쓸지. 패널의 "설정 및 연결" 체크박스가 이 값을 쓴다. **켠다고 한 적이 없으면 끈 것으로 본다.** */
+/** 쓸지. 패널의 "설정 → 일반" 체크박스가 이 값을 쓴다. **켠다고 한 적이 없으면 끈 것으로 본다.** */
 export const ENABLE_KEY = 'docCirculate';
 export const circulateEnabled = (value) => value === true;
 /** 마지막 실행의 상태. 하루에 한 번만 돌게 하는 표식이자, 패널이 결과를 보여주는 자리다. */

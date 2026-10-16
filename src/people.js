@@ -9,12 +9,12 @@
 // titleMouseOver(event, this, '<id>', …). 사내 메일은 `<id>@krs.co.kr` 이다(config.js MAIL_DOMAIN).
 // ID 를 못 찾은 카드에는 버튼을 붙이지 않는다 — 엉뚱한 사람에게 이어지는 버튼보다 없는 것이 낫다.
 //
-// 붙일지 말지는 패널의 "설정 및 연결" 체크박스(storage 의 teamsButton)를 따른다. 홈 카드와 같은 방식이다
+// 붙일지 말지는 패널의 "설정 → 일반" 체크박스(storage 의 teamsButton)를 따른다. 홈 카드와 같은 방식이다
 // — 꺼도 모듈은 불러 두고, 켜면 새로고침 없이 붙고, 끄면 열려 있는 화면에서도 곧바로 사라진다.
 
 import { MAIL_DOMAIN, TEAMS_CHAT_URL } from './config.js';
 
-/** 버튼을 쓸지. 패널의 "설정 및 연결" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
+/** 버튼을 쓸지. 패널의 "설정 → 일반" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
 export const ENABLE_KEY = 'teamsButton';
 export const teamsEnabled = (value) => value !== false;
 /** 우리가 붙인 버튼과 스타일의 표식. 다시 붙일 때 중복을 막고, 뗄 때 이걸로 찾는다. */

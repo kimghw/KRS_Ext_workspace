@@ -4,7 +4,7 @@
 // 매니페스트는 eclass 전체에 붙이지만, 붙일 화면은 경로가 아니라 **카드가 있는지**로 고른다.
 // 검색 결과(searchmember/MemberList)뿐 아니라 같은 카드가 뜨는 화면(부서 페이지 등)을 한 번에 덮고,
 // 경로 대소문자가 들쭉날쭉한 것도 피한다.
-// 붙일지 말지는 패널의 "설정 및 연결" 체크박스(storage 의 teamsButton)를 따른다. 꺼져 있어도 모듈은
+// 붙일지 말지는 패널의 "설정 → 일반" 체크박스(storage 의 teamsButton)를 따른다. 꺼져 있어도 모듈은
 // 불러 둔다 — 패널에서 다시 켜면 새로고침 없이 붙어야 하기 때문이다.
 (() => {
   if (!document.querySelector('.search_info_btn')) return;

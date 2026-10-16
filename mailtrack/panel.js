@@ -3,6 +3,7 @@
 //
 //   머리(연결 칩 · 새로고침 · 등록 + · 마지막 갱신 · 진행 중/완료) → 등록 대화(보낸 메일 고르기) → 목록(메일마다 N/M 배지와 받을 곳 칩)
 //   → 상세(회신 현황 옆 추적 끝내기 · 받을 곳 표 · 보낸 메일 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
+//   MCP 주소·내 메일 주소·연결 확인은 connRoot(패널 설정의 연결 갈래 — 2026-10-16 사용자 지정 "연결에는 mcp 서버 내용")가 있으면 거기에 그린다(connTemplate).
 //   목록 줄마다 오른쪽 아래 "지우기"(두 번 눌러 확인) — 2026-10-15 사용자 지정 "종료 기능이 없네" · "등록한 메일을 취소하는 기능이 안보임": 접힌 칸에 숨기지 않는다.
 // 회신 확인(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지"): 새로 이어진 회신은 "확인 필요" 로 서고 머리·목록에 그 수를 보인다. 수락하면 세고(받을 곳 완료),
 // 거부하면 세지 않아 받을 곳은 다시 기다림이 되며 병합 칸에서도 빠진다(잠긴 줄). 설정 requireAccept 를 켜면 회신이 와도 수락해야 센다.
@@ -40,16 +41,17 @@ const MIME_ZIP = 'application/zip';
 const UNSUPPORTED = { xlsx: /\.(xls|xlsm|xlsb|xltx|xltm)$/i, docx: /\.(doc|docm|dotx|dotm)$/i };
 
 /**
- * @param {{ root?: HTMLElement, $: (id:string) => HTMLElement|null, escapeHtml?: (v:any) => string,
+ * @param {{ root?: HTMLElement, connRoot?: HTMLElement|null, $: (id:string) => HTMLElement|null, escapeHtml?: (v:any) => string,
  *   logEvent?: (kind:string, ok:boolean, text:string, data?:object) => void, sync: object,
  *   flash?: (btn:HTMLElement, text:string, ms?:number) => void,
  *   download?: (file:{ name:string, bytes:Uint8Array, mime:string }) => Promise<void>,
  *   openTab?: (url:string) => any, copyText?: (text:string) => Promise<boolean>, now?: () => number, confirmMs?: number }} deps
  *   root 은 sidepanel.html 의 <section id="mail" class="mail hidden"> — 화면 조각은 전부 이 안에 만든다(id·class 는 mt 접두).
  *   sync 는 mailtrack/sync.js createSync 의 것(검사에서는 흉내). download 는 {name, bytes, mime} 하나를 받는다.
+ *   connRoot 은 (있으면) MCP 주소·내 메일 주소·연결 확인을 그릴 다른 칸 — 패널 설정의 연결 갈래(sidepanel.html #connOutlook). 없으면 메일 설정 칸 맨 위에 그린다.
  */
 export function createMailPanel({
-  root, $, escapeHtml, logEvent, sync, flash = () => {}, download = defaultDownload,
+  root, $, escapeHtml, logEvent, sync, connRoot = null, flash = () => {}, download = defaultDownload,
   openTab = (url) => chrome.tabs.create({ url }), copyText = defaultCopy, now = () => Date.now(), confirmMs = CONFIRM_MS,
 } = {}) {
   if (!sync) throw new Error('createMailPanel: sync 가 필요합니다');
@@ -60,7 +62,12 @@ export function createMailPanel({
   const log = typeof logEvent === 'function' ? logEvent : () => {};
 
   host.innerHTML = TEMPLATE;
-  const q = (id) => host.querySelector(`#${id}`);
+  // MCP 주소·내 메일 주소·연결 확인(connTemplate) — 패널 설정의 연결 갈래(connRoot)가 있으면 거기에(상태 칩·로그인 열기·알림 줄을 따로 두고) 메일 설정 칸에는
+  // 안내 한 줄만, 없으면 메일 설정 칸 맨 위에(칩·알림 줄은 머리와 메일 설정의 것을 같이 쓴다).
+  const connHost = connRoot || null;
+  if (connHost) connHost.innerHTML = connTemplate({ standalone: true });
+  host.querySelector('#mtSetBody').insertAdjacentHTML('afterbegin', connHost ? CONN_NOTE : connTemplate({ standalone: false }));
+  const q = (id) => host.querySelector(`#${id}`) || (connHost ? connHost.querySelector(`#${id}`) : null);
   const el = {
     state: q('mtState'), auth: q('mtAuth'), refresh: q('mtRefresh'), register: q('mtRegister'), summary: q('mtSummary'), stamp: q('mtStamp'), msg: q('mtMsg'),
     reg: q('mtReg'), regDays: q('mtRegDays'), regQ: q('mtRegQ'), regList: q('mtRegList'), regMsg: q('mtRegMsg'), regGo: q('mtRegGo'), regCancel: q('mtRegCancel'),
@@ -74,6 +81,8 @@ export function createMailPanel({
     settings: q('mtSettings'), setState: q('mtSetState'), url: q('mtUrl'), userEmail: q('mtUserEmail'), sentDays: q('mtSentDays'),
     windowDays: q('mtWindowDays'), autoMin: q('mtAutoMin'), ownByAddress: q('mtOwnByAddress'), useHeaders: q('mtUseHeaders'), requireAccept: q('mtRequireAccept'),
     probe: q('mtProbe'), setMsg: q('mtSetMsg'),
+    // 연결 갈래에 그렸을 때만 있는 것 — 없으면 머리 칩(mtState)·머리의 열기(mtAuth)·메일 설정의 알림 줄(mtSetMsg)이 그 몫을 한다.
+    connState: q('mtConnState'), connAuth: q('mtConnAuth'), connMsg: q('mtConnMsg') || q('mtSetMsg'),
   };
 
   const st = {
@@ -123,10 +132,12 @@ export function createMailPanel({
     el.regMsg.className = `status mt-reg-msg${kind ? ` ${kind}` : ''}`;
     el.regMsg.textContent = text;
   }
-  function setSetMsg(text, kind = '') {
-    el.setMsg.className = `status mt-set-msg${kind ? ` ${kind}` : ''}`;
-    el.setMsg.textContent = text;
+  function setSetMsg(text, kind = '', target = el.setMsg) {
+    target.className = `status mt-set-msg${kind ? ` ${kind}` : ''}`;
+    target.textContent = text;
   }
+  /** 서버 주소·내 메일 주소·연결 확인의 알림 — 연결 갈래에 그렸으면 그쪽 줄, 아니면 메일 설정의 줄. */
+  const setConnMsg = (text, kind = '') => setSetMsg(text, kind, el.connMsg);
 
   /** sync 가 던진 오류를 사람 말로 — kind 는 offline·auth·notool·badurl 이면 머리 칩도 바꾼다. */
   function msgOf(info) {
@@ -163,6 +174,13 @@ export function createMailPanel({
     el.state.textContent = state === 'ok' ? 'Outlook 연결됨' : text;
     el.state.title = [text, title].filter(Boolean).join(' · ');
     el.auth.classList.toggle('hidden', !(state === 'auth' && safeUrl(authUrl)));
+    // 설정 화면의 연결 갈래에도 같은 칩과 로그인 열기(있을 때만).
+    if (el.connState) {
+      el.connState.dataset.state = state;
+      el.connState.textContent = el.state.textContent;
+      el.connState.title = el.state.title;
+    }
+    el.connAuth?.classList.toggle('hidden', !(state === 'auth' && safeUrl(authUrl)));
   }
 
   function paintSummary() {
@@ -275,6 +293,8 @@ export function createMailPanel({
         } else if (r?.idle) {
           // 열린 항목이 없으면 sync 는 조회하지 않는다(계획 4절 6).
           setMsg('기다리는 메일이 없어 찾지 않았습니다.');
+          // 조회하지 않았으니 서버가 살아났는지도 모른다 — 칩이 꺼짐·오류로 남아 있으면 다시 확인한다(연결 확인 단추가 설정 화면으로 간 뒤에도 메일 탭에서 되살리는 길).
+          if (!['ok', 'checking'].includes(st.conn.state)) await runProbe();
         } else {
           const text = `받은 메일 ${num(r?.fetched)}건 · 새로 이어진 회신 ${num(r?.linked)}건`;
           // warnings — 큰 첨부를 서버가 주지 않았다 따위(갱신은 됐다).
@@ -1078,18 +1098,21 @@ export function createMailPanel({
   }
 
   async function saveSettings(patch, { reprobe = false } = {}) {
+    // 서버 주소·내 메일 주소의 알림은 연결 갈래의 줄로(거기 그렸으면), 나머지는 메일 설정의 줄로.
+    const say = 'mcpUrl' in patch || 'userEmail' in patch ? setConnMsg : setSetMsg;
     try {
       const ret = await sync.settings(patch);
       absorb(ret);
       paintSettings();
       paintSummary();
-      setSetMsg('저장했습니다.');
+      say('저장했습니다.');
       // 메일 주소는 기록에 남기지 않는다 — 바꾼 칸 이름만.
       log('mail', true, `메일 설정 바꿈: ${Object.keys(patch).join(', ')}`);
-      if (reprobe && st.shown) runProbe();
+      // 탭이 보일 때, 또는 연결 갈래에 칩이 있을 때(탭이 안 보여도 거기서 바꿨을 테니) 다시 확인해 칩을 맞춘다.
+      if (reprobe && (st.shown || el.connState)) runProbe();
     } catch (e) {
       const info = fail('메일 설정 저장', e);
-      setSetMsg(`저장하지 못했습니다: ${msgOf(info)}`, 'error');
+      say(`저장하지 못했습니다: ${msgOf(info)}`, 'error');
     }
   }
 
@@ -1098,7 +1121,7 @@ export function createMailPanel({
     const chk = checkMcpUrl(v);
     if (!chk.ok) {
       el.url.setAttribute('aria-invalid', 'true');
-      setSetMsg(chk.error, 'error');
+      setConnMsg(chk.error, 'error');
       return;
     }
     el.url.removeAttribute('aria-invalid');
@@ -1110,7 +1133,7 @@ export function createMailPanel({
     const v = el.userEmail.value.trim();
     if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
       el.userEmail.setAttribute('aria-invalid', 'true');
-      setSetMsg(`메일 주소 꼴이 아닙니다: ${v}`, 'error');
+      setConnMsg(`메일 주소 꼴이 아닙니다: ${v}`, 'error');
       return;
     }
     el.userEmail.removeAttribute('aria-invalid');
@@ -1132,10 +1155,10 @@ export function createMailPanel({
 
   async function probeClick() {
     el.probe.disabled = true;
-    setSetMsg('서버를 확인하는 중…');
+    setConnMsg('서버를 확인하는 중…');
     try {
       const ok = await runProbe();
-      setSetMsg(ok ? `연결됨 — ${st.conn.text}` : st.conn.text, ok ? '' : 'error');
+      setConnMsg(ok ? `연결됨 — ${st.conn.text}` : st.conn.text, ok ? '' : 'error');
     } finally {
       el.probe.disabled = false;
     }
@@ -1215,6 +1238,7 @@ export function createMailPanel({
     el.useHeaders.addEventListener('change', () => saveSettings({ useHeaders: el.useHeaders.checked }));
     el.requireAccept.addEventListener('change', () => saveSettings({ requireAccept: el.requireAccept.checked }));
     el.probe.addEventListener('click', probeClick);
+    el.connAuth?.addEventListener('click', () => openUrl(st.conn.authUrl));
   }
 
   /** 탭을 열 때 — 장부를 읽어 그리고, 서버 확인과 (조건이 맞으면) 저절로 새로고침은 기다리지 않는다(st.bg 로 남긴다). */
@@ -1248,12 +1272,31 @@ export function createMailPanel({
     return refresh({ force: true });
   }
 
+  /**
+   * 패널 설정의 연결 갈래를 열 때 — 메일 탭을 아직 열지 않았으면 장부를 읽어 저장된 MCP 주소·내 메일 주소를 그린다(서버 확인은 하지 않는다 —
+   * 연결 확인 단추가 한다). 이미 읽었으면 그려 둔 그대로.
+   */
+  async function loadSettings() {
+    setConnMsg('');   // 지난번의 오류·저장 알림은 지운다 — 칸은 저장된 값으로 다시 그려지니 어긋난 알림이 남지 않게
+    if (!st.book) {
+      try {
+        const b = await sync.load();
+        absorb(b && Array.isArray(b.items) ? b : null);
+      } catch (e) {
+        // fail() 은 메일 탭의 알림 줄에 적는데 설정 화면이 열려 있으면 그 탭은 숨어 있다 — 연결 갈래의 줄에도 적는다.
+        const info = fail('메일 장부 읽기', e);
+        setConnMsg(`저장된 설정을 읽지 못했습니다: ${msgOf(info)}`, 'error');
+      }
+    }
+    paintSettings();
+  }
+
   // 처음 그림 — 장부를 읽기 전이라 빈 목록과 "확인 전" 칩이 선다(섹션은 숨겨진 채).
   setConn('idle', '확인 전');
   paint();
   paintSettings();
 
-  return { wire, show, hide, reload, state: () => st };
+  return { wire, show, hide, reload, loadSettings, state: () => st };
 }
 
 /* ------------------------------------------------------------ 화면 뼈대(정적 — 메일에서 온 글은 없다) */
@@ -1354,20 +1397,34 @@ const TEMPLATE = `
 </div>
 <details id="mtSettings" class="mt-settings card">
   <summary><span>메일 설정</span><span id="mtSetState" class="mt-set-state"></span></summary>
-  <div class="mt-set-body">
-    <label class="mt-field" title="KR_MS365_mcp 의 Outlook 서버 — 이 PC(localhost · 127.0.0.1)만 됩니다"><span>MCP 주소</span><input type="url" id="mtUrl" placeholder="${MCP_URL_DEFAULT}" autocomplete="off" spellcheck="false" /></label>
-    <label class="mt-field" title="비우면 서버가 로그인한 계정을 씁니다"><span>내 메일 주소</span><input type="email" id="mtUserEmail" placeholder="비우면 서버 기본" autocomplete="off" spellcheck="false" /></label>
+  <div id="mtSetBody" class="mt-set-body">
     <label class="mt-field"><span>보낸 메일 기간</span><select id="mtSentDays" aria-label="등록 대화의 기본 기간"></select></label>
     <label class="mt-field" title="회신을 찾을 때 이보다 오래된 받은 메일은 보지 않습니다"><span>조회 창(일)</span><input type="number" id="mtWindowDays" min="1" max="3650" step="1" /></label>
     <label class="mt-field" title="탭을 열 때 마지막 갱신이 이보다 오래됐으면 저절로 찾습니다 — 0 이면 끕니다"><span>저절로 갱신(분)</span><input type="number" id="mtAutoMin" min="0" max="1440" step="1" /></label>
     <label class="mt-check"><input type="checkbox" id="mtOwnByAddress" /><span>우리 회사(내 도메인) 받는 사람은 주소마다 따로 셉니다 — 끄면 도메인 하나로 묶습니다(새로 등록하는 메일부터)</span></label>
     <label class="mt-check"><input type="checkbox" id="mtUseHeaders" /><span>메일 머리(In-Reply-To · References)로도 회신을 잇습니다 — 조금 느립니다</span></label>
     <label class="mt-check" title="끄면 회신이 오면 바로 세고, 아니다 싶은 것은 거부로 되돌립니다"><input type="checkbox" id="mtRequireAccept" /><span>회신이 와도 수락해야 받을 곳을 완료로 셉니다(새로 이어지는 회신부터)</span></label>
-    <div class="mt-actions"><button type="button" id="mtProbe" class="small">연결 확인</button></div>
     <p id="mtSetMsg" class="status mt-set-msg" role="status" aria-live="polite"></p>
   </div>
 </details>
 `;
+
+/** 연결 갈래에 그렸을 때 메일 설정 칸 맨 위에 두는 안내 한 줄. */
+const CONN_NOTE = '<p class="hint mt-conn-note">서버(MCP) 주소와 내 메일 주소는 패널 머리의 설정(톱니) → <strong>연결</strong> 에 있습니다.</p>';
+
+/**
+ * MCP 주소·내 메일 주소·연결 확인. standalone 이면(패널 설정의 연결 갈래) 상태 칩·로그인 열기·알림 줄을 따로 둔다 — 메일 설정 칸 안에 그릴 때는
+ * 머리 칩(mtState)·열기(mtAuth)·메일 설정의 알림 줄(mtSetMsg)이 그 몫이라 두지 않는다.
+ */
+function connTemplate({ standalone }) {
+  return `
+<div id="mtConn" class="mt-conn">
+  <label class="mt-field" title="KR_MS365_mcp 의 Outlook 서버 — 이 PC(localhost · 127.0.0.1)만 됩니다"><span>MCP 주소</span><input type="url" id="mtUrl" placeholder="${MCP_URL_DEFAULT}" autocomplete="off" spellcheck="false" /></label>
+  <label class="mt-field" title="비우면 서버가 로그인한 계정을 씁니다"><span>내 메일 주소</span><input type="email" id="mtUserEmail" placeholder="비우면 서버 기본" autocomplete="off" spellcheck="false" /></label>
+  <div class="mt-actions">${standalone ? '<span id="mtConnState" class="mt-state" data-state="idle" role="status" aria-live="polite">확인 전</span><button type="button" id="mtConnAuth" class="small mt-auth hidden" title="Microsoft 로그인 창을 새 탭으로 엽니다 — 로그인한 뒤 연결 확인을 누르세요">열기</button>' : ''}<button type="button" id="mtProbe" class="${standalone ? 'ghost small' : 'small'}">연결 확인</button></div>
+  ${standalone ? '<p id="mtConnMsg" class="status mt-set-msg" role="status" aria-live="polite"></p>' : ''}
+</div>`;
+}
 
 /* ------------------------------------------------------------ 순수 도우미 */
 

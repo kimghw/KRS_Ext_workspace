@@ -501,7 +501,7 @@ export async function reserveCar(payload) {
       ok: false, submitted: false, verified: false,
       missing: form.missing || [],
       message: `신청 폼에서 ${what} 칸을 찾지 못해 제출하지 않았습니다. `
-        + '차량 탭 → 설정 및 연결 → 페이지 구조 캡처로 알려주시면 맞추겠습니다.',
+        + '패널 머리의 톱니 설정 → 일반 → 페이지 구조 캡처로 알려주시면 맞추겠습니다.',
     };
   }
 

@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
 const { JSDOM } = require('jsdom');
+import { DEFAULT_MODEL } from '../src/ai.js';   // LLM 갈래가 보이는 모델 이름
 
 const root = new URL('../', import.meta.url);
 const html = fs.readFileSync(new URL('sidepanel.html', root), 'utf8');
@@ -108,29 +109,47 @@ console.log('회의실 모드로 시작');
     assert.equal(doc.getElementById('auto'), null, '자동 갱신 스위치가 남아 있다');
     assert.ok(calls.intervals.includes(60_000), '걸린 타이머: ' + calls.intervals.join(', '));
   });
-  t('설정의 로컬 CLI·API 키는 접혀 있다', () => {
-    const subs = [...doc.querySelectorAll('.settings details.sub')];
-    assert.equal(subs.length, 2);
-    assert.ok(subs.every((d) => !d.open));
-    assert.match(subs[0].querySelector('summary').textContent, /로컬 Claude CLI/);
-    assert.match(subs[1].querySelector('summary').textContent, /Anthropic API 키/);
-  });
-  t('설정 및 연결·활동 로그·페이지 구조 캡처는 `설정` 한 줄로 접혀 있다', () => {
+  t('설정 화면은 처음에 닫혀 있고, 머리의 톱니·닫기·갈래 탭에 리스너가 붙는다', () => {
     const box = doc.getElementById('settingsBox');
     assert.ok(box, '#settingsBox 가 없다');
-    assert.equal(box.tagName, 'DETAILS');
-    assert.ok(!box.open, '처음부터 펼쳐져 있다');
-    assert.ok(box.closest('footer.settings'), '패널 맨 아래 footer 안이 아니다');
-    assert.match(box.firstElementChild.textContent, /^설정연결 · 활동 로그 · 진단$/);
-    const rows = [...box.querySelector('.settings-body').children].map((d) => d.matches('details.diag') && d.querySelector('summary').textContent);
-    assert.equal(rows.length, 3);
-    assert.match(rows[0] || '', /^설정 및 연결/);
-    assert.match(rows[1] || '', /^활동 로그/);
-    assert.match(rows[2] || '', /^페이지 구조 캡처/);
+    assert.equal(box.tagName, 'SECTION');
+    assert.ok(box.hidden, '처음부터 열려 있다');
+    assert.equal(doc.getElementById('settingsShortcut').getAttribute('aria-expanded'), 'false');
+    assert.ok(wired.get('settingsShortcut')?.has('click'));
+    assert.ok(wired.get('settingsClose')?.has('click'));
+    assert.ok(wired.get('settingsTabs')?.has('click'));
+    assert.ok(wired.get('settingsBox')?.has('keydown'), 'Esc');
   });
-  t('접힌 요약 줄에 CLI 배지와 키 유무가 보인다', () => {
-    assert.ok(doc.querySelector('details.sub > summary #cliState'));
+  t('설정은 일반 · LLM · 연결 세 갈래다', () => {
+    const tabs = [...doc.querySelectorAll('#settingsTabs [data-pane]')];
+    assert.deepEqual(tabs.map((b) => [b.dataset.pane, b.textContent]), [['general', '일반'], ['llm', 'LLM'], ['conn', '연결']]);
+    assert.deepEqual([...doc.querySelectorAll('#settingsBox .set-pane')].map((p) => p.dataset.pane), ['general', 'llm', 'conn']);
+  });
+  t('일반 — 보이는 탭 · 내 이름 · 켜고 끄기 · 활동 로그 · 페이지 구조 캡처', () => {
+    const g = doc.getElementById('setGeneral');
+    for (const id of ['tabPicks', 'myName', 'teamsButton', 'qualityYearKeep', 'homeUncfm', 'docCirculate', 'logBox', 'capture']) assert.ok(g.querySelector(`#${id}`), id);
+    const rows = [...g.children].filter((d) => d.matches('details.diag')).map((d) => d.querySelector('summary').textContent);
+    assert.equal(rows.length, 2);
+    assert.match(rows[0], /^활동 로그/);
+    assert.match(rows[1], /^페이지 구조 캡처/);
+  });
+  t('LLM — 로컬 Claude CLI 와 API 키, 쓰는 모델. 접힌 .sub 칸은 없다', () => {
+    const l = doc.getElementById('setLlm');
+    for (const id of ['cliState', 'cliCheck', 'cliGuide', 'apiKey', 'apiKeyState', 'llmModel']) assert.ok(l.querySelector(`#${id}`), id);
     assert.equal(doc.getElementById('apiKeyState').textContent, 'CLI 가 없을 때만');
+    assert.equal(doc.getElementById('llmModel').textContent, DEFAULT_MODEL);
+    assert.equal(doc.querySelector('#settingsBox details.sub'), null);
+  });
+  t('연결 — Outlook(메일 탭이 그린 MCP 주소·내 메일 주소·연결 확인) · Teams · OneNote', () => {
+    const c = doc.getElementById('setConn');
+    for (const id of ['connOutlook', 'mtUrl', 'mtUserEmail', 'mtProbe', 'mtConnState', 'mtConnAuth', 'mtConnMsg', 'connTeamsCheck', 'connNoteCheck']) assert.ok(c.querySelector(`#${id}`), id);
+    assert.equal(doc.querySelector('#mail #mtUrl'), null, '메일 탭의 메일 설정에 MCP 주소가 남아 있다');
+    assert.ok(doc.querySelector('#mail #mtSettings #mtSentDays'), '메일 설정의 다른 칸은 메일 탭에 남는다');
+    assert.ok(doc.querySelector('#mail #mtSettings .mt-conn-note'), '메일 설정에 어디로 갔는지 안내가 없다');
+    assert.equal(doc.getElementById('mtUrl').value, 'http://localhost:5001/mcp');
+    assert.equal(doc.getElementById('connTeamsUrl').textContent, 'http://localhost:5003/mcp');
+    assert.equal(doc.getElementById('connNoteUrl').textContent, 'http://localhost:5005/mcp');
+    assert.equal(doc.getElementById('connTeamsState').textContent, '확인 전');
   });
   t('CLI 다시 확인 버튼', () => assert.ok(wired.get('cliCheck')?.has('click')));
   t('API 키 입력', () => assert.ok(wired.get('apiKey')?.has('change') || wired.get('apiKey')?.has('input')));
@@ -222,15 +241,178 @@ console.log('패널 머리의 홈 카드 체크박스');
     assert.equal(window.document.getElementById('homeCard').checked, false));
 }
 
-console.log('설정 및 연결의 Teams 버튼 체크박스');
+console.log('설정 화면 — 톱니로 열면 설정만 보이고, 갈래(일반·LLM·연결)를 고르면 기억한다');
+{
+  const { window, store, calls } = await boot({ mode: 'car' });
+  const doc = window.document;
+  const settle = () => new Promise((r) => setTimeout(r, 40));
+  const app = doc.querySelector('.app');
+  const gear = doc.getElementById('settingsShortcut');
+  const box = doc.getElementById('settingsBox');
+  const pane = (id) => doc.getElementById(id);
+  gear.click();
+  await settle();
+  t('열면 설정 칸이 서고 .app 에 settings-open 이 붙어(CSS 가 탭 줄·탭 내용을 숨긴다) 제목이 설정이 된다', () => {
+    assert.ok(!box.hidden);
+    assert.ok(app.classList.contains('settings-open'));
+    assert.equal(gear.getAttribute('aria-expanded'), 'true');
+    assert.equal(gear.title, '설정 닫기');
+    assert.equal(doc.getElementById('appTitle').textContent, '설정');
+    assert.equal(store.mode, 'car', '탭은 그대로다');
+  });
+  t('처음에는 일반 갈래', () => {
+    assert.equal(pane('setTabGeneral').getAttribute('aria-selected'), 'true');
+    assert.ok(!pane('setGeneral').hidden && pane('setLlm').hidden && pane('setConn').hidden);
+  });
+  pane('setTabLlm').click();
+  await settle();
+  t('LLM 을 누르면 그 갈래만 보이고 저장된다', () => {
+    assert.ok(pane('setGeneral').hidden && !pane('setLlm').hidden && pane('setConn').hidden);
+    assert.equal(pane('setTabLlm').getAttribute('aria-selected'), 'true');
+    assert.ok(pane('setTabLlm').classList.contains('active'));
+    assert.equal(pane('setTabGeneral').getAttribute('aria-selected'), 'false');
+    assert.equal(store.settingsPane, 'llm');
+  });
+  pane('setTabConn').click();
+  await settle();
+  t('연결 갈래', () => {
+    assert.ok(!pane('setConn').hidden && pane('setLlm').hidden);
+    assert.equal(store.settingsPane, 'conn');
+  });
+  const before = calls.urls.length;
+  pane('connTeamsCheck').click();
+  await settle();
+  t('Teams 연결 확인 — 이 PC 의 :5003 을 두드리고, 닿지 않으면 배지에 적고 기록에 남긴다', () => {
+    assert.ok(calls.urls.slice(before).includes('http://localhost:5003/mcp'), calls.urls.slice(before).join(', '));
+    assert.equal(pane('connTeamsState').textContent, '닿지 않음');
+    assert.ok(pane('connTeamsState').classList.contains('off'));
+    assert.match(pane('connTeamsState').title, /offline/);
+    assert.ok(!pane('connTeamsCheck').disabled);
+    assert.ok((store.activityLog || []).some((e) => e.kind === 'setting' && !e.ok && /Teams MCP 연결 확인/.test(e.text)));
+  });
+  pane('connNoteCheck').click();
+  await settle();
+  t('OneNote 연결 확인도 같다(:5005)', () => {
+    assert.ok(calls.urls.includes('http://localhost:5005/mcp'));
+    assert.equal(pane('connNoteState').textContent, '닿지 않음');
+  });
+  gear.click();
+  await settle();
+  t('톱니를 다시 누르면 닫히고 보던 탭(차량)의 제목이 돌아온다', () => {
+    assert.ok(box.hidden);
+    assert.ok(!app.classList.contains('settings-open'));
+    assert.equal(gear.getAttribute('aria-expanded'), 'false');
+    assert.equal(gear.title, '설정 열기');
+    assert.equal(doc.getElementById('appTitle').textContent, '차량 이용');
+  });
+  gear.click();
+  await settle();
+  t('다시 열면 마지막에 본 갈래(연결)로 선다', () => assert.ok(!box.hidden && !pane('setConn').hidden && pane('setGeneral').hidden));
+  pane('settingsClose').click();
+  await settle();
+  t('닫기 단추로도 닫힌다', () => assert.ok(box.hidden && !app.classList.contains('settings-open')));
+  gear.click();
+  await settle();
+  box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await settle();
+  t('Esc 로도 닫힌다', () => assert.ok(box.hidden));
+  gear.click();
+  await settle();
+  doc.getElementById('tabRoom').click();
+  await settle();
+  t('설정이 열린 채로 탭이 불리면(홈 카드에서 온 건처럼) 설정은 닫히고 그 탭이 선다', () => {
+    assert.ok(box.hidden && !app.classList.contains('settings-open'));
+    assert.equal(doc.getElementById('appTitle').textContent, '회의실 예약');
+    assert.equal(store.mode, 'room');
+  });
+}
+{
+  const { window } = await boot({ mode: 'room', settingsPane: 'llm' });
+  const doc = window.document;
+  doc.getElementById('settingsShortcut').click();
+  await new Promise((r) => setTimeout(r, 40));
+  t('저장된 갈래(LLM)로 연다', () => assert.ok(!doc.getElementById('setLlm').hidden && doc.getElementById('setGeneral').hidden));
+}
+{
+  const { window } = await boot({ mode: 'room', settingsPane: 'bogus' });
+  const doc = window.document;
+  doc.getElementById('settingsShortcut').click();
+  await new Promise((r) => setTimeout(r, 40));
+  t('모르는 갈래 값이면 일반', () => assert.ok(!doc.getElementById('setGeneral').hidden));
+}
+
+console.log('설정 화면 안에서 보이는 탭을 끄면 설정은 열린 채 뒤의 탭만 옮긴다 · 초점 · Esc · 화살표 키');
+{
+  const { window, store } = await boot({ mode: 'room', tabsOff: ['attend', 'gongmun', 'rnd', 'mail', 'mine'] });
+  const doc = window.document;
+  const settle = () => new Promise((r) => setTimeout(r, 40));
+  const box = doc.getElementById('settingsBox');
+  const pick = (mode) => doc.querySelector(`#tabPicks input[data-tab="${mode}"]`);
+  const toggle = (mode, on) => { pick(mode).checked = on; pick(mode).dispatchEvent(new window.Event('change', { bubbles: true })); };
+  doc.getElementById('settingsShortcut').click();
+  await settle();
+  t('열면 갈래 탭에 초점이 가서 Esc 가 바로 듣는다', () => assert.equal(doc.activeElement, doc.getElementById('setTabGeneral')));
+  toggle('room', false);
+  await settle();
+  t('보던 탭(회의실)을 끄면 설정은 열린 채 뒤의 탭이 차량으로 옮겨 가고 제목은 설정 그대로', () => {
+    assert.ok(!box.hidden && doc.querySelector('.app').classList.contains('settings-open'));
+    assert.equal(doc.getElementById('appTitle').textContent, '설정');
+    assert.equal(store.mode, 'car');
+    assert.equal(doc.getElementById('setNote').textContent, '');
+  });
+  toggle('car', false);
+  await settle();
+  t('마지막 하나를 끄면 되돌리고 체크 줄 아래에 까닭을 적는다(상태 줄은 숨어 있다)', () => {
+    assert.ok(pick('car').checked);
+    assert.equal(doc.getElementById('setNote').textContent, '탭은 적어도 하나 남겨야 합니다.');
+    assert.ok(doc.getElementById('setNote').classList.contains('error'));
+    assert.ok(!box.hidden);
+  });
+  toggle('room', true);
+  await settle();
+  t('다시 켜면 까닭은 지워진다', () => assert.equal(doc.getElementById('setNote').textContent, ''));
+  doc.getElementById('settingsClose').click();
+  await settle();
+  t('닫으면 옮겨 간 탭(차량)의 제목', () => assert.equal(doc.getElementById('appTitle').textContent, '차량 이용'));
+
+  doc.getElementById('settingsShortcut').click();
+  await settle();
+  doc.getElementById('setTabLlm').click();
+  await settle();
+  const key = doc.getElementById('apiKey');
+  key.focus();
+  key.value = 'sk-ant-half';
+  key.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await settle();
+  t('글 칸 안의 Esc 는 고치던 값을 되돌리고 칸을 나갈 뿐 닫지 않는다', () => {
+    assert.ok(!box.hidden);
+    assert.equal(key.value, '');
+    assert.equal(doc.activeElement, doc.getElementById('setTabLlm'));
+    assert.equal(store.apiKey, undefined);
+  });
+  doc.getElementById('setTabLlm').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  await settle();
+  t('→ 키로 다음 갈래(연결)', () => assert.ok(!doc.getElementById('setConn').hidden && store.settingsPane === 'conn'));
+  doc.getElementById('setTabConn').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  await settle();
+  t('끝에서 → 는 처음(일반)으로, 고른 갈래만 Tab 차례에 든다', () => {
+    assert.ok(!doc.getElementById('setGeneral').hidden);
+    assert.deepEqual([...doc.querySelectorAll('#settingsTabs [data-pane]')].map((b) => b.tabIndex), [0, -1, -1]);
+  });
+  doc.getElementById('setTabGeneral').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await settle();
+  t('갈래 탭에서 Esc 는 닫는다', () => assert.ok(box.hidden));
+}
+
+console.log('설정(일반)의 Teams 버튼 체크박스');
 {
   const { wired, window, store } = await boot({ mode: 'room' });
   const doc = window.document;
   const box = doc.getElementById('teamsButton');
-  t('설정 및 연결 안에 있다', () => {
+  t('설정의 일반 갈래 안에 있다', () => {
     assert.ok(box, '체크박스가 없다');
     assert.equal(box.type, 'checkbox');
-    assert.match(box.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   t('설정이 없으면 켜진 채로 뜬다', () => assert.equal(box.checked, true));
   t('change 리스너', () => assert.ok(wired.get('teamsButton')?.has('change')));
@@ -254,15 +436,15 @@ console.log('설정 및 연결의 Teams 버튼 체크박스');
     assert.equal(window.document.getElementById('teamsButton').checked, false));
 }
 
-console.log('설정 및 연결의 Quality 연도 유지 체크박스');
+console.log('설정(일반)의 Quality 연도 유지 체크박스');
 {
   const { wired, window, store } = await boot({ mode: 'room' });
   const doc = window.document;
   const box = doc.getElementById('qualityYearKeep');
-  t('설정 및 연결 안에 있다', () => {
+  t('설정의 일반 갈래 안에 있다', () => {
     assert.ok(box, '체크박스가 없다');
     assert.equal(box.type, 'checkbox');
-    assert.match(box.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   t('설정이 없으면 켜진 채로 뜬다', () => assert.equal(box.checked, true));
   t('change 리스너', () => assert.ok(wired.get('qualityYearKeep')?.has('change')));
@@ -286,15 +468,15 @@ console.log('설정 및 연결의 Quality 연도 유지 체크박스');
     assert.equal(window.document.getElementById('qualityYearKeep').checked, false));
 }
 
-console.log('설정 및 연결의 접수 미확인 공문 카드 체크박스');
+console.log('설정(일반)의 접수 미확인 공문 카드 체크박스');
 {
   const { wired, window, store } = await boot({ mode: 'room' });
   const doc = window.document;
   const box = doc.getElementById('homeUncfm');
-  t('설정 및 연결 안에 있다', () => {
+  t('설정의 일반 갈래 안에 있다', () => {
     assert.ok(box, '체크박스가 없다');
     assert.equal(box.type, 'checkbox');
-    assert.match(box.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   t('설정이 없으면 켜진 채로 뜬다', () => assert.equal(box.checked, true));
   t('change 리스너', () => assert.ok(wired.get('homeUncfm')?.has('change')));
@@ -318,7 +500,7 @@ console.log('설정 및 연결의 접수 미확인 공문 카드 체크박스');
     assert.equal(window.document.getElementById('homeUncfm').checked, false));
 }
 
-console.log('설정 및 연결의 보이는 탭');
+console.log('설정(일반)의 보이는 탭');
 {
   const { wired, window, store, calls } = await boot({ mode: 'room' });
   const doc = window.document;
@@ -332,9 +514,9 @@ console.log('설정 및 연결의 보이는 탭');
     b.dispatchEvent(new window.Event('change', { bubbles: true }));
     return new Promise((r) => setTimeout(r, 40));
   };
-  t('설정 및 연결 안에 있다', () => {
+  t('설정의 일반 갈래 안에 있다', () => {
     assert.ok(group, '보이는 탭 묶음이 없다');
-    assert.match(group.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(group.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   t('탭 줄 차례대로 일곱 개', () => assert.deepEqual(boxes.map((b) => b.dataset.tab), ['attend', 'gongmun', 'rnd', 'mail', 'room', 'car', 'mine']));
   t('설정이 없으면 전부 켜져 있고 탭도 다 보인다', () => {
@@ -367,7 +549,7 @@ console.log('설정 및 연결의 보이는 탭');
     assert.equal(boxes.find((b) => b.dataset.tab === 'attend').checked, true);
     assert.deepEqual(store.tabsOff, ['gongmun', 'rnd', 'mail', 'room', 'car', 'mine']);
     assert.deepEqual(hiddenNow(), ['gongmun', 'rnd', 'mail', 'room', 'car', 'mine']);
-    assert.match(doc.getElementById('status').textContent, /적어도 하나/);
+    assert.match(doc.getElementById('setNote').textContent, /적어도 하나/);   // 상태 줄은 설정 화면 뒤에 숨어 있어 체크 줄 아래에 적는다
   });
   await pick('mail', true);
   t('다시 켜면 저장에서 빠지고 탭이 돌아온다', () => {
@@ -447,16 +629,16 @@ console.log('설정 및 연결의 보이는 탭');
   });
 }
 
-console.log('설정 및 연결의 미회람 문서 자동 열람 체크박스');
+console.log('설정(일반)의 미회람 문서 자동 열람 체크박스');
 {
   const { wired, window, store } = await boot({ mode: 'room' });
   const doc = window.document;
   const box = doc.getElementById('docCirculate');
   const line = doc.getElementById('docCirculateState');
-  t('설정 및 연결 안에 있다', () => {
+  t('설정의 일반 갈래 안에 있다', () => {
     assert.ok(box, '체크박스가 없다');
     assert.equal(box.type, 'checkbox');
-    assert.match(box.closest('details.diag')?.querySelector('summary')?.textContent || '', /설정 및 연결/);
+    assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   // 읽음 처리는 되돌릴 수 없다. 켠 적이 없는 브라우저에서 켜진 채로 뜨면 안 된다.
   t('설정이 없으면 꺼진 채로 뜬다', () => assert.equal(box.checked, false));
@@ -702,7 +884,7 @@ console.log('활동 로그 — 남기고, 보여주고, 복사한다');
 
   t('로그 버튼과 칸에 리스너', () => {
     assert.ok(wired.get('logBox')?.has('toggle'));
-    assert.ok(wired.get('settingsBox')?.has('toggle'), '바깥 설정을 펼칠 때도 그려야 한다');
+    assert.ok(wired.get('settingsShortcut')?.has('click'), '설정 화면을 열 때도 그려야 한다');
     for (const id of ['logCopy', 'logSave', 'logClear']) assert.ok(wired.get(id)?.has('click'), id);
   });
 
@@ -727,10 +909,8 @@ console.log('활동 로그 — 남기고, 보여주고, 복사한다');
   box.open = true;
   box.dispatchEvent(new window.Event('toggle'));
   await settle();
-  t('바깥 설정이 접혀 있으면 활동 로그를 열어도 그리지 않는다', () => assert.equal(out.textContent, ''));
-  const settings = doc.getElementById('settingsBox');
-  settings.open = true;
-  settings.dispatchEvent(new window.Event('toggle'));
+  t('설정 화면이 닫혀 있으면 활동 로그를 열어도 그리지 않는다', () => assert.equal(out.textContent, ''));
+  doc.getElementById('settingsShortcut').click();   // 설정 화면을 열면(일반 갈래) 그린다
   await settle();
   t('열면 최신 것이 위로 온다', () => {
     const lines = out.textContent.split('\n');

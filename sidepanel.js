@@ -4,6 +4,9 @@ import { captureRaw } from './src/site.js';
 import { RUNNERS, runnerOf } from './src/runners.js';
 import { modifyReservation, describeModifyResult } from './src/modify.js';
 import { parseSmart, diagnoseSmart, nativeProbe, nativeLogs } from './src/llm.js';
+import { DEFAULT_MODEL } from './src/ai.js';
+import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js';
+import { ONENOTE_MCP_URL } from './src/rndnote.js';
 import { bridgeGuide, bridgeRoot } from './src/bridgeguide.js';
 import { createLogbook, formatEntries, buildLogReport, stamp } from './src/logbook.js';
 import { buildSaveDigest } from './src/diagnose.js';
@@ -54,7 +57,10 @@ const el = {
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
   homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
   docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'), tabPicks: $('tabPicks'),
-  settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), logBox: $('logBox'), logCount: $('logCount'), logOut: $('logOut'),
+  settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), settingsTabs: $('settingsTabs'), settingsClose: $('settingsClose'), llmModel: $('llmModel'),
+  connTeamsUrl: $('connTeamsUrl'), connTeamsState: $('connTeamsState'), connTeamsCheck: $('connTeamsCheck'),
+  connNoteUrl: $('connNoteUrl'), connNoteState: $('connNoteState'), connNoteCheck: $('connNoteCheck'),
+  setNote: $('setNote'), logBox: $('logBox'), logCount: $('logCount'), logOut: $('logOut'),
   logCopy: $('logCopy'), logSave: $('logSave'), logClear: $('logClear'),
 };
 
@@ -62,6 +68,7 @@ const el = {
 const state = { day: null, picks: [], drag: null, loadedAt: 0, timer: null,
   region: null, regions: [], apiKey: '', found: [], cli: false, mode: 'room', extendTarget: null,
   tabsOff: [],   // 설정(보이는 탭)에서 끈 탭의 모드 이름 — src/tabpick.js
+  settingsOpen: false, settingsPane: 'general', settingsScroll: 0,   // 설정 화면(머리의 톱니)이 열려 있는가 · 보이는 갈래(일반 general · LLM llm · 연결 conn — settingsPane 에 저장) · 열기 전 스크롤 자리
   // 다리 확인이 한 번이라도 끝났는지와, 닿지 않았을 때 브라우저가 댄 까닭(연결 지침에 적는다).
   cliChecked: false, cliError: '',
   justBooked: [], myName: '', mine: [], editTarget: null, carWho: null,
@@ -1775,8 +1782,9 @@ const rnd = createRndPanel({
 /**
  * 메일 탭(2026-10-15 사용자 지정: "별도 폴더에 작성 … 지금 프로젝트와 가능한 분리해서") — 내가 보낸 메일의 회신을 받는 사람 조직마다 센다.
  * 화면·장부·금고·Outlook MCP(:5001)는 모두 mailtrack/ 안에 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다(mailtrack/index.js).
+ * MCP 주소·내 메일 주소·연결 확인은 설정 화면의 연결 갈래(#connOutlook)에 그린다(connRoot) — 나머지 메일 설정은 메일 탭에 남는다.
  */
-const mail = createMailPanel({ root: $('mail'), $, escapeHtml, logEvent, flash: (btn, text, ms) => flash(btn, text, ms), copyText: (text) => copyText(text) });
+const mail = createMailPanel({ root: $('mail'), $, escapeHtml, logEvent, connRoot: $('connOutlook'), flash: (btn, text, ms) => flash(btn, text, ms), copyText: (text) => copyText(text) });
 
 /** 내가 넣은 예약을 며칠간 기억한다. 지난 날짜는 버린다. */
 const BOOKED_KEEP_DAYS = 30;
@@ -1844,7 +1852,9 @@ function paintTabs() {
  * 탭 상태를 화면에 적용하고 다시 조회한다.
  * 같은 모드여도 그대로 진행한다 — 시작할 때 저장된 모드를 입히는 데도 쓰기 때문이다.
  */
-function applyMode(mode) {
+function applyMode(mode, { keepSettings = false } = {}) {
+  // 설정 화면 위로 탭이 불리면(홈 카드에서 온 건) 설정은 닫히고 그 탭이 선다 — 설정의 보이는 탭에서 보던 탭을 꺼서 옮길 때(keepSettings)는 열어 둔 채 뒤의 탭만 바꾼다.
+  if (state.settingsOpen && !keepSettings) showSettings(false);
   state.mode = mode;
   state.picks = [];
   state.day = null;
@@ -1864,8 +1874,7 @@ function applyMode(mode) {
   paintTabs();   // 끈 탭이라도 보고 있는 동안은 탭 줄에 남고, 떠나면 사라진다
 
   const pageName = car ? '차량 이용' : '회의실 예약';
-  const screenTitle = attendTab ? '근태 신청' : gongmunTab ? '공문 작성' : rndTab ? 'R&D 과제' : mailTab ? '메일 수신' : mineTab ? '현황' : pageName;
-  el.appTitle.textContent = screenTitle;
+  el.appTitle.textContent = state.settingsOpen ? '설정' : screenTitleOf(mode);
   const openLabel = `${pageName} 페이지를 새 탭에서 열기`;
   el.openPageInline.title = openLabel;
   el.openPageInline.setAttribute('aria-label', openLabel);
@@ -1923,6 +1932,103 @@ function applyMode(mode) {
 function setMode(mode) {
   if (state.mode === mode) return;
   applyMode(mode);
+}
+
+/* ------------------------------------------------------------ 설정 화면 */
+
+/** 마지막에 본 갈래를 두는 키 — 일반 general · LLM llm · 연결 conn. */
+const SETTINGS_PANE_KEY = 'settingsPane';
+const SETTINGS_PANES = ['general', 'llm', 'conn'];
+const normalizePane = (v) => (SETTINGS_PANES.includes(v) ? v : 'general');
+/** Teams·OneNote MCP 가 닿는지 볼 때 기다리는 시간(src/teams.js 의 probe 와 같다). */
+const MCP_PROBE_MS = 2500;
+
+/** 머리의 제목 — 보고 있는 탭의 이름. 설정 화면이 열려 있는 동안은 `설정` 이다(showSettings). */
+const screenTitleOf = (mode) => ({ attend: '근태 신청', gongmun: '공문 작성', rnd: 'R&D 과제', mail: '메일 수신', mine: '현황', car: '차량 이용' })[mode] || '회의실 예약';
+
+/**
+ * 설정 화면을 열고 닫는다(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게"). 열면 .app 에 settings-open 이 붙어 탭 줄·탭 내용이
+ * 숨고(sidepanel.css) 제목이 `설정` 이 되며, 닫으면 보던 탭이 그대로 돌아온다 — 탭(state.mode)은 건드리지 않는다. 설정이 열린 채로 탭이 불리면
+ * (홈 카드에서 온 건, 다른 창의 보이는 탭 바꾸기) applyMode 가 먼저 닫는다.
+ */
+function showSettings(on) {
+  if (state.settingsOpen === on) return;
+  state.settingsOpen = on;
+  el.settingsBox.hidden = !on;
+  document.querySelector('.app')?.classList.toggle('settings-open', on);
+  el.settingsShortcut.setAttribute('aria-expanded', String(on));
+  el.settingsShortcut.title = on ? '설정 닫기' : '설정 열기';
+  el.settingsShortcut.setAttribute('aria-label', el.settingsShortcut.title);
+  el.appTitle.textContent = on ? '설정' : screenTitleOf(state.mode);
+  const page = document.scrollingElement || document.documentElement;
+  if (on) {
+    state.settingsScroll = page.scrollTop;   // 닫을 때 보던 자리로 돌아가게
+    choosePane(state.settingsPane, { save: false });
+    page.scrollTop = 0;
+    el.settingsTabs.querySelector('.set-tab.active')?.focus({ preventScroll: true });   // Esc 가 바로 듣고, 키보드로도 갈래부터
+  } else {
+    page.scrollTop = state.settingsScroll;
+  }
+}
+
+/** 갈래를 고른다 — 머리 줄의 탭과 아래 칸을 맞추고 저장한다. 일반이면 활동 로그를, 연결이면 메일 장부의 서버 주소를 그린다. */
+function choosePane(name, { save = true } = {}) {
+  const pane = normalizePane(name);
+  state.settingsPane = pane;
+  for (const btn of el.settingsTabs.querySelectorAll('[data-pane]')) {
+    const on = btn.dataset.pane === pane;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', String(on));
+    btn.tabIndex = on ? 0 : -1;   // 고른 갈래만 Tab 차례에 들고, 나머지는 ←·→ 로(role=tablist)
+  }
+  for (const box of el.settingsBox.querySelectorAll('.set-pane')) box.hidden = box.dataset.pane !== pane;
+  if (save) chrome.storage.local.set({ [SETTINGS_PANE_KEY]: pane });
+  if (pane === 'general') paintLog();
+  if (pane === 'conn') mail.loadSettings();   // 메일 탭을 한 번도 열지 않았어도 저장된 MCP 주소·내 메일 주소가 보이게
+}
+
+/** 일반 갈래의 보이는 탭 아래 알림 줄 — 설정 화면이 열려 있으면 예약 현황의 상태 줄은 숨어 있어 거기 적어도 보이지 않는다. */
+function settingsNote(text, kind = '') {
+  el.setNote.className = `status set-note${kind ? ` ${kind}` : ''}`;
+  el.setNote.textContent = text;
+}
+
+/** 글을 적는 칸인가(API 키·내 이름·MCP 주소 …) — 체크박스·단추는 아니다. */
+const isTextField = (t) => t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range', 'file'].includes(t.type));
+
+/**
+ * 연결 갈래의 Teams·OneNote MCP — 닿는지 본다(initialize → tools/list, src/teams.js 의 connect). 서버가 없는 PC 가 보통이라 던지지 않고
+ * 배지에 적는다. Outlook 은 메일 탭이 제 칸(connOutlook)에서 본다.
+ */
+const MCP_CHECKS = {
+  teams: { label: 'Teams MCP', url: TEAMS_MCP_URL, badge: () => el.connTeamsState, button: () => el.connTeamsCheck,
+    verdict: (tools) => (tools.includes(FILE_TOOL) ? '연결됨 · 파일 보내기 가능' : '연결됨 · 파일 보내는 도구 없음') },
+  onenote: { label: 'OneNote MCP', url: ONENOTE_MCP_URL, badge: () => el.connNoteState, button: () => el.connNoteCheck,
+    verdict: (tools) => `연결됨 · 도구 ${tools.length}개` },
+};
+async function checkMcp(which) {
+  const c = MCP_CHECKS[which];
+  const badge = c.badge();
+  const btn = c.button();
+  btn.disabled = true;
+  badge.textContent = '확인 중…';
+  badge.classList.remove('on', 'off');
+  badge.title = '';
+  try {
+    const mcp = await mcpConnect(c.url, fetch, MCP_PROBE_MS, c.label);
+    const tools = ((await mcp.call('tools/list', {}))?.tools || []).map((t) => t.name);
+    badge.textContent = c.verdict(tools);
+    badge.classList.add('on');
+    badge.title = tools.join(', ');
+    logEvent('setting', true, `${c.label} 연결 확인 — ${badge.textContent}`);
+  } catch (err) {
+    badge.textContent = '닿지 않음';
+    badge.classList.add('off');
+    badge.title = String(err?.message || err);
+    logEvent('setting', false, `${c.label} 연결 확인 — 닿지 않음: ${badge.title}`);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ------------------------------------------------------------ 내 예약 */
@@ -2404,12 +2510,12 @@ function flash(btn, text, ms = 1800) {
   flashTimers.set(btn, setTimeout(() => { btn.textContent = btn.dataset.label; }, ms));
 }
 
-/** 요약(건수)은 늘, 목록은 칸을 열었을 때만(바깥 `설정` 도 펼쳐져 있을 때) 그린다. 최신 것이 위로 온다. */
+/** 요약(건수)은 늘, 목록은 칸을 열었을 때만(설정 화면이 열려 있을 때) 그린다. 최신 것이 위로 온다. */
 async function paintLog() {
   const list = await logbook.list();
   const fails = list.filter((e) => !e.ok).length;
   el.logCount.textContent = list.length ? `${list.length}건${fails ? ` · 실패 ${fails}` : ''}` : '기록 없음';
-  if (!el.logBox.open || !el.settingsBox.open) return;
+  if (!el.logBox.open || el.settingsBox.hidden) return;
   el.logOut.textContent = formatEntries(list.slice(-LOG_PREVIEW).reverse(), { detail: false });
 }
 
@@ -2569,7 +2675,7 @@ async function init() {
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
-      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY]);
+      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
   if (saved.spanDays != null) el.spanDays.value = saved.spanDays;
@@ -2580,6 +2686,11 @@ async function init() {
   state.foldOpen = !!saved.foldOpen;
   el.apiKey.value = state.apiKey;
   el.myName.value = state.myName;
+  state.settingsPane = normalizePane(saved[SETTINGS_PANE_KEY]);
+  // LLM·연결 갈래의 고정 글 — 쓰는 모델(src/ai.js, 다리 native/host.mjs 도 같은 모델)과 Teams·OneNote MCP 주소(바꾸지 않는다).
+  el.llmModel.textContent = DEFAULT_MODEL;
+  el.connTeamsUrl.textContent = TEAMS_MCP_URL;
+  el.connNoteUrl.textContent = ONENOTE_MCP_URL;
   // 비교작성 탭이면 여기서 끝 — 공문 탭만 띄운다.
   if (gongmun.compareTab) return initCompareTab();
   el.homeCard.checked = homeEnabled(saved[HOME_ENABLE_KEY]);
@@ -2710,13 +2821,14 @@ async function init() {
     const next = toggleTab(state.tabsOff, mode, box.checked);
     if (!next) {
       box.checked = true;
-      setStatus('탭은 적어도 하나 남겨야 합니다.', 'error');
+      settingsNote('탭은 적어도 하나 남겨야 합니다.', 'error');   // 예약 현황의 상태 줄은 설정 화면 뒤에 숨어 있다 — 체크 줄 바로 아래에 적는다
       return;
     }
+    settingsNote('');
     state.tabsOff = next;
     chrome.storage.local.set({ [TABS_KEY]: next });
     logEvent('setting', true, `${TAB_LABELS[mode]} 탭 ${box.checked ? '켬' : '끔'}`);
-    if (!box.checked && state.mode === mode) applyMode(firstShown(next));
+    if (!box.checked && state.mode === mode) applyMode(firstShown(next), { keepSettings: true });   // 설정은 열어 둔 채 뒤의 탭만 옮긴다
     else paintTabs();
   });
   el.myName.addEventListener('change', () => {
@@ -2733,16 +2845,43 @@ async function init() {
   });
   el.capture.addEventListener('click', runCapture);
   el.logBox.addEventListener('toggle', paintLog);
-  el.settingsBox.addEventListener('toggle', paintLog);   // 바깥 `설정` 을 펼쳐야 활동 로그가 보인다
-  const syncSettingsShortcut = () => el.settingsShortcut.setAttribute('aria-expanded', String(el.settingsBox.open));
-  el.settingsBox.addEventListener('toggle', syncSettingsShortcut);
-  el.settingsShortcut.addEventListener('click', () => {
-    el.settingsBox.open = true;
-    syncSettingsShortcut();
-    el.settingsBox.scrollIntoView({ block: 'start' });
-    el.settingsBox.querySelector('summary').focus({ preventScroll: true });
+  // 설정 화면 — 머리의 톱니로 열고 닫는다(열면 탭 줄·탭 내용이 숨는다). 닫기 단추·Esc 로도 닫힌다. 갈래(일반·LLM·연결)는 머리 줄의 탭.
+  el.settingsShortcut.addEventListener('click', () => showSettings(!state.settingsOpen));
+  el.settingsClose.addEventListener('click', () => {
+    showSettings(false);
+    el.settingsShortcut.focus({ preventScroll: true });
   });
-  syncSettingsShortcut();
+  // 글 칸에 들어갈 때의 값을 적어 둔다 — Esc 로 되돌리게(focus 는 번지지 않아 잡는 단계로 듣는다).
+  el.settingsBox.addEventListener('focus', (e) => {
+    const t = e.target;
+    if (t instanceof HTMLElement && isTextField(t)) t.dataset.prev = t.value;
+  }, true);
+  el.settingsBox.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.isComposing) return;
+    const t = e.target;
+    // 글 칸 안의 Esc 는 고치던 것을 되돌리고 칸을 나간다(반쯤 적은 API 키가 저장되지 않게) — 한 번 더 누르면 닫힌다.
+    if (t instanceof HTMLElement && isTextField(t)) {
+      if (t.dataset.prev != null) t.value = t.dataset.prev;
+      el.settingsTabs.querySelector('.set-tab.active')?.focus({ preventScroll: true });
+      return;
+    }
+    showSettings(false);
+    el.settingsShortcut.focus({ preventScroll: true });
+  });
+  // 갈래 탭은 ←·→ 로도 옮긴다(role=tablist).
+  el.settingsTabs.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const i = SETTINGS_PANES.indexOf(state.settingsPane);
+    e.preventDefault();
+    choosePane(SETTINGS_PANES[(i + (e.key === 'ArrowRight' ? 1 : SETTINGS_PANES.length - 1)) % SETTINGS_PANES.length]);
+    el.settingsTabs.querySelector('.set-tab.active')?.focus({ preventScroll: true });
+  });
+  el.settingsTabs.addEventListener('click', (e) => {
+    const btn = e.target instanceof HTMLElement ? e.target.closest('[data-pane]') : null;
+    if (btn) choosePane(btn.dataset.pane);
+  });
+  el.connTeamsCheck.addEventListener('click', () => checkMcp('teams'));
+  el.connNoteCheck.addEventListener('click', () => checkMcp('onenote'));
   el.logCopy.addEventListener('click', copyLog);
   el.logSave.addEventListener('click', saveLog);
   el.logClear.addEventListener('click', clearLog);

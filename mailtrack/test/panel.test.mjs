@@ -1010,6 +1010,19 @@ await ta('갱신의 주의(warnings)는 알림 줄 끝에, 기다리는 메일�
   await until(() => !$('mtRefresh').disabled && $('mtMsg').textContent === '기다리는 메일이 없어 찾지 않았습니다.');
   s.refreshOut = null;
 });
+await ta('기다리는 메일이 없어도 칩이 꺼짐으로 남아 있으면 새로고침이 서버를 다시 확인한다(연결 확인 단추가 설정 화면으로 간 뒤 — 2026-10-16)', async () => {
+  s.probeOut = probeFail('offline', 'fetch failed');
+  $('mtProbe').click();
+  await until(() => $('mtState').dataset.state === 'offline' && !$('mtProbe').disabled);
+  s.probeOut = OK_PROBE;
+  s.refreshOut = { ok: true, fetched: 0, linked: 0, at: clock, idle: true };
+  const probes = callsOf(s, 'probe').length;
+  $('mtRefresh').click();
+  await until(() => $('mtState').dataset.state === 'ok' && !$('mtRefresh').disabled, '다시 확인');
+  assert.equal(callsOf(s, 'probe').length, probes + 1);
+  assert.equal($('mtMsg').textContent, '기다리는 메일이 없어 찾지 않았습니다.');
+  s.refreshOut = null;
+});
 await ta('sync.refresh 가 ok:false 를 돌려줘도(서버 꺼짐 — sync.js 의 꼴 그대로) 칩과 알림 줄에', async () => {
   const error = { kind: 'offline', message: 'connect ECONNREFUSED 127.0.0.1:5001' };
   s.refreshOut = { ok: false, fetched: 0, linked: 0, at: clock, error, kind: 'offline' };
@@ -1024,6 +1037,75 @@ t('hide() — 숨기고 타이머를 치운다', () => {
   panel.hide();
   assert.ok(hidden('mail'));
   assert.equal(panel.state().tick, null);
+});
+
+console.log('connRoot — 패널 설정의 연결 갈래(2026-10-16)에 MCP 주소·내 메일 주소·연결 확인을 그린다');
+await ta('connRoot 가 있으면 그 칸에(상태 칩·열기·알림 줄 따로), 메일 설정 칸에는 안내 한 줄 — 메일 탭을 열지 않아도 loadSettings 로 저장된 주소가 선다', async () => {
+  const { window } = new JSDOM('<!doctype html><body><section id="mail" class="mail hidden"></section><div id="conn"></div></body>', { url: 'https://example.org/' });
+  const { createMailPanel } = await import('../panel.js');
+  const book = makeBook();
+  book.settings = { ...book.settings, mcpUrl: 'http://127.0.0.1:5001/mcp', userEmail: 'me@krs.co.kr' };
+  const s = fakeSync(book);
+  const d = window.document;
+  const conn = d.getElementById('conn');
+  const g = (id) => d.getElementById(id);
+  const p = createMailPanel({ root: g('mail'), $: g, escapeHtml, logEvent: () => {}, sync: s, connRoot: conn });
+  p.wire();
+  for (const id of ['mtConn', 'mtUrl', 'mtUserEmail', 'mtProbe', 'mtConnState', 'mtConnAuth', 'mtConnMsg']) assert.ok(conn.querySelector(`#${id}`), id);
+  assert.equal(d.querySelector('#mail #mtUrl'), null, '메일 설정 칸에 MCP 주소가 남아 있다');
+  assert.ok(d.querySelector('#mail #mtSettings #mtSentDays') && d.querySelector('#mail #mtSettings #mtSetMsg'), '다른 메일 설정은 메일 탭에');
+  assert.match(d.querySelector('#mail #mtSettings .mt-conn-note').textContent, /설정.*연결/);
+  assert.equal(g('mtConnState').textContent, '확인 전');
+  assert.ok(g('mtConnAuth').classList.contains('hidden'));
+  assert.equal(g('mtUrl').value, 'http://localhost:5001/mcp', '장부를 읽기 전에는 기본값');
+  assert.deepEqual(s.calls, []);
+  await p.loadSettings();
+  assert.deepEqual(s.calls.map((c) => c[0]), ['load']);
+  assert.equal(g('mtUrl').value, 'http://127.0.0.1:5001/mcp');
+  assert.equal(g('mtUserEmail').value, 'me@krs.co.kr');
+  await p.loadSettings();
+  assert.deepEqual(s.calls.map((c) => c[0]), ['load'], '한 번 읽었으면 다시 읽지 않는다');
+  // 주소 검사 오류·저장 알림은 연결 갈래의 알림 줄로, 메일 설정의 줄은 비어 있다.
+  g('mtUrl').value = 'http://evil.example.com/mcp';
+  g('mtUrl').dispatchEvent(new window.Event('change'));
+  assert.equal(g('mtConnMsg').textContent, 'MCP 주소는 이 PC(localhost · 127.0.0.1)만 됩니다: evil.example.com');
+  assert.equal(g('mtSetMsg').textContent, '');
+  g('mtUrl').value = 'http://localhost:5002/mcp';
+  g('mtUrl').dispatchEvent(new window.Event('change'));
+  await until(() => g('mtConnMsg').textContent === '저장했습니다.', '저장');
+  assert.deepEqual(s.calls.filter((c) => c[0] === 'settings').at(-1), ['settings', { mcpUrl: 'http://localhost:5002/mcp' }]);
+  assert.equal(g('mtSetMsg').textContent, '');
+  // 탭이 보이지 않아도 주소를 바꾸면 다시 확인해 칩을 맞춘다(연결 갈래에 칩이 있으니) — 머리 칩도 같이.
+  await until(() => g('mtConnState').dataset.state === 'ok', '다시 확인');
+  assert.equal(g('mtConnState').textContent, 'Outlook 연결됨');
+  assert.equal(g('mtState').textContent, 'Outlook 연결됨');
+  // 연결 확인 단추 → 알림도 연결 갈래의 줄로.
+  g('mtProbe').click();
+  await until(() => !g('mtProbe').disabled && /^연결됨 — /.test(g('mtConnMsg').textContent), '연결 확인');
+  assert.equal(g('mtSetMsg').textContent, '');
+  // 로그인이 풀렸으면 연결 갈래의 열기가 보인다.
+  s.probeOut = probeFail('auth', 'auth_required', 'https://login.microsoftonline.com/z');
+  g('mtProbe').click();
+  await until(() => g('mtConnState').dataset.state === 'auth' && !g('mtProbe').disabled, '로그인 필요');
+  assert.ok(!g('mtConnAuth').classList.contains('hidden'));
+  assert.equal(g('mtConnState').textContent, 'Microsoft 로그인 필요');
+  // 갈래로 되돌아오면(loadSettings) 지난 알림은 지운다 — 칸은 저장된 값으로 다시 서니.
+  await p.loadSettings();
+  assert.equal(g('mtConnMsg').textContent, '');
+});
+await ta('장부를 읽지 못하면 연결 갈래의 줄에도 적는다 — 메일 탭의 알림 줄은 설정 화면 뒤에 숨어 있으니', async () => {
+  const { window } = new JSDOM('<!doctype html><body><section id="mail" class="mail hidden"></section><div id="conn"></div></body>', { url: 'https://example.org/' });
+  const { createMailPanel } = await import('../panel.js');
+  const s = fakeSync(makeBook());
+  s.load = async () => { s.calls.push(['load']); throw new Error('storage broken'); };
+  const d = window.document;
+  const g = (id) => d.getElementById(id);
+  const p = createMailPanel({ root: g('mail'), $: g, escapeHtml, logEvent: () => {}, sync: s, connRoot: g('conn') });
+  p.wire();
+  await p.loadSettings();
+  assert.match(g('mtConnMsg').textContent, /^저장된 설정을 읽지 못했습니다: storage broken/);
+  assert.equal(g('mtConnMsg').className, 'status mt-set-msg error');
+  assert.equal(g('mtUrl').value, 'http://localhost:5001/mcp', '기본값 그대로');
 });
 
 console.log(`\n${pass} passed`);
