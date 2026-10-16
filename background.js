@@ -1,6 +1,7 @@
 import { hrListDocs, hrCloseWorker, hrWorkerAlive } from './src/hr.js';
 import { loadPlans } from './src/plans.js';
 import { receiptSmart } from './src/llm.js';
+import { docText } from './doctext/index.js';
 import { todayStr } from './src/parse.js';
 import { createEvidenceStore } from './src/evidence.js';
 import { intakeEvidence } from './src/intake.js';
@@ -152,8 +153,27 @@ function logTrip(msg) {
     .then(() => ({ ok: true }), (err) => ({ ok: false, error: err?.message || String(err) }));
 }
 
+/**
+ * 진단 — 서비스 워커 길의 첨부 글자 먼저 뽑기(doctext/index.js 의 docText → offscreen 문서)가 실제로 도는지 본다(test/cdp/doctext.mjs 가 부른다).
+ * Claude 는 부르지 않는다. 뽑은 글자는 돌려주지 않고 어떻게 읽었는지(read)와 크기만 돌려준다.
+ */
+async function probeDocText(msg) {
+  const started = Date.now();
+  const awake = setInterval(() => chrome.runtime.getPlatformInfo?.(() => {}), AWAKE_MS);
+  try {
+    const files = (Array.isArray(msg?.files) ? msg.files : []).filter((f) => typeof f?.dataUrl === 'string' && f.dataUrl.startsWith('data:'));
+    const out = await docText(String(msg?.input || '진단'), files);
+    return { ok: true, read: out.read, lean: out.lean, files: out.files.map((f) => f.name), inputLen: out.input.length, ms: Date.now() - started };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err), ms: Date.now() - started };
+  } finally {
+    clearInterval(awake);
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'openSidePanel') openSidePanel(sender).then(sendResponse);
+  else if (msg?.type === 'doctextProbe') probeDocText(msg).then(sendResponse);
   else if (msg?.type === 'hrPlans') readPlans(!!msg.force).then(sendResponse);
   else if (msg?.type === 'receiptRead') readReceipt(msg).then(sendResponse);
   else if (msg?.type === 'evidenceKeep') keepEvidence(msg).catch((err) => ({ ok: false, error: err?.message || String(err) })).then(sendResponse);

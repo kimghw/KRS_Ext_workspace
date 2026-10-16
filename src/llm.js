@@ -6,6 +6,10 @@
 //
 // 앞의 것이 안 되면 다음으로 내려가고, 무엇을 썼는지 항상 같이 돌려준다.
 //
+// 첨부(출장 증빙·공문 문서)는 어느 길이든 글자를 먼저 뽑는다 — 다리는 다리에서(native/doctext.mjs), API 길은 브라우저에서(doctext/).
+// 글자 층이 있는 PDF 는 글자만 보내고 파일을 붙이지 않으며, 그림·스캔본은 OCR 글자를 입력에 적고 파일도 붙인다. 어떻게 읽었는지는
+// 첨부마다 한 줄씩 read 로 온다(API 길만 — 다리 길은 다리 기록에 남는다).
+//
 // **어느 길로 온 답이든 입력 명세(input.yaml)의 관문을 지난 것만 돌려준다**(src/input.js 의 structure).
 // 답이 명세와 다르면 그 길은 실패한 것으로 치고 다음 길로 내려간다. 여기서 나간 것은 그대로 실행자 쪽
 // (findSlots, applyPatch)으로 가므로, 구조가 틀린 것이 여기를 지나면 안 된다.
@@ -16,6 +20,9 @@ import { parseLocal } from './nlq.js';
 import { parseAttendLocal, fixRelativeDates } from './attend.js';
 import { parseSetupLocal, reasonInput, KINDS, REASON_KEYS } from './gongmun.js';
 import { RECIPE } from './gmrecipe.js';
+// 정적으로 가져온다 — 서비스 워커(background.js 의 readReceipt·keepEvidence 가 receiptSmart 를 부른다)는 import() 를 막아
+// 느리게 가져오면 거기서는 늘 실패해 offscreen 길이 영영 닿지 않는다. 가져오기만으로는 chrome·document·Worker 를 만지지 않는다.
+import { docText as defaultDocText } from '../doctext/index.js';
 
 export const NATIVE_HOST = 'com.krs.meetingroom';
 
@@ -65,14 +72,37 @@ async function nativeTask(task, input, files = []) {
 const joined = (...parts) => parts.flat().filter(Boolean).join(', ');
 
 /**
+ * 첨부에서 글자를 먼저 뽑는 작업 — 출장 증빙(receipt)과 공문 문서(gongmun.<갈래>). 다리(native/host.mjs 의 TEXT_FIRST)와 같은 규칙이다.
+ * 사유 쓰기(gongmunReason.*)와 공문 설정 채팅(gongmunSetup)은 글만 받으므로 아니다.
+ */
+export const textFirst = (task) => task === 'receipt' || task.startsWith('gongmun.');
+
+/**
+ * API 길의 글자 먼저 뽑기 — doctext/index.js 의 docText(어디서 불렸든 한 진입점: 확장 페이지면 바로, 서비스 워커면 offscreen 문서로).
+ * docText 는 못 뽑으면(꾸러미 없음·뽑을 수 없는 환경) 던지지 않고 파일째 돌려주며 까닭을 read 에 적는다. 그래도 던지면 여기서 받아
+ * 전처럼 파일째 읽히고 그 까닭이 read 에 남는다 — 다리(native/host.mjs 의 extractText)와 같은 문구다. 여기서는 절대 던지지 않는다.
+ * @param {Function} [docText] 테스트가 끼우는 가짜 — 패널은 넘기지 않는다
+ * @returns {Promise<{input: string, files: object[], read: string[], lean: boolean}>}
+ */
+async function extractText(input, files, docText = defaultDocText) {
+  try {
+    return await docText(input, files);
+  } catch (e) {
+    return { input, files, read: [`글자 뽑기를 건너뜀(${String(e?.message || e).slice(0, 160)}) — 파일째 보냄`], lean: false };
+  }
+}
+
+/**
  * 로컬 CLI → API 키 순으로 물어, **명세를 통과한 첫 답**을 돌려준다.
  * 둘 다 안 되면 data 가 없다. 왜 내려왔는지는 fails 에 남는다 — 답이 명세와 달랐던 것도 실패다.
+ * 첨부가 있는 글자 먼저 뽑기 작업(textFirst)은 API 길에서 여기서 뽑아 보낸다. CLI 길은 다리가 뽑고 read 를 다리 기록에 남기므로 돌려주지 않는다.
  *
  * @param {string} task input.yaml 의 작업 이름
- * @param {{apiKey?:string, useNative?:boolean, kind?:string}} opts kind 는 화면이 정한 종류
- * @returns {Promise<{data?: object, notes?: string[], via?: 'cli'|'api', costUsd?: number, fails: string[]}>}
+ * @param {{apiKey?:string, useNative?:boolean, kind?:string, files?:{name:string,type:string,dataUrl:string}[], docText?:Function}} opts
+ *   kind 는 화면이 정한 종류, files 는 첨부, docText 는 테스트가 끼우는 글자 뽑기(패널은 넘기지 않는다)
+ * @returns {Promise<{data?: object, notes?: string[], via?: 'cli'|'api', costUsd?: number, read?: string[], fails: string[]}>}
  */
-async function askClaude(task, input, { apiKey, useNative, kind, files = [] }) {
+async function askClaude(task, input, { apiKey, useNative, kind, files = [], docText }) {
   const fails = [];
   if (useNative) {
     try {
@@ -84,8 +114,10 @@ async function askClaude(task, input, { apiKey, useNative, kind, files = [] }) {
   }
   if (apiKey) {
     try {
-      const data = await callClaude(task, input, { apiKey, files });
-      return { ...structure(task, data, { kind }), via: 'api', fails };
+      let call = { input, files, read: [], lean: false };
+      if (textFirst(task) && files.length) call = await extractText(input, files, docText);
+      const data = await callClaude(task, call.input, { apiKey, files: call.files });
+      return { ...structure(task, data, { kind }), via: 'api', read: call.read, fails };
     } catch (err) {
       fails.push(`API 실패(${err.message})`);
     }
@@ -125,12 +157,13 @@ export async function parseSmart(text, opts) {
  * 읽는 일이라 규칙 해석(local)은 없다 — 로컬 CLI 도 API 키도 안 되면 던진다. 묶는 것은 src/after.js 가 한다.
  * @param {{name:string,type:string,dataUrl:string}} file
  * @param {{trip:{from?:string,to?:string,location?:string}, me?:string}} ctx
- * @returns {Promise<{record: object, via: 'cli'|'api', costUsd?: number, note?: string}>}
+ * @returns {Promise<{record: object, via: 'cli'|'api', costUsd?: number, note?: string, read: string[]}>}
+ *   read 는 API 길에서 첨부를 어떻게 읽었는지(글자 층·OCR·건너뜀) 한 줄 — CLI 길은 다리 기록에 있어 빈 배열이다.
  */
 export async function receiptSmart(file, ctx, opts) {
   const got = await askClaude('receipt', receiptInput(file, ctx), { ...opts, kind: 'trip', files: [file] });
   if (!got.data) throw new Error(`증빙을 읽지 못했습니다 — ${joined(got.fails) || 'Claude 연결(로컬 CLI 또는 API 키)이 필요합니다'}`);
-  return { record: got.data, via: got.via, costUsd: got.costUsd, note: joined(got.notes) };
+  return { record: got.data, via: got.via, costUsd: got.costUsd, note: joined(got.notes), read: got.read || [] };
 }
 
 /** 증빙 읽기에 같이 주는 화면 글자의 한도 — 예약 확인 화면은 이보다 훨씬 짧다. 다리는 입력을 2만 자에서 자르고 OCR 글자가 그 뒤에 붙는다. */
@@ -154,14 +187,15 @@ export function receiptInput(file, { trip = {}, me = '', text = '' } = {}) {
  * 초안으로 바꾸는 것은 src/gongmun.js 의 fromRecord 다.
  * @param {{files?: {name:string,type:string,dataUrl:string}[], text?: string}} source
  * @param {{kind: 'purchase'|'edu'|'trip'|'outside', today?: string}} ctx 화면이 고른 갈래
- * @returns {Promise<{record: object, via: 'cli'|'api', costUsd?: number, note?: string}>}
+ * @returns {Promise<{record: object, via: 'cli'|'api', costUsd?: number, note?: string, read: string[]}>}
+ *   read 는 API 길에서 첨부마다 어떻게 읽었는지(글자 층·OCR·건너뜀) 한 줄씩 — CLI 길은 다리 기록에 있어 빈 배열이다.
  */
 export async function gongmunSmart(source, ctx, opts) {
   const files = source?.files || [];
   const kind = KINDS[ctx?.kind] ? ctx.kind : 'purchase';
   const got = await askClaude(`gongmun.${kind}`, gongmunInput(source, { ...ctx, kind }), { ...opts, kind, files });
   if (!got.data) throw new Error(`문서를 읽지 못했습니다 — ${joined(got.fails) || 'Claude 연결(로컬 CLI 또는 API 키)이 필요합니다'}`);
-  return { record: got.data, via: got.via, costUsd: got.costUsd, note: joined(got.notes) };
+  return { record: got.data, via: got.via, costUsd: got.costUsd, note: joined(got.notes), read: got.read || [] };
 }
 
 /**

@@ -687,7 +687,7 @@
     <!-- 설정 화면(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게 … 설정 아래 일반/LLM/연결 이렇게 3가지로"). 머리의 톱니(settingsShortcut)를 누르면
          탭 줄·탭 내용이 숨고 이 칸만 선다(sidepanel.js showSettings · sidepanel.css .app.settings-open). 갈래는 머리 줄의 세 탭(data-pane) —
            일반: 보이는 탭 · 내 이름 · 켜고 끄기 네 줄 · 활동 로그 · 페이지 구조 캡처
-           LLM: Claude 에 닿는 길 전부 — 로컬 Claude CLI · Anthropic API 키 · 쓰는 모델
+           LLM: Claude 에 닿는 길 전부 — 로컬 Claude CLI(아래에 "다리가 하는 일" 표 #bridgeUses — src/bridgeuse.js) · Anthropic API 키 · 쓰는 모델
            연결: 이 PC 의 KR_MS365_mcp 서버 — Outlook(메일 탭이 MCP 주소·내 메일 주소를 #connOutlook 에 그린다, mailtrack/panel.js connRoot) · Teams · OneNote
          마지막에 본 갈래는 settingsPane 에 남는다. 비교작성 탭에서는 initCompareTab 이 hidden 을 붙여 통째로 숨긴다. -->
     <section id="settingsBox" class="settings card" hidden aria-label="설정">
@@ -766,7 +766,7 @@
         </details>
       </div>
       <div id="setLlm" class="set-pane" role="tabpanel" data-pane="llm" aria-labelledby="setTabLlm" hidden>
-        <p class="hint set-lead">말로 찾기·말로 채우기·공문 읽기·HELP 가 Claude 에 닿는 길입니다. <strong>로컬 CLI → API 키</strong> 차례로 쓰고, 둘 다 없으면 규칙으로만 읽습니다. 모델은 <code id="llmModel"></code> 입니다.</p>
+        <p class="hint set-lead">말로 찾기·말로 채우기·공문 읽기·HELP 가 Claude 에 닿는 길입니다. <strong>로컬 CLI → API 키</strong> 차례로 쓰고, 둘 다 없으면 규칙으로만 읽습니다. 첨부(증빙·공문 문서)는 어느 길이든 글자를 먼저 뽑아 보냅니다 — 다리가 있으면 다리에서, 없으면 브라우저 안에서(그 꾸러미는 저장소 폴더의 npm install 이 만듭니다). 모델은 <code id="llmModel"></code> 입니다.</p>
         <div class="set-block">
           <div class="set-block-head"><strong>로컬 Claude CLI</strong><span id="cliState" class="badge">확인 중</span></div>
           <p class="hint">
@@ -778,6 +778,9 @@
             <button id="cliCheck" class="ghost small">다시 확인</button>
             <button id="cliGuide" type="button" class="ghost small cli-guide-copy" hidden>연결 지침 복사</button>
           </div>
+          <!-- 다리가 하는 일 — 줄마다 다리가 맡는지(is-on) · 다른 길로 가는지(is-alt: API 키·브라우저) · 못 하는지(is-off). 줄은 src/bridgeuse.js 가 만들고
+               sidepanel.js paintBridgeUses 가 다리 확인·API 키 변경·브라우저 글자 뽑기 꾸러미 확인(doctext/browser.js ready) 때마다 다시 그린다. -->
+          <ul id="bridgeUses" class="bridge-uses" aria-label="다리가 하는 일"></ul>
         </div>
         <div class="set-block">
           <div class="set-block-head"><strong>Anthropic API 키</strong><span id="apiKeyState" class="summary-detail">CLI 가 없을 때만</span></div>

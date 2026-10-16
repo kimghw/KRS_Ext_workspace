@@ -35,7 +35,7 @@ eclass 회의실 현황을 사이드 패널에서 **시간 단위**로 보고, �
 
 설정은 패널 머리의 **톱니(⚙)** 로 엽니다(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게 … 일반/LLM/연결 이렇게 3가지로"). 열면 탭 줄과
 탭 내용이 숨고 설정 화면만 서며, 톱니를 다시 누르거나 `닫기`·Esc 로 보던 탭으로 돌아갑니다(홈 카드에서 건을 눌러 탭이 불리면 저절로 닫히고, 설정 안의 보이는 탭에서 보던 탭을 꺼도 설정은 열린 채 뒤의 탭만 옮깁니다. 글 칸 안의 Esc 는 고치던 값을 되돌릴 뿐이고 갈래는 ←·→ 로도 옮깁니다). 갈래는 셋입니다 —
-**일반**(보이는 탭 · 내 이름 · 켜고 끄기 네 줄 · 활동 로그 · 페이지 구조 캡처), **LLM**(Claude 에 닿는 길 전부 — 로컬 Claude CLI · Anthropic API 키 · 쓰는 모델),
+**일반**(보이는 탭 · 내 이름 · 켜고 끄기 네 줄 · 활동 로그 · 페이지 구조 캡처), **LLM**(Claude 에 닿는 길 전부 — 로컬 Claude CLI · Anthropic API 키 · 쓰는 모델 · **다리가 하는 일** 표 — 2026-10-16, `src/bridgeuse.js`: Claude 호출·첨부 글자 먼저 뽑기·GitHub 새 커밋·활동 로그의 다리 기록 네 줄이 지금 어느 길로 가는지(다리 / API 키·브라우저 / 없음)),
 **연결**(이 PC 의 KR_MS365_mcp 서버 — Outlook MCP 주소·내 메일 주소(메일 탭의 것) · Teams · OneNote 와 `연결 확인`). 마지막에 본 갈래로 다시 엽니다(`settingsPane`).
 설정과 활동 로그는 브라우저 프로필마다 따로 저장돼 다른 사람과 섞이지 않습니다.
 크롬과 엣지에 둘 다 불러오면 프로필이 달라 설정도 따로 갑니다.
@@ -801,7 +801,7 @@ DOC-Cruiser 의 미회람 문서(`Management → Non-circular documents`)를 **e
     앉은 편마다 찾아 더합니다 — 구간 마일 × 좌석 등급의 적립률(대한항공 김포↔김해 일반석 215마일, 특실·비즈니스는 125% 라 269마일).
     카드에서 그 편을 특실(`+`)로 골랐거나 항공권의 좌석 등급이 프레스티지·비즈니스면 특실의 적립률입니다. 표에 없는 항공사·구간은 채우지 않고 알립니다.
   - 영수증의 그 밖의 정보(조식 포함·예약번호 …)는 "추가 정보"로 카드에 적습니다. 카드의 열기 아이콘으로 사후정산 입력 화면을 열어 확인·수정할 수 있습니다.
-  - **증빙은 글자를 먼저 뽑고, 그 글자를 구조화합니다**(2026-10-04, 로컬 CLI 다리 — `native/doctext.mjs`). 패널·홈 카드·사후정산 입력 화면 어디에 넣은 증빙이든 같습니다.
+  - **증빙은 글자를 먼저 뽑고, 그 글자를 구조화합니다**(2026-10-04 로컬 CLI 다리 — `native/doctext.mjs` · 2026-10-16 부터 API 키 길도 — 브라우저 안의 `doctext/browser.js`, 규칙은 둘이 같은 `doctext/core.js`). 패널·홈 카드·사후정산 입력 화면 어디에 넣은 증빙이든 같습니다.
     공문 탭의 문서(견적서·교육 안내문·웹페이지 캡처)도 2026-10-08 부터 같은 길입니다(`native/host.mjs` 의 `TEXT_FIRST`).
     - **PDF** — 라이브러리(pdf.js)로 글자 층을 뽑아 **그 글자만** Claude 에게 보냅니다(파일은 붙이지 않습니다). 실제 숙박 영수증·예약서와 견본으로 재 보니
       PDF 째 보낼 때와 읽은 값이 같았습니다(세 장 × 2회 전부 맞음). 여섯 쪽을 넘거나 글자가 12,000자를 넘으면 자르지 않고 전처럼 PDF 째 보냅니다.
@@ -810,7 +810,12 @@ DOC-Cruiser 의 미회람 문서(`Management → Non-circular documents`)를 **e
       작은 그림은 두 배로 키워 읽히고, OCR 을 믿기 어려우면(엔진이 매긴 믿음 45 미만·글자 20자 미만 — 흐린 사진) 글자는 적지 않고 그림만 보냅니다.
     - **스캔한 PDF**(글자 층 없음) — 앞의 세 쪽을 그림으로 그려 OCR 하고, 그 글자를 PDF 와 같이 보냅니다.
     - 글자를 못 뽑으면(암호 걸린 PDF·풀 수 없는 그림·꾸러미 없음) 전처럼 파일째 읽힙니다. 어떻게 읽었는지는 다리 기록의 `read` 에 남습니다
-      (`Receipt.pdf: 글자 층 347자(1쪽) — 글자만 보냄`) — 뽑은 글자 자체는 기록에 남기지 않습니다. **API 키 길은 전처럼 파일째** 보냅니다(확장 안에는 OCR 엔진이 없습니다).
+      (`Receipt.pdf: 글자 층 347자(1쪽) — 글자만 보냄`) — 뽑은 글자 자체는 기록에 남기지 않습니다.
+    - **API 키 길도 같습니다**(2026-10-16 사용자 지정: "증빙/공문 첨부도 api 에서 할 수 있게"). 확장 페이지 안에서 pdf.js 와 Tesseract(wasm)를 돌립니다(`doctext/` —
+      꾸러미 `vendor/doctext/` 는 `npm install` 이 `tools/vendor.mjs` 로 node_modules 에서 베낍니다, 14MB 쯤, `.gitignore`). 패널에서는 그 페이지가 뽑고, 사후정산 입력 화면·홈 카드의
+      부탁은 서비스 워커라 Worker 가 없어 **offscreen 문서**(`offscreen.html`, `chrome.offscreen` — 권한 `offscreen`)가 대신 뽑습니다. wasm 을 돌리려 매니페스트 CSP 에
+      `'wasm-unsafe-eval'` 이 있습니다. 꾸러미가 없으면 전처럼 파일째 보내고, 어떻게 읽었는지는 반환의 `read` 로 돌아와 활동 로그의 읽은 줄에 붙습니다.
+      어느 길로 가는지는 `설정 → LLM` 의 **다리가 하는 일** 표에 보입니다.
   - Claude 가 없으면(다리·API 키 둘 다 없음) 증빙을 읽을 수 없어 올리지 않습니다. 사후정산 저장은 2026-10-03 에 실제로 나갔습니다(계산서 143884 — 사전정산 확정에 이어 숙박 줄이 올라갔습니다).
 - **숙박비 내역** — 사후정산을 쓰는 단계의 출장 줄을 펴면 가는 편·오는 편 아래에 **사후정산 입력 화면에 지금 있는 숙박 줄이 전부** 한 줄씩 섭니다(`lodgebox.js`):
   `숙박 8/18` · 업체명(좁으면 줄임표 — 전체 이름과 박 수는 풍선말) · 정산금액(원화는 `125,052원`, 외화는 `88.46 USD`) · `상한`(실제 금액이 상한액을 넘는 원화 줄에만) · 어디서 온 줄인가 · `×`.
@@ -1606,6 +1611,8 @@ PC 에 claude 가 깔려 있는가가 아닙니다. 아래 `로컬 CLI 연결` �
 6. 저장소 폴더에서 `npm install` — 다리가 출장 증빙에서 글자를 먼저 뽑을 때 쓰는 꾸러미입니다(`pdfjs-dist` · `tesseract.js` 와 학습 데이터
    `@tesseract.js-data/kor`·`eng` · `@napi-rs/canvas`). 하지 않아도 다리는 돕니다 — 그때는 증빙을 전처럼 파일째 읽히고 기록의 `read` 에 까닭이 남습니다.
    OCR 학습 데이터는 처음 쓸 때 `native\tessdata\` 에 풀립니다(밖에서 받지 않습니다).
+   같은 `npm install` 이 **브라우저 길의 꾸러미**(`vendor/doctext/` — API 키 길이 첨부의 글자를 먼저 뽑을 때 쓴다)도 베낍니다(`postinstall` → `tools/vendor.mjs`,
+   따로는 `npm run vendor`). 다리 없이 API 키만 쓰는 PC 도 이것 하나면 됩니다 — 없으면 `설정 → LLM` 의 다리가 하는 일 표에 `파일째 보냄 — 꾸러미 없음` 으로 보입니다.
 
 `install.ps1` 은 크롬 키(`HKCU\Software\Google\Chrome\NativeMessagingHosts`)와
 엣지 키(`HKCU\Software\Microsoft\Edge\NativeMessagingHosts`)에 같은 매니페스트를 한 번에 겁니다.
@@ -1762,6 +1769,7 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `tools/gen-travel.mjs` | 네 YAML(규칙 · KTX 운임 둘 · 항공 마일리지 표) → `src/travelspec.js` 와 검토표 `references/review.md` 생성기 (규칙·운임표·마일리지 표의 모양과 값도 검사하고, 무엇이 바뀌었는지 말해 준다) |
 | `references/review.md` | 생성물. 확장이 실제로 쓰는 값(운임 전 구간·도시→역·규칙·마일리지)과 출처·기준일을 사람이 읽는 표로 낸 것 — 원본과 맞춰 볼 때 본다 |
 | `references/README.md` | 참조 데이터 안내 — 어느 파일을 누가 고치는지, 고치는 순서, 아직 코드에 있는 참조 값 |
+| `tools/vendor.mjs` | 브라우저 길의 글자 먼저 뽑기 꾸러미를 node_modules 에서 `vendor/doctext/` 로 베낀다(pdf.js 본체·워커·cmaps·표준 글꼴·wasm 디코더, tesseract.js 본체·워커·SIMD LSTM 코어, 한글·영문 학습 데이터, 버전을 적은 `manifest.json`). `npm install` 의 postinstall 과 `npm run vendor`, `--check` 는 있는지·버전이 맞는지 |
 | `tools/refdata.mjs` · `.claude/skills/refdata` | 참조 데이터 현황 점검과 밖에서 가져오기(`/refdata` 스킬) — 코레일 KTX 운임표 받기·가져오기(`tools/import-ktx-fares.py`), 항공 마일리지 표 맞춰 보기, 생성물 다시 만들기 |
 | `src/travel.js` · `src/trip.js` | 여비계산서(사전정산) — 셈·화면 읽기·저장 요청 짓기(`travel.js`), eclass 와 말하기(`trip.js`) · 사전정산 완료(확정) · 사후정산 올리기·확정(`trip.js`) |
 | `src/routes.js` | 출장지마다 지난번에 쓴 교통편(아이콘 · KTX 로 간 길)을 기억했다가 다음에 먼저 쓰는 규칙 — 무엇을 기억하고(만든 사전정산 · 사이트에서 읽은 교통편 줄) 무엇을 되살리는지. 저장은 패널이 `chrome.storage`(`tripRoutes`)에 한다 |
@@ -1778,6 +1786,7 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `src/settling.js` | 다녀온 출장 가운데 여비 정산이 덜 끝난 것만 남기는 규칙 — 몇 주까지(4주·8주·안 봄), 사후정산 완료·여비증빙 송부는 뺌, 여비계산서 목록을 하루 한 번 담아 두기(`tripStages` — 8주 전부터, 홈 카드가 앞으로의 출장의 계산서도 보려고 하면 그 끝 날까지). 신청 내역·현황·홈 카드가 같이 쓴다 |
 | `src/send.js` | 여비증빙 송부의 규칙 — 언제 보낼 수 있는지(`sendGate`), 어느 길인지(`channelOf`), 최근 목록(`pushRecent`), 보내는 글(`sendTitle`·`sendLines`) |
 | `src/pdf.js` · `vendor/pdf-lib.esm.min.js` | 증빙(그림·PDF)을 PDF 하나로 묶는다. `vendor/` 는 pdf-lib 1.17.1(MIT)의 배포 파일 그대로다 — 고치지 않는다 |
+| `doctext/` | 첨부(출장 증빙·공문 문서)에서 **글자를 먼저 뽑는** 공통 규칙과 브라우저 길(2026-10-16): `core.js` 는 다리와 브라우저가 같이 쓰는 순수 규칙(글자 층이 읽을 만한가 `usable`, 무엇을 보낼지 `withText` — 엔진은 끼워 준다), `browser.js` 는 확장 페이지 안의 엔진(pdf.js 글자 층·쪽 그리기, Tesseract wasm OCR — 워커 하나를 차례로 쓰고 유휴 뒤 내림, 꾸러미 `vendor/doctext/` 가 있는지 `ready`), `index.js` 는 한 진입점 `docText` — 페이지면 바로, 서비스 워커면 offscreen 문서(`offscreen.html`·`offscreen.js`)로. `src/llm.js` 의 API 키 길이 부른다. 꾸러미는 `tools/vendor.mjs` 가 node_modules 에서 베낀다(`npm install` 의 postinstall) |
 | `src/calpdf.js` | 여비계산서를 PDF 로 받는다 — 계산서 화면이 리포트 서버(ClipReport)에 보내는 폼을 읽어 뷰어의 "PDF 로 인쇄"와 같은 차례로 받는다. 보낼 때 증빙 앞에 붙는다 |
 | `src/memo.js` | eclass 쪽지 — 받는 사람 찾기, 글과 첨부 하나 보내기(임시저장 → 첨부 올리기 → 저장 → 보내기) |
 | `src/teams.js` | Teams MCP(`localhost:5003`)가 닿는지·파일을 보낼 수 있는지 확인하고, 되면 채팅으로 파일을 보낸다. MCP 연결(`connect`)은 원노트 공유(`src/rndnote.js`)도 쓴다 |
@@ -1795,7 +1804,8 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `src/whoami.js` | 로그인한 사람의 이름 — 홈 머리글의 사용자 ID 로 인명(쪽지 받는 사람 찾기)에서 한글 이름을 찾는다 |
 | `src/monthcache.js` | 한 달치 하루 기록 보관소(세 탭 공용, 읽은 시각·신선도) |
 | `src/nlq.js` | API 키 없이 쓰는 규칙 기반 질의 해석 |
-| `src/llm.js` | 로컬 CLI → API 키 → 규칙 순으로 백엔드 선택(답이 입력 명세와 다르면 다음 길로), 다리 기록 받아 오기 |
+| `src/llm.js` | 로컬 CLI → API 키 → 규칙 순으로 백엔드 선택(답이 입력 명세와 다르면 다음 길로), 다리 기록 받아 오기. API 키 길의 첨부(`receipt`·`gongmun.*` — `textFirst`)는 보내기 전에 글자를 먼저 뽑는다(`doctext/index.js`, 반환의 `read`) |
+| `src/bridgeuse.js` | 설정 → LLM 의 **다리가 하는 일** 표(2026-10-16): Claude 호출·첨부 글자 먼저 뽑기·GitHub 새 커밋·활동 로그의 다리 기록 네 줄이 다리·API 키·브라우저 꾸러미의 조합에 따라 어느 길로 가는지(`bridgeUses`) |
 | `src/logbook.js` | 활동 기록(최근 500건)과 복사용 보고서 |
 | `native/` | 로컬 Claude Code CLI 와 잇는 네이티브 메시징 다리 (호출 기록은 `native/logs/`). 첨부(출장 증빙)는 글자를 먼저 뽑는다(`native/doctext.mjs` — PDF 는 pdf.js 로 글자 층을 뽑아 글자만, 그림·스캔한 PDF 는 Tesseract OCR 글자를 파일과 같이. 기록의 `read`). 붙는 첨부는 메시지에 바로 실어 한 차례에 읽히고 생각은 조금만 하게 한다 — 안 되면 파일로 내려 Read 도구로 읽힌다(기록의 `attach`: `text`(글자만)/`direct`/`read`) |
 
@@ -1874,7 +1884,11 @@ node test/roomorder.test.mjs    # 화면 줄 차례와 접기 (실제 회의실 
 node test/logbook.test.mjs      # 활동 기록: 합치기·버리기·동시 기록, 복사 보고서 모양
 node test/host.test.mjs         # 다리 호출 기록: 파일 쓰기·보관 기간·logs 작업 (실제 프로세스, claude 는 안 부름), 증빙·공문 문서의 글자 먼저 뽑기를 거쳐 부르는 길(글자만·글자와 파일)
 node test/hostspawn.test.mjs    # 다리가 claude 를 띄우고 끝을 맺는 길(가짜 CLI — node 스크립트): 단계별 시간, 한글이 덩어리 경계에서 안 깨짐, 시간 초과 뒤 정리, 실패·느린 호출의 디버그 기록, 다시 부를 때 비용 합치기, 임시 파일 치우기
-node test/doctext.test.mjs      # 증빙에서 글자 먼저 뽑기: PDF 의 글자 층(pdf.js)·그림과 스캔한 PDF 의 OCR(Tesseract) — 무엇을 보내는지(가짜 엔진)와 실제 엔진으로 읽기
+node test/doctext.test.mjs      # 증빙에서 글자 먼저 뽑기(다리): PDF 의 글자 층(pdf.js)·그림과 스캔한 PDF 의 OCR(Tesseract) — 무엇을 보내는지(가짜 엔진)와 실제 엔진으로 읽기
+node doctext/test/core.test.mjs    # 글자 먼저 뽑기의 공통 규칙(doctext/core.js — 다리와 브라우저가 같이 쓴다): 글자만·OCR 글자와 파일·파일째·여러 쪽·꼬리표 빼기·엔진이 던질 때, base64 풀기, OCR 배율
+node doctext/test/browser.test.mjs # 브라우저 길(doctext/browser.js): 꾸러미 있음·없음(ready)·건너뜀 문구, OCR 워커 하나를 차례로 쓰고 유휴 뒤 내리기·시간 초과, tools/vendor.mjs 가 실제로 베끼는지(임시 폴더)
+node doctext/test/index.test.mjs   # 진입점(doctext/index.js): 페이지면 바로, 서비스 워커면 offscreen 문서(한 번만 만들기·already exists·응답 없음·유휴 뒤 닫기), 둘 다 아니면 파일째
+node test/bridgeuse.test.mjs    # 설정 → LLM 의 다리가 하는 일 표(src/bridgeuse.js): 다리·API 키·브라우저 꾸러미의 조합마다 네 줄의 길과 상태
 node test/calendar-month.test.mjs # 다음 달 날짜: 이웃 달 칸을 0건으로 안 읽고, 날짜 이동에 달력 초점일을 얹는지
 node test/gongmun.test.mjs      # 공문: 양식(고친 것만 저장), 틀 채우기(조사·빠지는 줄·차례·세부차례·품목), 교육·출장 제목 형식(과제 별명·온라인교육)·과제 개요, 합계·한도, 출장 읽기(행사 안내문 → 출장지·기간·목적·예상경비·첨부), 외부활동 허가 신청서(요청 공문 → 요청 기관·활동명·구분·기간·시간·장소·내용·사례비, 제목 "[요청 기관] [구분] 외부활동 허가 신청"·본문 외부활동 내용·빈 줄 빠짐·예산 계정 없음·남은 것·사유 입력·첨부 이름), 결재선(합의자 — 본인이 아니면 부서장이어도 합의, 참조자는 과제 YAML 의 갈래별 목록 `projectRefs` — 키·이름·제목으로 찾고 결재선의 사람은 빼며 공문 설정의 옛 refs 는 버림), 첨부 목록(교육 견적서·교육 내용 — 늘 두 줄·안내문도 교육 내용·빠진 첨부는 남은 것과 넣는 곳의 말), 오린 견적서 첨부(교육은 수강료 칸이 교육 견적서)(오려 낸 장 빼기·원래 장으로·강의를 사면 강의 내용 두 줄), R&D 탭의 과제와 연구 내용(올해 계획·앞 차년도 계획·진행 기록·공문 설정에서 빈 칸), 에이전트 칸의 말(지금 적힌 사유·사용자의 말·고친 용도도 넣음), 펼쳐 두는 칸, 캡처 묶음의 문서 종류 잇기, 다시 읽기 합치기(교육 구분 따라가기), 과제 내용으로 사유, 채팅 규칙 해석·얹기(별명·연구기간 — "참조 ○○○" 줄은 과제가 되지 않고 과제 YAML 에 적으라는 답), 명세(목록 형), 레시피(생성물이 레시피와 같음·근거 없는 전결권자와 없는 규정은 생성기가 막음)·위임전결(2천만원 경계·국내/해외·고른 전결권자)·부서장부터 전결권자까지 결재선·문서설정(부서 이름으로 Doc No.)·새 공문 창에 쓸 것(writePlan)·외부강의등 신고서(칸 하나가 신고서 칸 하나·시각 읽기·총 시간·셈하는 칸·숫자만·피커 꼴·과제/합의 없음·보존 3년·칸 지도 검사)
 node test/gmlist.test.mjs       # 공문 이력·검색(전자결재 문서함 읽기): 기안함·결재함 주소, 목록 화면 읽기(줄·문서건수·쪽 넘김·숨은 칸), 검색 포스트백 칸(기간·키워드·양식), 한 함의 모든 쪽·네 함 모으기·결재함 다섯 함(가짜 fetch — 포스트백 차례·키워드·로그인 풀림), 외부강의등 신고서 본문(직급·담당 연락처·사례금·당해 연도 누적·당월 누적), 갈래 가르기·상태 딱지, 사례비 누계(올해 가장 늦은 신고서 + 이번), 새 신고서의 셈하는 칸(outsideHistory), 문서 보기 주소
@@ -1914,6 +1928,7 @@ node test/cdp/run.mjs
 node test/cdp/reload.mjs          # 이름이 "KRS WORKSPACE" 인 압축 해제 확장을 리로드하고, 열려 있던 사이드패널을 같은 창에 다시 엽니다
 node test/cdp/reload.mjs <확장 ID>
 node test/cdp/reload.mjs open     # 리로드 없이 사이드패널만 엽니다(마지막으로 쓰던 창)
+node test/cdp/doctext.mjs         # 브라우저 길의 첨부 글자 먼저 뽑기 실측(doctext/) — 사이드패널 페이지에서 pdf.js·Tesseract(--page), 서비스 워커 → offscreen 문서(--sw, background.js 의 doctextProbe), 설정 → LLM 갈래 화면(--shot → test/cdp/out/). Claude 는 안 부릅니다. 결과는 doctext/README.md 의 실측 표
 node test/cdp/reload.mjs --open   # 패널이 닫혀 있었어도 리로드 뒤 엽니다 / --no-reopen 은 닫힌 채 둡니다
 ```
 

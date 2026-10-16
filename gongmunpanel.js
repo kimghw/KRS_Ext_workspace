@@ -677,7 +677,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       };
       saveWork();
       done = true;
-      logEvent('gongmun', true, `${k.title} 문서 읽음 · ${rec.summary} · ${all.length}장 · ${VIA_LABEL[got.via] || got.via}`);
+      // read 는 API 키 길이 첨부에서 글자를 먼저 뽑으며 남긴 한 줄들(src/llm.js — 다리 길은 다리 기록에 있어 비어 있다).
+      logEvent('gongmun', true, `${k.title} 문서 읽음 · ${rec.summary} · ${all.length}장 · ${VIA_LABEL[got.via] || got.via}${got.read?.length ? ` · ${got.read.join(' / ')}` : ''}`);
       setStatus(`읽었습니다(${VIA_LABEL[got.via] || got.via}) — ${rec.summary}`);
     } catch (err) {
       setStatus(err.message, 'error');

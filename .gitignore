@@ -12,5 +12,11 @@ native/logs/
 # 증빙 OCR(native/doctext.mjs)이 npm 꾸러미에서 풀어 두는 Tesseract 학습 데이터 — 없으면 다시 푼다.
 native/tessdata/
 
+# 브라우저(API 키 길)에서 첨부의 글자를 먼저 뽑는 꾸러미(pdf.js·tesseract.js·학습 데이터) — npm install 이 tools/vendor.mjs 로 node_modules 에서 베낀다(14MB 쯤).
+vendor/doctext/
+
 # Gmail 시험 구현이 내려 둔 메일 본문·첨부 — 개인 메일이다. 공개 저장소에 올리지 않는다.
 gmail/out/
+
+# CDP 실측 스크립트(test/cdp/doctext.mjs)가 찍은 화면.
+test/cdp/out/

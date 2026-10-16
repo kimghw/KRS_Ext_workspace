@@ -8,6 +8,7 @@ import { DEFAULT_MODEL } from './src/ai.js';
 import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js';
 import { ONENOTE_MCP_URL } from './src/rndnote.js';
 import { bridgeGuide, bridgeRoot } from './src/bridgeguide.js';
+import { bridgeUses } from './src/bridgeuse.js';
 import { createLogbook, formatEntries, buildLogReport, stamp } from './src/logbook.js';
 import { buildSaveDigest } from './src/diagnose.js';
 import { findSlots, MAX_DAYS, widenHours } from './src/search.js';
@@ -48,7 +49,7 @@ const el = {
   passenger: $('fPassenger'), carWho: $('carWho'), modify: $('modify'), editNote: $('editNote'),
   stamp: $('stamp'), pickList: $('pickList'),
   ask: $('askInput'), askGo: $('askGo'), askNote: $('askNote'), askList: $('askList'),
-  apiKey: $('apiKey'), apiKeyState: $('apiKeyState'), cliState: $('cliState'), cliCheck: $('cliCheck'), cliGuide: $('cliGuide'),
+  apiKey: $('apiKey'), apiKeyState: $('apiKeyState'), cliState: $('cliState'), cliCheck: $('cliCheck'), cliGuide: $('cliGuide'), bridgeUses: $('bridgeUses'),
   tabAttend: $('tabAttend'), tabGongmun: $('tabGongmun'), tabRnd: $('tabRnd'), tabMail: $('tabMail'), tabRoom: $('tabRoom'), tabCar: $('tabCar'), tabMine: $('tabMine'), appTitle: $('appTitle'),
   openPageInline: $('openPageInline'), scheduleTitle: $('scheduleTitle'), scheduleDate: $('scheduleDate'),
   capture: $('capture'), diagOut: $('diagOut'),
@@ -71,6 +72,8 @@ const state = { day: null, picks: [], drag: null, loadedAt: 0, timer: null,
   settingsOpen: false, settingsPane: 'general', settingsScroll: 0,   // 설정 화면(머리의 톱니)이 열려 있는가 · 보이는 갈래(일반 general · LLM llm · 연결 conn — settingsPane 에 저장) · 열기 전 스크롤 자리
   // 다리 확인이 한 번이라도 끝났는지와, 닿지 않았을 때 브라우저가 댄 까닭(연결 지침에 적는다).
   cliChecked: false, cliError: '',
+  // 브라우저 글자 뽑기 꾸러미(doctext/browser.js ready())가 있는가 — 다리가 없을 때 첨부를 어디서 읽는지 "다리가 하는 일" 표에 적는다. init 이 느리게 채운다.
+  docText: { ok: false, reason: '확인 전' },
   justBooked: [], myName: '', mine: [], editTarget: null, carWho: null,
   foldOpen: false, foundKind: 'room', asking: false,
   // 현황에 같이 보여줄 근태(출장·휴가 …). HR 에서 읽어 온 것이고, error 는 읽지 못한 까닭이다.
@@ -1712,6 +1715,30 @@ function paintAskReady() {
   gongmun.paintReady(!helpless);
   // 설정의 버튼은 API 키로 쓰고 있어도 CLI 가 없으면 남긴다.
   el.cliGuide.hidden = !state.cliChecked || state.cli;
+  paintBridgeUses();
+}
+
+/**
+ * 설정 → LLM 갈래의 "다리가 하는 일" 표(src/bridgeuse.js). 다리가 닿는지(state.cli) · API 키 · 브라우저 글자 뽑기 꾸러미(state.docText)가
+ * 바뀔 때마다 다시 그린다 — paintAskReady 끝에서 부르니 다리 확인·키 변경에 따라오고, 꾸러미 확인은 init 이 끝나는 대로 따로 부른다.
+ * 줄 하나: <li class="bridge-use is-on|alt|off" data-use=id><span class="bu-label">하는 일</span><span class="bu-via">어디로 가는지</span></li>
+ */
+function paintBridgeUses() {
+  if (!el.bridgeUses) return;
+  el.bridgeUses.textContent = '';
+  for (const u of bridgeUses({ cli: state.cli, apiKey: state.apiKey, docText: state.docText })) {
+    const li = document.createElement('li');
+    li.className = `bridge-use is-${u.state}`;
+    li.dataset.use = u.id;
+    const label = document.createElement('span');
+    label.className = 'bu-label';
+    label.textContent = u.label;
+    const via = document.createElement('span');
+    via.className = 'bu-via';
+    via.textContent = u.via;
+    li.append(label, via);
+    el.bridgeUses.append(li);
+  }
 }
 
 /**
@@ -2709,6 +2736,12 @@ async function init() {
     { mode: saved.mode || 'room' });
   paintAskReady();
   checkCli();
+  // "다리가 하는 일" 표의 첨부 글자 뽑기 줄 — 다리가 없을 때 브라우저 꾸러미(vendor/doctext, doctext/browser.js)가 있는지 본다.
+  // 느리게 가져온다: 모듈·꾸러미가 없어도(npm install 전 · 검사의 jsdom) 패널은 그대로 뜨고 그 줄만 "파일째 보냄" 으로 남는다.
+  import('./doctext/browser.js').then((m) => m.ready()).then(
+    (r) => { state.docText = { ok: !!r?.ok, reason: String(r?.reason || '') }; },
+    (err) => { state.docText = { ok: false, reason: String(err?.message || err) }; },
+  ).then(paintBridgeUses);
   // GitHub 새 커밋 아이콘 — 다리가 없으면 숨어 있다(gitsync.js).
   createGitSync({ button: $('gitSync'), badge: $('gitCount'), log: logEvent, say: setStatus }).start();
   paintRegion();

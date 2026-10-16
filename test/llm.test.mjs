@@ -284,4 +284,126 @@ await ta('로컬 CLI 로 보낼 때는 파일이 files 로 같이 간다. 둘 �
   await assert.rejects(again(file, { trip: {} }, { apiKey: 'sk-x', useNative: true }), /증빙을 읽지 못했습니다/);
 });
 
+console.log('API 길의 글자 먼저 뽑기 — 첨부가 있는 receipt·gongmun.* 은 docText(doctext/index.js)를 지나고, 그 결과가 본문에 실린다');
+{
+  const sent = [];
+  const RECEIPT = {
+    docType: 'lodging_receipt', vendor: '부산호텔', bizNo: null, payDate: '2026-09-10', checkIn: '2026-09-09', checkOut: '2026-09-10', nights: 1,
+    total: 143000, supply: null, vat: null, currency: 'KRW', corporateCard: null, airline: null, flightNo: null, flightDate: null, depPlace: null, arrPlace: null,
+    depTime: null, arrTime: null, seatClass: null, mileage: null, passenger: null, extra: null, summary: '부산호텔 1박 영수증',
+  };
+  const PURCHASE = { docType: 'quote', gist: '모니터', vendor: 'OO상사', total: 1000, summary: 'OO상사 모니터 견적서' };
+  const pdf = { name: 'q.pdf', type: 'application/pdf', dataUrl: 'data:application/pdf;base64,PDFPDF' };
+  const png = { name: 'r.png', type: 'image/png', dataUrl: 'data:image/png;base64,PNGPNG' };
+  /** 다리는 없고 API 만 있다. fetch 는 받은 본문을 적어 두고 정해 둔 답을 준다. */
+  const setupApi = (answer) => {
+    globalThis.chrome = { runtime: { sendNativeMessage: async () => { throw new Error('호스트를 찾을 수 없습니다'); } } };
+    globalThis.fetch = async (_url, init) => {
+      sent.push(JSON.parse(init.body));
+      return { ok: true, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer) }] }) };
+    };
+  };
+  /** 마지막 요청의 사용자 내용 블록들 — 첨부가 없으면 글 하나(string)로 가므로(src/ai.js) 같은 모양으로 맞춘다. */
+  const blocks = () => { const c = sent.at(-1).messages[0].content; return Array.isArray(c) ? c : [{ type: 'text', text: c }]; };
+  /** 가짜 docText(doctext/index.js 의 모양 { input, files, read, lean }) — 무엇을 받았는지 calls 에 적는다. */
+  const fakeDocText = (calls, out) => async (input, files) => { calls.push({ input, files }); return typeof out === 'function' ? out(input, files) : out; };
+
+  await ta('receipt: docText 가 입력 글과 첨부를 받고, 글자만 돌려주면(lean) 본문에 image·document 블록 없이 뽑은 글이 간다 — read 가 돌아온다', async () => {
+    setupApi(RECEIPT);
+    const calls = [];
+    const docText = fakeDocText(calls, (input) => ({ input: `${input}\n\n[첨부 글자]\n부산호텔 1박 143,000원`, files: [], read: ['q.pdf: PDF 글자 층 1쪽 — 파일은 보내지 않음'], lean: true }));
+    const { receiptSmart } = await load();
+    const r = await receiptSmart(pdf, { trip: { from: '2026-09-09', to: '2026-09-10' }, me: '김거화' }, { apiKey: 'sk-x', useNative: false, docText });
+    assert.equal(r.via, 'api');
+    assert.equal(r.record.vendor, '부산호텔');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].files, [pdf]);
+    assert.match(calls[0].input, /출장 정보: 2026-09-09 ~ 2026-09-10 · 출장자 김거화/);   // receiptInput 의 글이 그대로 docText 에 간다
+    assert.match(calls[0].input, /파일 이름: q\.pdf/);
+    const got = blocks();
+    assert.deepEqual(got.map((b) => b.type), ['text']);
+    assert.match(got[0].text, /파일 이름: q\.pdf/);
+    assert.match(got[0].text, /\[첨부 글자\]\n부산호텔 1박 143,000원/);
+    assert.ok(!JSON.stringify(sent.at(-1)).includes('PDFPDF'), 'PDF 바이트는 가지 않는다');
+    assert.deepEqual(r.read, ['q.pdf: PDF 글자 층 1쪽 — 파일은 보내지 않음']);
+  });
+
+  await ta('gongmun.*: 여러 장도 docText 를 지나고, 돌려준 files 만 붙는다(PDF 는 글자로, 그림은 OCR 글자와 함께 그림째) — read 는 첨부마다 한 줄', async () => {
+    setupApi(PURCHASE);
+    const calls = [];
+    const docText = fakeDocText(calls, (input, files) => ({
+      input: `${input}\n\n[q.pdf 글자]\n모니터 1,000원\n[r.png OCR]\n견적`,
+      files: files.filter((f) => f.type !== 'application/pdf'),
+      read: ['q.pdf: PDF 글자 층 1쪽 — 파일은 보내지 않음', 'r.png: OCR 신뢰도 80 — 그림도 같이 보냄'],
+      lean: false,
+    }));
+    const { gongmunSmart } = await load();
+    const r = await gongmunSmart({ files: [pdf, png], text: '' }, { kind: 'purchase', today: TODAY }, { apiKey: 'sk-x', useNative: false, docText });
+    assert.equal(r.via, 'api');
+    assert.equal(r.record.vendor, 'OO상사');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].files, [pdf, png]);
+    assert.match(calls[0].input, /파일 이름: q\.pdf, r\.png/);   // gongmunInput 의 글이 그대로 docText 에 간다
+    const got = blocks();
+    assert.deepEqual(got.map((b) => b.type), ['image', 'text']);
+    assert.equal(got[0].source.data, 'PNGPNG');
+    assert.match(got[1].text, /\[q\.pdf 글자\]\n모니터 1,000원/);
+    assert.ok(!JSON.stringify(sent.at(-1)).includes('PDFPDF'), 'docText 가 뺀 PDF 는 가지 않는다');
+    assert.deepEqual(r.read, ['q.pdf: PDF 글자 층 1쪽 — 파일은 보내지 않음', 'r.png: OCR 신뢰도 80 — 그림도 같이 보냄']);
+  });
+
+  await ta('글 작업(parse)과 첨부 없는 gongmun.* 은 docText 를 부르지 않는다 — textFirst 는 다리의 TEXT_FIRST 와 같은 규칙', async () => {
+    const calls = [];
+    const docText = fakeDocText(calls, { input: '엉뚱한 글', files: [], read: ['X'], lean: true });
+    setup({ native: 'absent', api: 'ok' });
+    const { parseSmart, gongmunSmart, textFirst } = await load();
+    const p = await parseSmart('내일 오전', { apiKey: 'sk-x', today: TODAY, useNative: false, docText });
+    assert.equal(p.via, 'api');
+    assert.equal(calls.length, 0);
+    setupApi(PURCHASE);
+    const g = await gongmunSmart({ files: [], text: '모니터 1대 1,000원' }, { kind: 'purchase' }, { apiKey: 'sk-x', useNative: false, docText });
+    assert.equal(g.via, 'api');
+    assert.equal(calls.length, 0);
+    assert.deepEqual(blocks().map((b) => b.type), ['text']);
+    assert.match(blocks()[0].text, /모니터 1대 1,000원/);
+    assert.deepEqual(g.read, []);
+    // 다리와 같은 규칙 — 명세의 모든 작업 이름에서 둘이 같은 것을 고른다.
+    process.env.KRS_HOST_NO_MAIN = '1';
+    const [{ TEXT_FIRST }, { TASKS }] = await Promise.all([import('../native/host.mjs'), import('../src/input.js')]);
+    assert.deepEqual(Object.keys(TASKS).filter(textFirst).sort(), [...TEXT_FIRST].sort());
+    assert.deepEqual(['receipt', 'gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside'].filter(textFirst).length, 5);
+    assert.deepEqual(['parse', 'attend', 'diagnose', 'gongmunSetup', 'gongmunReason.purchase', 'gongmunReason.edu'].filter(textFirst), []);
+  });
+
+  await ta('docText 가 던져도 API 를 건너뛰지 않는다 — 파일째 보내고 까닭이 read 에 남는다(다리의 extractText 와 같은 문구). note 에는 섞이지 않는다', async () => {
+    setupApi(RECEIPT);
+    const docText = async () => { throw new Error('pdf.js 를 못 불러옴'); };
+    const { receiptSmart } = await load();
+    const r = await receiptSmart(png, { trip: {} }, { apiKey: 'sk-x', useNative: false, docText });
+    assert.equal(r.via, 'api');
+    assert.equal(r.record.vendor, '부산호텔');
+    assert.deepEqual(r.read, ['글자 뽑기를 건너뜀(pdf.js 를 못 불러옴) — 파일째 보냄']);
+    assert.ok(!String(r.note || '').includes('글자 뽑기'), r.note);
+    const got = blocks();
+    assert.deepEqual(got[0], { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'PNGPNG' } });
+    assert.match(got[1].text, /파일 이름: r\.png/);
+  });
+
+  await ta('docText 를 넣지 않으면 doctext/index.js 의 docText 가 돈다 — node 에는 Worker 도 offscreen 도 없어 파일째 가고 까닭이 read 에 남는다. CLI 길의 read 는 빈 배열', async () => {
+    setupApi(RECEIPT);
+    const { receiptSmart } = await load();
+    const r = await receiptSmart(pdf, { trip: {} }, { apiKey: 'sk-x', useNative: false });
+    assert.equal(r.via, 'api');
+    assert.equal(r.read.length, 1);
+    assert.ok(r.read[0].startsWith('글자 뽑기를 건너뜀('), r.read[0]);
+    assert.ok(r.read[0].endsWith(' — 파일째 보냄'), r.read[0]);
+    assert.deepEqual(blocks()[0], { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'PDFPDF' } });
+    globalThis.chrome = { runtime: { sendNativeMessage: async () => ({ ok: true, costUsd: 0.01, data: RECEIPT }) } };
+    const { receiptSmart: viaCli } = await load();
+    const c = await viaCli(pdf, { trip: {} }, { useNative: true });
+    assert.equal(c.via, 'cli');
+    assert.deepEqual(c.read, []);
+  });
+}
+
 console.log(`\n통과 ${pass}건`);

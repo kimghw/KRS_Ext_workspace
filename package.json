@@ -3,12 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\" \"mailtrack/test/*.test.mjs\" gmail/gmail.test.mjs",
+    "test": "node --test \"test/*.test.mjs\" \"mailtrack/test/*.test.mjs\" \"doctext/test/*.test.mjs\" gmail/gmail.test.mjs",
     "gen": "node tools/refdata.mjs gen",
     "check": "node tools/refdata.mjs check",
     "refdata": "node tools/refdata.mjs",
     "rndskills": "node tools/rndskills.mjs",
-    "rerp": "node tools/rerp.mjs"
+    "rerp": "node tools/rerp.mjs",
+    "vendor": "node tools/vendor.mjs",
+    "postinstall": "node tools/vendor.mjs"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",

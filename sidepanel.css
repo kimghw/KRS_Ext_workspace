@@ -273,6 +273,15 @@ button.pk-del:hover { color: var(--danger); }
 .set-block-head > .badge, .set-block-head > .summary-detail { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-block > .hint { margin: 4px 0 0; }
 .set-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* 로컬 CLI 덩이의 "다리가 하는 일" 표(src/bridgeuse.js) — 줄마다 하는 일(왼쪽)과 어디로 가는지(오른쪽, 흐리게). 배지(.badge)와 같은 12px.
+   is-on 다리가 맡는다(보통) · is-alt 다른 길로 간다(강조색 — API 키·브라우저) · is-off 못 한다(위험색). */
+.bridge-uses { list-style: none; margin: 10px 0 0; padding: 0; font-size: 12px; line-height: 1.5; }
+.bridge-use { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px dashed var(--line); }
+.bridge-use:first-child { border-top: 0; }
+.bu-label { flex: 1 1 auto; min-width: 0; color: var(--fg); }
+.bu-via { flex: 0 1 auto; max-width: 55%; text-align: right; color: var(--muted); overflow-wrap: anywhere; }
+.bridge-use.is-alt .bu-via { color: var(--pick); }
+.bridge-use.is-off .bu-via { color: var(--danger); }
 /* 연결 갈래의 Teams·OneNote 줄 — 주소(바꾸지 않는다) · 배지 · 연결 확인. Outlook 은 메일 탭이 .conn-host 에 제 칸(mailtrack/panel.css .mt-conn)을 그린다. */
 .conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
 .conn-addr { flex: 1; min-width: 0; font: 12px/1.6 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
