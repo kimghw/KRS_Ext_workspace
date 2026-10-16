@@ -1,0 +1,84 @@
+# 출장품의(연구업무추진품의) 작성 — 행사·회의·학회 안내문·초청장과 교통·숙박 견적서를 읽어(gongmun.trip) 초안을 만들고 과제 내용으로 출장사유를 쓴(gongmunReason.trip) 뒤,
+# 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc, 2026-10-08 사용자 지정). 위임전결은 출장 구분(국내 팀장 · 해외 본부장 — registries/delegation.yaml 출장)이고
+# 구분은 초안의 division 칸이다. 문서설정 프로파일은 출장품의(검색 키워드 '출장' — 2026-10-12 사용자 지정). 근태 탭의 출장 신청(attend.trip)·여비계산서(trip.*)와는 다른 일이다.
+# 어댑터(gongmun.write): writePlan('trip', { title, body, draft, form, setting, rank } = rec.input, { me, preset: setup, project, today } = rec.preset) → writeGongmun(plan, { files: ctx.files, … }).
+id: gongmun.trip
+title: 출장품의 작성
+summary: '{preset.kindTitle} · {title}'
+preset:
+  # 불투명 객체 — 키는 src/gongmun.js normalizePreset 의 dept·head·director·chief(해외 출장의 전결권자)·docNo. 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다.
+  setup:     { from: storage:gongmunPreset, type: object, required: true, desc: '공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다)' }
+  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 로그에서 뺀다, log: false }
+  kindTitle: { value: 출장품의, desc: 갈래 이름 — 활동 로그 한 줄에 쓴다 }
+fields:
+  form:
+    type: enum
+    required: true
+    values: [KR_EA_Research_Task, KR_EA_Form2]
+    default: KR_EA_Research_Task
+    label: 양식
+    desc: eclass 전자결재 양식(formsFor('trip') — 연구업무추진품의가 기본)
+    read: '품의 양식 — 연구업무추진품의(KR_EA_Research_Task)가 기본. 기안문이라고 했을 때만 KR_EA_Form2'
+  title:
+    type: string
+    required: true
+    max: 99
+    label: 제목
+    desc: 공문 제목(제목 틀 "[과제 별명] 수행을 위한 출장 품의" 를 채운 글 — 사람이 고쳤으면 그 글)
+    read: 제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것
+    example: 차단기 과제 수행을 위한 출장 품의
+  body:
+    type: string
+    required: true
+    max: 20000
+    label: 본문
+    desc: 본문(본문 틀을 채운 글 — compose. 사람이 고쳤으면 그 글)
+    read: 본문 틀을 채운 글
+    llm: false
+  # 초안 — 레시피 trip/purpose.yaml 의 fields(place·from·to·who·cost·division·purpose·reason·account)를 생성기가 펼치고 currency·attach 를 더한다(reads 는 없다).
+  draft:
+    type: object
+    from: recipe
+    label: 초안
+    desc: 초안 칸(레시피 purpose.yaml 의 fields — 생성기가 펼친다). 읽은 문서(gongmun.trip)와 과제 내용으로 쓴 사유(gongmunReason.trip)가 채우고 사람이 고친다. division(국내·해외)이 위임전결을 정한다
+    read: 읽은 문서와 과제 내용으로 채운 초안
+  rank:
+    type: enum
+    values: [팀장, 소장, 본부장]
+    label: 전결권자
+    desc: 이 공문에서 사람이 고른 전결권자 직책. 비면 규정대로(출장 — 국내 팀장·해외 본부장)
+    read: '사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)'
+  setting:
+    type: object
+    label: 문서설정
+    desc: 이 공문에서 바꾼 문서설정만(settingPatch 의 키 — 없는 키는 레시피 프로파일 출장품의·공문 설정대로)
+    read: 사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만
+    llm: false
+    fields:
+      retention:     { type: enum, values: ['12', '24', '36', '60', '120', '240', '1200'], desc: 보존년한 코드(settings.yaml options.retention), read: '보존년한을 말했으면 그 코드(10년이면 120)' }
+      docNo:         { type: string, max: 8, desc: 문서번호 부서 코드(숫자만), read: '문서번호 부서를 코드로 말했을 때만' }
+      receiver:      { type: enum, values: [내부결재, KRE], desc: 수신처, read: '수신처를 말했을 때만 — 내부결재 또는 KRE' }
+      scope:         { type: enum, values: [결재선, 기안부서], desc: 공개범위, read: '공개범위를 말했을 때만 — 결재선 또는 기안부서' }
+      emergency:     { type: boolean, desc: 긴급, read: '긴급이라고 했을 때만 true' }
+      approvingOpen: { type: boolean, desc: 진행공개, read: '진행공개라고 했을 때만 true' }
+      drm:           { type: boolean, desc: DRM, read: 'DRM 을 걸라고 했을 때만 true' }
+      tag:           { type: string, max: 60, desc: 검색 키워드(프로파일이 '출장' 으로 둔다 — 2026-10-12 사용자 지정), read: '검색 키워드를 말했을 때만' }
+  attach:
+    type: list
+    max: 5
+    label: 첨부
+    desc: 첨부 파일 이름(바이트는 ctx.files) — 행사 안내문·견적서 PDF 와 원본 첨부
+    read: 첨부할 문서의 파일 이름 목록. 지어내지 않습니다
+    llm: false
+    item:
+      name: { type: string, required: true, max: 200, desc: 파일 이름, read: 파일 이름 }
+      kind: { type: string, max: 40, desc: '무엇의 문서인지(행사 안내문·견적서 …, 원본 첨부면 original)', read: '무엇의 문서인지. 모르면 null' }
+llm:
+  tasks:
+    - { task: gongmun.trip, fills: draft }
+    - { task: gongmunReason.trip, fills: draft }
+runner: gongmun.write
+uses:
+  - { module: src/gongmun.js, export: writePlan }
+  - { module: src/gmwrite.js, export: writeGongmun }
+next: 뒤 탭에 공문을 쓴다(과제·제목·차수·본문·문서설정·결재선·첨부). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다

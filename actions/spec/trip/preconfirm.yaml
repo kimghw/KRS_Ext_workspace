@@ -1,0 +1,41 @@
+# 사전정산 완료(확정) — 계산서 화면의 **확정** 버튼과 같은 요청(CalPrint/Confirm — src/trip.js tripPreConfirm, 2026-10-03 실제 화면에서 읽었고 계산서 143884 에 실제로 나갔다).
+# 사후정산을 올리거나 증빙을 담당자에게 보내려면 사전정산이 완료돼 있어야 한다(2026-10-03 사용자 지정). 출장 카드의 `사전정산 완료`(두 번째 누름 — attendpanel.js runPreConfirm)가
+# 부르고, 증빙을 넣었을 때는 trip.after 의 실행기가 안에서 같이 한다(ensurePre — 그때는 이 행위를 따로 짓지 않는다).
+# 화면의 단계가 "사전정산 작성" 이고 확정 폼이 이 계산서의 것일 때만 보낸다 — 확정할 것이 없으면 보내지 않고 목록으로 이미 완료됐는지만 본다(sent = false).
+# 목록 줄(row)은 ctx 다. 실행기(trip.preconfirm)는 tripPreConfirm(row, { name: preset.tripMe || preset.me, onStage }) 를 부른다.
+id: trip.preconfirm
+title: 사전정산 완료(확정)
+status: live
+confirm: true
+effect: write
+summary: '여비계산서 {seq} 사전정산 완료(확정)'
+preset:
+  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름(st.trips.me) — 출장자가 여럿일 때 내 계산서 화면을 연다. 비면 갈래의 me }
+fields:
+  seq:
+    type: string
+    required: true
+    max: 20
+    label: 계산서 번호
+    desc: 확정할 여비계산서 번호(목록 줄의 seq — 줄은 ctx.row). 실행기는 ctx.row.seq 와 같은지 본다
+    read: 확정할 여비계산서 번호 — 열린 출장 카드의 것 그대로. 지어내지 않습니다
+    example: '145580'
+  trseq:
+    type: string
+    max: 20
+    label: 출장자 번호
+    desc: 내 출장자 번호(목록 줄 travelers[].trseq — §14.2 의 대상 식별자). 사전정산을 확정하기 전에는 보통 비어 있다(확정한 뒤 생긴다) — 있으면 어댑터가 ctx.row 의 내 줄과 같은지 본다
+    read: 내 출장자 번호. 모르면 null
+    example: '203311'
+  docNo:
+    type: string
+    max: 20
+    label: 신청서 번호
+    desc: 그 출장의 HR 신청서 번호(기록·홈 카드가 출장 줄을 찾는 열쇠). 없어도 돈다
+    read: 그 출장의 HR 신청서 번호. 모르면 null
+    example: '2026-001234'
+llm: false
+runner: trip.preconfirm
+uses:
+  - { module: src/trip.js, export: tripPreConfirm }
+next: 보낸 뒤 목록을 다시 읽어 사전정산이 "완료" 가 됐는지로 판정한다(아니면 던진다). 결과의 row 는 다시 읽은 줄(출장자 번호 trseq 가 이때 생긴다) — 패널이 freshTrip 으로 카드의 단계를 맞춘다. 그 뒤 사후정산(trip.after)·송부(trip.send)가 열린다

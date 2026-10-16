@@ -1,5 +1,6 @@
 // 백엔드 선택: 로컬 CLI → API 키 → 규칙 해석 순으로 내려가는지 확인한다.
 import assert from 'node:assert/strict';
+import { systemPrompt } from '../src/input.js';
 
 const TODAY = '2026-09-16';
 let pass = 0;
@@ -12,10 +13,15 @@ const CLI_DIAGNOSIS = { verdict: 'rejected', siteMessage: '이미 예약된 시�
  * chrome.runtime.sendNativeMessage 와 fetch 를 상황별로 흉내낸다.
  * native 에 객체를 주면 CLI 가 그것을 답으로 돌려준다(명세와 다른 답을 흉내 낼 때 쓴다).
  */
+/** setup() 의 다리·API 가 마지막으로 받은 것 — 어느 작업으로 어떤 글이 갔는지 본다. */
+const seen = { native: null, api: null };
 function setup({ native, api }) {
+  seen.native = null;
+  seen.api = null;
   globalThis.chrome = {
     runtime: {
       sendNativeMessage: async (_host, msg) => {
+        seen.native = msg;
         if (native === 'absent') throw new Error('호스트를 찾을 수 없습니다');
         if (msg.task === 'ping') return { ok: true, pong: true };
         if (native === 'error') return { ok: false, error: 'CLI 오류' };
@@ -24,7 +30,8 @@ function setup({ native, api }) {
       },
     },
   };
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (_url, init) => {
+    seen.api = init?.body ? JSON.parse(init.body) : null;
     if (api === 'error') return { ok: false, status: 401, json: async () => ({ error: { message: 'bad key' } }) };
     return {
       ok: true,
@@ -46,6 +53,9 @@ await ta('CLI 가 되면 CLI 를 쓴다', async () => {
   const r = await parseSmart('9월 20일 8시~12시 10명', { apiKey: 'sk-x', today: TODAY, useNative: true });
   assert.equal(r.via, 'cli');
   assert.equal(r.filter.summary, 'CLI 해석');
+  // 작업은 행위 명세가 종류마다 만든 search.room(actions/spec/room/search.yaml 의 llm.task)이다 — input.yaml 의 parse 가 아니다.
+  assert.equal(seen.native.task, 'search.room');
+  assert.equal(seen.native.input, `오늘은 ${TODAY} 입니다.\n찾는 대상: 회의실\n\n요청: 9월 20일 8시~12시 10명`);
 });
 
 await ta('CLI 가 실패하면 API 키로 내려간다', async () => {
@@ -54,6 +64,7 @@ await ta('CLI 가 실패하면 API 키로 내려간다', async () => {
   const r = await parseSmart('아무거나', { apiKey: 'sk-x', today: TODAY, useNative: true });
   assert.equal(r.via, 'api');
   assert.ok(r.note.includes('로컬 CLI 실패'), r.note);
+  assert.equal(seen.api.system, systemPrompt('search.room'), 'API 길의 지시문도 같은 작업의 것');
 });
 
 await ta('둘 다 실패하면 규칙으로 내려간다', async () => {
@@ -152,6 +163,8 @@ await ta('차량은 좌석 수·지역 조건을 받지 않는다 — 비우고 
   setup({ native: { ...CLI_FILTER, region: '부산' }, api: 'ok' });
   const { parseSmart } = await load();
   const r = await parseSmart('부산 10명 차량', { apiKey: '', today: TODAY, useNative: true, kind: 'car' });
+  assert.equal(seen.native.task, 'search.car');
+  assert.match(seen.native.input, /찾는 대상: 차량/);
   assert.deepEqual([r.filter.minSeats, r.filter.region], [null, null]);
   assert.match(r.note, /차량은 좌석 수를 알 수 없어 인원 조건은 뺐습니다/);
   assert.match(r.note, /차량은 지역을 가리지 않아 지역 조건은 뺐습니다/);
@@ -227,8 +240,10 @@ console.log('근태 폼 말로 채우기');
     const r = await fillAttendSmart('2월 30일 휴가', { apiKey: '', today: TODAY, useNative: true, form });
     assert.deepEqual(r.patch, { kind: 'leave', start: '09:00' });
     assert.equal(r.reply, '휴가로 채웠습니다.');
-    assert.ok(r.note.includes('종류 안의 갈래 값(XX)은 받을 수 없어 뺐습니다'), r.note);
-    assert.ok(r.note.includes('날짜 값(2026-02-30)은 받을 수 없어 뺐습니다'), r.note);
+    // 알림의 칸 이름은 행위 명세가 만든 attend 작업의 label 이다(src/input.js nameOf) — 종류마다 이름이 다른 칸은 생성기가 "출발일·날짜·시작일" 로 잇는다
+    // (tools/gen-actions.mjs merged 모드: trip 출발일 · out/leaveout/health 날짜 · leave 시작일). sub 는 모든 종류에서 "종류".
+    assert.ok(r.note.includes('종류 값(XX)은 받을 수 없어 뺐습니다'), r.note);
+    assert.ok(r.note.includes('출발일·날짜·시작일 값(2026-02-30)은 받을 수 없어 뺐습니다'), r.note);
   });
   await ta('말하지 않은 칸(null)은 조각에 들어가지 않는다 — null 은 지우기가 아니다', async () => {
     globalThis.chrome = { runtime: { sendNativeMessage: async () => ({ ok: true, data: { kind: null, sub: null, start: null, end: '17:00', place: null, purpose: null, reply: '종료 시각을 채웠습니다.' } }) } };
@@ -243,6 +258,100 @@ console.log('근태 폼 말로 채우기');
     assert.equal(r.via, 'local');
     assert.deepEqual(r.patch, { kind: 'out', sub: 'OD', dateFrom: '2026-09-17', start: '14:00', end: '16:00' });
     assert.match(r.note, /로컬 CLI 실패.*API 실패/);
+  });
+}
+
+console.log('행위 명세의 LLM 어댑터 — fillAction(행위 ID): 행위가 작업 이름과 입력 글의 꼴을 정하고, 길은 askClaude 의 사다리다');
+{
+  const sent = [];
+  const ATTEND = { kind: 'out', dateFrom: '2026-09-17', start: '14:00', end: '16:00', place: '부산시청', purpose: null, reply: '외근으로 채웠습니다.' };
+  const API_FILTER = { summary: 'API 해석', dateFrom: '2026-09-21', dateTo: '2026-09-21', hourFrom: 9, hourTo: 18, minSeats: null, minHours: null, region: null };
+  /** 다리는 작업마다 정해 둔 답(또는 answer)을 주고, API 는 조회 조건 하나를 준다. 둘 다 받은 것을 sent 에 적는다. */
+  const setupAction = ({ native = 'ok', api = 'ok', answer } = {}) => {
+    globalThis.chrome = { runtime: { sendNativeMessage: async (_host, msg) => {
+      sent.push(msg);
+      if (native === 'error') return { ok: false, error: 'CLI 오류' };
+      return { ok: true, costUsd: 0.003, data: answer ?? (msg.task === 'attend' ? ATTEND : CLI_FILTER) };
+    } } };
+    globalThis.fetch = async (_url, init) => {
+      sent.push(JSON.parse(init.body));
+      if (api === 'error') return { ok: false, status: 401, json: async () => ({ error: { message: 'bad key' } }) };
+      return { ok: true, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(API_FILTER) }] }) };
+    };
+  };
+  const form = { kind: 'out', dateFrom: TODAY, place: '', purpose: '' };
+  const history = [{ who: 'me', text: '외근 올릴게' }];
+
+  await ta('attend.<종류> → 작업 attend(merged — 어느 종류 ID 든 하나), 입력 글은 attendInput 과 같다. reply 는 떼고 조각은 관문(초안·partial)을 지난다', async () => {
+    setupAction();
+    const { fillAction, attendInput } = await load();
+    const r = await fillAction('attend.out', '내일 2시부터 4시까지 부산시청 외근', { today: TODAY, form, history }, { apiKey: 'sk-x', useNative: true });
+    assert.equal(sent.at(-1).task, 'attend');
+    assert.equal(sent.at(-1).input, attendInput('내일 2시부터 4시까지 부산시청 외근', { form, today: TODAY, history }));
+    assert.deepEqual(r, { input: { kind: 'out', dateFrom: '2026-09-17', start: '14:00', end: '16:00', place: '부산시청' }, reply: '외근으로 채웠습니다.', via: 'cli', costUsd: 0.003, note: '', fails: [] });
+    for (const id of ['attend.trip', 'attend.leave', 'attend.health']) {
+      await fillAction(id, '내일 휴가', { today: TODAY, form }, { useNative: true });
+      assert.equal(sent.at(-1).task, 'attend', id);
+    }
+  });
+  await ta('attend 의 답은 fillAttendSmart 처럼 상대 날짜를 달력으로 다시 셈한다', async () => {
+    setupAction({ answer: { kind: 'out', dateFrom: '2026-09-18', reply: '외근으로 채웠습니다.' } });
+    const { fillAction } = await load();
+    const r = await fillAction('attend.out', '내일 외근', { today: TODAY, form }, { useNative: true });
+    assert.deepEqual([r.input.dateFrom, r.note], ['2026-09-17', '날짜는 달력으로 다시 셈했습니다']);
+  });
+  await ta('room.search → 작업 search.room, 입력 글은 parseSmart 가 보내는 것과 같다(searchInput). reply 가 없는 작업은 빈 글', async () => {
+    setupAction();
+    const { fillAction, parseSmart, searchInput } = await load();
+    const r = await fillAction('room.search', '9월 20일 8시~12시 10명', { today: TODAY }, { apiKey: 'sk-x', useNative: true });
+    const msg = sent.at(-1);
+    assert.equal(msg.task, 'search.room');
+    assert.equal(msg.input, `오늘은 ${TODAY} 입니다.\n찾는 대상: 회의실\n\n요청: 9월 20일 8시~12시 10명`);
+    assert.equal(msg.input, searchInput('9월 20일 8시~12시 10명', { today: TODAY, kind: 'room' }));
+    assert.deepEqual(r, { input: CLI_FILTER, reply: '', via: 'cli', costUsd: 0.003, note: '', fails: [] });
+    const smart = await parseSmart('9월 20일 8시~12시 10명', { today: TODAY, useNative: true });
+    assert.deepEqual([sent.at(-1).task, sent.at(-1).input, smart.filter], [msg.task, msg.input, r.input]);
+  });
+  await ta('car.search → 작업 search.car — 좌석 수·지역은 비우고 두 알림이 note 에 남는다(variants.car.clear). 종류는 행위의 갈래라 opts.kind 로 바꿀 수 없다', async () => {
+    setupAction({ answer: { ...CLI_FILTER, region: '부산' } });
+    const { fillAction } = await load();
+    const r = await fillAction('car.search', '부산 10명 차량', { today: TODAY }, { useNative: true, kind: 'room' });
+    assert.equal(sent.at(-1).task, 'search.car');
+    assert.match(sent.at(-1).input, /찾는 대상: 차량/);
+    assert.deepEqual([r.input.minSeats, r.input.region, r.input.summary, r.reply], [null, null, 'CLI 해석', '']);
+    assert.equal(r.note, '차량은 좌석 수를 알 수 없어 인원 조건은 뺐습니다, 차량은 지역을 가리지 않아 지역 조건은 뺐습니다');
+  });
+  await ta('CLI 의 답이 명세와 다르면 API 로 내려간다 — fails 에 까닭이 남고 note 에도 같이 적힌다. API 길의 지시문은 그 작업의 것', async () => {
+    setupAction({ answer: ATTEND });
+    const { fillAction } = await load();
+    const r = await fillAction('room.search', '아무거나', { today: TODAY }, { apiKey: 'sk-x', useNative: true });
+    assert.deepEqual([r.via, r.input.summary, r.fails.length], ['api', 'API 해석', 1]);
+    assert.match(r.fails[0], /^로컬 CLI 실패\(답이 입력 명세와 다릅니다/);
+    assert.equal(r.note, r.fails[0]);
+    assert.equal(sent.at(-1).system, systemPrompt('search.room'));
+  });
+  await ta('로컬 CLI 도 API 도 안 되면 던지지 않고 input: null 과 fails 를 돌려준다 — 규칙 해석은 부르는 쪽(parseSmart·fillAttendSmart)의 몫', async () => {
+    setupAction({ native: 'error', api: 'error' });
+    const { fillAction } = await load();
+    const r = await fillAction('room.search', '내일 오후', { today: TODAY }, { apiKey: 'sk-x', useNative: true });
+    assert.deepEqual(r, { input: null, fails: ['로컬 CLI 실패(CLI 오류)', 'API 실패(Claude 호출 실패 (HTTP 401) bad key)'] });
+  });
+  await ta('말로 채우지 않는 행위는 부르기 전에 던진다 — 공문(recipe 갈래)·예약·취소(llm: false)·출장(갈래에 LLM 작업 없음)·모르는 행위·오늘 없음', async () => {
+    setupAction();
+    const { fillAction } = await load();
+    const n = sent.length;
+    for (const id of ['gongmun.purchase', 'gongmun.setup', 'room.reserve', 'attend.cancel', 'trip.create']) {
+      await assert.rejects(fillAction(id, '글', { today: TODAY }, { useNative: true }), /이 행위는 말로 채우지 않습니다 — /, id);
+    }
+    await assert.rejects(fillAction('nope.search', '글', { today: TODAY }), /모르는 행위 nope\.search/);
+    await assert.rejects(fillAction('room.search', '글', {}), /ctx\.today/);
+    assert.equal(sent.length, n, '다리도 API 도 부르지 않는다');
+  });
+  await ta('askClaude 를 내보낸다 — 작업 이름으로 바로 묻는 길(사다리·관문 그대로)', async () => {
+    setupAction({ answer: { ...CLI_FILTER, region: '부산' } });
+    const { askClaude } = await load();
+    const got = await askClaude('search.car', '글', { useNative: true, kind: 'car' });
+    assert.deepEqual([got.via, got.data.minSeats, got.data.region, got.notes.length, got.fails], ['cli', null, null, 2, []]);
   });
 }
 
@@ -352,7 +461,7 @@ console.log('API 길의 글자 먼저 뽑기 — 첨부가 있는 receipt·gongm
     assert.deepEqual(r.read, ['q.pdf: PDF 글자 층 1쪽 — 파일은 보내지 않음', 'r.png: OCR 신뢰도 80 — 그림도 같이 보냄']);
   });
 
-  await ta('글 작업(parse)과 첨부 없는 gongmun.* 은 docText 를 부르지 않는다 — textFirst 는 다리의 TEXT_FIRST 와 같은 규칙', async () => {
+  await ta('글 작업(search.room)과 첨부 없는 gongmun.* 은 docText 를 부르지 않는다 — textFirst 는 다리의 TEXT_FIRST 와 같은 규칙', async () => {
     const calls = [];
     const docText = fakeDocText(calls, { input: '엉뚱한 글', files: [], read: ['X'], lean: true });
     setup({ native: 'absent', api: 'ok' });
@@ -372,7 +481,7 @@ console.log('API 길의 글자 먼저 뽑기 — 첨부가 있는 receipt·gongm
     const [{ TEXT_FIRST }, { TASKS }] = await Promise.all([import('../native/host.mjs'), import('../src/input.js')]);
     assert.deepEqual(Object.keys(TASKS).filter(textFirst).sort(), [...TEXT_FIRST].sort());
     assert.deepEqual(['receipt', 'gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside'].filter(textFirst).length, 5);
-    assert.deepEqual(['parse', 'attend', 'diagnose', 'gongmunSetup', 'gongmunReason.purchase', 'gongmunReason.edu'].filter(textFirst), []);
+    assert.deepEqual(['search.room', 'search.car', 'attend', 'diagnose', 'gongmunSetup', 'gongmunReason.purchase', 'gongmunReason.edu'].filter(textFirst), []);
   });
 
   await ta('docText 가 던져도 API 를 건너뛰지 않는다 — 파일째 보내고 까닭이 read 에 남는다(다리의 extractText 와 같은 문구). note 에는 섞이지 않는다', async () => {

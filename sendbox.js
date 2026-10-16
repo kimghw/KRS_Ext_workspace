@@ -35,12 +35,13 @@
 // 옆에도 × 가 선다. 지우는 것은 패널이 기억해 둔 것뿐이다. 사후정산을 완료한 출장에 넣은 증빙은 읽어서 사후정산에 반영한다(ctx.read).
 
 import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, calName, sendTitle, sendLines, packCount, SETTLED_LABEL, RECENT_MAX } from './src/send.js';
-import { buildPdf } from './src/pdf.js';
-import { tripCalPdf } from './src/trip.js';
-import { memoSuggest, memoSend, memoHtml } from './src/memo.js';
-import { teamsState, teamsSendFile } from './src/teams.js';
-import { EVIDENCE_ACCEPT, acceptsFile } from './src/attend.js';
-import { MAIL_DOMAIN } from './src/config.js';
+import { memoSuggest } from './src/memo.js';
+import { teamsState } from './src/teams.js';
+import { EVIDENCE_ACCEPT, acceptsFile, attendToday } from './src/attend.js';
+// 보내는 일(계산서 PDF → 묶기 → Teams·쪽지)은 행위 trip.send 다(actions/runners/trip.js) — 여기서 직접 부르지 않는다. 받는 사람 찾기·Teams 상태 보기는 읽기라 그대로다.
+import { createDispatcher } from './actions/dispatch.js';
+import { resolvePreset } from './actions/preset.js';
+import { registerTrip } from './actions/runners/trip.js';
 
 const FILE_LIMIT = 10 * 1024 * 1024;
 const SUGGEST_WAIT_MS = 250;
@@ -93,11 +94,23 @@ function withWay(x, saved) {
   return { ...x, way: wantOf(x.way) || wantOfLabel(last?.channel) };
 }
 
+/** 관문이 막은 까닭을 카드에 적을 글로 — ActionError 는 problems 를, 그 밖은 message 를. */
+const reasonOf = (err) => (err?.name === 'ActionError' && Array.isArray(err.problems) && err.problems.length ? err.problems.join(' · ') : err?.message || String(err));
+
 /**
- * @param {{escapeHtml:Function, logEvent:Function, evidence:object, setStatus:Function, setError:Function, repaint:Function, readFile:Function}} deps
- *   evidence 는 증빙 보관함(src/evidence.js), repaint 는 신청 내역을 다시 그리는 길, readFile 은 File → data URL 이다
+ * @param {{escapeHtml:Function, logEvent:Function, evidence:object, setStatus:Function, setError:Function, repaint:Function, readFile:Function, actions?:object}} deps
+ *   evidence 는 증빙 보관함(src/evidence.js), repaint 는 신청 내역을 다시 그리는 길, readFile 은 File → data URL 이다.
+ *   actions 는 행위 디스패처(actions/dispatch.js — 근태 패널이 준다, trip.* 실행기가 등록돼 있다). 없으면(단독 테스트) 여기서 만들어 trip.* 를 등록한다
  */
-export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setError, repaint, readFile }) {
+export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setError, repaint, readFile, actions: shared = null }) {
+  // 행위 디스패처 — 실패한 run 의 로그 줄은 글 끝에 실행기가 던진 까닭을 잇는다(전부터 "… 실패: X — 까닭" 꼴이었다).
+  const actions = shared || registerTrip(createDispatcher({ log: (e) => logEvent(e.kind, e.ok, !e.ok && e.data?.result?.error ? `${e.text} — ${e.data.result.error}` : e.text, e.data) }));
+  /** trip.send 의 사전설정 — 저장소는 chrome.storage.local, 내 이름은 설정의 myName, 오늘은 attendToday, tripMe 는 카드의 사정이 아는 내 이름(ctx.me). */
+  async function presetFor(id, ctx) {
+    const saved = await chrome.storage.local.get('myName').catch(() => null);
+    const me = typeof saved?.myName === 'string' ? saved.myName.trim() : '';
+    return resolvePreset(actions.entry(id).preset, { storage: (keys) => chrome.storage.local.get(keys), me, today: attendToday(), ctx });
+  }
   // sets 는 이전에 보낸 세트(과제·계정 + 받는 사람 + 보내는 길, 셋까지), done 은 출장(신청서 번호)마다 마지막으로 보낸 기록,
   // teams 는 Teams MCP 가 닿는지 본 결과(아직 못 봤으면 null), want 는 마지막으로 고른 길('teams'·'memo', 고르지 않았으면 ''),
   // by 는 카드마다 고르고 있는 값, pop 은 떠 있는 팝업이다.
@@ -419,13 +432,21 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
     const name = pdfName({ trip, me });
     let failed = '';
     try {
-      // 어느 길로 갈지는 보내는 그 순간에 다시 본다 — 패널을 연 뒤에 Teams MCP 를 켰거나 껐을 수 있다. 팝업에서 확인한 길과
-      // 달라졌으면 다른 길로 돌려 보내지 않고, 사후정산 저장·확정도 하기 전에 멈춘다.
+      // 카드를 먼저 다시 그린다(앞서 실패한 까닭이 걷힌다) — 아래의 첫 await 전에.
       step('보내는 길을 확인하는 중...');
+      // 행위 trip.send 의 기록 — 팝업에서 확인한 것 그대로(계산서·신청서·과제·계정·받는 사람·보내는 길·PDF 이름). 관문이 막으면 여기서 멈춘다 — 사이트에는 아무것도 가지 않는다.
+      const picked = shown?.channel || way.channel;
+      const record = actions.build('trip.send', {
+        input: { seq: trip.seq, docNo: it.docNo, account, to: { id: person.id, name: person.name || null }, channel: picked, reason: it.reason || null, file: name },
+        preset: await presetFor('trip.send', { tripMe: me || null }),
+      }).record;
+      // 어느 길로 갈지는 보내는 그 순간에 다시 본다 — 패널을 연 뒤에 Teams MCP 를 켰거나 껐을 수 있다. 확인한 길(기록의 channel)과
+      // 달라졌으면 다른 길로 돌려 보내지 않고, 사후정산 저장·확정도 하기 전에 멈춘다.
       box.teams = await teamsState();
       way = wayNow(s);
-      if (shown && way.channel !== shown.channel) {
-        throw new Error(`보내는 길이 달라져 보내지 않았습니다(확인한 길: ${shown.label} → 지금: ${way.label}) — 보내기를 다시 눌러 확인해 주세요`);
+      if (way.channel !== record.input.channel) {
+        const was = WAYS.find((w) => w.channel === record.input.channel)?.label || record.input.channel;
+        throw new Error(`보내는 길이 달라져 보내지 않았습니다(확인한 길: ${was} → 지금: ${way.label}) — 보내기를 다시 눌러 확인해 주세요`);
       }
       if (sendGate(ctx).settle) {
         if (ctx.hold) throw new Error(ctx.hold);
@@ -444,37 +465,26 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
       const kept = sendable(await evidence.list(it.docNo));
       const gate = sendGate({ trip, stage, need, kept });
       if (!gate.ready || gate.settle) throw new Error(gate.why || '사후정산이 완료되지 않아 보내지 않았습니다');
-      // 확정한 여비계산서를 출력(PDF)해 증빙 앞에 붙인다(2026-10-04 사용자 지정) — 받지 못하면 증빙만 보내지 않고 멈춘다.
-      // 로그인이 풀린 것은 그 말 그대로 둔다(화면이 그 글로 로그인 안내를 가린다).
-      step('여비계산서를 PDF 로 받는 중...');
-      const cal = await tripCalPdf(trip, { name: me, onStage: step }).catch((err) => {
-        if (err.name !== 'AuthError') err.message = `여비계산서를 PDF 로 받지 못해 보내지 않았습니다 — ${err.message}`;
-        throw err;
+      // 보낸다(행위 trip.send — 확정한 여비계산서를 출력(PDF)해 증빙 앞에 붙여 묶고 Teams 또는 쪽지로, 2026-10-04 사용자 지정. 계산서를 받지 못하면 증빙만 보내지 않고 멈춘다).
+      // 확정한 뒤의 계산서 줄과 단계, 보관함의 증빙이 ctx 다. 로그 한 줄은 디스패처가 남긴다(실패도 — 사후정산 저장·확정이 안 된 것은 그 행위의 run 이 남겼다).
+      const r = await actions.run(record, {
+        confirmed: record.hash, row: trip, stage, kept, onStage: step,
+        text: `여비계산서 증빙 송부 실패(${way.label}): ${trip.seq}`, data: { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id },
+        outcome: async (r) => ({
+          text: `여비계산서 증빙 송부(${way.label}): ${trip.seq} → ${person.id} · ${account} · ${name} ${r.pages}쪽`,
+          data: { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id, account, files: [calName({ trip }), ...kept.map((k) => k.name)], pages: r.pages },
+        }),
       });
-      step('여비계산서와 증빙을 PDF 로 묶는 중...');
-      const pdf = await buildPdf([{ name: calName({ trip }), bytes: cal.bytes }, ...kept], { title: `여비계산서 ${trip.seq} 증빙` });
-      const title = sendTitle({ account, me, trip });
-      const lines = sendLines({ account, me, trip, stage, reason: it.reason, kept, file: name });
-      step(`${way.label}로 보내는 중...`);
-      if (way.channel === 'teams') {
-        await teamsSendFile({ email: `${person.id}@${MAIL_DOMAIN}`, html: memoHtml([title, ...lines]), file: { name, bytes: pdf.bytes } });
-      } else {
-        await memoSend({ to: [person.id], title, lines, file: { name, bytes: pdf.bytes, type: 'application/pdf' }, onStage: step });
-      }
       // 보낸 곳이 맨 윗줄에 서고 켜진다 — 직접 고르던 칸은 접는다.
       box.sets = pushRecent(box.sets, { account, person, way: way.channel }, setKey);
       Object.assign(s, { want: way.channel, open: false });
-      const done = { ...box.done, [it.docNo]: { at: Date.now(), channel: way.label, to: person.name || person.id, account, file: name, pages: pdf.pages } };
+      const done = { ...box.done, [it.docNo]: { at: Date.now(), channel: way.label, to: person.name || person.id, account, file: name, pages: r.pages } };
       box.done = Object.fromEntries(Object.entries(done).sort((a, b) => b[1].at - a[1].at).slice(0, DONE_MAX));
       await chrome.storage.local.set({ sendSets: box.sets, sendDone: box.done });
-      setStatus(`${way.label}로 보냈습니다 — ${personText(person)} · ${account} · ${name}(${pdf.pages}쪽)`);
-      logEvent('trip', true, `여비계산서 증빙 송부(${way.label}): ${trip.seq} → ${person.id} · ${account} · ${name} ${pdf.pages}쪽`,
-        { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id, account, files: [calName({ trip }), ...kept.map((k) => k.name)], pages: pdf.pages });
+      setStatus(`${way.label}로 보냈습니다 — ${personText(person)} · ${account} · ${name}(${r.pages}쪽)`);
     } catch (err) {
-      s.error = failed ? `${failed}: ${err.message}` : err.message;
+      s.error = failed ? `${failed}: ${err.message}` : reasonOf(err);
       setError(err, failed || '여비증빙 송부 실패');
-      // 사후정산 저장·확정이 안 된 것은 attendpanel.js 가 이미 기록했다.
-      if (!failed) logEvent('trip', false, `여비계산서 증빙 송부 실패(${way.label}): ${trip.seq} — ${err.message}`, { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id });
     } finally {
       Object.assign(s, { busy: false, stage: '' });
       repaint();

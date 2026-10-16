@@ -38,7 +38,7 @@ console.log('첨부 파일(출장 증빙)은 run 에 넘기고 기록에는 이�
     assert.deepEqual(logged.at(-1).files, ['r.png (image/png, 0KB)']);
     assert.ok(!JSON.stringify(logged.at(-1)).includes('AAAA'));
   });
-  const plain = await handle({ task: 'parse', input: '내일' }, { log: (e) => logged.push(e), run: async (_t, _i, f) => { seen.push(f); return { data: {} }; } });
+  const plain = await handle({ task: 'search.room', input: '내일' }, { log: (e) => logged.push(e), run: async (_t, _i, f) => { seen.push(f); return { data: {} }; } });
   await ta('첨부가 없으면 빈 목록이 가고 기록에 files 가 없다', async () => {
     assert.equal(plain.ok, true);
     assert.deepEqual(seen.at(-1), []);
@@ -132,7 +132,7 @@ console.log('증빙은 글자를 먼저 뽑는다 — PDF 는 글자만, 그림�
   });
   await ta('증빙이 아닌 작업과 첨부 없는 증빙은 글자를 뽑지 않는다', async () => {
     const text = async () => assert.fail('부르면 안 됨');
-    for (const msg of [{ task: 'parse', input: '내일', files: [png] }, { task: 'receipt', input: '출장 정보' }, { task: 'gongmun.edu', input: '품의 종류: 교육' }]) {
+    for (const msg of [{ task: 'search.room', input: '내일', files: [png] }, { task: 'receipt', input: '출장 정보' }, { task: 'gongmun.edu', input: '품의 종류: 교육' }]) {
       let opts;
       await handle(msg, { log, text, run: async (_t, _i, _f, o) => { opts = o; return { data: {} }; } });
       assert.deepEqual(opts, { lean: false });
@@ -186,14 +186,15 @@ console.log('무엇을 남기나 (가짜 claude)');
   const logged = [];
   const log = (e) => logged.push(e);
 
-  const okRes = await handle({ task: 'parse', input: '내일 오후 회의실' }, {
+  // 글 작업의 보기는 행위 명세가 만든 search.room(actions/spec/room/search.yaml) — 다리는 src/input.js 의 TASKS 에 있는 작업만 받는다.
+  const okRes = await handle({ task: 'search.room', input: '내일 오후 회의실' }, {
     log, run: async () => ({ data: { summary: '내일 14시' }, costUsd: 0.012 }),
   });
   await ta('성공 응답은 전과 같다', async () =>
     assert.deepEqual(okRes, { ok: true, data: { summary: '내일 14시' }, costUsd: 0.012 }));
   await ta('성공도 남긴다 — 작업·입력·결과·비용·걸린 시간', async () => {
     const e = logged.at(-1);
-    assert.equal(e.task, 'parse');
+    assert.equal(e.task, 'search.room');
     assert.equal(e.ok, true);
     assert.equal(e.input, '내일 오후 회의실');
     assert.deepEqual(e.data, { summary: '내일 14시' });
@@ -213,7 +214,7 @@ console.log('무엇을 남기나 (가짜 claude)');
     assert.equal(e.stderr, 'not logged in');
   });
 
-  await handle({ task: 'parse', input: 'x'.repeat(5000) }, { log, run: async () => ({ data: {} }) });
+  await handle({ task: 'search.room', input: 'x'.repeat(5000) }, { log, run: async () => ({ data: {} }) });
   await ta('긴 입력은 잘라서 남긴다', async () => {
     const e = logged.at(-1);
     assert.ok(e.input.length < 1600);
@@ -262,7 +263,7 @@ console.log('무엇을 남기나 (가짜 claude)');
     }
   });
   await ta('빈 입력도 남긴다', async () => {
-    const r = await handle({ task: 'parse', input: '  ' }, { log, run: async () => assert.fail('부르면 안 됨') });
+    const r = await handle({ task: 'search.room', input: '  ' }, { log, run: async () => assert.fail('부르면 안 됨') });
     assert.equal(r.ok, false);
     assert.equal(logged.at(-1).error, '입력이 비어 있습니다.');
   });
@@ -350,14 +351,14 @@ console.log('실제 프로세스로 (크롬이 띄우는 것처럼)');
     });
   }
 
-  const res = await roundTrip({ task: 'parse', input: '내일 회의실' });
+  const res = await roundTrip({ task: 'search.room', input: '내일 회의실' });
   await ta('claude 가 실패하면 실패로 답한다', async () => {
     assert.equal(res.ok, false);
     assert.ok(res.error);
   });
   await ta('그 실패가 파일에 남는다 (종료 코드·stderr 포함)', async () => {
     const line = JSON.parse(fs.readFileSync(path.join(dir, dayName(new Date())), 'utf8').trim().split('\n').at(-1));
-    assert.equal(line.task, 'parse');
+    assert.equal(line.task, 'search.room');
     assert.equal(line.ok, false);
     assert.notEqual(line.exitCode, 0);
     assert.match(line.stderr, /bad option/);
@@ -382,7 +383,7 @@ console.log('실제 프로세스로 (크롬이 띄우는 것처럼)');
     assert.equal(r.ok, true);
     assert.deepEqual([typeof logged[0].textMs, logged[0].cli, logged[0].attach, logged[0].read], ['number', cli, 'direct', ['a.png: OCR 10자']]);
     // 글 작업에는 글자 뽑기가 없다
-    await handle({ task: 'parse', input: '내일 회의실' }, { log: (e) => logged.push(e), run: async () => ({ data: {}, costUsd: 0 }) });
+    await handle({ task: 'search.room', input: '내일 회의실' }, { log: (e) => logged.push(e), run: async () => ({ data: {}, costUsd: 0 }) });
     assert.deepEqual(['textMs' in logged[1], 'cli' in logged[1]], [false, false]);
   });
 

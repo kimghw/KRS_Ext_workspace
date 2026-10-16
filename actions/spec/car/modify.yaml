@@ -1,0 +1,29 @@
+# 차량 신청 수정 = 기존 건 취소 → 새 조건으로 재신청(src/modify.js modifyReservation — 회의실의 수정과 같은 규칙·같은 되돌리기 판단). 현황 탭의 수정(runModify)만 있다 —
+# 차량은 이어붙이기(extend)를 지원하지 않는다(되살릴 값을 다 알지 못한다 — RUNNERS.car.extend false).
+# 기록은 되돌릴 원래 신청(back)과 새 조건(next) — 둘 다 car.reserve 의 칸 그대로다(from: car.reserve). 콜백·산 손잡이·화면은 어댑터가 ctx 로 짓는다. `수정하기` 버튼이 확인이다.
+id: car.modify
+title: 차량 신청 수정
+log: modify
+fields:
+  back:
+    type: object
+    from: car.reserve
+    required: true
+    label: 원래 신청
+    desc: 되돌릴 원래 신청(원래 차량·날짜·시간·행선지 — 취소 뒤 새 신청이 안 되면 이것으로 되살린다)
+    read: 지금 잡혀 있는 신청 그대로(조회 결과에서). 지어내지 않습니다
+    llm: false
+  next:
+    type: object
+    from: car.reserve
+    required: true
+    label: 새 조건
+    desc: 새 조건(격자에서 고른 칸·행선지 — pickToPayload)
+    read: 사용자가 바꾸라고 한 차량·날짜·시간·행선지
+    llm: false
+llm: false
+runner: booking.modify
+uses:
+  - { module: src/modify.js, export: modifyReservation }
+  - { module: src/runners.js, export: RUNNERS }
+next: 결과(ok·stage·restored·lost·uncertain)는 modifyReservation 의 것 그대로다 — describeModifyResult 가 상태줄 문장을 만든다(패널)

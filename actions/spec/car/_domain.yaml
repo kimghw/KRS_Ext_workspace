@@ -1,0 +1,25 @@
+# 업무용 차량 갈래 — eclass 차량 이용 신청(src/rentcar.js, 실행자 src/runners.js RUNNERS.car). 종류: search(말로 찾기) · reserve(신청) · cancel · modify(취소 → 재신청).
+# 차량은 회의실과 같은 모양의 실행자지만 다른 점이 있다 — 행선지가 필수이고(사이트의 fnSaveCheck), 좌석 수·지역이 없고(search 의 drop), 여러 날에 걸칠 수 있으며(endDate),
+# 삭제 손잡이가 행 자리로 지은 버튼 이름이라 새로 읽은 화면에서 다시 찾은 것만 쓴다(staleHandle false). 그 순서는 src/rentcar.js·패널에 그대로 있다.
+#
+# LLM 작업은 per-kind 모드 — search.yaml 이 `llm: { task: search.car }` 로 이름을 적는다. 칸은 references/input.yaml 의 parse 와 같고, 차량이 받지 않는 minSeats·region 은
+# drop 으로 적어 작업에는 variants.car.clear 로 나간다(지금 parse 의 차량 동작 — 두 칸을 null 로 비우고 알림 — 그대로, test/llm.test.mjs).
+domain: car
+title: 차량
+log: reserve                   # 활동 로그 kind — 종류 파일이 덮어쓴다(search → ask · cancel → cancel · modify → modify)
+kinds: [search, reserve, cancel, modify]
+preset:
+  me: { from: me, desc: 내 이름(패널 설정의 myName — 내 신청 판정에 쓴다. 차량 신청 폼은 로그인한 사람의 이름을 내려 주므로 rememberName 이 채우기도 한다) }
+llm:
+  task: search
+  mode: per-kind
+  partial: false
+  input: search                # src/llm.js 의 searchInput(text, { today, kind })
+  title: 차량 조회 조건
+  consumer: { module: src/search.js, export: findSlots }
+  next: 사용자가 후보를 고른다 → car.reserve 기록 → src/runners.js 의 car 실행자가 신청한다(reserve)
+  role: >-
+    당신은 사내 업무용 차량 예약 도우미입니다. 사용자의 한국어 요청을 차량 조회 조건으로 바꿉니다.
+    조회 조건은 신청 명령이 아닙니다 — 빈 차량과 시간을 찾을 뿐이고, 신청은 사용자가 후보를 고른 뒤에 나갑니다.
+  rules: []
+  fields: {}

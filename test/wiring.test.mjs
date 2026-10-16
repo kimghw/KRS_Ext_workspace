@@ -173,6 +173,10 @@ console.log('회의실 모드로 시작');
     assert.ok(wired.get('cancelBooking')?.has('click'));
     assert.ok(wired.get('modify')?.has('click'), '수정 버튼에 리스너가 없다');
   });
+  t('예약·취소·수정·말로 찾기는 행위 디스패처(actions/)로만 간다 — 입구에서 실행기로 바로 가는 우회 호출이 없다', () => {
+    assert.ok(!/\brun\.reserve\(|\brun\.cancel\(|modifyReservation\(|findSlots\(/.test(js), 'sidepanel.js 에 실행기 직접 호출이 남아 있다');
+    assert.ok(/createDispatcher\(\{ log:/.test(js) && /registerBooking\(actions\)/.test(js), '디스패처가 없다');
+  });
 }
 
 console.log('홈의 내 예약 카드에서 누른 날짜로 연다');
@@ -1546,6 +1550,34 @@ console.log('공문 탭');
     }[func.name];
     return [{ result: answer ? answer() : null }];
   };
+  // 빈 곳으로 가는 단추(2026-10-16 사용자 지정: "반드시 들어가야 하는 거면 빈곳을 찾아갈 수 있는 바로가기 버튼을 넣어줘") — 내 이름을 비우고 누르면
+  // 관문이 막고(기안자는 꼭 있어야 한다), 상태줄 끝의 단추가 설정 → 일반의 내 이름 칸으로 데려간다. 그 뒤 이름을 되돌리고 진짜 작성으로 간다.
+  {
+    const name = doc.getElementById('myName');
+    const Event = doc.defaultView.Event;
+    name.value = '';
+    name.dispatchEvent(new Event('change', { bubbles: true }));
+    doc.getElementById('gmWrite').click();
+    await settle(80);
+    t('관문이 막으면 상태줄에 빈 곳으로 가는 단추가 선다 — 내 이름 채우기 → 설정 → 일반의 내 이름 칸', () => {
+      const status = doc.getElementById('gmStatus');
+      assert.match(status.textContent, /^공문을 쓸 수 없습니다 — .*me 가 없습니다/);
+      const jump = status.querySelector('button.jump[data-jump="preset:me"]');
+      assert.ok(jump, '내 이름 단추가 선다');
+      assert.equal(jump.textContent, '내 이름 채우기 →');
+      assert.equal(doc.getElementById('settingsBox').hidden, true, '누르기 전에는 설정이 닫혀 있다');
+      jump.click();
+      assert.equal(doc.getElementById('settingsBox').hidden, false, '설정이 열린다');
+      assert.equal(doc.querySelector('#settingsTabs .set-tab.active')?.dataset.pane, 'general', '일반 갈래');
+      assert.equal(doc.activeElement, name, '내 이름 칸에 초점');
+      assert.ok(name.classList.contains('jump-flash'), '윤곽선이 켜진다');
+      assert.ok(!doc.getElementById('gmWrite').disabled, '작성 잠금은 풀려 있다');
+    });
+    doc.getElementById('settingsShortcut').click();   // 설정을 닫고
+    name.value = '김거화';
+    name.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(20);
+  }
   doc.getElementById('gmWrite').click();
   await settle(50);
   t('뒤 탭 작성 중에도 화면 탭과 접힘을 바꿀 수 있고 작성 잠금·진행 기록은 유지된다', () => {
@@ -3899,7 +3931,7 @@ console.log('실행자 — 차량 탭의 일은 회의실 사이트로 가지 �
     arrayBuffer: async () => new TextEncoder().encode(html).buffer,
   });
   const posts = [];
-  const { window, calls } = await boot({ mode: 'car', myName: '최정호' }, {
+  const { window, calls, store } = await boot({ mode: 'car', myName: '최정호' }, {
     fetchImpl: async (url, init = {}) => {
       if (String(init.method || 'GET').toUpperCase() === 'POST') posts.push(String(url));
       return /RentCar/.test(String(url)) ? page(carHtml, String(url)) : Promise.reject(new Error('offline'));
@@ -3963,6 +3995,18 @@ console.log('실행자 — 차량 탭의 일은 회의실 사이트로 가지 �
     assert.match(doc.getElementById('status').textContent, /1건 실패\. 사이트가 이 차량의 신청을 막고 있습니다 — 차량 이용 시 지원팀/);
     assert.equal(posts.length, before.posts);
     assert.equal(calls.urls.filter((u) => /Admin_View_New/.test(u)).length, gets);
+  });
+  t('그 실패도 행위 기록으로 남는다 — car.reserve 기록(칸·사전설정·지문)과 결과만, 실행기에 준 한 건(payload)·손잡이·바이트는 없다', () => {
+    const e = (store.activityLog || []).find((x) => x.kind === 'reserve' && !x.ok && /189오9673/.test(x.text || ''));
+    assert.ok(e, JSON.stringify((store.activityLog || []).map((x) => [x.kind, x.text])));
+    assert.match(e.text, /실패: 사이트가 이 차량의 신청을 막고 있습니다/);
+    assert.equal(e.data.record.action, 'car.reserve');
+    assert.match(e.data.record.hash, /^[0-9a-f]{8}$/);
+    assert.deepEqual([e.data.record.by, e.data.record.input.place, e.data.record.input.date, e.data.submitted], ['ui', '부산시청', '2026-09-16', false]);
+    assert.match(e.data.record.input.car, /189오9673/);
+    assert.ok('me' in e.data.record.preset, '사전설정 키는 값이 비어도 있다');
+    assert.equal('payload' in e.data, false);
+    assert.equal(/dataUrl|"del"|blocked/.test(JSON.stringify(e.data)), false);
   });
 }
 
@@ -4062,6 +4106,17 @@ console.log('근태 폼의 차량 조회 — 빈 차량을 누르면 차량 탭�
     assert.ok(store.justBooked.some((b) => b.mode === 'car' && b.date === D1 && b.room === '스타리아 (308소4997)' && b.start === 420 && b.end === 1440), JSON.stringify(store.justBooked));
     assert.equal(store.myName, '고민수');
     assert.ok(Object.values(store).some((v) => Array.isArray(v) && v.some((e) => e?.kind === 'reserve' && e.ok && /스타리아.*근태 폼의 차량 조회/.test(e.text || ''))), '활동 기록에 예약이 남는다');
+  });
+  t('예약은 행위 기록(car.reserve)으로 남는다 — 기록의 칸·지문·사전설정과 결과(verified)만, 실행기에 준 한 건(payload)·바이트는 없다', () => {
+    const e = (store.activityLog || []).find((x) => x.kind === 'reserve' && x.ok && /근태 폼의 차량 조회/.test(x.text || ''));
+    assert.ok(e);
+    assert.equal(e.data.record.action, 'car.reserve');
+    assert.match(e.data.record.hash, /^[0-9a-f]{8}$/);
+    assert.deepEqual(e.data.record.input, { car: '스타리아 (308소4997)', carValue: '75', date: D1, start: '07:00', end: '20:00', endDate: D2, title: '착수회의 참석', place: '대전', passenger: null });
+    assert.deepEqual([e.data.record.by, e.data.record.via, e.data.result.verified, e.data.owner], ['ui', null, true, '고민수']);
+    assert.ok('me' in e.data.record.preset, '사전설정 키는 값이 비어도 있다');
+    assert.equal('payload' in e.data, false);
+    assert.equal(/dataUrl/.test(JSON.stringify(e.data)), false);
   });
 
   await until(() => /내 신청/.test(doc.getElementById('atCars')?.textContent || ''));

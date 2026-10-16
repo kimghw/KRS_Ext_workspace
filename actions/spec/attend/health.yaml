@@ -1,0 +1,120 @@
+# 건강검진(정기 건강검진 — 공가) 신청 — HR 휴가/공가 신청서(LV, 근태종류 HCL). 하루 전체(allDay — 휴가구분 01) 아니면 시간(04 — 시작과 몇 시간, 30분 단위).
+# 사유와 첨부(검진 확인서)는 사이트가 반드시 요구한다. 첨부 파일의 바이트는 기록에 담지 않는다 — 기록의 file 은 { name, type, size? } 참조이고 바이트는 run 의 ctx.files 로 간다(§14.1).
+id: attend.health
+title: 건강검진 신청
+hint: 건강검진
+summary: '건강검진 {dateFrom} {start}~{end} · {purpose}'
+fields:
+  dateFrom:
+    type: date
+    required: true
+    label: 날짜
+    desc: 검진 날짜(하루짜리)
+    read: '날짜(YYYY-MM-DD). "내일"·"다음 주 수요일" 은 오늘을 기준으로 실제 날짜로'
+    example: '2026-10-20'
+  allDay:
+    type: boolean
+    label: 하루 전체
+    desc: 하루 전체로 올리는가(휴가구분 01). 끄면 시작과 몇 시간을 받는다(04)
+    read: 건강검진을 하루 전체로 올리는가. 건강검진이 아니면 null
+    default: true
+    example: true
+  start:
+    type: time
+    required: true
+    label: 시작
+    desc: 시작 시각(30분 단위) — 하루 전체가 아닐 때
+    read: '시작 시각 HH:MM(30분 단위). 하루 전체면 null'
+    default: '09:00'             # 오전 9시(2026-10-02 사용자 지정 — src/attend.js DEFAULT_START)
+    when: '!allDay'
+    example: '09:00'
+  span:
+    type: integer
+    required: true
+    min: 30
+    max: 510                     # 1~8시간 칩 + 30분 칩(src/attend.js SPAN_HOURS·nextSpan)
+    label: 몇 시간
+    desc: '몇 분인지(칩) — 하루 전체가 아닐 때. 종료 시각(end)은 시작 + 이것이다. LLM 은 end 로 말한다(llm: false)'
+    read: 사용자가 정하지 않습니다 — end(끝나는 시각)에서 폼이 셈합니다
+    llm: false
+    when: '!allDay'
+  end:
+    type: time
+    label: 종료
+    desc: 종료 시각 — 화면 칸이 아니고 시작 + 몇 시간에서 나온다(settle). 하루 전체가 아닐 때 HR 에 간다
+    read: '종료 시각 HH:MM. "2시부터 3시간" 처럼 길이로 말했으면 셈해서'
+    ui: false
+    when: '!allDay'
+    example: '12:00'
+  purpose:
+    type: string
+    required: true
+    max: 200
+    label: 사유
+    desc: 사유(HR 의 reqRsn — 사이트가 반드시 요구한다)
+    read: 사유. 사용자가 말한 것만 — 지어내지 않습니다
+    example: 건강검진
+  file:
+    type: file
+    label: 첨부파일
+    desc: 검진 확인서 등(사이트가 반드시 요구한다 — 이미 올려 둔 파일이 있는 문서를 고칠 때는 비워도 된다, hasFile). 기록에는 이름·형식만 남고 바이트는 ctx.files 로 간다
+    read: 사용자가 넣은 파일의 이름과 형식. 지어내지 않습니다
+    llm: false
+  op:
+    type: enum
+    required: true
+    values: [save, request]
+    label: 올리는 길
+    desc: 임시저장(save)·결재요청(request) — 누른 버튼. 둘은 다른 확인이다(기록이 다르다)
+    read: 사용자가 말로 고르지 않습니다 — 버튼이 정합니다(임시저장이면 save, 결재요청이면 request)
+    llm: false
+    ui: false
+  doc:
+    type: object
+    label: 고쳐 올리는 문서
+    desc: 임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc)
+    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서
+    llm: false
+    ui: false
+    fields:
+      docNo: { type: string, max: 30, required: true, desc: 문서번호, read: 고치는 문서의 번호 그대로 }
+      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1), read: 그 문서의 상태 코드 그대로 }
+ignore:
+  kind: 행위 ID 가 종류다(attend.health)
+  dateTo: 하루짜리 — settle 이 시작일로 맞추고 HR 에는 시작일이 종료일로 간다
+  days: 하루짜리
+  place: 장소를 쓰지 않는 종류(applyPatch 가 버린다)
+  venue: 장소를 쓰지 않는 종류
+  workplace: 출장·외근의 칸
+  expense: 출장·외근의 칸
+  flexStart: 유연근무의 칸
+  flexMode: 유연근무의 칸
+  flexMon: 유연근무의 칸
+  flexTue: 유연근무의 칸
+  flexWed: 유연근무의 칸
+  flexThu: 유연근무의 칸
+  flexFri: 유연근무의 칸
+  settle: 출장의 여비계산서
+  transport: 출장의 교통편
+  trainGrade: 출장의 좌석 등급
+  car: 출장·외근의 차량 조회
+  carPlace: 외근의 차량 행선지
+  sub: 건강검진에는 갈래가 없다
+  half: 연차의 구분
+  wfa: 연차의 기념일 지원
+  wfaName: 연차의 기념일 지원
+  wfaRelation: 연차의 기념일 지원
+  wfaReason: 연차의 기념일 지원
+  wfaDate: 연차의 기념일 지원
+  wfaStayFrom: 연차의 기념일 지원
+  wfaStayTo: 연차의 기념일 지원
+  wfaPaid: 연차의 기념일 지원
+  wfaAsk: 연차의 기념일 지원
+  wfaCash: 연차의 기념일 지원
+rules:
+  - '하루 전체라고 했으면 allDay 는 true, 시각을 말했으면 false 입니다.'
+runner: attend.apply
+uses:
+  - { module: src/attend.js, export: buildJob }
+  - { module: src/hr.js, export: hrRunJob }
+next: 결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 첨부는 어댑터가 기록의 파일 이름으로 ctx.files 에서 찾아 buildJob 의 file op 에 넣는다

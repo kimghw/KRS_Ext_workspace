@@ -10,8 +10,10 @@ import { parse } from 'yaml';
 const SOURCE = new URL('../references/input.yaml', import.meta.url);
 const TARGET = new URL('../src/inputspec.js', import.meta.url);
 
-const TYPES = new Set(['date', 'time', 'integer', 'number', 'string', 'enum', 'boolean', 'list']);
+const TYPES = new Set(['date', 'time', 'integer', 'number', 'string', 'enum', 'boolean', 'list', 'tags', 'file', 'object']);
 const OPS = new Set(['<', '<=']);
+/** 칸의 when — key · !key · key=value · key!=value (src/input.js 의 관문 parseWhen 과 같은 문법). */
+const WHEN = /^(!?)([A-Za-z_$][\w$]*)(?:\s*(!=|=)\s*(.+))?$/;
 
 /** 명세의 모양을 본다. 틀린 명세로 지시문과 관문을 만들면 틀린 것이 조용히 통과한다. */
 export function checkSpec(spec) {
@@ -25,23 +27,39 @@ export function checkSpec(spec) {
     if (!Array.isArray(task.rules) || task.rules.some((r) => typeof r !== 'string')) at('rules 는 글의 목록이어야 합니다');
     const fields = task.fields && typeof task.fields === 'object' ? task.fields : {};
     if (!Object.keys(fields).length) at('fields 가 비어 있습니다');
-    const checkField = (key, f, nested) => {
+    // within 은 이 칸이 어디 안에 있는지 — '' (맨 위) · 'list' (목록의 줄) · 'object' (객체). siblings 는 같은 자리의 칸들(when 의 상대).
+    const checkField = (key, f, within, siblings) => {
       if (!TYPES.has(f?.type)) return at(`${key}: 모르는 형 ${f?.type}`);
       if (typeof f.desc !== 'string' || !f.desc.trim()) at(`${key}: desc 가 비어 있습니다`);
-      if (f.type === 'enum' && (!Array.isArray(f.values) || !f.values.length || f.values.some((v) => typeof v !== 'string'))) {
-        at(`${key}: enum 은 글로 된 values 가 있어야 합니다`);
+      if ((f.type === 'enum' || f.type === 'tags') && (!Array.isArray(f.values) || !f.values.length || f.values.some((v) => typeof v !== 'string'))) {
+        at(`${key}: ${f.type === 'enum' ? 'enum 은' : 'tags 는'} 글로 된 values 가 있어야 합니다`);
       }
       for (const lim of ['min', 'max']) if (lim in f && typeof f[lim] !== 'number') at(`${key}: ${lim} 은 수여야 합니다`);
       if (typeof f.min === 'number' && typeof f.max === 'number' && f.min > f.max) at(`${key}: min(${f.min})이 max(${f.max})보다 큽니다`);
+      if (f.when != null) {
+        // 조건의 칸은 같은 자리에 있어야 한다 — 관문이 raw 의 그 자리를 본다.
+        const m = String(f.when).match(WHEN);
+        if (!m || (m[1] && m[3])) at(`${key}: when 문법이 틀렸습니다(${f.when})`);
+        else if (!Object.hasOwn(siblings, m[2])) at(`${key}: when 의 칸(${m[2]})이 없습니다`);
+      }
+      if (f.type === 'object') {
+        // 객체는 한 겹뿐이다 — 객체 안에 객체를, 목록의 줄 안에 객체를 두지 않는다(관문·지시문이 한 겹만 읽는다). 객체 안의 목록은 된다.
+        if (within === 'object') return at(`${key}: 객체 안에 객체를 둘 수 없습니다`);
+        if (within === 'list') return at(`${key}: 목록의 줄 안에 객체를 둘 수 없습니다`);
+        const sub = f.fields && typeof f.fields === 'object' ? f.fields : {};
+        if (!Object.keys(sub).length) at(`${key}: 객체는 안의 칸(fields)이 있어야 합니다`);
+        for (const [k, sf] of Object.entries(sub)) checkField(`${key}.${k}`, sf, 'object', sub);
+        return undefined;
+      }
       if (f.type !== 'list') return undefined;
       // 목록의 줄은 한 겹뿐이다 — 줄 안에 목록을 두지 않는다(지시문·관문이 한 겹만 읽는다).
-      if (nested) return at(`${key}: 목록 안에 목록을 둘 수 없습니다`);
+      if (within === 'list') return at(`${key}: 목록 안에 목록을 둘 수 없습니다`);
       const item = f.item && typeof f.item === 'object' ? f.item : {};
       if (!Object.keys(item).length) at(`${key}: 목록은 줄의 칸(item)이 있어야 합니다`);
-      for (const [k, sf] of Object.entries(item)) checkField(`${key}.${k}`, sf, true);
+      for (const [k, sf] of Object.entries(item)) checkField(`${key}.${k}`, sf, 'list', item);
       return undefined;
     };
-    for (const [key, f] of Object.entries(fields)) checkField(key, f, false);
+    for (const [key, f] of Object.entries(fields)) checkField(key, f, '', fields);
     for (const c of task.checks || []) {
       if (!(c.left in fields) || !(c.right in fields)) at(`checks: 없는 칸(${c.left}, ${c.right})`);
       if (!OPS.has(c.op)) at(`checks: 모르는 비교 ${c.op}`);

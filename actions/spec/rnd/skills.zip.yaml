@@ -1,0 +1,17 @@
+# 스킬 묶음 저장 — 확장 안의 rnd/skills.json 과 rnd/skills/* 를 zip 하나로 묶어 내려받는다(rndpanel.js saveSkillZip → src/rndskills.js bundleSkills). 과제 작업 프로젝트의 .claude/skills/ 에 푼다.
+# 바깥에 쓰지 않는다 — 내려받기뿐이다(effect draft).
+id: rnd.skills.zip
+title: 스킬 묶음 저장
+status: planned
+confirm: true
+effect: draft
+summary: '스킬 묶음 저장 {name}'
+fields:
+  name: { type: string, max: 100, label: zip 이름, desc: 내려받는 파일 이름(비면 src/rndskills.js zipName(today) — rnd-skills_<오늘>.zip), read: '사용자가 파일 이름을 정했을 때만. 그 밖에는 null', example: rnd-skills_2026-10-16.zip }
+llm: false
+runner: rnd.skills.zip
+uses:
+  - { module: src/rndskills.js, export: checkManifest }
+  - { module: src/rndskills.js, export: bundleSkills }
+  - { module: src/rndskills.js, export: zipName }
+next: 묶은 바이트를 내려받고(download) 상태 줄에 크기를 적는다. 목록(rnd/skills.json)을 못 읽으면 묶지 않는다

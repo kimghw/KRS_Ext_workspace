@@ -1,0 +1,32 @@
+# 회의실 예약 수정 = 기존 건 취소 → 새 조건으로 재예약(사이트에는 수정이 없다). 중간에 실패하면 원래 예약을 되살리는 판단은 src/modify.js modifyReservation 이 한다
+# (제출은 됐는데 확인이 안 되면 되살리지 않는다 — 이중 예약 방지). 현황 탭의 수정(runModify)과 이어붙이기(extendBooking — 기존 건을 비우고 합친 범위로)가 같은 기록이다.
+# 기록은 되돌릴 원래 예약(back)과 새 조건(next) 두 벌 — 둘 다 room.reserve 의 칸 그대로다(from: room.reserve — 생성기가 펼친다). 취소·예약·복구 콜백과 산 손잡이·화면은 어댑터가
+# ctx(day·target·reloadFor·onStage)로 짓는다. `수정하기`/`이어붙이기` 버튼이 확인이다.
+id: room.modify
+title: 회의실 예약 수정
+log: modify
+preset:
+  region: { from: storage:region, desc: 보고 있던 지역 }
+fields:
+  back:
+    type: object
+    from: room.reserve
+    required: true
+    label: 원래 예약
+    desc: 되돌릴 원래 예약(원래 회의실·날짜·시간·제목 — 취소 뒤 새 예약이 안 되면 이것으로 되살린다). 원래 회의실이 지금 목록에 없으면 수정을 시작하지 않는다(rowValueOf)
+    read: 지금 잡혀 있는 예약 그대로(조회 결과에서). 지어내지 않습니다
+    llm: false
+  next:
+    type: object
+    from: room.reserve
+    required: true
+    label: 새 조건
+    desc: 새 조건(격자에서 고른 칸·회의주제 — pickToPayload). 다른 회의실·다른 날이어도 된다
+    read: 사용자가 바꾸라고 한 회의실·날짜·시간·제목
+    llm: false
+llm: false
+runner: booking.modify
+uses:
+  - { module: src/modify.js, export: modifyReservation }
+  - { module: src/runners.js, export: RUNNERS }
+next: 결과(ok·stage·restored·lost·uncertain)는 modifyReservation 의 것 그대로다 — describeModifyResult 가 상태줄 문장을 만들고, lost·uncertain 이면 사이트에서 확인 링크를 붙인다(패널)

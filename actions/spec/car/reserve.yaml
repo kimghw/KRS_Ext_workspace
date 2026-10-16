@@ -1,0 +1,81 @@
+# 차량 신청 — 격자에서 고른 칸(sidepanel.js submitBooking)이나 근태 폼의 차량 조회에서 누른 차(reserveCarPick — 여러 날 출장이면 endDate)를 신청한다
+# (RUNNERS.car.reserve(payload)). 사이트는 행선지를 요구하고 사용목적은 요구하지 않는다(실제 신청 폼 캡처). 차량 자체는 폼이 아니라 주소(CARIDX — carValue)로 정해진다.
+# 기록의 칸은 RUNNERS.car.payload 가 내는 모양에서 kind·room(차 이름의 별칭 — 진행 표시가 본다)·blocked(사이트가 막는 차의 까닭 — ctx.blocked)를 뺀 것이다(§6.6 payloadOf).
+# `예약하기` 버튼 또는 차량 상자의 차를 누름이 확인이다.
+id: car.reserve
+title: 차량 신청
+log: reserve
+summary: '{car} {date} {start}~{end} · {place}'
+fields:
+  car:
+    type: string
+    required: true
+    max: 100
+    label: 차량
+    desc: 차량 이름(사이트 목록의 이름)
+    read: 조회 결과에서 고른 차량 이름 그대로. 지어내지 않습니다
+    example: 카니발(12가 3456)
+  carValue:
+    type: string
+    required: true
+    max: 50
+    desc: 사이트의 차량 값(CARIDX)
+    read: 조회 결과의 차량 값 그대로
+    llm: false
+    example: '7'
+  date:
+    type: date
+    required: true
+    label: 이용일
+    desc: 이용일(시작일)
+    read: 이용일(YYYY-MM-DD)
+    example: '2026-10-20'
+  start:
+    type: time
+    required: true
+    label: 시작
+    desc: 시작 시각
+    read: 시작 시각 HH:MM
+    example: '09:00'
+  end:
+    type: time
+    required: true
+    label: 종료
+    desc: 종료 시각(여러 날이면 마지막 날의 반납 시각)
+    read: 종료 시각 HH:MM
+    example: '18:00'
+  endDate:
+    type: date
+    label: 반납일
+    desc: 여러 날에 걸친 신청의 마지막 날(근태 폼의 여러 날 출장에서 넘어온 것). 이용일과 같으면 비운다
+    read: 여러 날 쓰면 마지막 날(YYYY-MM-DD). 하루면 null
+    example: '2026-10-21'
+  title:
+    type: string
+    max: 100
+    label: 사용목적
+    desc: 사용목적(사이트는 요구하지 않는다 — 비워도 된다)
+    read: 사용자가 말한 사용목적. 지어내지 않습니다
+    example: 출장
+  place:
+    type: string
+    required: true
+    max: 100
+    label: 행선지
+    desc: 행선지 — 사이트가 반드시 요구한다(RUNNERS.car.missing). 근태 폼에서는 출장지(장소) 또는 외근의 carPlace
+    read: 차량으로 갈 곳. 사용자가 말한 것만
+    example: 대전 한국기계연구원
+  passenger:
+    type: string
+    max: 100
+    label: 동승자
+    desc: 동승자(비워도 된다)
+    read: 함께 타는 사람. 말하지 않았으면 null
+checks:
+  - { left: date, op: '<=', right: endDate, message: 반납일이 이용일보다 앞섭니다 }
+  # 시작 < 종료는 두지 않는다 — 여러 날에 걸친 신청은 종료가 마지막 날의 시각이라 시작보다 이를 수 있다.
+llm: false                     # 1단계: 신청은 UI 가 고른 칸으로만 짓는다(말로 찾기는 car.search)
+runner: booking.reserve
+uses:
+  - { module: src/runners.js, export: RUNNERS }
+next: 실행기가 다시 조회해 확인된 것만 ok 다(ok && verified) — 그 뒤 '내가 넣음' 기록과 내 이름(차량 폼이 내려 주는 who.name)은 패널이 남긴다. 실패하면 diagnose 작업이 원인을 읽는다

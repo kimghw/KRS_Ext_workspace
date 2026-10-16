@@ -1,0 +1,71 @@
+# 사전정산 다시 저장(2026-10-05 사용자 지정: "사전정산 다시하기") — 출장 카드의 `사전정산 다시 저장`(두 번째 누름, attendpanel.js savePre). 계산서 화면의
+# `사전정산 입력` 으로 들어가 교통편 줄을 고치고 `저장` 을 누른 것과 같다(src/trip.js tripPreSave). 카드에서 다시 고른 가는 편·오는 편(picks), 편의 일자·출발 시·
+# 도착 시를 고친 것(edits — 2026-10-05 사용자 지정 "여비계산서의 값을 가져온 상태에서 고친다"), 일비·식비 줄의 식수(meal — 같은 날 "식비는 아이콘으로 줄이거나
+# 늘릴 수 있게")가 입력이다. 사전정산 화면에서 읽은 지금 줄(detail — tripPreDetail 의 rows·sHour·eHour·stays·period)과 목록 줄(row)은 ctx 다 — 사이트에서 읽은 것은
+# 기록에 넣지 않는다(§5). 실행기(trip.presave)는 prePlan({ trip: row, picks, rows: detail.rows, workplace, sHour, eHour, edits }) 와 stayPlan({ stays, period, want: meal }) 로
+# 계획을 짓고 tripPreSave(row, { ...plan, meals: stay?.set || null }, { name, onStage }) 를 부른다 — 바꾼 것이 없으면 화면에 있는 그대로 다시 저장한다.
+# 저장을 받은 사이트가 단계를 어떻게 하는지는 모른다(실제로 보내 본 적이 없다, 2026-10-05) — 화면을 다시 읽어 줄이 바뀌었는지로 판정하고 목록의 지금 단계를 그대로 돌려준다.
+id: trip.presave
+title: 사전정산 다시 저장
+status: live
+confirm: true
+effect: write
+summary: '여비계산서 {seq} 사전정산 다시 저장'
+preset:
+  tripMe:    { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름(tripList 의 me — attendpanel 의 st.trips.me). 출장자가 여럿인 계산서에서 내 줄을 고른다. 비면 갈래의 me }
+  workplace: { from: storage:attendWorkplace, desc: 근무지 — 편의 떠나는 역·닿는 역을 찾는다(prePlan 의 workplace) }
+fields:
+  seq:
+    type: string
+    required: true
+    max: 20
+    label: 계산서 번호
+    desc: 여비계산서 번호(목록 줄의 seq — 줄 자체는 ctx.row). 실행기는 ctx.row.seq 와 같은지 본다
+    read: 다시 저장할 여비계산서 번호. 열린 출장 카드의 계산서 번호 그대로 — 지어내지 않습니다
+    example: '145580'
+  trseq:
+    type: string
+    max: 20
+    label: 출장자 번호
+    desc: 내 출장자 번호(목록 줄 travelers[].trseq — §14.2 의 대상 식별자). 사전정산 다시 저장에는 쓰지 않아 비어도 된다 — 있으면 어댑터가 ctx.row 의 내 줄과 같은지 본다
+    read: 내 출장자 번호. 모르면 null
+    example: '203311'
+  # 가는 편·오는 편은 둘뿐이라 줄마다 leg 로 가른다(object 안에 object 를 둘 수 없어 { go: {t,g}, back: {t,g} } 대신 줄 목록이다 — §3.3). 실행기가 { [leg]: { t, g } } 로 되돌린다.
+  picks:
+    type: list
+    max: 2
+    label: 가는 편·오는 편
+    desc: 카드에서 다시 고른 편(prePlan 의 picks). 줄이 없는 편은 손대지 않은 것 — 사전정산의 줄 그대로다. 비행기·버스를 고르면 사전정산에는 그 편의 줄을 넣지 않는다
+    read: 사용자가 가는 편·오는 편의 교통편을 바꾸라고 했을 때만. 말하지 않은 편은 줄을 넣지 않습니다
+    llm: false
+    item:
+      leg: { type: enum, values: [go, back], required: true, desc: 어느 편(go 가는 편·back 오는 편), read: '가는 편이면 go, 오는 편이면 back' }
+      t:   { type: enum, values: [train, plane, bus], desc: 교통편(기차·비행기·버스), read: '기차(train)·비행기(plane)·버스(bus). 말하지 않았으면 null' }
+      g:   { type: enum, values: [standard, first], desc: '좌석 등급(기차·비행기 — 한 번 더 누르면 특실, 2026-10-04 사용자 지정)', read: '특실·비즈니스라고 했을 때만 first, 아니면 null(일반석)' }
+  edits:
+    type: list
+    max: 2
+    label: 일자·시각 고침
+    desc: 편의 일자·출발 시·도착 시를 카드에서 고친 것(prePlan 의 edits — 달라진 칸만 그 줄에 적어 보낸다, 교통편이 그대로면 set 으로 칸만 고친다). 고치지 않은 칸은 null
+    read: 사용자가 그 편의 날짜나 출발·도착 시각을 바꾸라고 했을 때만. 시는 0~23 의 정수
+    llm: false
+    item:
+      leg:  { type: enum, values: [go, back], required: true, desc: 어느 편, read: '가는 편이면 go, 오는 편이면 back' }
+      date: { type: date, desc: 그 편의 일자(YYYY-MM-DD), read: '그 편이 떠나는 날. 말하지 않았으면 null', example: 2026-10-21 }
+      shr:  { type: integer, min: 0, max: 23, desc: 출발 시(정시 — 0 은 적지 않은 것으로 계산서에 00:00), read: '출발 시(0~23). 말하지 않았으면 null', example: 7 }
+      ehr:  { type: integer, min: 0, max: 23, desc: 도착 시(정시), read: '도착 시(0~23). 말하지 않았으면 null', example: 10 }
+  meal:
+    type: integer
+    min: 0
+    max: 93
+    label: 식수
+    desc: 일비·식비 줄의 식수(stayPlan 의 want — 0 부터 일수 × 하루 세 끼까지, 넘으면 실행기가 stayPlan 으로 자른다). null 이면 사전정산의 값 그대로. 당일출장(주재국)에는 없다
+    read: '사용자가 식비 끼니 수를 말했을 때만(예: "식비 4끼로"). 말하지 않았으면 null'
+    example: 4
+llm: false
+runner: trip.presave
+uses:
+  - { module: src/travel.js, export: prePlan }
+  - { module: src/travel.js, export: stayPlan }
+  - { module: src/trip.js, export: tripPreSave }
+next: 저장한 뒤 화면을 다시 읽어 교통편 줄(과 고친 식수)이 바뀌었는지로 성공을 판정하고 목록의 지금 단계를 그대로 돌려준다(tripPreSave). 패널은 다시 읽은 줄(detail.rows)로 가는 편·오는 편의 새 바탕을 잡고 routeOfRows 로 이 출장지의 교통편을 기억하며(keepTripRoute) 목록을 다시 읽는다(freshTrip). 단계가 '사전정산 작성' 으로 돌아갔으면 카드에 `사전정산 완료` 가 선다(trip.preconfirm)

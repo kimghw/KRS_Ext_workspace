@@ -1,0 +1,43 @@
+# 근태 갈래 — HR(hr.krs.co.kr) 신청서. 종류 파일은 신청 여섯(trip·out·flex·leaveout·leave·health — 화면 차례, src/attend.js KIND_ORDER),
+# 신청 내역 줄의 행위 둘(cancel 취소신청 · doc 상신·회수·삭제), 그리고 2단계로 미룬 welfare(가족 기념일 지원 신청 화면 채우기 — status: planned).
+#
+# 칸은 src/attend.js 의 fieldsFor(form)·blankForm(kind) 과 맞춘다 — actions/test/spec.test.mjs 가 종류마다 "fieldsFor 의 키 ⊆ fields, 이름(label) 같음"
+# 과 "blankForm 의 키 ⊆ fields ∪ ignore" 를 본다. 폼 기본값(출장 07:00~20:00·외근 09:00·소통 13:00/60분 …)은 blankForm·SUBS 가 깔고 여기서는
+# 칸의 default 로 적는다(문서·--example 용). 사전설정(preset)은 실행 전에 저장소·ctx 에서 채워 어댑터가 실행기에 넘기는 값만이다.
+#
+# LLM 작업은 merged 모드 하나(attend) — 종류 파일의 llm: true 인 칸을 합쳐 references/input.yaml 의 attend 작업과 같은 칸(키·형·values)을 만든다
+# (actions/test/spec.test.mjs 가 fixtures/tasks-before.json 과 맞춘다). 답은 부분 수정(partial)이라 src/attend.js applyPatch 가 폼에 얹을 뿐이고,
+# HR 에 올리는 것은 사람이 결재요청·임시저장을 누른 뒤의 attend.<종류> 기록이다.
+domain: attend
+title: 근태
+log: attend                    # 활동 로그 kind(src/logbook.js KIND_LABEL) — attendpanel.js 가 지금 쓰는 'attend' 그대로
+kinds: [trip, out, flex, leaveout, leave, health, cancel, doc, welfare]
+preset:
+  today: { from: today, desc: '오늘(YYYY-MM-DD) — 날짜 칸의 기본값이고 "내일"·"다음 주 수요일" 셈의 기준(blankForm(kind, today))' }
+  me: { from: me, desc: 내 이름(패널 설정의 myName) }
+llm:
+  task: attend
+  mode: merged
+  partial: true                # 답은 조각이다 — null 은 "바꾸지 않음"(src/attend.js applyPatch)
+  input: attend                # src/llm.js 의 attendInput(text, { form, today, history })
+  title: 근태 신청 폼 조각
+  consumer: { module: src/attend.js, export: applyPatch }
+  next: 사용자가 폼을 확인하고 누른다 → attend.<종류> 기록(op=save|request) → src/attend.js buildJob → src/hr.js hrRunJob
+  role: >-
+    당신은 사내 근태 신청 도우미입니다. 사용자의 말에서 근태 신청 폼에 넣을 값을 뽑습니다.
+    입력에는 오늘 날짜와 달력, 지금 폼(JSON), 앞선 대화, 새 요청이 들어 있습니다.
+  # 모든 종류에 같이 가는 규칙. 종류만의 규칙은 종류 파일의 rules 에 있고 "종류가 trip(출장)일 때:" 를 앞에 달고 뒤따른다.
+  rules:
+    - '**이번 말에서 사용자가 말한 것만** 채웁니다. 말하지 않은 칸은 null 입니다. 장소와 목적을 지어내지 않습니다.'
+    - 지금 폼에 이미 들어 있는 값을 되풀이하지 않습니다. 바꾸라고 한 것만 넣습니다.
+    - '"내일", "다음 주 수요일" 같은 표현은 오늘을 기준으로 실제 날짜로 바꿉니다. 연도가 없으면 오늘과 같은 해입니다.'
+    - 요일은 셈하지 말고 입력의 달력 줄에서 찾습니다.
+    - '시각은 24시간제 HH:MM 입니다. 외근·외출·건강검진은 30분 단위, 출장·교육은 정시 단위입니다.'
+    - '"2시부터 3시간" 처럼 길이로 말했으면 end 에 끝나는 시각을 셈해 넣습니다.'
+    - 'dateTo 는 여러 날 출장·휴가일 때만 넣습니다. "1박 2일"·"3일간" 처럼 기간으로 말했으면 days 에 날 수를 넣습니다(당일은 1).'
+    - 출장이 아니면 venue 는 null 이고 장소는 place 에 넣습니다.
+    - allDay 는 건강검진일 때만 true/false 이고, 그 외에는 null 입니다.
+    - 'reply 에는 **무엇을 채웠는지만** 한 문장으로 적습니다("…채웠습니다"). 아직 아무것도 올라가지 않았으므로 등록·신청했다고 말하지 않고, 비어 있는 칸은 적지 않습니다(화면이 따로 보여 줍니다).'
+  # 모든 종류에 같이 들어가는 LLM 칸 — 작업의 맨 뒤에 붙는다. 화면 칸이 아니다(ui: false).
+  fields:
+    reply: { type: string, max: 300, desc: 답 한 줄, read: 무엇을 채웠는지 한국어 한 문장, ui: false }

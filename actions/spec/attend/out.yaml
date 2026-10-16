@@ -1,0 +1,155 @@
+# 외근·교육·부서소통회 신청 — HR 외근/교육 신청서(TRO). 갈래(sub)가 셋이다(src/attend.js SUBS.out):
+#   OD 외근 · TR 교육(정시 단위 — 사이트가 분 칸을 잠근다) · MEET 소통 = **외근 13~14시 "부서소통회"** 의 줄임(2026-10-02 사용자 지정, HR 에는 OD 로 올라간다).
+# 소통을 고르면 깔리는 값(SUBS.out MEET.preset): start 13:00 · span 60(분 → end 14:00) · purpose 부서소통회 — 화면의 withSub 이 깐다. 사용자가 다르게 말했을 때만 바꾼다.
+# 외근에는 장소 칸이 없다 — HR 신청서가 받는 글은 "내용" 하나라(2026-10-02 사용자 지정) 장소는 목적 뒤에 붙는다(applyPatch 가 "목적 - 장소" 로 잇는다).
+# 하루 안에서 끝나는 종류라 종료 시각 대신 몇 시간(span)을 받고 종료 시각은 시작 + span 에서 나온다(settle/spanEnd) — HR 에는 start·end 가 간다.
+id: attend.out
+title: 외근 신청
+hint: 외근·교육·부서소통회
+summary: '{dateFrom} {start}~{end} {sub} · {purpose}'
+fields:
+  sub:
+    type: enum
+    required: true
+    values: [OD, TR, MEET]
+    label: 종류
+    desc: '갈래 — OD(외근)·TR(교육)·MEET(소통 = 부서소통회, 13:00 부터 60분·목적 "부서소통회" 가 깔린다)'
+    read: 'out 이면 OD(외근)·TR(교육)·MEET(부서소통회)'
+    default: OD
+    example: OD
+  dateFrom:
+    type: date
+    required: true
+    label: 날짜
+    desc: 날짜(하루짜리)
+    read: '날짜(YYYY-MM-DD). "내일"·"다음 주 수요일" 은 오늘을 기준으로 실제 날짜로'
+    example: '2026-10-20'
+  start:
+    type: time
+    required: true
+    label: 시작
+    desc: 시작 시각(외근·소통은 30분 단위, 교육은 정시 단위)
+    read: '시작 시각 HH:MM(외근·소통은 30분 단위, 교육은 정시). 말하지 않았으면 null'
+    default: '09:00'             # 오전 9시(2026-10-02 사용자 지정 — src/attend.js DEFAULT_START). 소통(MEET)은 13:00
+    example: '14:00'
+  span:
+    type: integer
+    required: true
+    min: 30
+    max: 510                     # 1~8시간 칩 + 30분 칩(2026-10-02 사용자 지정 — src/attend.js SPAN_HOURS·nextSpan). 교육은 정시 단위라 30분 칩이 없다
+    label: 몇 시간
+    desc: '몇 분인지(칩 — 1~8시간과 30분). 종료 시각(end)은 시작 + 이것이다. 지금 input.yaml 의 attend 작업에 없던 칸이라 LLM 은 end 로 말한다(llm: false)'
+    read: 사용자가 정하지 않습니다 — end(끝나는 시각)에서 폼이 셈합니다
+    llm: false
+  end:
+    type: time
+    label: 종료
+    desc: 종료 시각 — 화면 칸이 아니고 시작 + 몇 시간에서 나온다(settle). HR 에는 이것이 간다
+    read: '종료 시각 HH:MM. "2시부터 3시간" 처럼 길이로 말했으면 셈해서'
+    ui: false
+    example: '16:00'
+  purpose:
+    type: string
+    required: true
+    max: 200
+    label: 목적
+    desc: 목적 — HR 신청서의 "내용"(외근에는 장소 칸이 없어 장소를 남기려면 같이 적는다). 소통은 "부서소통회" 가 깔린다
+    read: 목적·사유. 사용자가 말한 것만 — 지어내지 않습니다
+    example: 과제 협의 (부산시청)
+  place:
+    type: string
+    max: 200
+    label: 장소
+    desc: 외근에는 장소 칸이 없다 — LLM 이 place 에 넣으면 폼(applyPatch)이 목적 뒤에 "목적 - 장소" 로 붙이고 이 칸은 비운다
+    read: '장소(기관·건물·지역). 폼이 목적 뒤에 붙입니다'
+    ui: false
+    example: 부산시청
+  car:
+    type: boolean
+    label: 차량 조회
+    desc: 폼의 날짜·시간에 빈 차량을 폼 아래에 보여 주고, 누르면 그 차량을 신청한다(2026-10-03 사용자 지정, src/carfind.js) — HR 에는 올라가지 않는다
+    read: 사용자가 차량을 말했을 때만 true
+    default: false
+    llm: false
+  workplace:
+    type: string
+    max: 50
+    label: 근무지
+    desc: 차량의 근무지(서울·부산 — 차량은 근무지의 것을 잡는다). 차량 조회를 켰을 때 한 줄로 받는다. 한 번 적으면 남는다(attendWorkplace)
+    read: 근무지 — 서울 또는 부산
+    llm: false
+    when: car
+  carPlace:
+    type: string
+    max: 100
+    label: 행선지
+    desc: 차량 신청의 행선지(사이트가 요구한다) — 외근 폼에는 출장지 칸이 없어 차량 조회를 켰을 때 따로 받는다. 근태 신청의 필수 칸은 아니다(비면 차량 상자가 말한다)
+    read: 차량으로 갈 곳(예 부산시청)
+    llm: false
+    when: car
+  expense:
+    type: enum
+    values: ['Y', 'N']
+    label: 출장경비
+    desc: 출장경비(HR 의 biztripExpKind) — 외근은 'N'(blankForm). 묻지 않는다
+    read: 사용자가 정하지 않습니다 — 외근은 늘 N
+    default: 'N'
+    llm: false
+    ui: false
+  op:
+    type: enum
+    required: true
+    values: [save, request]
+    label: 올리는 길
+    desc: 임시저장(save)·결재요청(request) — 누른 버튼. 둘은 다른 확인이다(기록이 다르다)
+    read: 사용자가 말로 고르지 않습니다 — 버튼이 정합니다(임시저장이면 save, 결재요청이면 request)
+    llm: false
+    ui: false
+  doc:
+    type: object
+    label: 고쳐 올리는 문서
+    desc: 임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 종류는 못 바꾼다
+    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서
+    llm: false
+    ui: false
+    fields:
+      docNo: { type: string, max: 30, required: true, desc: 문서번호, read: 고치는 문서의 번호 그대로 }
+      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1), read: 그 문서의 상태 코드 그대로 }
+ignore:
+  kind: 행위 ID 가 종류다(attend.out)
+  dateTo: 하루짜리 — settle 이 시작일로 맞추고 HR 에는 시작일이 종료일로 간다(buildJob)
+  days: 하루짜리(여러 날은 출장·휴가만)
+  half: 연차의 구분
+  flexStart: 유연근무의 칸
+  flexMode: 유연근무의 칸
+  flexMon: 유연근무의 칸
+  flexTue: 유연근무의 칸
+  flexWed: 유연근무의 칸
+  flexThu: 유연근무의 칸
+  flexFri: 유연근무의 칸
+  allDay: 건강검진의 칸
+  file: 건강검진의 첨부
+  venue: 출장의 장소 — 외근에는 장소 칸이 없다(place 는 목적 뒤에 붙는다)
+  settle: 출장의 여비계산서
+  transport: 출장의 교통편
+  trainGrade: 출장의 좌석 등급
+  wfa: 연차의 기념일 지원
+  wfaName: 연차의 기념일 지원
+  wfaRelation: 연차의 기념일 지원
+  wfaReason: 연차의 기념일 지원
+  wfaDate: 연차의 기념일 지원
+  wfaStayFrom: 연차의 기념일 지원
+  wfaStayTo: 연차의 기념일 지원
+  wfaPaid: 연차의 기념일 지원
+  wfaAsk: 연차의 기념일 지원
+  wfaCash: 연차의 기념일 지원
+rules:
+  - '교육은 kind 가 out 이고 sub 가 TR 입니다. 외근이라고 말했으면 sub 는 OD 입니다.'
+  - '부서소통회(소통회)는 kind 가 out 이고 sub 가 MEET 입니다. 시각(13:00~14:00)과 목적("부서소통회")은 폼이 채우므로, 사용자가 다르게 말했을 때만 start·end·purpose 를 넣습니다.'
+runner: attend.apply
+uses:
+  - { module: src/attend.js, export: buildJob }
+  - { module: src/hr.js, export: hrRunJob }
+then:
+  - { action: car.reserve, when: car }
+next: 결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다)

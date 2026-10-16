@@ -1,0 +1,42 @@
+# 여비계산서 삭제 — 계산서 화면의 **삭제**(CalPrint/Delete — src/trip.js tripDelete). 출장을 취소하면 사전정산까지 계산서를 지운다
+# (2026-10-07 사용자 지정: "출장 취소 하면 여비계산 내용은 사전정산까지 제거"). 취소신청을 올린 뒤 attendpanel.js afterCancel 이 같은 누름으로 잇고(attend.cancel 의 뒤),
+# 취소가 걸린 출장에 계산서가 남아 있으면 cancelLine 의 버튼(dropTrip)으로 따로 지운다. 근태 변경(keepTrip)은 같은 출장을 새로 올리는 길이라 계산서를 남긴다.
+# 다른 출장자가 함께 있는 계산서와 사후정산까지 끝난 계산서는 지우지 않고 던진다. **실제로 보내 본 적이 없다**(2026-10-07). 목록 줄(row)은 ctx 다.
+# 실행기(trip.delete)는 tripDelete(row, { name: preset.tripMe || preset.me, onStage }) 를 부른다.
+id: trip.delete
+title: 여비계산서 삭제(출장 취소)
+status: live
+confirm: true                  # 취소신청의 누름(attend.cancel)이나 cancelLine 의 삭제 버튼(두 번 누름)이 확인이다
+effect: write
+summary: '여비계산서 {seq} 삭제(출장 취소) · {docNo}'
+preset:
+  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름(st.trips.me) — 다른 출장자가 있는지 가리고 내 계산서 화면을 연다. 비면 갈래의 me }
+fields:
+  seq:
+    type: string
+    required: true
+    max: 20
+    label: 계산서 번호
+    desc: 지울 여비계산서 번호(목록 줄의 seq — 줄은 ctx.row. 패널은 tripDocFor(it, rows, me) 로 그 출장의 줄을 찾는다)
+    read: 지울 여비계산서 번호 — 취소하는 출장의 것 그대로. 지어내지 않습니다
+    example: '145580'
+  trseq:
+    type: string
+    max: 20
+    label: 출장자 번호
+    desc: 내 출장자 번호(목록 줄 travelers[].trseq — §14.2 의 대상 식별자). 삭제 폼은 출장자를 가리지 않아 쓰지 않는다 — 있으면 어댑터가 ctx.row 의 내 줄과 같은지 본다
+    read: 내 출장자 번호. 모르면 null
+    example: '203311'
+  docNo:
+    type: string
+    max: 20
+    label: 신청서 번호
+    desc: 취소하는 출장의 HR 신청서 번호(기록 — 어느 출장의 계산서를 지웠는지)
+    read: 취소하는 출장의 HR 신청서 번호. 모르면 null
+    example: '2026-001234'
+llm: false
+runner: trip.delete
+uses:
+  - { module: src/trip.js, export: tripDelete }
+  - { module: src/travel.js, export: tripDocFor }
+next: 보낸 뒤 목록을 다시 읽어 그 계산서가 사라졌는지로 판정한다(아니면 던진다). 패널은 목록을 다시 읽고(loadTrips) 상태 줄에 지웠다고 적는다

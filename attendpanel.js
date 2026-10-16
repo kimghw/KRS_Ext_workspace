@@ -8,11 +8,11 @@
 import {
   KINDS, KIND_MAIN, KIND_MORE, STATUS, MAX_TRIP_DAYS, blankForm, fieldsFor, missingFields, problems, describe, settle,
   nameOf, timeOptions, spanDays, nextSpan, halfOf, halfPlan, halfFlexForm, workStartOn, itemsIn, isPast, rangeCovering,
-  buildJob, buildDocJob, buildCancelJob, listItems, formFromDoc, applyPatch, withSub, attendToday,
+  listItems, formFromDoc, applyPatch, withSub, attendToday,
   FLEX_MODES, FLEX_DAYS, flexModeOf, fillFlexWeek, isWelfare, welfareFormFor, leaveBalance,
   acceptsFile, itemsOfKind, EVIDENCE_ACCEPT, statusLabel, CANCELLING_KEY, CANCELLING_LABEL, CANCELLED_LABEL, cancellingOf, pruneCancelling, isCancelDoc, linkCancel,
 } from './src/attend.js';
-import { hrListDocs, hrGetDoc, hrDeleteDoc, hrRunJob, hrWeekTimes, hrUserLeaves, hrOpenDoc, hrCloseWorker, hrCancelRefs, HR_SSO_URL } from './src/hr.js';
+import { hrListDocs, hrGetDoc, hrWeekTimes, hrUserLeaves, hrOpenDoc, hrCloseWorker, hrCancelRefs, HR_SSO_URL } from './src/hr.js';
 import {
   WFA_LIST_URL, WFA_SAVE_URL, WFA_INTRO_URL, WFA_PER_YEAR, WFA_FILES, welfareFill, parseWelfareList, welfareYearCount, describeWelfare, injected as wfaInjected,
 } from './src/welfare.js';
@@ -22,13 +22,12 @@ import {
   settlePlan, describePlan, tripStage, tripDocFor, tripIconState, settleLabel,
   TRANSPORTS, TRAIN_GRADES, LEG_GRADED, transportsOf, trainGradeOf, nextTransport, legPlan, nextLegPick, describeTrans, prePlan, stayPlan, legDiffs, legWhen,
 } from './src/travel.js';
-import { tripList, tripCreate, tripDocUrl, TRIP_SHELL_URL, tripPreDetail, tripPreConfirm, tripPostConfirm, tripAfterSave, tripAfterUrl } from './src/trip.js';
-import { tripPreSave, tripPreUrl, tripDelete } from './src/trip.js';
+// 여비계산서에 쓰는 것(tripCreate·tripPreSave·tripPreConfirm·tripPostConfirm·tripDelete·tripAfterSave)은 여기서 직접 부르지 않는다 — 행위(actions/runners/trip.js)로 간다. 읽기만 남는다.
+import { tripList, tripDocUrl, TRIP_SHELL_URL, tripPreDetail, tripAfterUrl, tripPreUrl } from './src/trip.js';
 import { afterNeed, afterPlan, afterSummary, evidenceOf, needsAfter, TRANS_NAME } from './src/after.js';
 import { lodgeAsk, lodgeCap, lodgeSettle, lodgeSame, lodgeChoices, lodgeDecide, lodgeOver, lodgeKnown, lodgeComment, lodgeReason, LODGE_OVER_REASON } from './src/after.js';
-import { tripLodgeMax, tripAfterLodges } from './src/trip.js';
 import { createEvidenceStore, MARKS_KEY } from './src/evidence.js';
-import { UP_BUSY_KEY, upBusy } from './src/afterup.js';
+import { UP_BUSY_KEY, upBusy, lodgeKey } from './src/afterup.js';
 import { READ_POOL, mapPool } from './src/pool.js';
 import { ROUTES_KEY, routeOfPlan, routeOfRows, keepRoute, recallRoute, withRoute } from './src/routes.js';
 import { createSendBox } from './sendbox.js';
@@ -41,6 +40,17 @@ import {
 } from './src/settling.js';
 import { AuthError } from './src/net.js';
 import { PORTAL_HOME_URL } from './src/config.js';
+// 행위 층(actions/) — HR 에 올리고 여비계산서를 쓰는 일은 전부 기록(record)으로 지어 디스패처로 돌린다(사람의 누름이 확인이다). 읽기(hrListDocs·tripList·tripPreDetail …)는 행위가 아니다.
+import { createDispatcher } from './actions/dispatch.js';
+import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
+import { resolvePreset } from './actions/preset.js';
+import { registerAttend } from './actions/runners/attend.js';
+import { registerTrip } from './actions/runners/trip.js';
+
+/** 디스패처의 로그 줄 글 — 실행기가 던진 run 은 까닭을 글 끝에 잇는다(전부터 "… 실패: X — 까닭" 꼴이었다). 돌아온 결과로 정한 실패는 outcome 이 글을 다 적는다. */
+const failedText = (e) => (!e.ok && typeof e.data?.result?.error === 'string' && e.data.result.error ? `${e.text} — ${e.data.result.error}` : e.text);
+/** 관문이 막은 까닭을 상태 줄에 적을 글로 — ActionError 는 problems 를, 그 밖은 message 를. */
+const problemText = (err) => (err?.name === 'ActionError' && Array.isArray(err.problems) && err.problems.length ? err.problems.join(' · ') : err?.message || String(err));
 
 const ARM_MS = 4000;
 /**
@@ -131,9 +141,10 @@ const CAR_STATE = { free: '비어 있음', unknown: '확인 불가' };
  *   onCar 는 차량 조회에서 빈 차량을 눌렀을 때 그 차량을 신청하는 길이다(src/carfind.js 의 carPick 모양을 받아
  *   {ok, submitted, message} 를 돌려준다 — 패널(sidepanel.js)이 차량 탭의 예약하기와 같은 길로 보낸다).
  *   webcap 은 웹페이지를 찍는 길(src/pagecap.js — 보고 있는 탭 통째로·페이지 위의 부분 고르기·고른 부분 찍기, webpick.js 에 넘긴다) — 테스트가 갈아 끼운다.
+ *   actions 는 행위 디스패처(actions/dispatch.js — sidepanel 이 만들어 세 패널이 같은 것을 쓴다). 없으면(단독 패널 테스트) 여기서 만든다.
  */
 export function createAttendPanel({
-  $, escapeHtml, logEvent, ai, onChanged = () => {}, evidence = createEvidenceStore(),
+  $, escapeHtml, logEvent, ai, onChanged = () => {}, evidence = createEvidenceStore(), actions: shared = null, openSetting = null,
   cars = { scan: (dates) => scanCarDays(dates) },
   onCar = async () => ({ ok: false, submitted: false, message: '차량 신청이 연결되지 않았습니다.' }),
   webcap = {},
@@ -241,9 +252,54 @@ export function createAttendPanel({
     return true;
   }
 
+  // 행위 디스패처(actions/ — UI 의 누름을 기록으로 바꿔 실행기를 부르는 층). sidepanel 이 만들어 세 패널이 같은 것을 쓴다; 없으면(단독 패널 테스트) 여기서 만든다.
+  // 근태(attend.apply·doc·cancel)와 여비계산서(trip.*) 실행기는 이 패널의 갈래라 여기서 한 번 등록한다. 실패한 run 의 로그 줄은 글 끝에 실행기가 던진
+  // 까닭을 잇는다(failedText — sidepanel 의 래퍼도 같게 두는 것이 좋다).
+  const actions = shared || createDispatcher({ log: (e) => logEvent(e.kind, e.ok, failedText(e), e.data) });
+  /**
+   * 관문이 막은 빈 곳으로 가는 단추의 표(src/jump.js) — 폼의 칸은 data-key 로 찾고, 내 이름은 설정 → 일반로, HR 의 나(사번)는 HR 열기 단추로
+   * (HR 에 로그인하면 신청 내역을 읽으며 채워진다). 어디로 갈지 모르는 칸은 단추가 안 선다.
+   */
+  const fieldNode = (key) => el.fields.querySelector(`.at-field[data-key="${key}"]`);
+  const JUMPS = {
+    input: {},
+    preset: {
+      me: openSetting ? { label: '내 이름', go: () => openSetting('general', 'myName') } : null,
+      hrMe: { label: 'HR 열어 로그인', go: () => flashFocus(el.openHr) },
+      workplace: () => flashFocus(fieldNode('workplace')),
+    },
+    field: (root) => (fieldNode(root) ? () => flashFocus(fieldNode(root)) : null),
+  };
+  const paintProblem = (err) => {
+    setStatus(problemText(err), 'error');
+    paintJumps(el.status, jumpsOf(err, err?.action && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
+  };
+  registerAttend(actions);
+  registerTrip(actions);
+
+  /**
+   * 행위의 사전설정을 채운다(actions/preset.js) — 저장소는 chrome.storage.local, 내 이름은 설정의 myName, 오늘은 attendToday, ctx 는 HR 의 나(hrMe — 사번·이름)와
+   * 여비계산서 목록이 아는 내 이름(tripMe). 근무지는 이 패널이 쥔 값(st.workplace — 저장소 attendWorkplace 와 같은 것)으로 맞춘다.
+   */
+  async function presetFor(id, ctx = {}) {
+    const saved = await chrome.storage.local.get('myName').catch(() => null);
+    const me = typeof saved?.myName === 'string' ? saved.myName.trim() : '';
+    const preset = await resolvePreset(actions.entry(id).preset, {
+      storage: (keys) => chrome.storage.local.get(keys), me, today: attendToday(), ctx: { hrMe: st.me || null, tripMe: st.trips?.me || null, ...ctx },
+    });
+    if (Object.hasOwn(preset, 'workplace') && st.workplace) preset.workplace = st.workplace;
+    return preset;
+  }
+  /** 기록을 짓는다(관문) — 비었거나 틀린 칸이 있으면 ActionError(problems). 사이트에는 아무것도 가지 않는다. */
+  async function buildRecord(id, input, ctx = {}) {
+    return actions.build(id, { input, preset: await presetFor(id, ctx) }).record;
+  }
+  /** 기록을 돌린다 — 확인 증거는 그 기록의 지문이다(사람이 누른 핸들러 안에서만 부른다). 로그 한 줄은 디스패처가 남긴다(ctx.text·data·outcome). */
+  const runRecord = (record, ctx) => actions.run(record, { confirmed: record.hash, ...ctx });
+
   // 출장 카드의 여비증빙 송부 칸. 아래 함수들은 이 뒤에 적혀 있지만 부를 때는 이미 있다.
   const sendBox = createSendBox({
-    escapeHtml, logEvent, evidence, readFile: (f) => readFile(f), repaint: () => paintList(),
+    escapeHtml, logEvent, evidence, actions, readFile: (f) => readFile(f), repaint: () => paintList(),
     setStatus: (...args) => setStatus(...args), setError: (...args) => setError(...args),
   });
   // 출장 카드의 숙박비 내역(lodgebox.js) — 사후정산 화면에 지금 있는 숙박 줄을 보이고, 지우고, 다시 읽는다.
@@ -781,22 +837,30 @@ export function createAttendPanel({
    */
   async function makeTripDoc(form) {
     const plan = settlePlan(form, memoOf(form));
+    const what = `${describePlan(plan)}${plan.notes.length ? ` (${plan.notes.join(' / ')})` : ''}`;
     try {
       if (!st.me?.emplNo) throw new Error('HR 에서 사번을 확인하지 못했습니다');
-      const r = await tripCreate(plan, { emplNo: st.me.emplNo, name: st.me.name, onStage: setStatus });
+      // 행위 trip.create — 기록은 출장 폼의 칸(출발·도착·며칠·출장지·장소·목적·근무지·교통편·등급), 사전설정은 HR 의 나(사번)·근무지. 어댑터가 같은 settlePlan 으로 짓는다.
+      const record = await buildRecord('trip.create', {
+        dateFrom: form.dateFrom, start: form.start, dateTo: form.dateTo, end: form.end, days: form.days, place: form.place, venue: form.venue, purpose: form.purpose,
+        workplace: form.workplace, transport: transportsOf(form), trainGrade: trainGradeOf(form),
+      });
+      const r = await runRecord(record, {
+        memo: memoOf(form), onStage: setStatus, text: '여비계산서(사전정산) 작성 실패', data: { plan },
+        outcome: async (r) => ({
+          text: r.existing ? `여비계산서가 이미 있어 만들지 않음: ${r.row.seq}` : `여비계산서(사전정산) 작성: ${r.row.seq} · ${what}`,
+          data: { seq: r.row.seq, existing: r.existing, linked: r.linked, plan },
+        }),
+      });
       // 이 출장지로 이렇게 갔다고 기억해 둔다 — 다음에 같은 출장지를 적으면 이 교통편·이 길이 먼저다.
       if (!r.existing) keepTripRoute(form.place, routeOfPlan(plan));
       st.trips = null;
       loadTrips();
-      const what = `${describePlan(plan)}${plan.notes.length ? ` (${plan.notes.join(' / ')})` : ''}`;
-      logEvent('trip', true, r.existing ? `여비계산서가 이미 있어 만들지 않음: ${r.row.seq}` : `여비계산서(사전정산) 작성: ${r.row.seq} · ${what}`,
-        { seq: r.row.seq, existing: r.existing, linked: r.linked, plan });
       return r.existing
         ? ` · 여비계산서는 이 기간에 이미 있어(${r.row.seq}) 새로 만들지 않았습니다`
         : ` · 여비계산서(사전정산) ${r.row.seq} 을 만들었습니다 — ${what}`;
     } catch (err) {
-      logEvent('trip', false, `여비계산서(사전정산) 작성 실패: ${err.message}`, { plan, auth: err instanceof AuthError });
-      return ` · 여비계산서는 만들지 못했습니다: ${err.message}`;
+      return ` · 여비계산서는 만들지 못했습니다: ${problemText(err)}`;
     }
   }
 
@@ -1352,6 +1416,17 @@ export function createAttendPanel({
   /** HR 이 띄운 문구 가운데 기록에 남길 것만. */
   const said = (r) => (r.dialogs || []).map((d) => `${d.kind}: ${d.text}`).slice(-6);
 
+  /** 폼 → attend.<종류> 기록의 입력 — 명세의 칸만(when 으로 빠질 칸은 관문이 뺀다), 첨부는 참조(이름·형식)만(바이트는 run 의 ctx.files). op(save·request)·doc 을 더한다. */
+  function attendInput(form, op, doc) {
+    const input = {};
+    for (const key of Object.keys(actions.entry(`attend.${form.kind}`).fields)) {
+      if (key === 'op' || key === 'doc') continue;
+      const v = form[key];
+      input[key] = key === 'file' && v ? { name: v.name, type: v.type || '' } : v;
+    }
+    return { ...input, op, doc };
+  }
+
   /**
    * 폼을 올린다. 한 번 누르면 바로 나간다 — 무엇이 올라가는지는 버튼 위의 "올릴 내용" 줄에 이미 적혀 있다
    * (2026-10-02 사용자 지정. 두 번 누르기는 신청 내역의 삭제·회수·변경·취소신청에만 남아 있다).
@@ -1382,45 +1457,61 @@ export function createAttendPanel({
     const kind = st.form.kind;
     const editing = st.edit;
     const sent = { ...st.form };   // 올린 그대로. 올린 뒤 폼이 비워져도 여비계산서는 이것으로 짓는다.
-    let job;
-    let flexJob = null;
+    // 행위 attend.<종류> — 기록은 폼의 칸 + op(임시저장 save·결재요청 request)·doc(고쳐 올리는 문서). 반차 앞에 올릴 유연근무는 따로 한 기록이다(먼저 돈다).
+    // 관문이 막으면(비었거나 틀린 칸) 까닭을 상태 줄에 적고 아무것도 보내지 않는다.
+    let record;
+    let flexRecord = null;
     try {
-      job = buildJob(st.form, { action, doc: editing ? { docNo: editing.docNo, statusCode: editing.status } : null });
-      if (flexForm) flexJob = buildJob(flexForm, { action });
+      record = await buildRecord(`attend.${kind}`, attendInput(st.form, action, editing ? { docNo: editing.docNo, statusCode: editing.status } : null));
+      if (flexForm) flexRecord = await buildRecord('attend.flex', attendInput(flexForm, action, null));
     } catch (err) {
-      return setStatus(err.message, 'error');
+      paintProblem(err);
+      return undefined;
     }
     setBusy(true);
     try {
-      if (flexJob) {
+      if (flexRecord) {
         // 유연근무가 올라가지 않았으면 반차도 올리지 않는다 — 08:30 출근인 채로 반차만 남으면 안 된다.
-        const f = await hrRunJob(flexJob, { onStage: (m) => setStatus(`유연근무 — ${m}`) });
+        const flexSummary = describe(flexForm);
+        const f = await runRecord(flexRecord, {
+          onStage: (m) => setStatus(`유연근무 — ${m}`), text: `${verb} 실패: ${flexSummary}`, data: { action, kind: 'flex', forHalf: true },
+          outcome: async (f) => ({
+            ok: f.ok, text: `${verb}${f.ok ? '' : ' 실패'}: ${flexSummary} · ${f.docNo || ''}${f.ok ? '' : ` — ${failText(f)}`}`,
+            data: { action, kind: 'flex', docNo: f.docNo, stage: f.stage, said: said(f), read: f.read, forHalf: true },
+          }),
+        });
         st.sched = null;
         onChanged();
-        logEvent('attend', f.ok, `${verb}${f.ok ? '' : ' 실패'}: ${flexJob.summary} · ${f.docNo || ''}${f.ok ? '' : ` — ${failText(f)}`}`,
-          { action, kind: 'flex', docNo: f.docNo, stage: f.stage, said: said(f), read: f.read, forHalf: true });
         if (!f.ok) {
           setStatus(`유연근무(출근시간 변경) ${verb} 실패 — 반차는 올리지 않았습니다: ${failText(f)}`, 'error');
           await confirmInList(f.docNo);
           return;
         }
       }
-      const r = await hrRunJob(job, { onStage: setStatus });
+      // 최종 성공은 HR 의 말이 아니라 목록에서 확인한 것으로 정한다 — outcome 이 그것을 정하고, 로그 한 줄이 그 결과를 담는다.
+      let state = null;
+      let seen = false;
+      const r = await runRecord(record, {
+        files: sent.file ? [sent.file] : [], onStage: setStatus, text: `${verb} 실패: ${summary}`, data: { action, kind },
+        outcome: async (r) => {
+          if (!r.ok) return { ok: false, text: `${verb} 실패: ${summary} — ${failText(r)}`, data: { action, kind, stage: r.stage, docNo: r.docNo, said: said(r), read: r.read } };
+          state = await confirmInList(r.docNo);
+          const want = action === 'request' ? [STATUS.REQUESTED, STATUS.WAIT, STATUS.APPROVED] : [STATUS.TEMP];
+          seen = !!state && want.includes(state.status);
+          return { ok: seen, text: `${verb}: ${summary} · ${r.docNo}${seen ? '' : ' (목록에서 미확인)'}`, data: { action, kind, docNo: r.docNo, status: state?.statusName, read: r.read, edited: !!editing } };
+        },
+      });
       if (!r.ok) {
         // 누르기 전에 멈춘 것(값이 안 들어감)과 누른 뒤 사이트가 거절한 것을 가려 말한다.
         const where = r.stage === 'done' ? 'HR 이 받지 않았습니다' : '올리지 않았습니다';
-        const left = flexJob ? ' 유연근무는 이미 올라갔습니다 — 신청 내역에서 확인하세요.' : '';
+        const left = flexRecord ? ' 유연근무는 이미 올라갔습니다 — 신청 내역에서 확인하세요.' : '';
         setStatus(`${verb} 실패 — ${where}: ${failText(r)}${left}`, 'error');
-        if (flexJob) await confirmInList(r.docNo);
-        logEvent('attend', false, `${verb} 실패: ${summary} — ${failText(r)}`, { action, kind, stage: r.stage, docNo: r.docNo, said: said(r), read: r.read });
+        if (flexRecord) await confirmInList(r.docNo);
         return;
       }
-      const state = await confirmInList(r.docNo);
-      const want = action === 'request' ? [STATUS.REQUESTED, STATUS.WAIT, STATUS.APPROVED] : [STATUS.TEMP];
-      const seen = state && want.includes(state.status);
       // 올라간 것은 확인됐는데 지금 보는 기간 밖의 날짜면 목록에는 없다. 없어진 줄 알지 않게 말해 준다.
       const hidden = seen && !st.items.includes(state) ? ' · 지금 보는 기간 밖의 날짜라 목록에는 보이지 않습니다' : '';
-      // 출장이 결재요청으로 올라갔으면 이어서 여비계산서(사전정산)를 만든다. 임시저장에서는 만들지 않는다.
+      // 출장이 결재요청으로 올라갔으면 이어서 여비계산서(사전정산)를 만든다(then: trip.create — 같은 누름이 승인한 범위). 임시저장에서는 만들지 않는다.
       let trip = seen && action === 'request' && wantsTrip(sent) ? await makeTripDoc(sent) : '';
       let fine = seen && !/못했습니다/.test(trip);
       // 연차에 기념일 지원을 붙였으면 결재요청이 올라간 뒤 eclass 의 기념일 지원 신청 화면을 채워 연다(임시저장에서는 열지 않는다).
@@ -1436,8 +1527,6 @@ export function createAttendPanel({
       fine ? '' : 'error');
       onChanged();
       st.sched = null;   // 올린 것이 그 날의 근무시간을 바꿨을 수 있다(유연근무). 다음 반차 때 다시 읽는다.
-      logEvent('attend', seen, `${verb}: ${summary} · ${r.docNo}${seen ? '' : ' (목록에서 미확인)'}`,
-        { action, kind, docNo: r.docNo, status: state?.statusName, read: r.read, edited: !!editing });
       st.edit = null;
       st.filled.clear();
       st.form = blank(kind);
@@ -1445,7 +1534,6 @@ export function createAttendPanel({
       paintForm();
     } catch (err) {
       setError(err, `${verb} 실패`);
-      logEvent('attend', false, `${verb} 실패: ${summary} — ${err.message}`, { action, kind, auth: err instanceof AuthError });
     } finally {
       setBusy(false);
     }
@@ -1689,19 +1777,26 @@ export function createAttendPanel({
     return `<div class="at-tripline at-cancelnote"><span>${escapeHtml(text)}</span>${drop}</div>`;
   }
 
+  /** 행위 trip.delete — 그 출장의 여비계산서를 지운다(dropTrip·afterCancel 이 같이 쓴다). 못 지우면 던진다. 로그는 디스패처가 남긴다(실패도). */
+  async function deleteTrip(it, row) {
+    const record = await buildRecord('trip.delete', { seq: row.seq, trseq: trseqOf(row) || null, docNo: it.docNo });
+    return runRecord(record, {
+      row, onStage: setStatus, text: `여비계산서 삭제 실패(출장 취소): ${it.summary}`, data: { docNo: it.docNo },
+      outcome: async () => ({ text: `여비계산서 삭제(출장 취소): ${row.seq} · ${it.summary}`, data: { seq: row.seq, docNo: it.docNo } }),
+    });
+  }
+
   /** 취소가 걸린 출장의 남은 여비계산서를 지운다(cancelLine 의 버튼). */
   async function dropTrip(it) {
     const row = leftTrip(it);
     if (!row) return;
     setBusy(true);
     try {
-      await tripDelete(row, { name: st.trips.me, onStage: setStatus });
-      logEvent('trip', true, `여비계산서 삭제(출장 취소): ${row.seq} · ${it.summary}`, { seq: row.seq, docNo: it.docNo });
+      await deleteTrip(it, row);
       await loadTrips();
       setStatus(`여비계산서 ${row.seq} 을(를) 지웠습니다 — ${it.summary}`);
     } catch (err) {
       setError(err, '여비계산서를 지우지 못했습니다');
-      logEvent('trip', false, `여비계산서 삭제 실패(출장 취소): ${it.summary} — ${err.message}`, { docNo: it.docNo });
     } finally {
       setBusy(false);
       paintList();
@@ -2182,18 +2277,27 @@ export function createAttendPanel({
     Object.assign(a, { busy: true, error: '', info: '', warn: '', result: null, stage: '사전정산을 다시 저장하는 중...' });
     paintList();
     try {
-      const r = await tripPreSave(trip, { ...plan, meals: stay?.set || null }, { name: st.trips?.me || '', onStage: (s) => { a.stage = s; paintList(); } });
+      // 행위 trip.presave — 기록은 다시 고른 편(picks)·고친 일자·시각(edits)·식수(meal). 사전정산의 지금 줄(a.detail)은 ctx 다 — 어댑터가 같은 prePlan·stayPlan 으로 짓는다.
+      const picks = Object.entries(a.prePicks || {}).filter(([, p]) => p?.t).map(([leg, p]) => ({ leg, t: p.t, g: p.g || null }));
+      const edits = Object.entries(a.preEdits || {}).map(([leg, e]) => ({ leg, date: e?.date ?? null, shr: e?.shr ?? null, ehr: e?.ehr ?? null }))
+        .filter((e) => e.date != null || e.shr != null || e.ehr != null);
+      const record = await buildRecord('trip.presave', { seq: trip.seq, trseq: trseqOf(trip) || null, picks, edits, meal: a.redoPre && Number.isInteger(a.preMeal) ? a.preMeal : null });
+      const r = await runRecord(record, {
+        row: trip, detail: a.detail, onStage: (s) => { a.stage = s; paintList(); }, text: `여비계산서(사전정산) 다시 저장 실패: ${trip.seq}`, data: { seq: trip.seq },
+        outcome: async (r) => ({
+          text: `여비계산서(사전정산) 다시 저장: ${trip.seq} · ${what} · ${r.stage.label}`,
+          data: { seq: trip.seq, drop: plan.drop, add: plan.add.length, linked: r.linked, meals: stay?.set || null },
+        }),
+      });
       Object.assign(a, { detail: r.detail, redoPre: false, prePicks: null, preMeal: null, preEdits: null });
       keepTripRoute(trip.location, routeOfRows(r.detail.rows, trip));
       const next = r.stage.phase === 'pre' && !r.stage.done ? ' — `사전정산 완료`를 누르거나 증빙을 넣으면 다시 확정합니다' : '';
       a.info = `사전정산을 다시 저장했습니다 — ${what} · 지금 단계: ${r.stage.label}${next}`;
       setStatus(`사전정산을 다시 저장했습니다 — 여비계산서 ${trip.seq} · ${what} · ${r.stage.label}`);
-      logEvent('trip', true, `여비계산서(사전정산) 다시 저장: ${trip.seq} · ${what} · ${r.stage.label}`, { seq: trip.seq, drop: plan.drop, add: plan.add.length, linked: r.linked, meals: stay?.set || null });
       await freshTrip(r.row);
     } catch (err) {
-      a.error = `사전정산 다시 저장 실패: ${err.message}`;
+      a.error = `사전정산 다시 저장 실패: ${problemText(err)}`;
       setError(err, '사전정산 다시 저장 실패');
-      logEvent('trip', false, `여비계산서(사전정산) 다시 저장 실패: ${trip.seq} — ${err.message}`, { seq: trip.seq, auth: err instanceof AuthError });
     } finally {
       a.busy = false;
       a.stage = '';
@@ -2543,16 +2647,15 @@ export function createAttendPanel({
    * 담당자에게 보내려면 사전정산이 완료돼 있어야 해서(2026-10-03 사용자 지정), 출장 카드의 `사전정산 완료` 버튼과 증빙을 넣었을 때
    * 여기로 온다. 끝나면 다시 읽은 그 계산서 줄로 카드의 단계를 맞추고(freshTrip), 그 줄을 돌려준다. 못 했으면 던진다.
    */
-  async function confirmPre(trip, onStage = setStatus) {
-    try {
-      const r = await tripPreConfirm(trip, { name: st.trips?.me || '', onStage });
-      logEvent('trip', true, r.sent ? `여비계산서 사전정산 완료(확정): ${trip.seq}` : `여비계산서 사전정산이 이미 완료돼 있음: ${trip.seq}`, { seq: trip.seq, sent: r.sent });
-      await freshTrip(r.row);
-      return r.row;
-    } catch (err) {
-      logEvent('trip', false, `여비계산서 사전정산 완료(확정) 실패: ${trip.seq} — ${err.message}`, { seq: trip.seq, auth: err instanceof AuthError });
-      throw err;
-    }
+  async function confirmPre(trip, onStage = setStatus, docNo = '') {
+    // 행위 trip.preconfirm — 기록은 계산서 번호(와 출장자 번호·신청서 번호), 목록 줄은 ctx 다. 로그는 디스패처가 남긴다(실패도 — 던지면 그대로 올라간다).
+    const record = await buildRecord('trip.preconfirm', { seq: trip.seq, trseq: trseqOf(trip) || null, docNo: docNo || null });
+    const r = await runRecord(record, {
+      row: trip, onStage, text: `여비계산서 사전정산 완료(확정) 실패: ${trip.seq}`, data: { seq: trip.seq },
+      outcome: async (r) => ({ text: r.sent ? `여비계산서 사전정산 완료(확정): ${trip.seq}` : `여비계산서 사전정산이 이미 완료돼 있음: ${trip.seq}`, data: { seq: trip.seq, sent: r.sent } }),
+    });
+    await freshTrip(r.row);
+    return r.row;
   }
 
   /** 출장 카드의 `사전정산 완료` 버튼(두 번째 누름). 되는 동안 카드가 잠기고, 결과는 카드와 상태 줄에 적힌다. */
@@ -2564,7 +2667,7 @@ export function createAttendPanel({
     Object.assign(a, { busy: true, error: '', info: '', result: null, stage: '사전정산을 완료(확정)하는 중...' });
     paintList();
     try {
-      await confirmPre(trip, (s) => { a.stage = s; paintList(); });
+      await confirmPre(trip, (s) => { a.stage = s; paintList(); }, it.docNo);
       a.info = '사전정산을 완료(확정)했습니다';
       setStatus(`사전정산을 완료(확정)했습니다 — 여비계산서 ${trip.seq} · ${it.summary}`);
     } catch (err) {
@@ -2576,6 +2679,21 @@ export function createAttendPanel({
       paintList();
     }
   }
+
+  /**
+   * trip.after 기록의 입력 — 읽은 증빙(records — 파일은 참조만), 고른 가는 편·오는 편(picks — attendLegs 의 { go, back } 을 goT·goG·backT·backG 로 편 것), 근무지,
+   * 숙박 줄의 결정(lodge), 안 올릴 증빙(exclude), 켬(always·keepTrans·preconfirm). 바이트는 run 의 ctx.files 로 간다(filesOf).
+   */
+  function afterInput({ trip, records = [], picks = {}, lodge = [], exclude = [], always = false, keepTrans = false, preconfirm = false }) {
+    return {
+      seq: trip.seq, trseq: trseqOf(trip) || null,
+      records: records.map((r) => ({ ...r, file: r.file ? { name: r.file.name, type: r.file.type || '' } : null })),
+      picks: { goT: picks?.go?.t || null, goG: picks?.go?.g || null, backT: picks?.back?.t || null, backG: picks?.back?.g || null },
+      workplace: st.workplace || null, lodge, exclude, always, keepTrans, preconfirm,
+    };
+  }
+  /** 읽은 증빙의 바이트 — run 의 ctx.files([{ name, type, dataUrl }]). 어댑터가 기록의 파일 이름으로 찾아 잇는다. */
+  const filesOf = (records) => records.filter((r) => r.file).map((r) => ({ name: r.file.name, type: r.file.type || '', dataUrl: r.file.dataUrl || '' }));
 
   /**
    * 사후정산을 지금 카드에 있는 대로 저장한다(2026-10-03 사용자 지정) — 여비증빙 송부 칸의 `보내기`(저장 → 확정 → 송부)가 부른다.
@@ -2594,23 +2712,21 @@ export function createAttendPanel({
     Object.assign(a, { busy: true, error: '', info: '', stage: '사후정산을 저장하는 중...' });
     try {
       if (!a.detail) a.detail = await tripPreDetail(trip.seq);
-      const plan = afterPlan(a.tickets || [], { trip, detail: a.detail, picks: st.legs[it.docNo] || {}, workplace: st.workplace });
-      if (plan.problems.length) throw new Error(plan.problems.join(' · '));
-      if (!plan.need.needed) throw new Error('당일 출장이고 비행기를 타지 않아 사후정산 대상이 아닙니다.');
-      const unknown = plan.legs.filter((l) => l.pick?.t && !l.row);
-      if (unknown.length) plan.trans = [];
-      plan.docs = [];
-      const r = await tripAfterSave(trip, trseqOf(trip), plan, { name: st.trips?.me || '', onStage: say, always: true });
+      // 행위 trip.after(always·keepTrans) — 앞서 넣은 항공권(a.tickets)과 고른 가는 편·오는 편으로 어댑터가 짓고, 새로 올릴 것이 없어도 화면의 폼을 그대로 저장한다.
+      // 값을 모르는 편이 있으면(항공권을 다시 넣어야 하는 편 등) 교통비 내역은 화면에 있는 그대로 둔다(keepTrans). 문제(못 읽은 값·대상 아님)는 어댑터가 던진다.
+      const tickets = a.tickets || [];
+      const record = await buildRecord('trip.after', afterInput({ trip, records: tickets, picks: st.legs[it.docNo], always: true, keepTrans: true }));
+      const r = await runRecord(record, {
+        row: trip, detail: a.detail, files: filesOf(tickets), onStage: say, text: `여비계산서(사후정산) 저장 실패: ${trip.seq}`, data: { seq: trip.seq },
+        outcome: async (r) => ({ text: `여비계산서(사후정산) 저장: ${trip.seq} · ${afterSummary(r.plan) || '화면에 있는 그대로'}`, data: { seq: trip.seq, notes: r.plan.notes } }),
+      });
+      const plan = r.plan;
       a.result = { ...plan, saved: true, same: r.same, lodgeRows: r.lodgeRows, stage: r.stage };
+      const unknown = plan.legs.filter((l) => l.pick?.t && !l.row);
       if (unknown.length) a.info = `교통비 내역은 사후정산 화면에 있는 그대로 두었습니다 — ${unknown.map((l) => `${l.label}: ${l.problem}`).join(' · ')}`;
-      const what = afterSummary(plan) || '화면에 있는 그대로';
-      setStatus(`사후정산을 저장했습니다 — ${what}`);
-      logEvent('trip', true, `여비계산서(사후정산) 저장: ${trip.seq} · ${what}`, { seq: trip.seq, notes: plan.notes });
+      setStatus(`사후정산을 저장했습니다 — ${afterSummary(plan) || '화면에 있는 그대로'}`);
       await freshTrip(r.row);
       return r.row;
-    } catch (err) {
-      logEvent('trip', false, `여비계산서(사후정산) 저장 실패: ${trip.seq} — ${err.message}`, { seq: trip.seq, auth: err instanceof AuthError });
-      throw err;
     } finally {
       a.busy = false;
       a.stage = '';
@@ -2625,17 +2741,16 @@ export function createAttendPanel({
   async function confirmPost(it, onStage = () => {}) {
     const trip = tripOf(it);
     if (!trip) throw new Error('여비계산서를 찾지 못했습니다. 신청 내역을 새로 읽어 주세요.');
-    try {
-      const r = await tripPostConfirm(trip, { name: st.trips?.me || '', onStage });
-      logEvent('trip', true, r.sent ? `여비계산서 사후정산 완료(확정): ${trip.seq}` : `여비계산서 사후정산이 이미 완료돼 있음: ${trip.seq}`, { seq: trip.seq, sent: r.sent });
-      // 다시 작성하던 사후정산이 다시 완료됐다 — 카드는 정산 내역(보기)으로 돌아간다.
-      if (st.after[trip.seq]) st.after[trip.seq].reopen = false;
-      await freshTrip(r.row);
-      return r.row;
-    } catch (err) {
-      logEvent('trip', false, `여비계산서 사후정산 완료(확정) 실패: ${trip.seq} — ${err.message}`, { seq: trip.seq, auth: err instanceof AuthError });
-      throw err;
-    }
+    // 행위 trip.postconfirm — 로그는 디스패처가 남긴다(실패도 — 던지면 그대로 올라간다).
+    const record = await buildRecord('trip.postconfirm', { seq: trip.seq, trseq: trseqOf(trip) || null, docNo: it.docNo });
+    const r = await runRecord(record, {
+      row: trip, onStage, text: `여비계산서 사후정산 완료(확정) 실패: ${trip.seq}`, data: { seq: trip.seq },
+      outcome: async (r) => ({ text: r.sent ? `여비계산서 사후정산 완료(확정): ${trip.seq}` : `여비계산서 사후정산이 이미 완료돼 있음: ${trip.seq}`, data: { seq: trip.seq, sent: r.sent } }),
+    });
+    // 다시 작성하던 사후정산이 다시 완료됐다 — 카드는 정산 내역(보기)으로 돌아간다.
+    if (st.after[trip.seq]) st.after[trip.seq].reopen = false;
+    await freshTrip(r.row);
+    return r.row;
   }
 
   /**
@@ -2730,7 +2845,7 @@ export function createAttendPanel({
       const now = tripStage(row, st.trips?.me);
       if (now.phase !== 'pre' || now.done) return false;
       failed = '사전정산 완료 실패';
-      row = await confirmPre(row, onStage);
+      row = await confirmPre(row, onStage, it.docNo);
       failed = '사후정산 실패';
       return true;
     };
@@ -2751,7 +2866,8 @@ export function createAttendPanel({
       // 물어 둔 채 아직 올리지 못한 숙박 증빙(a.ask)도 같이 묶는다 — 새 증빙을 넣었다고 그것이 사라지면 안 된다.
       const earlier = [...(a.tickets || []), ...(a.ask?.records || [])];
       const all = [...records, ...earlier.filter((t) => !records.some((r) => r.file.name === t.file.name))];
-      const plan = afterPlan(all, { trip, detail: a.detail, picks: st.legs[it.docNo] || {}, workplace: st.workplace });
+      const picks0 = st.legs[it.docNo] || {};   // 이 묶음의 가는 편·오는 편 — 사람이 고른 것(표를 앉힌 뒤의 plan.picks 가 아니다). trip.after 기록에도 이것이 간다
+      const plan = afterPlan(all, { trip, detail: a.detail, picks: picks0, workplace: st.workplace });
       a.ask = null;
       plan.docs = records.map((r) => ({ ...evidenceOf(r, trip), name: r.file.name, summary: r.summary || '' }));
       a.result = plan;
@@ -2837,32 +2953,26 @@ export function createAttendPanel({
         return;
       }
       await ensurePre();
-      // 숙박 줄의 정산금액을 정한다(2026-10-03 사용자 지정). 사이트에서 상한액을 읽어 붙이고, 사람이 정해 줘야 하는 것(외화 문서의
-      // 원화 금액, 상한액 초과)이 있으면 올리지 않고 카드에서 묻는다 — 답하면 answerAsk 가 이어서 올린다.
-      if (plan.lodge.length) onStage('숙박비 상한액을 확인하는 중...');
-      for (const l of plan.lodge) lodgeSettle(Object.assign(l, await tripLodgeMax(trseqOf(row), l.nation, l.currency)));
-      // 이미 사후정산에 올라가 있는 숙박 줄은 상한액을 넘어도 다시 묻지 않는다(2026-10-05 사용자 지정: "이게 확인이 안되나? 출장이랑 맞잖아") —
-      // 화면의 숙박 줄을 읽어 같은 줄이 있으면 그 금액으로 정한다. 그러면 아래에서 같은 줄로 걸러져 다시 올라가지 않는다.
-      if (plan.lodge.some((l) => lodgeAsk(l) === 'cap')) {
-        const have = await tripAfterLodges(row.seq, trseqOf(row)).catch(() => []);
-        for (const l of plan.lodge) {
-          const how = lodgeAsk(l) === 'cap' ? lodgeKnown(l, have) : '';
-          if (how) lodgeDecide(plan, l, how);
-        }
-      }
-      if (plan.lodge.some(lodgeAsk)) {
-        a.ask = { plan, row, records: all.filter((r) => /^lodging_/.test(r.docType)), files: fileNames, krw: {}, reason: {} };
+      // 행위 trip.after — 어댑터가 같은 기록(앞서 넣은 항공권·물어 둔 숙박 증빙까지)과 고른 가는 편·오는 편으로 다시 묶어 올린다: 숙박 줄의 정산금액은 사이트의
+      // 상한액으로 정하고(2026-10-03 사용자 지정), 이미 올라가 있는 같은 줄은 그 금액으로(2026-10-05 "이게 확인이 안되나? 출장이랑 맞잖아"), 사람이 정해 줘야 하는 것
+      // (외화 문서의 원화 금액·상한액 초과)이 남으면 올리지 않고 돌아온다 — 카드에서 묻고(askHtml), 답하면 answerAsk 가 그 결정을 담은 새 기록으로 다시 올린다.
+      const input = afterInput({ trip: row, records: all, picks: picks0 });
+      const bytes = filesOf(all);
+      const r = await uploadAfter(it, row, input, bytes, fileNames, onStage);
+      if (r.ask) {
+        // 묻는 동안 쥐고 있는 것: 어댑터가 지은 계획(a.result 와 같은 객체 — 답하면 그 줄을 고쳐 더 물을 것이 있는지 본다), 그 기록의 입력·바이트(답을 담아 다시 짓는다),
+        // 숙박 기록(다음 증빙과 같이 묶는다), 지금까지의 답(lodge).
+        a.ask = { plan: r.plan, row: r.row, input, bytes, lodge: [], records: all.filter((x) => /^lodging_/.test(x.docType)), files: fileNames, krw: {}, reason: {} };
         setStatus('사후정산을 아직 올리지 않았습니다 — 출장 카드에서 정산금액을 정해 주세요');
         return;
       }
-      await sendAfter(it, trip, a, plan, row, fileNames, onStage);
+      await afterSaved(it, trip, a, r);
       // 완료한 출장에 넣은 증빙인데 같은 줄이 이미 있어 아무것도 올리지 않았으면, 다시 작성하는 것으로 치지 않는다 — 정산 내역 그대로다.
       if (amend && a.result && !a.result.saved) Object.assign(a, { reopen: false, result: null, info: '같은 숙박 줄이 사후정산에 이미 있어 다시 올리지 않았습니다 — 증빙은 보관했습니다' });
     } catch (err) {
-      a.error = failed === '사후정산 실패' ? err.message : `${failed}: ${err.message}`;
+      a.error = failed === '사후정산 실패' ? problemText(err) : `${failed}: ${err.message}`;
       setError(err, failed);
-      // 사전정산 완료가 실패한 것은 confirmPre 가 이미 기록했다.
-      if (failed === '사후정산 실패') logEvent('trip', false, `여비계산서(사후정산) 실패: ${trip.seq} — ${err.message}`, { seq: trip.seq, files: fileNames });
+      // 로그는 디스패처가 남겼다 — 사전정산 완료(trip.preconfirm)도, 사후정산(trip.after)도 저마다의 run 이 한 줄씩.
     } finally {
       a.busy = false;
       a.stage = '';
@@ -2871,23 +2981,39 @@ export function createAttendPanel({
   }
 
   /**
-   * 묶은 사후정산을 올리고 무엇이 올라갔는지 카드에 적는다 — runAfter 와, 물은 것에 답했을 때의 answerAsk 가 같이 쓴다.
-   * 같은 숙박 줄이 사이트에 이미 있으면 그 줄은 다시 올라가지 않는다(src/trip.js tripAfterSave 의 same). 못 올리면 던진다.
+   * 행위 trip.after 를 돌린다 — runAfter 와, 물은 것에 답했을 때의 answerAsk 가 같이 쓴다. 어댑터가 지은 계획(상한액·같은 줄·결정이 얹힌 것)에 카드가 적어 둔 읽은 증빙의
+   * 줄(docs)을 얹어 a.result 로 삼는다(물을 것이 남았으면 그 계획 그대로, 올렸으면 saved·same·lodgeRows·stage 를 더해). 같은 숙박 줄이 사이트에 이미 있으면 그 줄은
+   * 다시 올라가지 않는다(src/trip.js tripAfterSave 의 same). 못 올리면 던진다 — 로그 한 줄은 디스패처가 남긴다(올림·물음·같은 줄·실패).
    */
-  async function sendAfter(it, trip, a, plan, row, fileNames, onStage) {
-    const r = await tripAfterSave(row, trseqOf(row), plan, { name: st.trips?.me || '', onStage });
+  async function uploadAfter(it, row, input, bytes, fileNames, onStage) {
+    const a = st.after[row.seq];
+    const record = await buildRecord('trip.after', input);
+    const r = await runRecord(record, {
+      row, detail: a.detail, files: bytes, onStage, text: `여비계산서(사후정산) 실패: ${row.seq}`, data: { seq: row.seq, files: fileNames },
+      outcome: async (r) => {
+        r.plan.docs = a.result?.docs || [];
+        if (r.ask) return { text: `여비계산서(사후정산) 올리기 전 물음: ${row.seq} — 정산금액을 정해야 하는 숙박 줄 ${r.ask.length}개`, data: { seq: row.seq, files: fileNames, asked: r.ask.map((x) => `${x.key}: ${x.kind}`) } };
+        if (!r.sent) return { text: `여비계산서(사후정산) 같은 줄이 있어 올리지 않음: ${row.seq}`, data: { seq: row.seq, files: fileNames } };
+        const sent = { ...r.plan, lodge: r.plan.lodge.filter((l) => !r.same.includes(l)) };
+        return { text: `여비계산서(사후정산) 작성: ${row.seq} · ${afterSummary(sent)}`, data: { seq: row.seq, files: fileNames, notes: r.plan.notes, skipped: r.plan.skipped, lodgeSeqs: r.lodgeSeqs } };
+      },
+    });
+    a.result = r.ask ? r.plan : { ...r.plan, saved: r.sent, same: r.same, lodgeRows: r.lodgeRows, stage: r.stage };
+    return r;
+  }
+
+  /** 올린 뒤(또는 같은 줄이라 올리지 않은 뒤) 카드와 적어 둔 것을 맞춘다 — runAfter 와 answerAsk 가 같이 쓴다. */
+  async function afterSaved(it, trip, a, r) {
     a.ask = null;
-    a.result = { ...plan, saved: r.sent, same: r.same, lodgeRows: r.lodgeRows, stage: r.stage };
     if (!r.sent) {
       setStatus('같은 숙박 줄이 사후정산에 이미 있어 다시 올리지 않았습니다');
       return;
     }
-    const sent = { ...plan, lodge: plan.lodge.filter((l) => !r.same.includes(l)) };
-    rememberMine(trip.seq, r.lodgeRows, plan);
+    const sent = { ...r.plan, lodge: r.plan.lodge.filter((l) => !r.same.includes(l)) };
+    rememberMine(trip.seq, r.lodgeRows, r.plan);
     setStatus(`사후정산을 올렸습니다 — ${afterSummary(sent)}`);
-    logEvent('trip', true, `여비계산서(사후정산) 작성: ${trip.seq} · ${afterSummary(sent)}`, { seq: trip.seq, files: fileNames, notes: plan.notes, skipped: plan.skipped, lodgeSeqs: r.lodgeSeqs });
     await freshTrip(r.row);
-    await lodgeBox.reload(lodgeCtx(r.row || row), { quiet: true });   // 방금 올린 줄이 숙박비 내역에 보이게 다시 읽는다
+    await lodgeBox.reload(lodgeCtx(r.row || trip), { quiet: true });   // 방금 올린 줄이 숙박비 내역에 보이게 다시 읽는다
   }
 
   /** 지운 숙박 줄의 적어 둔 내용을 버린다 — 지우지 못했으면(그 줄이 아직 있으면) 둔다. */
@@ -2972,17 +3098,21 @@ export function createAttendPanel({
     }
     const l = ask.plan.lodge[+btn.dataset.i];
     if (!l) return;
+    // 답은 두 곳에 적는다 — 카드의 계획(같은 객체: 더 물을 것이 있는지 바로 보인다)과 기록의 lodge(다시 올릴 때 어댑터가 같은 함수로 되얹는다 — 줄의 열쇠는 lodgeKey).
+    const key = lodgeKey(l);
     if (act === 'ask-krw') {
       const typed = String(el.list.querySelector(`.at-ask-krw[data-i="${btn.dataset.i}"]`)?.value ?? ask.krw[btn.dataset.i] ?? '').trim();
       const n = Number(typed.replace(/[,\s원]/g, ''));
       if (!typed || !Number.isFinite(n) || n <= 0) { setStatus('원화로 결제된 금액을 숫자로 적어 주세요.', 'error'); return; }
       l.actual = Math.round(n);
       lodgeSettle(l);
+      ask.lodge.push({ key, settle: 'krw', amount: Math.round(n) });
     } else {
       // 실제 금액으로 정산하면 승인이 필요하다는 알림이 그 줄과 결과 글에 붙고(src/after.js lodgeDecide), 비고에 상한 초과 사유가 들어간다 —
       // 사유 칸에 적힌 글(비었으면 기본 문구, 2026-10-08 사용자 지정). 상한액으로 정산하면 사유는 적지 않는다.
       const typed = el.list.querySelector(`.at-ask-reason[data-i="${btn.dataset.i}"]`)?.value ?? ask.reason?.[btn.dataset.i];
       lodgeDecide(ask.plan, l, act === 'ask-cap' ? 'cap' : 'real', typeof typed === 'string' ? typed : undefined);
+      ask.lodge.push({ key, settle: act === 'ask-cap' ? 'cap' : 'actual', reason: typeof typed === 'string' ? typed : null });
     }
     if (ask.plan.lodge.some(lodgeAsk)) {
       setStatus('사후정산을 아직 올리지 않았습니다 — 출장 카드에서 정산금액을 정해 주세요');
@@ -2992,11 +3122,17 @@ export function createAttendPanel({
     Object.assign(a, { busy: true, error: '', stage: '여비계산서(사후정산)를 올리는 중...' });
     paintList();
     try {
-      await sendAfter(it, trip, a, ask.plan, ask.row, ask.files, (s) => { a.stage = s; paintList(); });
+      // 답을 담은 새 기록으로 다시 올린다(trip.after) — 같은 증빙·같은 편에 lodge 결정만 더한 것이다. 어댑터가 또 묻는 것이 있으면(있을 리 없지만) 그대로 다시 묻는다.
+      const r = await uploadAfter(it, ask.row, { ...ask.input, lodge: [...ask.lodge] }, ask.bytes, ask.files, (s) => { a.stage = s; paintList(); });
+      if (r.ask) {
+        a.ask = { ...ask, plan: r.plan, row: r.row, krw: {}, reason: {} };
+        setStatus('사후정산을 아직 올리지 않았습니다 — 출장 카드에서 정산금액을 정해 주세요');
+        return;
+      }
+      await afterSaved(it, trip, a, r);
     } catch (err) {
-      a.error = err.message;
+      a.error = problemText(err);
       setError(err, '사후정산 실패');
-      logEvent('trip', false, `여비계산서(사후정산) 실패: ${trip.seq} — ${err.message}`, { seq: trip.seq, files: ask.files });
     } finally {
       a.busy = false;
       a.stage = '';
@@ -3252,25 +3388,49 @@ export function createAttendPanel({
     try {
       let detail = {};
       const again = then === 'copy' ? await readDocForm(it) : null;
-      if (action === 'delete') {
-        setStatus('삭제하는 중...');
-        await hrDeleteDoc(it, { onStage: setStatus });
-      } else {
-        const job = action === 'cancel' ? buildCancelJob(it, reason) : buildDocJob(it, action);
-        const r = await hrRunJob(job, { onStage: setStatus });
-        detail = { stage: r.stage, said: said(r), newDocNo: action === 'cancel' ? r.docNo : undefined };
-        if (!r.ok) throw new Error(failText(r));
-      }
-      const after = await confirmInList(it.docNo);
-      // 삭제는 목록에서 사라져야 하고, 상신·회수는 상태가 바뀌어야 한다. 취소신청은 원 문서가 승인 때까지 그대로다.
-      const done = action === 'delete' ? !after
-        : action === 'cancel' ? true
-          : !!after && after.status !== it.status;
+      // 행위 attend.cancel(취소신청 — 사유) · attend.doc(상신·회수·삭제). 신청 내역의 줄은 ctx.item 이고, 기록에는 문서번호·신청서가 있다(§14.2).
+      const id = action === 'cancel' ? 'attend.cancel' : 'attend.doc';
+      const record = await buildRecord(id, action === 'cancel' ? { docNo: it.docNo, formId: it.formId, reason } : { docNo: it.docNo, formId: it.formId, action });
+      if (action === 'delete') setStatus('삭제하는 중...');
+      let after = null;
+      let done = false;
+      let already = false;
+      await runRecord(record, {
+        item: it, onStage: setStatus, text: `${verb} 실패: ${it.summary} · ${it.docNo}`, data: { action, docNo: it.docNo },
+        // 최종 판정은 목록에서 — 삭제는 사라져야 하고, 상신·회수는 상태가 바뀌어야 한다. 취소신청은 원 문서가 승인 때까지 그대로다. 로그 한 줄이 그 결과를 담는다.
+        outcome: async (r) => {
+          if (action !== 'delete') {
+            detail = { stage: r.stage, said: said(r), newDocNo: action === 'cancel' ? r.docNo : undefined };
+            if (!r.ok) {
+              // 취소할 수 있는 문서 목록에 없다 — 이 건에는 이미 취소신청이 올라가 있다(HR 에서 올렸다 — 2026-10-07 실제로 그랬다).
+              // 실패로 끝내지 않고 취소가 걸린 것으로 적어 두고, 목록을 다시 읽어 그 취소신청서를 잇는다. 출장이면 계산서를 지운다(trip.delete).
+              if (action === 'cancel' && /취소할 수 있는 결재완료 문서 목록에/.test(failText(r))) {
+                already = true;
+                st.cancelFor = null;
+                st.cancelThen = null;
+                await confirmInList(it.docNo);
+                const dropped = await afterCancel(it, '', { keepTrip: then === 'copy', already: true });
+                setStatus(`이미 취소신청이 올라가 있는 건입니다 — ${it.summary} · ${it.docNo}${dropped}`);
+                onChanged();
+                return { ok: true, text: `취소신청 이미 있음: ${it.summary} · ${it.docNo}`, data: { action, docNo: it.docNo } };
+              }
+              throw new Error(failText(r));
+            }
+          }
+          after = await confirmInList(it.docNo);
+          done = action === 'delete' ? !after : action === 'cancel' ? true : !!after && after.status !== it.status;
+          return {
+            ok: done, text: `${verb}${again ? '(변경)' : ''}: ${it.summary} · ${it.docNo}${done ? '' : ' (목록에서 미확인)'}`,
+            data: { action, docNo: it.docNo, before: it.statusName, after: after?.statusName, reason, change: !!again, ...detail },
+          };
+        },
+      });
+      if (already) return;
       st.cancelFor = null;
       st.cancelThen = null;
       if (st.edit?.docNo === it.docNo || st.wfaFor?.docNo === it.docNo) resetForm();
       if (done && again) seatForm(again, null);
-      // 취소신청을 올렸으면 그 건은 결재될 때까지 "취소 중"이다 — 적어 두고, 출장이면 여비계산서(사전정산까지)를 지운다.
+      // 취소신청을 올렸으면 그 건은 결재될 때까지 "취소 중"이다 — 적어 두고, 출장이면 여비계산서(사전정산까지)를 지운다(then: trip.delete).
       const dropped = action === 'cancel' && done ? await afterCancel(it, detail.newDocNo, { keepTrip: !!again }) : '';
       const tail = (again ? '. 같은 내용을 폼에 불러왔습니다 — 시간을 고친 뒤 결재요청하세요.' : '') + dropped;
       setStatus(done
@@ -3278,23 +3438,8 @@ export function createAttendPanel({
         : `${verb}했다고 HR 이 답했지만 목록의 상태가 그대로입니다 — ${it.docNo}. HR 에서 확인해 주세요.`, done ? '' : 'error');
       onChanged();
       st.sched = null;
-      logEvent('attend', done, `${verb}${again ? '(변경)' : ''}: ${it.summary} · ${it.docNo}${done ? '' : ' (목록에서 미확인)'}`,
-        { action, docNo: it.docNo, before: it.statusName, after: after?.statusName, reason, change: !!again, ...detail });
     } catch (err) {
-      // 취소할 수 있는 문서 목록에 없다 — 이 건에는 이미 취소신청이 올라가 있다(HR 에서 올렸다 — 2026-10-07 실제로 그랬다).
-      // 실패로 끝내지 않고 취소가 걸린 것으로 적어 두고, 목록을 다시 읽어 그 취소신청서를 잇는다. 출장이면 계산서를 지운다.
-      if (action === 'cancel' && /취소할 수 있는 결재완료 문서 목록에/.test(err.message)) {
-        st.cancelFor = null;
-        st.cancelThen = null;
-        await confirmInList(it.docNo);
-        const dropped = await afterCancel(it, '', { keepTrip: then === 'copy', already: true });
-        setStatus(`이미 취소신청이 올라가 있는 건입니다 — ${it.summary} · ${it.docNo}${dropped}`);
-        logEvent('attend', true, `취소신청 이미 있음: ${it.summary} · ${it.docNo}`, { action, docNo: it.docNo });
-        onChanged();
-        return;
-      }
       setError(err, `${verb} 실패`);
-      logEvent('attend', false, `${verb} 실패: ${it.summary} · ${it.docNo} — ${err.message}`, { action, docNo: it.docNo });
     } finally {
       setBusy(false);
     }
@@ -3317,13 +3462,11 @@ export function createAttendPanel({
       if (!st.trips?.rows || tripsBusy) await loadTrips();
       const row = st.trips?.rows ? tripDocFor(it, st.trips.rows, st.trips.me) : null;
       if (!row) return st.trips?.error ? ` · 여비계산서를 읽지 못해 지우지 못했습니다: ${st.trips.error}` : '';
-      await tripDelete(row, { name: st.trips.me, onStage: setStatus });
-      logEvent('trip', true, `여비계산서 삭제(출장 취소): ${row.seq} · ${it.summary}`, { seq: row.seq, docNo: it.docNo });
+      await deleteTrip(it, row);
       await loadTrips();
       return ` · 여비계산서 ${row.seq}(사전정산)를 지웠습니다`;
     } catch (err) {
-      logEvent('trip', false, `여비계산서 삭제 실패(출장 취소): ${it.summary} — ${err.message}`, { docNo: it.docNo });
-      return ` · 여비계산서를 지우지 못했습니다: ${err.message}`;
+      return ` · 여비계산서를 지우지 못했습니다: ${problemText(err)}`;
     }
   }
 

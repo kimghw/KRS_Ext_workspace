@@ -1,0 +1,86 @@
+# 여비 증빙 송부 — 확정한 여비계산서의 출력(PDF)을 맨 앞에, 보관함의 증빙을 뒤에 붙여 PDF 하나로 묶어(src/pdf.js buildPdf) 담당자에게 Teams(MCP) 또는 eclass 쪽지로 보낸다
+# (sendbox.js go — 2026-10-03·10-04 사용자 지정: "확정한 다음에 출력해서 증빙들과 합쳐서 보내야지", 과제·계정과 받는 사람·보내는 길은 한 세트로 기억).
+# 보내기를 누르면 보낼 내용 팝업이 뜨고 팝업의 `보내기` 를 눌러야 나간다(2026-10-04) — 그 누름이 이 행위의 확인이다. 숙박·비행기 출장인데 사후정산을 아직 완료하지 않았으면
+# (sendGate 의 settle) 같은 누름으로 trip.after(always) → trip.postconfirm 를 먼저 돌리고 이것을 부른다(2026-10-03 "저장 후 확정 후 보내기") — 패널이 차례로 잇고, 이 어댑터는
+# **보내기만** 한다(§14.4). 언제 보낼 수 있는지(src/send.js sendGate — 당일 출장은 당일증빙이 있어야, 숙박·비행기 출장은 증빙이 없어도 계산서만), 출장 기간과 안 맞아 확정하지 않은
+# 증빙은 빼는 것(sendable), 글의 꼴(sendTitle·sendLines)은 src/send.js 그대로다. 보관함의 증빙 목록(kept — 이름·label·dataUrl)과 Teams 사정(teamsState)은 ctx 다.
+# 어댑터(trip.send): 보내는 순간의 길이 기록의 channel 과 다르면 보내지 않는다(패널도 본다) → tripCalPdf(row) → buildPdf([계산서, ...kept]) → teamsSendFile 또는 memoSend →
+# { ok: true, channel, to, file, pages } 를 돌려준다(§14.3).
+id: trip.send
+title: 여비 증빙 송부
+status: live
+confirm: true                  # 보낼 내용 팝업의 `보내기`(또는 `저장·확정 후 보내기`)가 확인이다
+effect: write                  # Teams MCP 또는 eclass 쪽지로 나간다
+summary: '여비 증빙 송부 {seq} · {account} · {channel}'
+preset:
+  tripMe: { from: ctx:tripMe, desc: '여비계산서 목록 화면이 아는 내 이름(st.trips.me) — 계산서 PDF 를 내 출장자 번호로 받고(tripCalPdf 의 name), 제목·본문의 출장자에 적는다. 비면 갈래의 me' }
+fields:
+  seq:
+    type: string
+    required: true
+    max: 20
+    label: 계산서 번호
+    desc: 보내는 여비계산서 번호(목록 줄의 seq — 줄은 ctx.row, 어댑터가 같은지 본다. 출장 기간·출장지도 거기서 읽는다)
+    read: 보낼 여비계산서 번호 — 열린 출장 카드의 것 그대로. 지어내지 않습니다
+    example: '145580'
+  docNo:
+    type: string
+    max: 20
+    label: 신청서 번호
+    desc: 그 출장의 HR 신청서 번호 — 보관함(증빙)과 보낸 기록(sendDone)의 열쇠
+    read: 그 출장의 HR 신청서 번호. 모르면 null
+    example: '2026-001234'
+  account:
+    type: string
+    required: true
+    max: 100
+    label: 과제·계정
+    desc: 어느 과제 또는 계정의 여비인지(직접 적거나 이전에 보낸 세트에서 고른 것) — 글의 제목과 "과제·계정" 줄에 들어간다
+    read: 사용자가 말한 과제 이름이나 계정. 지어내지 않습니다
+    example: MVDC 차단기 과제
+  to:
+    type: object
+    required: true
+    label: 받는 사람
+    desc: 담당자(쪽지의 받는 사람 조회 memoSuggest 로 고른 사람 — id 가 사번·계정이고 Teams 는 id@회사 도메인으로 보낸다). 직급·부서는 화면에만 보이고 기록에는 담지 않는다
+    read: 사용자가 말한 받는 사람. 이름·ID 로 찾은 사람 가운데 고른 것 그대로 — 지어내지 않습니다
+    fields:
+      id:   { type: string, required: true, max: 40, desc: '받는 사람의 ID(사번·계정 — 쪽지의 to, Teams 의 메일 앞부분)', read: 받는 사람의 ID 그대로, example: hgd }
+      name: { type: string, max: 40, desc: 이름(보낸 기록의 to 에 적힌다), read: '받는 사람의 이름. 모르면 null', example: 홍길동 }
+  channel:
+    type: enum
+    required: true
+    values: [teams, memo]
+    label: 보내는 길
+    desc: Teams(MCP localhost:5003) 또는 쪽지(eclass) — 송부 칸의 `보내는 길` 칩으로 고른 것(2026-10-04 사용자 지정). 팝업에 적힌 길이고, 보내는 순간 Teams 로 갈 수 없으면 보내지 않는다
+    read: 'Teams 로 보내라고 했으면 teams, 쪽지로 보내라고 했으면 memo. 말하지 않았으면 null(Teams 가 닿으면 Teams, 아니면 쪽지)'
+  reason:
+    type: string
+    max: 200
+    label: 출장 목적
+    desc: 신청서의 목적(it.reason) — 글의 "목적" 줄. 비면 줄을 뺀다
+    read: '그 출장의 목적. 모르면 null'
+    example: MVDC 차단기 실증 시험 참관
+  file:
+    type: string
+    required: true
+    max: 100
+    label: PDF 이름
+    desc: 보낼 PDF 의 이름 — 패널이 src/send.js pdfName({ trip, me }) 로 짓는다("여비증빙_<계산서>_<이름>.pdf"). 계산서 출력은 calName 으로 그 안에 맨 앞에 선다
+    read: '보낼 PDF 파일 이름. 사용자가 정해 말하지 않았으면 "여비증빙_<계산서 번호>_<이름>.pdf"'
+    example: 여비증빙_145580_김거화.pdf
+llm: false
+runner: trip.send
+uses:
+  - { module: src/send.js, export: sendGate }
+  - { module: src/send.js, export: sendable }
+  - { module: src/send.js, export: sendTitle }
+  - { module: src/send.js, export: sendLines }
+  - { module: src/send.js, export: pdfName }
+  - { module: src/send.js, export: calName }
+  - { module: src/trip.js, export: tripCalPdf }
+  - { module: src/pdf.js, export: buildPdf }
+  - { module: src/teams.js, export: teamsSendFile }
+  - { module: src/memo.js, export: memoSend }
+  - { module: src/memo.js, export: memoHtml }
+next: 보낸 뒤 패널이 과제·계정 + 받는 사람 + 길을 한 세트로 최근 목록 맨 앞에 기억하고(sendSets, 셋까지) 그 출장의 보낸 기록(sendDone)을 적는다 — 실행기 밖의 일이다. 계산서를 PDF 로 받지 못하면 보내지 않는다

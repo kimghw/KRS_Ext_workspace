@@ -1459,17 +1459,41 @@ Claude 가 조건을 해석해 날짜를 하루씩 조회하고, 조건에 맞�
 2. **Anthropic API 키** — `설정 → LLM` 의 `Anthropic API 키` 에 넣으면 씁니다(이 브라우저에만 저장).
 3. **규칙 해석** — 위 둘 중 하나가 붙어 있는데 호출이 실패하면 흔한 문장은 규칙으로 처리합니다.
 
-### 입력 명세 (`input.yaml`) — 말은 구조로 바뀐 뒤에만 실행 쪽으로 간다
+### 행위 명세 (`actions/spec`) — 사람이 누르든 LLM 이 읽든 같은 구조가 된 뒤에 실행기가 돈다
 
-Claude 가 읽어 돌려주는 것은 일곱 가지입니다 — 회의실·차량 **조회 조건**(`parse`), 근태 **폼 조각**(`attend`),
-출장 **증빙 한 장의 기록**(`receipt`), 예약 실패 **원인 설명**(`diagnose`), 공문의 **문서 기록**(`gongmun.<갈래>`)·
-**공문 설정 조각**(`gongmunSetup`)·**사유**(`gongmunReason.<갈래>`). 각각 어떤 칸을 어떤 형으로 내야 하는지, 어떤 규칙으로 읽는지가
-**`references/input.yaml` 한 곳**에 적혀 있습니다 — 공문의 셋만은 **공문 레시피(`recipes/gongmun`)**에 칸마다 적혀 있고 생성기(`tools/gen-gongmun.mjs`)가
-같은 꼴의 작업으로 만들어 함께 씁니다(2026-10-09 사용자 지정). 칸의 형에는 **목록**(`list` — 줄마다 같은 모양의 객체, 품목·파일·과제)도 있습니다.
-목록의 줄은 줄마다 관문을 지나고, 필수 칸이 빠진 줄만 빼고 몇 줄을 뺐는지 알립니다(목록 안에 목록은 두지 않습니다).
+2026-10-16 사용자 지정("LLM 하고 사람이 클릭을 하면 이게 구조화 된 다음에 러너/실행기를 호출하는 구조로 모두 바꾸고 싶어 … 중간에 yaml 구조파일을 놓고
+LLM 으로 read 할 수 있는 인라인 프롬프트를 넣던가 … 사전설정에 대한 정보도 들어가야 되고, 공문 종류·근태 종류에 따라 각각 yaml 이 존재해야지")으로
+**행위 층 `actions/`** 가 생겼습니다. 행위 하나에 YAML 하나(`actions/spec/<갈래>/<종류>.yaml` — 근태 여섯 종류·공문 네 종류·회의실·차량·여비계산서)이고,
+칸마다 `read`(Claude 에게 가는 인라인 프롬프트 — 지금 Claude 가 채우지 않는 칸에도 둡니다)와 **사전설정**(`preset` — 내 이름·오늘·근무지·공문 설정·고른 과제처럼
+그때그때 적지 않는 값)이 있습니다. 패널의 단추(예약하기·결재요청·공문 작성 …)도, Claude 가 말을 읽어 채운 조각도 **같은 기록**(`{ action, preset, input, hash }`)이 되어
+관문을 지나고, 디스패처가 사람 확인을 확인한 뒤 기존 실행기를 부릅니다. 어떤 행위가 있고 어떻게 쓰는지는 [`actions/README.md`](actions/README.md), 설계와 검토(Codex 와 두 번 교차 검토)는
+[`docs/actions-design.md`](docs/actions-design.md).
 
 ```
-사용자 말 → 로컬 CLI · API 키 · 규칙 해석 → input.yaml 의 구조 → 관문(검증·정규화) → 받는 코드
+사람(UI 클릭)  ── 패널이 칸 값을 모음 ──┐
+                                        ├─ 기록 ─ 관문(검증·정규화) ─ 디스패처(확인·활동 로그) ─ 실행기(src/runners.js · attend.js+hr.js · trip.js · gongmun.js+gmwrite.js …)
+Claude(말·문서) ── 명세에서 만든 작업 ───┘
+```
+
+- 기록은 활동 로그에 한 줄씩 남습니다(`data.record` — 파일은 이름만, 바이트·세션·사이트 손잡이는 없음). `node tools/gen-actions.mjs --example <행위>` 가 보기 기록을 YAML 로 찍습니다.
+- 디스패처는 실행 직전에 기록을 **다시 검사하고 지문(hash)을 다시 셉니다** — 지은 뒤 고친 기록, 필수가 빈 초안은 여기서 막힙니다. `confirm: true` 인 행위는 사람이 누른 자리에서만 돕니다(Claude 의 답으로는 안 됩니다).
+- 꼭 있어야 하는 것이 비어 막히면 상태줄에 까닭과 함께 **빈 곳으로 가는 단추**가 섭니다(2026-10-16 사용자 지정: "반드시 들어가야 하는 거면 빈곳을 찾아갈 수 있는 바로가기 버튼을 넣어줘" — `src/jump.js`).
+  `내 이름 채우기 →` 는 설정 → 일반의 내 이름 칸을, `공문 설정 채우기 →` 는 공문 탭의 공문 설정 칸을, 폼의 칸이면 그 칸을 열어 초점을 두고 윤곽선을 잠깐 켭니다.
+- 사이트 특유의 순서(HR 입력 차례·ViewState 다시 읽기·수정의 되돌리기 판단·정산 규칙·공문 단계)는 YAML 로 옮기지 않았습니다 — 기존 실행기가 그대로 하고, 새 층은 그 앞에 서는 얇은 어댑터입니다.
+- 아직 안 옮긴 것(R&D·메일·홈 카드·회람·기념일 지원 화면·숙박 줄 고치기)은 명세만 `status: planned` 로 있습니다(2단계).
+
+### 입력 명세 (`input.yaml`) — 말은 구조로 바뀐 뒤에만 실행 쪽으로 간다
+
+Claude 가 읽어 돌려주는 것은 일곱 가지입니다 — 회의실·차량 **조회 조건**(`search.room`·`search.car`), 근태 **폼 조각**(`attend`),
+출장 **증빙 한 장의 기록**(`receipt`), 예약 실패 **원인 설명**(`diagnose`), 공문의 **문서 기록**(`gongmun.<갈래>`)·
+**공문 설정 조각**(`gongmunSetup`)·**사유**(`gongmunReason.<갈래>`). 각각 어떤 칸을 어떤 형으로 내야 하는지, 어떤 규칙으로 읽는지가 세 곳에 나뉘어 적혀 있고
+생성기가 같은 꼴의 작업으로 만들어 함께 씁니다(`src/input.js` 의 `TASKS`) — 증빙·원인은 **`references/input.yaml`**, 조회 조건·근태 조각은 **행위 명세(`actions/spec`)**
+의 종류별 YAML 에 칸마다 적힌 `read` 를 합친 것(근태는 여섯 종류의 칸을 합쳐 작업 하나 — 종류는 Claude 가 고릅니다, 2026-10-16), 공문의 셋은 **공문 레시피(`recipes/gongmun`)**에
+칸마다 적혀 있습니다(`tools/gen-gongmun.mjs`, 2026-10-09 사용자 지정). 칸의 형에는 **목록**(`list` — 줄마다 같은 모양의 객체, 품목·파일·과제)·**값의 목록**(`tags`)·**파일 참조**(`file` — 이름·형식)·
+**한 겹의 객체**(`object`)도 있습니다. 목록의 줄은 줄마다 관문을 지나고, 필수 칸이 빠진 줄만 빼고 몇 줄을 뺐는지 알립니다(목록 안에 목록은 두지 않습니다).
+
+```
+사용자 말 → 로컬 CLI · API 키 · 규칙 해석 → 명세의 구조 → 관문(검증·정규화) → 받는 코드
 ```
 
 - **지시문과 스키마를 여기서 만듭니다.** 로컬 CLI 다리(`native/host.mjs`)와 API(`src/ai.js`)가 같은 지시문을 씁니다.
@@ -1477,15 +1501,18 @@ Claude 가 읽어 돌려주는 것은 일곱 가지입니다 — 회의실·차�
 - **어느 길로 온 답이든 관문을 지납니다**(`src/input.js` 의 `structure`). 필수 칸이 없거나 틀리면, 또는 끝이 시작보다
   앞서면 그 답을 버리고 다음 길로 내려갑니다. 필수가 아닌 칸이 틀리면 그 칸만 비우고 **무엇을 뺐는지 결과 줄에 적습니다.**
   명세에 없는 키는 버립니다 — Claude 가 정하는 것은 칸의 값뿐이고, 어느 종류·어느 함수로 갈지는 화면이 정합니다.
+  관문에는 두 모드가 있습니다(2026-10-16) — Claude 의 조각을 받는 **초안 모드**(위처럼 틀린 칸은 비우고 알림)와 사람이 보낸 기록을 실행기에 넘기기 직전의
+  **실행 모드**(잃는 보정 — 칸 비우기·줄 빼기·글 자르기 — 가 생기면 막습니다. 사람이 본 것과 보내는 것이 달라지면 안 됩니다).
 - 구조가 곧 실행은 아닙니다. 조회 조건은 빈 시간을 찾을 뿐이고 예약은 후보를 고른 뒤에, 근태 조각은 폼에 얹힐 뿐이고
   HR 에는 폼을 확인해 누른 뒤에 나갑니다. 명세의 `consumer`(구조를 받는 코드)와 `next`(그 뒤의 길)가 이것을 적어 둡니다.
 
 확장은 YAML 을 읽지 못하므로 `input.yaml` 을 고친 뒤에는 생성물을 다시 만듭니다. 둘이 어긋나면 테스트가 잡습니다.
 
 ```
-npm run gen                       # 두 생성기를 한 번에(아래 여비 쪽 생성물도 같이)
+npm run gen                       # 생성기들을 한 번에(여비·공문 레시피·행위 명세의 생성물도 같이)
 node tools/gen-input.mjs          # input.yaml → src/inputspec.js
 node tools/gen-input.mjs --check  # 쓰지 않고 어긋났는지만 본다
+node tools/gen-actions.mjs        # actions/spec → actions/spec.js (--check · --prompt attend|search.room|search.car · --show <행위> · --example <행위>)
 ```
 
 ### 여비 규칙·KTX 운임표 (`travel-rules.yaml` · `ktx-fares.yaml`)
@@ -1761,8 +1788,10 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `src/site.js` | 날짜 조회·지역 전환·예약 제출 흐름 |
 | `src/roomorder.js` | 회의실 줄 차례와 접어 둘 방 (화면 차례는 사이트 차례와 다르다) |
 | `src/runners.js` | 예약 종류별 실행자 — 회의실(`site.js`)·차량(`rentcar.js`)의 조회·예약·취소를 같은 모양으로 감싼 어댑터. 패널은 일을 시작할 때 하나를 집어 끝까지 그것만 쓴다 |
-| `references/input.yaml` | **LLM 입력 명세(단일 출처)** — 작업마다 낼 칸·형·규칙, 그 구조를 받는 코드 |
-| `tools/gen-input.mjs` | `input.yaml` → `src/inputspec.js` 생성기 (명세의 모양도 검사) |
+| `actions/` | **행위 층**(2026-10-16 — `actions/README.md`·`actions/CLAUDE.md`·`docs/actions-design.md`): `spec/<갈래>/<종류>.yaml`(**행위 명세 — 단일 출처.** 행위마다 파일 하나, 칸마다 `read` 인라인 프롬프트와 `preset` 사전설정) · `spec.js`(**생성물**) · `gate.js`(관문 — 초안/실행 모드) · `preset.js`(사전설정 채우기) · `record.js`(기록·지문·로그용 자르기·YAML 글) · `dispatch.js`(디스패처 — 등록·build·run·확인·활동 로그) · `runners/<갈래>.js`(기록 → 기존 실행기 인자) · `test/` |
+| `tools/gen-actions.mjs` | `actions/spec` → `actions/spec.js` 생성기. LLM 작업 `attend`·`search.room`·`search.car` 도 여기서 만든다(`--check` · `--prompt` · `--show` · `--example`) |
+| `references/input.yaml` | **LLM 읽기 작업 명세(단일 출처)** — 출장 증빙 읽기(`receipt`)·실패 원인(`diagnose`)의 칸·형·규칙, 그 구조를 받는 코드. 조회 조건·근태 조각은 2026-10-16 부터 행위 명세가 만든다 |
+| `tools/gen-input.mjs` | `input.yaml` → `src/inputspec.js` 생성기 (명세의 모양도 검사 — 행위 명세가 만든 작업도 같은 검사를 지난다) |
 | `recipes/gongmun/` | **공문 레시피(단일 출처)** — 폼(manifest·fieldmap)·목적(purpose — 칸마다 읽는 법 · body_spec — 틀과 자리 · attach_rules)·문서 읽기 공통 지시문·틀의 공통 자리·위임전결·문서설정 |
 | `tools/gen-gongmun.mjs` | `recipes/gongmun` → `src/gmrecipe.js` 생성기 (레시피끼리 가리키는 것 — 규정·프로파일·칸·틀의 자리 — 도 검사하고, 공문 문서 읽기 작업 `gongmun.<갈래>` 도 만든다. `--prompt <갈래>` 는 지시문 전문) |
 | `references/travel-rules.yaml` · `references/ktx-fares.yaml` | **여비 규칙·KTX 운임(단일 출처)** — 식수·일비·출장기간 구분, 구간 운임 |
@@ -1791,7 +1820,7 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `src/memo.js` | eclass 쪽지 — 받는 사람 찾기, 글과 첨부 하나 보내기(임시저장 → 첨부 올리기 → 저장 → 보내기) |
 | `src/teams.js` | Teams MCP(`localhost:5003`)가 닿는지·파일을 보낼 수 있는지 확인하고, 되면 채팅으로 파일을 보낸다. MCP 연결(`connect`)은 원노트 공유(`src/rndnote.js`)도 쓴다 |
 | `src/inputspec.js` | 생성물. 고치지 않는다 |
-| `src/input.js` | 명세로 지시문·JSON 스키마를 만들고, 돌아온 답을 검증·정규화하는 관문 |
+| `src/input.js` | 명세로 지시문·JSON 스키마를 만들고, 돌아온 답을 검증·정규화하는 관문. `TASKS` 는 input.yaml·공문 레시피·행위 명세의 작업을 합친 것이고, `structureOf`(명세 객체를 직접 받는 관문 — 초안/실행 모드, `when`, `tags`·`file`·`object` 형)를 행위 층이 쓴다 |
 | `src/ai.js` | 명세의 작업 하나를 Anthropic Messages API 에 맡긴다 (`claude-opus-5-5`, 생각의 깊이 `low` — 로컬 CLI 다리와 같은 모델·같은 깊이, 구조화 출력. 2026-10-05 사용자 지정으로 `claude-haiku-4-5` 에서 바꿨다) |
 | `src/search.js` | 날짜 범위를 훑어 조건에 맞는 빈 시간대 찾기 |
 | `src/diagnose.js` | 저장 응답에서 달라진 부분만 추려 작은 요약으로 만들기 (회의실·차량이 보낸 값과 폼 칸이 달라 종류별로 추린다) |
@@ -1819,7 +1848,8 @@ npm i                           # jsdom, yaml (둘 다 개발용 — 확장에�
 npm test                        # 아래 전부를 한 번에(30초 남짓). 하나만 볼 때는 아래 줄을 따로 돌린다
 node test/logic.test.mjs        # 시간/날짜 파싱, 슬롯 계산, 내 예약 판정
 node test/search.test.mjs       # 문장 해석 → 예약 가능 목록
-node test/llm.test.mjs          # 로컬 CLI → API 키 → 규칙 폴백, 명세와 다른 답은 다음 길로
+node test/llm.test.mjs          # 로컬 CLI → API 키 → 규칙 폴백, 명세와 다른 답은 다음 길로, 행위의 작업으로 말 읽기(fillAction)
+node --test "actions/test/*.test.mjs"   # 행위 층: 생성물 일치·명세 검사(1단계 호환 — 생성된 attend·search 작업이 옮기기 전 input.yaml 과 같은 칸)·관문(초안/실행 모드·when·새 형)·사전설정·기록(지문·자르기·YAML 왕복)·디스패처(확인·hash·outcome·로그 한 줄)·실행기 어댑터(가짜 실행기로 인자 변환·차례)
 node test/gitsync.test.mjs      # git 아이콘: 임시 저장소(맨 저장소 + 둘)로 받아 오기·새 커밋 세기·겹침·갈라짐 거절·빨리 감기 받기·다시 불러올지, 다리의 gitStatus·gitPull, 아이콘의 모양과 누름
 node test/travel.test.mjs       # 여비계산서: 규칙·운임 생성물 일치, 식수·일비·교통편 셈, 목록·작성 화면 읽기, 저장 요청, 올리는 흐름
 node test/routes.test.mjs       # 출장지마다 기억하는 교통편: 무엇을 기억하는지(만든 사전정산·사이트의 줄), 담기·꺼내기, 다음 출장에서 되살리기

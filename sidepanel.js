@@ -2,7 +2,7 @@ import { DEFAULT_HOURS, ORIGIN, PORTAL_HOME_URL } from './src/config.js';
 import { AuthError } from './src/net.js';
 import { captureRaw } from './src/site.js';
 import { RUNNERS, runnerOf } from './src/runners.js';
-import { modifyReservation, describeModifyResult } from './src/modify.js';
+import { describeModifyResult } from './src/modify.js';
 import { parseSmart, diagnoseSmart, nativeProbe, nativeLogs } from './src/llm.js';
 import { DEFAULT_MODEL } from './src/ai.js';
 import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js';
@@ -11,7 +11,7 @@ import { bridgeGuide, bridgeRoot } from './src/bridgeguide.js';
 import { bridgeUses } from './src/bridgeuse.js';
 import { createLogbook, formatEntries, buildLogReport, stamp } from './src/logbook.js';
 import { buildSaveDigest } from './src/diagnose.js';
-import { findSlots, MAX_DAYS, widenHours } from './src/search.js';
+import { MAX_DAYS, widenHours } from './src/search.js';
 import { collectMine, datesFrom, sameName } from './src/mine.js';
 import { MONTH_DAYS, createDayStore } from './src/monthcache.js';
 import {
@@ -36,6 +36,13 @@ import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
 import { tripRule, loadStages } from './src/settling.js';
 import { tripList } from './src/trip.js';
+import { RECIPE } from './src/gmrecipe.js';
+// 행위 층(actions/) — 예약·취소·수정·말로 찾기는 기록(record)을 지어 디스패처로 돈다. 실행기 어댑터는 actions/runners/booking.js.
+import { createDispatcher } from './actions/dispatch.js';
+import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
+import { ActionError } from './actions/gate.js';
+import { resolvePreset } from './actions/preset.js';
+import { registerBooking, inputOf, cancelInputOf, handleSpan, LIVE_RECORD_GONE } from './actions/runners/booking.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -107,6 +114,23 @@ function forgetHome() {
 /** 수정·이어붙이기 결과에서 남길 것만 고른다. record 에는 화면 손잡이 같은 조각이 딸려 온다. */
 const modifyOutcome = (r) => (r && {
   stage: r.stage, restored: r.restored, lost: r.lost, uncertain: r.uncertain, message: r.message,
+});
+
+/* ------------------------------------------------------------- 행위 디스패처 */
+
+/**
+ * 행위 디스패처(actions/) — 예약·취소·수정·말로 찾기는 기록(record)을 지어 여기로 돈다. 근태·공문 패널도 같은 것을 쓴다(deps.actions).
+ * 한 번 돌 때마다 활동 기록 한 줄은 디스패처가 남긴다 — 옮긴 자리에서는 run 안의 일을 logEvent 로 따로 적지 않는다.
+ * 사람이 누른 핸들러 안에서만 confirmed: record.hash 를 넣는다(조회 행위는 확인 없이 돈다).
+ */
+// 실행기가 던진 run 은 디스패처가 ctx.text 로 ✕ 줄을 남기고 까닭은 data.result.error 에 둔다 — 전처럼 줄 글에 "— 까닭" 을 잇는다(attendpanel·sendbox 의 단독 래퍼와 같다).
+const failedText = (e) => (!e.ok && typeof e.data?.result?.error === 'string' && e.data.result.error ? `${e.text} — ${e.data.result.error}` : e.text);
+const actions = createDispatcher({ log: (e) => logEvent(e.kind, e.ok, failedText(e), e.data) });
+registerBooking(actions);
+
+/** 행위의 사전설정을 채운다 — 저장소·내 이름·오늘·레시피·패널의 ctx(actions/preset.js). 값이 없으면 null 이지만 키는 다 있다. */
+const presetFor = (id, ctx = {}) => resolvePreset(actions.entry(id).preset, {
+  storage: (keys) => chrome.storage.local.get(keys), me: state.myName, today: todayStr(), recipe: RECIPE, ctx,
 });
 
 /* ------------------------------------------------------------- 유틸 */
@@ -423,13 +447,21 @@ function pickToPayload(run, p, title) {
  */
 const currentRunner = () => (isCar() ? RUNNERS.car : RUNNERS.room);
 
-/** 보내기 전에 비어 있으면 안 되는 칸을 본다. 비었으면 말하고 그 칸에 손을 놓는다. */
-function missingInput(run, title, why = '') {
+/**
+ * 기록을 짓다 관문(actions/gate.js)이 막은 까닭을 상태줄에 적고 그 칸에 손을 놓는다.
+ * 비어 있으면 안 되는 칸(회의실은 회의주제, 차량은 행선지 — 그 종류의 실행자가 정한다)은 예전 missingInput 과 같은 말·초점이고,
+ * 그 밖의 까닭(글자 수·시각 차례)은 관문의 말 그대로다.
+ */
+function sayBuildError(run, err, title, why = '') {
   const miss = run.missing({ title, place: el.place.value.trim() });
-  if (!miss) return false;
+  if (!miss) {
+    setStatus(Array.isArray(err?.problems) ? err.problems.join(', ') : err?.message || String(err), 'error');
+    // 어디가 비었는지 아는 것(관문의 missing)은 그 자리로 가는 단추를 상태줄 끝에 세운다.
+    paintJumps(el.status, jumpsOf(err, err?.action && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
+    return;
+  }
   setStatus(why && miss.field === 'place' ? `행선지를 입력하세요. ${why}` : miss.message, 'error');
   (miss.field === 'place' ? el.place : el.title).focus();
-  return true;
 }
 
 /**
@@ -1143,35 +1175,59 @@ async function submitBooking() {
   // 이 제출이 끝날 때까지 쓸 실행자. 도는 중에 탭을 옮겨도 남은 건은 같은 종류로 간다.
   const run = currentRunner();
   const title = el.title.value.trim();
-  if (missingInput(run, title)) return;
-
-  const jobs = state.picks.filter((p) => p.kind !== 'cancel').map((p) => pickToPayload(run, p, title));
   let day = state.day;
   el.submit.disabled = true;
   el.refresh.disabled = true;
+
+  // 고른 칸마다 기록(<갈래>.reserve)을 먼저 다 짓는다 — 관문이 막으면(회의주제·행선지가 빔) 아무것도 보내기 전에 멈춘다.
+  let jobs;
+  try {
+    const preset = await presetFor(`${run.kind}.reserve`);
+    jobs = state.picks.filter((p) => p.kind !== 'cancel').map((p) => {
+      const payload = pickToPayload(run, p, title);
+      return { payload, record: actions.build(`${run.kind}.reserve`, { input: inputOf(payload), preset }).record };
+    });
+  } catch (err) {
+    el.submit.disabled = false;
+    el.refresh.disabled = false;
+    if (!(err instanceof ActionError)) throw err;
+    sayBuildError(run, err, title);
+    return;
+  }
 
   const failed = [];
   let done = 0;
 
   try {
     for (let i = 0; i < jobs.length; i++) {
-      const payload = jobs[i];
+      const { payload, record } = jobs[i];
       setStatus(`예약 중 ${i + 1}/${jobs.length} — ${payload.room} ${payload.start}~${payload.end}`);
       markPick(i, '⏳');
 
+      const what = `${payload.room} ${payload.date} ${payload.start}~${payload.end}`;
       let result;
+      let digest = null;
       try {
-        result = await run.reserve(payload, day);
+        // 사람이 누른 자리라 확인(confirmed)을 넣는다. 활동 기록 한 줄은 디스패처가 남기고, 최종 문구·data 는 결과를 보고 정한다(outcome).
+        result = await actions.run(record, {
+          confirmed: record.hash, day, blocked: payload.blocked, text: what,
+          outcome: async (r) => {
+            if (r.ok && r.verified) return { ok: true, data: { message: r.message || undefined, owner: r.record?.owner || r.who?.name } };
+            digest = saveDigest(payload, r);
+            return {
+              ok: false,
+              text: `${what} — ${r.submitted ? '제출했지만 확인 못 함' : '실패'}: ${r.message}`,
+              data: { submitted: !!r.submitted, verified: r.verified, message: r.message, digest },
+            };
+          },
+        });
       } catch (err) {
         result = { ok: false, submitted: false, message: err.message };
       }
 
-      const what = `${payload.room} ${payload.date} ${payload.start}~${payload.end}`;
       if (result.ok && result.verified) {
         done++;
         markPick(i, '✓', 'done');
-        logEvent('reserve', true, what,
-          { payload, message: result.message || undefined, owner: result.record?.owner || result.who?.name });
         rememberBooked([{
           mode: run.kind, date: payload.date, room: payload.room,
           start: parseInt(payload.start, 10) * 60 + +payload.start.slice(3),
@@ -1188,12 +1244,8 @@ async function submitBooking() {
           rememberName(result.record.owner);
         }
       } else {
-        const digest = saveDigest(payload, result);
         failed.push({ payload, result, digest });
         markPick(i, result.submitted ? '⚠' : '✕', 'fail');
-        logEvent('reserve', false,
-          `${what} — ${result.submitted ? '제출했지만 확인 못 함' : '실패'}: ${result.message}`,
-          { payload, submitted: !!result.submitted, verified: result.verified, message: result.message, digest });
       }
 
       // 다음 건은 새 화면으로 보낸다(방금 넣은 예약도 반영된다)
@@ -1227,7 +1279,7 @@ async function submitBooking() {
   }
 
   // 넣은 날은 담아 둔 현황이 낡았다. 버려서 다음에 볼 때 다시 읽게 한다.
-  forgetDays([...new Set(jobs.map((j) => j.date))], [run.kind]);
+  forgetDays([...new Set(jobs.map((j) => j.payload.date))], [run.kind]);
 
   // 결과를 먼저 쓰면 아래 조회가 덮어버린다. 새로고침을 끝내고 나서 말한다.
   if (!failed.length) state.picks = [];
@@ -1309,35 +1361,47 @@ async function extendBooking() {
   el.extend.disabled = true;
   el.submit.disabled = true;
   el.refresh.disabled = true;
+
+  // 이어붙이기도 수정 행위(<갈래>.modify)다 — 되돌릴 원래 건(back)과 합친 새 조건(next)이 기록이고, 로그 kind 는 modify 다.
+  // 관문이 막으면(회의주제가 빔) 취소부터 하지 않는다.
+  let record;
+  try {
+    ({ record } = actions.build(`${run.kind}.modify`, {
+      input: { back: inputOf(mk(target.start, target.end)), next: inputOf(mk(merged.start, merged.end)) },
+      preset: await presetFor(`${run.kind}.modify`),
+    }));
+  } catch (err) {
+    el.extend.disabled = false;
+    el.submit.disabled = false;
+    el.refresh.disabled = false;
+    if (!(err instanceof ActionError)) throw err;
+    sayBuildError(run, err, title);
+    return;
+  }
+  const what = `${row.room.name} ${date} ${fmtTime(target.start)}~${fmtTime(target.end)} → ${fmtTime(merged.start)}~${fmtTime(merged.end)}`;
   forgetDays([date], [run.kind]);
 
   let result;
   try {
     // 사이트는 시간이 1분이라도 겹치면 받지 않는다. 기존 건을 먼저 비우고 합친 범위로 새로 넣는다.
-    // 순서와 되돌리기는 src/modify.js 에 맡긴다 — 이어붙이기와 수정이 같은 규칙을 쓴다.
+    // 순서와 되돌리기는 src/modify.js 에 맡긴다 — 이어붙이기와 수정이 같은 규칙을 쓴다(콜백은 actions/runners/booking.js 가 짓는다).
     // 특히 **새 예약이 제출은 됐는데 확인이 안 될 때는 되돌리지 않는다**(이중 예약 방지).
-    result = await modifyReservation({
+    // 취소는 보고 있던 화면(day)의 손잡이(target)로 바로 가고, 새 예약·되살리기 전에는 그 날짜를 다시 읽는다(reloadFor).
+    result = await actions.run(record, {
+      confirmed: record.hash,
+      day,
+      target,
+      reloadFor: (d) => reloadFor(run, d, region),
       onStage: (stage) => setStatus({
         cancel: `기존 ${fmtTime(target.start)}~${fmtTime(target.end)} 취소 중...`,
         reserve: `${fmtTime(merged.start)}~${fmtTime(merged.end)} 로 다시 예약 중...`,
         restore: '이어붙이기에 실패해 원래 예약을 되살리는 중...',
       }[stage] || '', stage === 'restore' ? 'error' : ''),
-
-      cancel: () => run.cancel(target, day),
-      reserve: async () => {
-        day = await reloadFor(run, date, region);
-        return run.reserve(mk(merged.start, merged.end), day);
-      },
-      restore: async () => {
-        day = await reloadFor(run, date, region);
-        return run.reserve(mk(target.start, target.end), day);
-      },
+      text: what,
+      data: { title, extend: true },
+      outcome: async (r) => ({ text: `${what}${r.ok ? '' : ` — ${r.message}`}`, data: { title, extend: true, outcome: modifyOutcome(r) } }),
     });
 
-    logEvent('extend', result.ok,
-      `${row.room.name} ${date} ${fmtTime(target.start)}~${fmtTime(target.end)} → ` +
-      `${fmtTime(merged.start)}~${fmtTime(merged.end)}${result.ok ? '' : ` — ${result.message}`}`,
-      { title, outcome: modifyOutcome(result) });
     if (result.ok) {
       rememberBooked([{ mode: run.kind, date, room: row.room.name, start: merged.start, end: merged.end, at: Date.now() }]);
     }
@@ -1356,8 +1420,8 @@ async function extendBooking() {
       }
     }
   } catch (err) {
+    // 실행기가 던진 것은 디스패처가 기록했다.
     setStatus(`이어붙이기 실패: ${err.message}`, 'error');
-    logEvent('extend', false, `${row.room.name} 이어붙이기 실패: ${err.message}`, { outcome: modifyOutcome(result) });
   } finally {
     el.extend.disabled = false;
     el.submit.disabled = false;
@@ -1380,6 +1444,8 @@ async function cancelFromMine(index) {
   el.refresh.disabled = true;
   setStatus(`취소 중... ${it.room} ${when}`);
 
+  // run 까지 갔는지 — 실행기가 던진 것은 디스패처가 기록하고, 그 전(화면 읽기·손잡이 찾기·기록 짓기)의 실패는 여기서 남긴다.
+  let ran = false;
   try {
     const run = runnerOf(it.kind);
     if (!run) throw new Error(`취소할 수 없는 종류입니다(${it.kind}).`);
@@ -1387,9 +1453,19 @@ async function cancelFromMine(index) {
     const rec = liveRecordFor(run, day, it);
     if (!rec) throw new Error(LIVE_RECORD_GONE);
 
-    const r = await run.cancel(rec, day);
-    logEvent('cancel', r.ok, `${it.room} ${when}${r.ok ? '' : ` — ${r.message}`}`,
-      { from: 'mine', kind: it.kind, title: it.title, submitted: r.submitted, message: r.message || undefined });
+    // 기록(<갈래>.cancel)은 줄의 구간으로 짓고, 사이트에서 읽은 손잡이(rec)는 ctx 로 간다.
+    const { record } = actions.build(`${run.kind}.cancel`, {
+      input: cancelInputOf(run.kind, { name: it.room, from: it.from, to: it.to, title: it.title, region: it.region || state.region }),
+      preset: await presetFor(`${run.kind}.cancel`),
+    });
+    ran = true;
+    const r = await actions.run(record, {
+      confirmed: record.hash, day, record: rec, text: `${it.room} ${when}`, data: { from: 'mine', kind: it.kind, title: it.title },
+      outcome: async (res) => ({
+        text: `${it.room} ${when}${res.ok ? '' : ` — ${res.message}`}`,
+        data: { from: 'mine', kind: it.kind, title: it.title, submitted: res.submitted, message: res.message || undefined },
+      }),
+    });
     forgetDays(datesBetween(it.from.date, it.to.date));
     if (r.ok) {
       state.justBooked = state.justBooked.filter((b) =>
@@ -1403,7 +1479,7 @@ async function cancelFromMine(index) {
     }
   } catch (err) {
     setStatus(`취소 실패: ${err.message}`, 'error');
-    logEvent('cancel', false, `${it.room} ${when} — ${err.message}`, { from: 'mine', kind: it.kind });
+    if (!ran) logEvent('cancel', false, `${it.room} ${when} — ${err.message}`, { from: 'mine', kind: it.kind });
   } finally {
     el.refresh.disabled = false;
   }
@@ -1427,20 +1503,21 @@ async function cancelPicked() {
   let failMsg = '';
 
   try {
+    const preset = await presetFor(`${run.kind}.cancel`);
     for (let i = 0; i < cancels.length; i++) {
       const p = cancels[i];
       setStatus(`취소 중 ${i + 1}/${cancels.length}...`);
       const rec = p.record || {};
       const what = `${rec.room || rec.name || '?'} ${day.date} ${fmtTime(rec.start)}~${fmtTime(rec.end)}`;
-      let r;
-      try {
-        r = await run.cancel(p.record, day);
-      } catch (err) {
-        logEvent('cancel', false, `${what} — ${err.message}`, { from: 'grid', mode: run.kind });
-        throw err;
-      }
-      logEvent('cancel', r.ok, `${what}${r.ok ? '' : ` — ${r.message}`}`,
-        { from: 'grid', mode: run.kind, title: rec.title, submitted: r.submitted, message: r.message || undefined });
+      // 기록(<갈래>.cancel)은 손잡이의 구간으로 짓고, 손잡이 자체는 ctx 로 간다. 실행기가 던지면 디스패처가 기록하고 다시 던진다.
+      const { record } = actions.build(`${run.kind}.cancel`, { input: cancelInputOf(run.kind, handleSpan(p.record, day)), preset });
+      const r = await actions.run(record, {
+        confirmed: record.hash, day, record: p.record, text: what, data: { from: 'grid', mode: run.kind, title: rec.title },
+        outcome: async (res) => ({
+          text: `${what}${res.ok ? '' : ` — ${res.message}`}`,
+          data: { from: 'grid', mode: run.kind, title: rec.title, submitted: res.submitted, message: res.message || undefined },
+        }),
+      });
       if (r.ok) {
         done++;
       } else {
@@ -1491,8 +1568,6 @@ function findLiveRecord(day, it) {
     return r.start < to && r.end > from;
   }) || null;
 }
-
-const LIVE_RECORD_GONE = '방금 다시 읽은 화면에서 그 예약을 찾지 못했습니다. 이미 취소됐거나 바뀌었을 수 있습니다 — 새로고침한 뒤 다시 해 주세요.';
 
 /**
  * 취소에 쓸 기록. 새로 읽은 화면에서 찾은 것이 먼저다. 못 찾았을 때 담아 둔 기록을 대신 쓰는 것은
@@ -1585,7 +1660,6 @@ async function runModify() {
     return;
   }
   const title = el.title.value.trim() || t.title;
-  if (missingInput(run, title, '되돌릴 때도 이 값을 씁니다.')) return;
   const next = pickToPayload(run, pick, title);
 
   // 되돌릴 값은 **원래 자리, 원래 시간** 이다. 다른 회의실/차량을 골랐을 수 있다.
@@ -1606,41 +1680,48 @@ async function runModify() {
     end: fmtTime(t.end),
     title: t.title || title,
   };
-
   const busy = (on) => {
     el.modify.disabled = on;
     el.submit.disabled = on;
     el.refresh.disabled = on;
   };
   busy(true);
+
+  // 수정 행위(<갈래>.modify)의 기록 — 되돌릴 원래 건(back)과 새 조건(next). 관문이 막으면(회의주제·행선지가 빔) 취소부터 하지 않는다.
+  let record;
+  try {
+    ({ record } = actions.build(`${run.kind}.modify`, { input: { back: inputOf(back), next: inputOf(next) }, preset: await presetFor(`${run.kind}.modify`) }));
+  } catch (err) {
+    busy(false);
+    if (!(err instanceof ActionError)) throw err;
+    sayBuildError(run, err, title, '되돌릴 때도 이 값을 씁니다.');
+    return;
+  }
+  const what = `${t.room} ${t.date} ${fmtTime(t.start)}~${fmtTime(t.end)} → ${next.room} ${next.date} ${next.start}~${next.end}`;
   forgetDays([...new Set([t.date, next.date, ...spanDatesOf(t.record)])], [t.kind]);
 
   let result;
   try {
-    result = await modifyReservation({
+    // 콜백(취소 → 새 예약 → 되살리기)은 actions/runners/booking.js 가 짓는다 — 취소 전에 원래 날짜를 다시 읽어 산 손잡이를 찾고(live —
+    // 없으면 취소를 보내지 않고 "그대로 두었다" 로 멈춘다), 새 예약·되살리기 전에도 그 날짜를 다시 읽는다(reloadFor). 활동 기록 한 줄은 디스패처가 남긴다.
+    result = await actions.run(record, {
+      confirmed: record.hash,
+      day: state.day,
+      live: (day) => liveRecordFor(run, day, t),
+      reloadFor: (date) => reloadFor(run, date),
+      blocked: next.blocked,
       onStage: (stage) => setStatus({
         cancel: `기존 ${t.room} ${fmtTime(t.start)}~${fmtTime(t.end)} 취소 중...`,
         reserve: `${next.start}~${next.end} 로 다시 예약 중...`,
         restore: '다시 예약하지 못해 원래 예약을 되살리는 중...',
       }[stage] || '', stage === 'restore' ? 'error' : ''),
-
-      cancel: async () => {
-        const day = await reloadFor(run, t.date);
-        const rec = liveRecordFor(run, day, t);
-        // 취소를 보내지 않았으므로 원래 예약은 그대로다. modify.js 가 "그대로 두었다"고 말한다.
-        if (!rec) return { ok: false, submitted: false, message: LIVE_RECORD_GONE };
-        return run.cancel(rec, day);
-      },
-      reserve: async () => run.reserve(next, await reloadFor(run, next.date)),
-      restore: async () => run.reserve(back, await reloadFor(run, t.date)),
+      text: what,
+      data: { kind: t.kind, title },
+      outcome: async (r) => ({ text: `${what}${r.ok ? '' : ` — ${r.message}`}`, data: { kind: t.kind, title, outcome: modifyOutcome(r) } }),
     });
   } finally {
     busy(false);
   }
-  logEvent('modify', result.ok,
-    `${t.room} ${t.date} ${fmtTime(t.start)}~${fmtTime(t.end)} → ${next.room} ${next.date} ${next.start}~${next.end}` +
-    (result.ok ? '' : ` — ${result.message}`),
-    { kind: t.kind, title, outcome: modifyOutcome(result) });
 
   state.picks = [];
   state.editTarget = null;
@@ -1774,7 +1855,7 @@ const isPanelTab = () => isAttend() || isGongmun() || isRnd() || isMail();
 
 /** 근태 탭. 화면 조각은 attendpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const attend = createAttendPanel({
-  $, escapeHtml, logEvent,
+  $, escapeHtml, logEvent, actions, openSetting: jumpToSetting,
   ai: () => ({ apiKey: state.apiKey, cli: state.cli }),
   // 근태를 올리거나 거둬들였으면 현황이 담아 둔 근태는 낡았다. 다음에 현황을 볼 때 다시 읽게 한다.
   onChanged: () => chrome.storage.local.remove(PLANS_KEY),
@@ -1790,7 +1871,7 @@ const COMPARE_KIND = new URLSearchParams(window.location.search).get('compare') 
 
 /** 공문 탭. 화면 조각은 gongmunpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const gongmun = createGongmunPanel({
-  $, escapeHtml, logEvent,
+  $, escapeHtml, logEvent, actions, openSetting: jumpToSetting,
   ai: () => ({ apiKey: state.apiKey, cli: state.cli }),
   me: () => state.myName,
   flash: (btn, text, ms) => flash(btn, text, ms),
@@ -2019,6 +2100,22 @@ function settingsNote(text, kind = '') {
   el.setNote.className = `status set-note${kind ? ` ${kind}` : ''}`;
   el.setNote.textContent = text;
 }
+
+/**
+ * 설정의 한 칸으로 간다 — 빈 곳으로 가는 단추(src/jump.js)가 부른다(2026-10-16 사용자 지정: "반드시 들어가야 하는 거면 빈곳을 찾아갈 수 있는
+ * 바로가기 버튼을 넣어줘"). 설정 화면을 열고 갈래를 고른 뒤 그 칸에 초점을 두고 윤곽선을 잠깐 켠다. 근태·공문 패널도 deps.openSetting 으로 쓴다.
+ */
+function jumpToSetting(pane, id) {
+  showSettings(true);
+  choosePane(pane);
+  flashFocus(document.getElementById(id));
+}
+
+/** 관문이 막은 빈 곳으로 가는 단추의 표 — 회의실·차량 기록의 칸(회의주제·행선지·동승자)과 사전설정(내 이름)마다 어디로 갈지. */
+const JUMPS = {
+  input: { title: () => flashFocus(el.title), place: () => flashFocus(el.place), passenger: () => flashFocus(el.passenger) },
+  preset: { me: { label: '내 이름', go: () => jumpToSetting('general', 'myName') } },
+};
 
 /** 글을 적는 칸인가(API 키·내 이름·MCP 주소 …) — 체크박스·단추는 아니다. */
 const isTextField = (t) => t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range', 'file'].includes(t.type));
@@ -2342,6 +2439,8 @@ async function runAsk() {
   state.found = [];
   setAskNote('조건을 해석하는 중...');
 
+  // run 까지 갔는지 — 실행기가 던진 것은 디스패처가 기록하고, 그 전(조건 해석·기록 짓기)의 실패는 여기서 남긴다.
+  let ran = false;
   try {
     const parsed = await parseSmart(text, {
       apiKey: state.apiKey, today: todayStr(), useNative: state.cli, kind,
@@ -2350,28 +2449,39 @@ async function runAsk() {
     // 관문이 비우고 parsed.note 에 적어 준다 — 인원 조건을 그대로 두면 모든 차가 걸러진다.
     const { filter } = parsed;
     const via = VIA_LABEL[parsed.via] || parsed.via;
+    const { noun } = run;
     setAskNote(`[${via}] ${filter.summary} — 후보를 찾는 중...`);
 
-    const { results, skipped, dates } = await findSlots(filter, (date, i, n) => {
-      setAskNote(`[${via}] ${filter.summary} — ${date} 조회 중 (${i}/${n})`);
-    }, run.loadDay);
+    // 말로 찾기는 조회 행위(<갈래>.search — 확인 없이 돈다)다. LLM 이 지은 조각이라 by:llm 으로 초안 모드로 짓고, run 이 실행 모드로 다시 본다.
+    // 로컬 CLI 가 실패해 규칙 해석으로 내려간 사정(parsed.note)은 기록 문장에 남긴다 — 결과는 나와도 고칠 거리다.
+    const { record } = actions.build(`${kind}.search`, {
+      input: filter, preset: await presetFor(`${kind}.search`), by: 'llm', via: parsed.via, mode: 'draft',
+    });
+    ran = true;
+    const { results, skipped, dates } = await actions.run(record, {
+      onProgress: (date, i, n) => {
+        setAskNote(`[${via}] ${filter.summary} — ${date} 조회 중 (${i}/${n})`);
+      },
+      loadDay: run.loadDay,
+      text: `"${text}" → [${via}] ${noun} 조회`,
+      data: { kind, via: parsed.via, costUsd: parsed.costUsd },
+      outcome: async (r) => ({
+        text: `"${text}" → [${via}] ${noun} 빈 시간 ${r.results.length}건${parsed.note ? ` (${parsed.note})` : ''}`,
+        data: { kind, via: parsed.via, costUsd: parsed.costUsd, days: r.dates.length, skipped: r.skipped.length },
+      }),
+    });
 
     renderFound(results, skipped, kind);
 
-    const { noun } = run;
     const parts = [`[${via}] ${noun} ${dates.length}일 조회 · 빈 시간 ${results.length}건`];
     if (parsed.guessed) parts.push('날짜·시간을 못 읽어 기본값으로 봤습니다');
     if (parsed.note) parts.push(parsed.note);
     if (skipped.length) parts.push(`⚠ ${skipped.length}일은 확인 불가라 제외`);
     if (dates.length >= MAX_DAYS) parts.push(`최대 ${MAX_DAYS}일까지만 봅니다`);
     setAskNote(parts.join(' · '), skipped.length ? 'error' : '');
-    // 로컬 CLI 가 실패해 규칙 해석으로 내려간 사정(parsed.note)은 문장에 남긴다 — 결과는 나와도 고칠 거리다.
-    logEvent('ask', true,
-      `"${text}" → [${via}] ${noun} 빈 시간 ${results.length}건${parsed.note ? ` (${parsed.note})` : ''}`,
-      { kind, via: parsed.via, filter, costUsd: parsed.costUsd, days: dates.length, skipped: skipped.length });
   } catch (err) {
     setAskNote(err.message, 'error');
-    logEvent('ask', false, `"${text}" — ${err.message}`, { kind });
+    if (!ran) logEvent('ask', false, `"${text}" — ${err.message}`, { kind });
   } finally {
     state.asking = false;
     paintAskReady();
@@ -2447,23 +2557,41 @@ async function reserveCarPick(r) {
   const payload = run.payload({
     row: r.car, date: r.date, start: fmtTime(r.start), end: fmtTime(r.end), endDate: r.endDate, title: r.title, place: r.place, passenger: '',
   });
-  const miss = run.missing({ title: payload.title, place: payload.place });
-  if (miss) return { ok: false, submitted: false, message: miss.message };
-
-  let result;
+  // 차량 탭의 예약하기와 같은 행위(car.reserve)다. 관문이 막으면(행선지가 빔) 예전과 같은 말로 돌려준다 — 그 밖의 까닭은 관문의 말 그대로.
+  let record;
   try {
-    result = await run.reserve(payload);
+    ({ record } = actions.build('car.reserve', { input: inputOf(payload), preset: await presetFor('car.reserve') }));
   } catch (err) {
-    result = { ok: false, submitted: false, message: err.message };
+    if (!(err instanceof ActionError)) throw err;
+    const miss = run.missing({ title: payload.title, place: payload.place });
+    return { ok: false, submitted: false, message: miss ? miss.message : err.problems.join(', ') };
   }
   const multi = !!payload.endDate;
   const what = `${payload.room} ${payload.date} ${payload.start}~${multi ? `${payload.endDate} ` : ''}${payload.end}`;
+
+  let result;
+  let digest = null;
+  try {
+    // 사람이 빈 차량을 누른 자리라 확인(confirmed)을 넣는다. 활동 기록 한 줄은 디스패처가 남기고, 최종 문구·data 는 결과를 보고 정한다(outcome).
+    result = await actions.run(record, {
+      confirmed: record.hash, blocked: payload.blocked, text: `${what} (근태 폼의 차량 조회)`,
+      outcome: async (res) => {
+        if (res.ok && res.verified) return { ok: true, data: { message: res.message || undefined, owner: res.record?.owner || res.who?.name } };
+        digest = saveDigest(payload, res);
+        return {
+          ok: false,
+          text: `${what} (근태 폼의 차량 조회) — ${res.submitted ? '제출했지만 확인 못 함' : '실패'}: ${res.message}`,
+          data: { submitted: !!res.submitted, verified: res.verified, message: res.message, digest },
+        };
+      },
+    });
+  } catch (err) {
+    result = { ok: false, submitted: false, message: err.message };
+  }
   // 넣은 날은 담아 둔 현황이 낡았다. 여러 날에 걸친 신청은 걸친 날을 모두 버린다.
   forgetDays(datesBetween(payload.date, payload.endDate || payload.date), [run.kind]);
 
   if (result.ok && result.verified) {
-    logEvent('reserve', true, `${what} (근태 폼의 차량 조회)`,
-      { payload, message: result.message || undefined, owner: result.record?.owner || result.who?.name });
     rememberBooked([{
       mode: run.kind, date: payload.date, room: payload.room,
       start: r.start,
@@ -2476,10 +2604,6 @@ async function reserveCarPick(r) {
     return { ok: true, submitted: true, message: result.message || '' };
   }
 
-  const digest = saveDigest(payload, result);
-  logEvent('reserve', false,
-    `${what} (근태 폼의 차량 조회) — ${result.submitted ? '제출했지만 확인 못 함' : '실패'}: ${result.message}`,
-    { payload, submitted: !!result.submitted, verified: result.verified, message: result.message, digest });
   state.lastFailure = { payload, result };
   // 됐는지는 이미 재조회로 판정했다. 여기서는 왜 안 됐는지만 읽는다(차량 탭의 예약하기와 같다).
   const found = (await explainFailure(digest))?.result;

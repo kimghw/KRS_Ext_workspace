@@ -1,0 +1,41 @@
+# 여비계산서(사전정산) 새로 올리기 — 출장 결재요청(attend.trip)이 HR 에 올라간 뒤 **같은 누름**으로 이어진다(attendpanel.js makeTripDoc,
+# attend/trip.yaml 의 then: trip.create when settle). 디스패처는 잇지 않는다 — 패널이 차례로 부른다.
+#
+# 칸은 src/travel.js settlePlan(form, memo) 이 읽는 출장 폼의 키 그대로다(dateFrom·start·dateTo·end·days·place·venue·purpose·workplace·transport·trainGrade —
+# src/attend.js blankForm('trip')). 실행기(trip.create)는 formOf(rec) 로 폼을 되살려 tripCreate(settlePlan(form, ctx.memo), { emplNo: preset.hrMe.emplNo, name: preset.hrMe.name, onStage }) 를 부른다:
+#   - 같은 기간·같은 출장자의 계산서가 이미 있으면 올리지 않고 그것을 돌려준다(existing).
+#   - 올린 뒤 목록을 다시 읽어 새 번호가 생겼는지로 성공을 판정한다(2026-10-02: 사이트의 말을 믿지 않는다).
+#   - memo 는 그 출장지에 기억해 둔 교통편·KTX 길(src/routes.js recallRoute — 2026-10-04 사용자 지정 "한번 설정한 교통편은 다음에도 우선하여 재사용"). 패널이 ctx.memo 로 준다(§6.6) —
+#     저장소 tripRoutes 전체는 기록에 담지 않는다(§14.2: 실행기에 넘기는 값만 preset).
+# 당일(days 1)이면 당일출장(주재국)이고 일비·식비 내역이 없다. 기차만 골랐을 때만 KTX 운임표의 정가로 가는 길·오는 길 두 줄이 들어간다(2026-10-04: 내릴 역·갈아타는 길).
+# 폼의 기본값(아침 7시 출발·저녁 8시 도착 — 2026-10-02 사용자 지정, 교통편 기차 일반석)은 칸의 default 다(§14.2 — 적용은 blankForm 이 한다).
+id: trip.create
+title: 여비계산서(사전정산) 작성
+status: live
+confirm: true                  # 근태 탭의 결재요청 버튼이 확인이다 — 패널이 attend.trip 과 같은 누름에서 record.hash 를 넣는다
+effect: write
+summary: '여비계산서(사전정산) {dateFrom}~{dateTo} {place} · {purpose}'
+preset:
+  hrMe:      { from: ctx:hrMe, type: object, required: true, desc: HR 의 나(사번 emplNo·이름 name — attendpanel 의 st.me). 사번이 없으면 못 돈다(HR 에서 사번을 확인하지 못함) }
+  workplace: { from: storage:attendWorkplace, desc: 근무지(서울·부산 — 근태 탭에 한 번 적으면 남는다). 칸의 workplace 가 비면 어댑터가 이것을 폼의 workplace 로 넘긴다(attendpanel 과 같다) }
+fields:
+  dateFrom:   { type: date, required: true, label: 출발일, desc: 출발일(계산서의 출장 시작일 sDate), read: '출발일(YYYY-MM-DD). "내일"·"다음 주 수요일" 은 오늘을 기준으로 실제 날짜로', example: 2026-10-20 }
+  start:      { type: time, required: true, default: '07:00', label: 출발, desc: '출발 시각(정시 — 시만 쓴다, sHour. 첫날 조식을 셈할 때 본다)', read: '출발 시각 HH:MM(정시). 말하지 않았으면 아침 7시(07:00 — 2026-10-02 사용자 지정)', example: '07:00' }
+  dateTo:     { type: date, required: true, label: 도착일, desc: 도착일(eDate — 당일이면 출발일과 같은 날), read: '도착일(YYYY-MM-DD). 당일이면 출발일과 같은 날', example: 2026-10-21 }
+  end:        { type: time, required: true, default: '20:00', label: 도착, desc: '도착 시각(정시 — 시만 쓴다, eHour. 마지막 날 석식을 셈할 때 본다)', read: '도착 시각 HH:MM(정시). 말하지 않았으면 저녁 8시(20:00)', example: '20:00' }
+  days:       { type: integer, required: true, min: 1, max: 31, default: 1, label: 며칠간, desc: '며칠간 — 1 이면 당일출장(주재국·일비 없음), 2 이상이면 일반출장(일비·식비 내역)', read: '며칠간인지(당일 1, 1박 2일이면 2). "3일간" 처럼 기간으로 말했으면 그 날 수', example: 2 }
+  place:      { type: string, required: true, max: 200, label: 출장지, desc: 출장지(도시·지역) — 내릴 KTX 역(stationOf)과 기억해 둔 길의 열쇠(routeKey)다, read: '출장지 — 도시·지역(예: 대전). "대전 한국기계연구원" 이면 대전. 지어내지 않습니다', example: 대전 }
+  venue:      { type: string, max: 200, label: 장소, desc: 찾아갈 기관·건물 — 계산서의 출장지 칸에 "출장지(장소)" 로 붙는다(tripLocation — 2026-10-08 사용자 지정), read: '찾아갈 기관·건물(예: 한국기계연구원). 말하지 않았으면 null', example: 한국기계연구원 }
+  purpose:    { type: string, required: true, max: 200, label: 목적, desc: 출장 목적(계산서의 목적 칸), read: 목적·사유. 지어내지 않습니다, example: MVDC 차단기 실증 시험 참관 }
+  workplace:  { type: string, max: 100, label: 근무지, desc: 떠나는 근무지(서울·부산) — 탈 KTX 역을 여기서 찾는다. 역을 못 찾으면 교통편 내역을 비워 올리고 notes 에 적는다. 비면 사전설정의 근무지, read: '근무지 — 서울 또는 부산. 말하지 않았으면 null(사전설정의 근무지를 쓴다)', llm: false, example: 부산 }
+  transport:  { type: tags, values: [train, plane, bus], default: [train], label: 교통편, desc: 교통편(여럿 — 기차만 골랐을 때만 KTX 줄이 들어간다. 함께 고르면 다녀온 뒤 출장 카드에서 가는 편·오는 편을 고른다. 기본은 기차 — references/travel-rules.yaml transport.default), read: '기차(train)·비행기(plane)·버스(bus) 가운데 말한 것. 말하지 않았으면 null(기본 기차)', llm: false }
+  trainGrade: { type: enum, values: [standard, first], default: standard, label: 좌석 등급, desc: '기차 좌석 등급(standard 일반석·first 특실 — ktx-fares.yaml 의 등급, 기본 일반석. 기차 아이콘을 한 번 더 누르면 특실)', read: '특실이라고 했을 때만 first. 그 밖에는 null(일반석)', llm: false }
+checks:
+  - { left: dateFrom, op: '<=', right: dateTo, message: 도착일이 출발일보다 앞섭니다 }
+llm: false                     # 갈래가 mode none — 칸의 read 는 2단계 통합 명령창을 위해 둔다
+runner: trip.create
+uses:
+  - { module: src/travel.js, export: settlePlan }
+  - { module: src/trip.js, export: tripCreate }
+  - { module: src/routes.js, export: recallRoute }
+next: 올린 뒤 목록을 다시 읽어 새 계산서(row.seq)를 확인한 것만 ok 다(tripCreate — 던지지 않으면 ok, §14.3). 패널은 새로 만든 것이면 routeOfPlan 으로 이 출장지의 교통편을 기억하고(keepTripRoute) 목록을 다시 읽는다(loadTrips). 이미 있으면(existing) 그 번호를 상태 줄에 적는다

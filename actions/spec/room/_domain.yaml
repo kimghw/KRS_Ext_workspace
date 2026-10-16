@@ -1,0 +1,24 @@
+# 회의실 갈래 — eclass 회의실 예약(src/site.js, 실행자 src/runners.js RUNNERS.room). 종류: search(말로 찾기 — 조회뿐, confirm 없음) · reserve · cancel · modify(취소 → 재예약).
+# 사이트와 말하는 순서(ViewState 다시 읽기·삭제 손잡이·되돌리기 판단)는 src/site.js·src/modify.js 와 패널에 그대로 있다 — 이 명세는 그 앞의 기록의 꼴이다.
+#
+# LLM 작업은 per-kind 모드 — search.yaml 이 `llm: { task: search.room }` 로 이름을 적는다(§14.2). 지금 references/input.yaml 의 parse 작업과 같은 칸이다
+# (actions/test/spec.test.mjs 가 fixtures/tasks-before.json 과 맞춘다). 예약·취소·수정은 UI 가 고른 칸으로만 짓는다(llm: false) — 칸의 read 는 2단계 통합 명령창을 위해 둔다.
+domain: room
+title: 회의실
+log: reserve                   # 활동 로그 kind(src/logbook.js KIND_LABEL) — 종류 파일이 덮어쓴다(search → ask · cancel → cancel · modify → modify)
+kinds: [search, reserve, cancel, modify]
+preset:
+  me: { from: me, desc: 내 이름(패널 설정의 myName — 내 예약 판정에 쓴다) }
+llm:
+  task: search                 # 작업 이름의 머리 — 실제 이름은 종류 파일의 llm.task(search.room)
+  mode: per-kind
+  partial: false               # 조회 조건은 한 벌 — 필수가 빠지면 답을 버리고 다음 길(API 키 → 규칙 해석)로 내려간다
+  input: search                # src/llm.js 의 searchInput(text, { today, kind })
+  title: 회의실 조회 조건       # role·title 의 {종류} 자리는 종류 파일의 title 로 바뀐다 — 여기서는 쓰지 않는다(종류가 search 하나뿐이다)
+  consumer: { module: src/search.js, export: findSlots }
+  next: 사용자가 후보를 고른다 → room.reserve 기록 → src/runners.js 의 room 실행자가 예약한다(reserve)
+  role: >-
+    당신은 사내 회의실 예약 도우미입니다. 사용자의 한국어 요청을 회의실 조회 조건으로 바꿉니다.
+    조회 조건은 예약 명령이 아닙니다 — 빈 시간을 찾을 뿐이고, 예약은 사용자가 후보를 고른 뒤에 나갑니다.
+  rules: []                    # 조회의 규칙은 search.yaml 에 있다(종류 하나뿐이다)
+  fields: {}

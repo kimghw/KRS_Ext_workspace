@@ -30,6 +30,9 @@ export const KIND_LABEL = {
   attend: '근태',
   'attend-ask': '근태채우기',
   'attend-list': '근태내역',
+  // 출장 카드(여비계산서·증빙·송부)와 R&D 탭은 전부터 이 kind 로 남겼는데 이름이 없어 kind 글자 그대로 보였다 — 행위 층(actions/)의 trip.*·rnd.* 기록도 같은 kind 다.
+  trip: '출장',
+  rnd: 'R&D',
   gongmun: '공문',
   'gongmun-setup': '공문설정',
   mail: '메일',

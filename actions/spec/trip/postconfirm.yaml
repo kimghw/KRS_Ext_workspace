@@ -1,0 +1,41 @@
+# 사후정산 완료(확정) — 사후정산을 저장해 단계가 "사후정산 작성" 이 된 계산서 화면의 **확정**(사전정산과 같은 CalPrint/Confirm — src/trip.js tripPostConfirm).
+# 여비증빙 송부 칸의 `보내기`(팝업의 `저장·확정 후 보내기`)가 사후정산을 저장한 뒤에 부른다(sendbox.js go → ctx.confirm → attendpanel.js confirmPost —
+# 2026-10-03 사용자 지정 "저장 후 확정 후 보내기", 2026-10-05 "보내기 하면 그때 '확정' 하고 보내라고"). 확정만 하는 버튼은 두지 않는다.
+# 화면의 단계가 "사후정산 작성" 이고 확정 폼이 이 계산서의 것일 때만 보낸다. **실제로 보내 본 적이 없다**(2026-10-04 — 화면은 145580 에서 읽어 확인했다).
+# 목록 줄(row)은 ctx 다. 실행기(trip.postconfirm)는 tripPostConfirm(row, { name: preset.tripMe || preset.me, onStage }) 를 부른다.
+id: trip.postconfirm
+title: 사후정산 완료(확정)
+status: live
+confirm: true                  # 팝업의 `저장·확정 후 보내기` 가 확인이다 — 패널이 trip.after(always) → trip.postconfirm → trip.send 를 같은 누름으로 잇는다
+effect: write
+summary: '여비계산서 {seq} 사후정산 완료(확정)'
+preset:
+  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름(st.trips.me) — 출장자가 여럿일 때 내 계산서 화면을 연다. 비면 갈래의 me }
+fields:
+  seq:
+    type: string
+    required: true
+    max: 20
+    label: 계산서 번호
+    desc: 확정할 여비계산서 번호(목록 줄의 seq — 줄은 ctx.row)
+    read: 확정할 여비계산서 번호 — 열린 출장 카드의 것 그대로. 지어내지 않습니다
+    example: '145580'
+  trseq:
+    type: string
+    max: 20
+    label: 출장자 번호
+    desc: 내 출장자 번호(목록 줄 travelers[].trseq — §14.2 의 대상 식별자). 있으면 어댑터가 ctx.row 의 내 줄과 같은지 본다
+    read: 내 출장자 번호. 모르면 null
+    example: '203311'
+  docNo:
+    type: string
+    max: 20
+    label: 신청서 번호
+    desc: 그 출장의 HR 신청서 번호(기록용). 없어도 돈다
+    read: 그 출장의 HR 신청서 번호. 모르면 null
+    example: '2026-001234'
+llm: false
+runner: trip.postconfirm
+uses:
+  - { module: src/trip.js, export: tripPostConfirm }
+next: 보낸 뒤 목록을 다시 읽어 사후정산이 "완료" 가 됐는지로 판정한다(아니면 던진다). 패널은 다시 작성하던 카드(reopen)를 정산 내역(보기)으로 되돌리고 freshTrip 으로 단계를 맞춘다. 송부(trip.send)는 이 다음이다

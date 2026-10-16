@@ -1,0 +1,17 @@
+# 공문(전자결재 품의) 갈래 — 구매·교육·출장 품의(연구업무추진품의)와 외부강의등 신고서, 그리고 공문 설정 채우기(setup — 2단계).
+# 공문 작성은 새 공문 창을 뒤 탭으로 열어 과제·제목·차수·본문·문서설정·결재선·첨부를 넣는 것까지다(src/gmwrite.js writeGongmun — 2026-10-08 사용자 지정 "공문작성은
+# 백그라운드에서"). 임시저장·상신은 사람이 창에서 한다. 무엇을 넣을지는 src/gongmun.js writePlan 이 레시피(recipes/gongmun — src/gmrecipe.js RECIPE)로 정한다.
+#
+# LLM 작업은 여기서 만들지 않는다(mode recipe — §3.4): 문서 읽기(gongmun.<종류>)·사유 쓰기(gongmunReason.<종류>)·공문 설정 채우기(gongmunSetup)는 레시피 생성기
+# (tools/gen-gongmun.mjs)가 RECIPE.tasks 에 만든다(2026-10-09 사용자 지정: 키마다 어떻게 뽑을지의 프롬프트는 레시피에). 종류 파일의 llm.tasks 가 그 이름을 가리키고,
+# 초안 칸(draft)은 레시피의 fields·reads 를 생성기가 펼친다(§3.5·§14.2) — 같은 칸을 세 벌로 적지 않는다(§10). 나머지 칸(form·title·body·rank·setting·attach)의 read 는 여기 적는다.
+domain: gongmun
+title: 공문
+log: gongmun                   # 활동 로그 kind(src/logbook.js KIND_LABEL 의 gongmun) — gongmunpanel.js 가 지금 쓰는 것. setup 은 gongmun-setup 으로 덮어쓴다
+kinds: [purchase, edu, trip, outside, setup]
+preset:
+  me:    { from: me, required: true, desc: '기안자(내 이름 — 결재선의 기안, 과제책임자가 본인이면 합의를 뺀다)' }
+  today: { from: today, desc: 오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리) }
+llm:
+  task: gongmun                # 이름의 앞머리만 — 작업은 레시피(RECIPE.tasks 의 gongmun.<종류>·gongmunReason.<종류>·gongmunSetup)가 만든다
+  mode: recipe

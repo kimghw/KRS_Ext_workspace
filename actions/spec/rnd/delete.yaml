@@ -1,0 +1,15 @@
+# R&D 과제 지우기 — 과제 폼의 `지우기`(두 번 누름 — rndpanel.js delProject, confirmTwice). 장부에서만 지운다(원노트 페이지의 과제는 다음 맞춤에서 묘비(del)로 남는다 — src/rndnote.js syncInfo).
+id: rnd.delete
+title: R&D 과제 지우기
+status: planned
+confirm: true                  # 두 번 누름("정말 지우기")이 확인이다
+effect: draft
+summary: 'R&D 과제 지움 {name}'
+fields:
+  id:   { type: string, required: true, max: 40, label: 과제 id, desc: '지울 과제의 id(장부 rndBook 의 projects[].id)', read: 지울 과제의 id — 보고 있는 과제 그대로, llm: false }
+  name: { type: string, max: 200, label: 과제명, desc: 지울 과제의 이름(기록용 — 어댑터가 id 의 과제와 같은지 본다), read: 지울 과제의 이름, example: MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발 }
+llm: false
+runner: rnd.delete
+uses:
+  - { module: src/rnd.js, export: projectOf }
+next: 장부에서 빼고 보고 있는 과제를 첫 과제로 옮겨 저장한다(rndpanel.js save)

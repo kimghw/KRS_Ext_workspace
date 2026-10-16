@@ -1,0 +1,36 @@
+# 홈 카드 증빙 받기 — 출장 줄에 놓거나 붙여 넣은 파일 한 장을 그 출장의 증빙으로 받는다(src/home.js takeFiles → background.js keepEvidence → src/intake.js intakeEvidence, 2026-10-04 사용자 지정).
+# 패널의 출장 카드와 같은 판단으로 읽어(receiptSmart — input.yaml 의 receipt) 증빙으로 쓸 수 있는 것만 보관함에 담는다. 출장 기간과 안 맞으면 알림 표시(warn)로 담고 올리지 않는다
+# (2026-10-05 사용자 지정). 사후정산이 완료된 출장(settled)이면 읽지 않고 보낼 증빙으로 담는다. 여비계산서는 여기서 바꾸지 않는다 — 숙박 증빙·항공권이면 홈 카드가 이어서 올린다(home.afterup).
+# 여러 장을 한꺼번에 넣으면 장마다 이 기록이 하나다(나란히 읽힌다 — src/pool.js). 파일 바이트는 ctx.files(§14.1).
+id: home.evidence
+title: 홈 카드 증빙 받기
+status: planned
+confirm: true                  # 출장 줄에 놓거나 붙여 넣은 누름이 확인이다(by auto 의 기록이지만 사람의 손이 시작한다)
+effect: draft                  # 보관함(IndexedDB)에 담고 Claude 로 읽는다 — 사이트에 쓰지 않는다
+summary: '홈 카드에서 받은 증빙 {name} · {docNo}'
+fields:
+  docNo: { type: string, required: true, max: 20, label: 신청서 번호, desc: 그 출장의 HR 신청서 번호(보관함의 열쇠), read: 그 출장의 HR 신청서 번호, example: '2026-001234' }
+  name:  { type: string, required: true, max: 200, label: 파일 이름, desc: '받은 파일의 이름(file.name 과 같다 — 활동 로그 한 줄용. 같은 이름의 다른 그림은 담을 때 번호가 붙는다, uniqueName)', read: 파일 이름 그대로, llm: false }
+  file:  { type: file, required: true, label: 증빙 파일, desc: 받은 파일의 참조(이름·형식·크기 — 바이트는 ctx.files), read: 증빙 파일의 이름과 형식. 지어내지 않습니다, llm: false }
+  trip:
+    type: object
+    required: true
+    label: 여비계산서
+    desc: 그 출장의 여비계산서(목록 줄에서 — 번호·출장기간·출장지. intakeEvidence 의 trip — periodMiss 의 기준)
+    read: 그 출장의 여비계산서 번호와 기간·출장지. 목록에 있는 것 그대로
+    fields:
+      seq:      { type: string, max: 20, desc: 여비계산서 번호, read: 여비계산서 번호, example: '145580' }
+      from:     { type: date, required: true, desc: 출장 시작일, read: 출장 시작일(YYYY-MM-DD), example: 2026-10-20 }
+      to:       { type: date, desc: 출장 종료일(당일이면 시작일), read: 출장 종료일(YYYY-MM-DD), example: 2026-10-21 }
+      location: { type: string, max: 200, desc: 출장지("출장지(장소)"), read: 출장지, example: 대전(한국기계연구원) }
+  settled: { type: boolean, label: 사후정산 완료됨, desc: 사후정산이 완료된 출장인가 — 참이면 읽지 않고 보낼 증빙(label 증빙)으로만 담는다, read: '사후정산이 이미 완료된 출장이면 true', llm: false }
+# checks 는 두지 않는다 — object 안의 칸(trip.from·trip.to)은 checks 가 가리키지 못하고, 기간은 목록 줄(ctx)에서 온 값이라 어댑터가 본다.
+llm: false
+runner: home.evidence
+uses:
+  - { module: src/intake.js, export: intakeEvidence }
+  - { module: src/evidence.js, export: createEvidenceStore }
+  - { module: src/llm.js, export: receiptSmart }
+then:
+  - { action: home.afterup, when: '!settled' }
+next: 결과({ ok, kept, name, label, note, warn, todo })를 출장 줄에 적는다. todo(사후정산에 올릴 숙박 증빙·항공권)가 하나라도 있으면 홈 카드가 home.afterup 을 잇는다(같은 누름 — 다 담은 뒤 한 번)

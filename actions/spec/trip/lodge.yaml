@@ -1,0 +1,39 @@
+# 사후정산 숙박 줄 손질 — 출장 카드의 숙박비 내역(lodgebox.js): `상한` 버튼으로 정산금액을 상한액과 실제 금액 사이에서 바꾸고(toggleCap — 2026-10-06 사용자 지정
+# "상한할지 안할지 버튼 하나"), 비고의 상한 초과 사유를 고쳐 쓰고(setReason — 2026-10-08 "수정 가능하게 해줘"), 줄을 지운다(remove — 두 번 누름).
+# 셋 다 사후정산 입력 화면의 폼을 그 줄의 칸만 바꿔 그대로 다시 저장하는 것이다(src/trip.js tripAfterLodgeAmount·tripAfterLodgeComment·tripAfterLodgeDelete) —
+# **실제로 보내 본 적이 없다**(2026-10-03·10-06·10-08). 2단계에 옮긴다(§12) — 지금은 lodgebox.js 가 src/trip.js 를 바로 부른다.
+# 화면의 숙박 줄(rows — tripAfterRows)·적어 둔 실제 금액(attendLodgeActual)·상한(maxes)은 ctx 다. 실행기(trip.lodge)는 action 에 따라 세 함수 가운데 하나를 부른다.
+id: trip.lodge
+title: 사후정산 숙박 줄 손질
+status: planned
+confirm: true                  # 상한 버튼·비고에 저장·지우기(두 번 누름)가 확인이다
+effect: write
+summary: '여비계산서 {seq} 숙박 줄 {lodgeSeq} · {action}'
+preset:
+  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름 — 출장자 번호(trseq)를 고른다 }
+fields:
+  seq:      { type: string, required: true, max: 20, label: 계산서 번호, desc: 여비계산서 번호, read: 열린 출장 카드의 여비계산서 번호 그대로, example: '145580' }
+  trseq:    { type: string, required: true, max: 20, label: 출장자 번호, desc: '내 출장자 번호(목록 줄 travelers[].trseq — 사후정산 입력 화면 주소에 든다)', read: '내 출장자 번호. 모르면 null', example: '203311' }
+  lodgeSeq: { type: string, required: true, max: 20, label: 숙박 줄 번호, desc: 바꿀 줄의 번호(lodge_seq — 화면의 줄), read: 바꿀 숙박 줄의 번호 — 숙박비 내역의 줄 그대로, example: '7' }
+  action:
+    type: enum
+    required: true
+    values: [cap, real, reason, delete]
+    label: 무엇을
+    desc: cap 상한액으로 낮춤(정산금액·공급가액·부가세를 바꾸고 비고의 사유를 걷음) · real 실제 금액으로 되돌림(비고에 사유를 이음) · reason 비고의 사유만 고침 · delete 줄 지움
+    read: '상한액으로 하라면 cap, 실제 금액으로 하라면 real, 사유만 고치라면 reason, 지우라면 delete'
+  reason:
+    type: string
+    max: 200
+    label: 상한 초과 사유
+    desc: 비고에 적을 사유(real·reason 일 때 — 비면 기본 문구 LODGE_OVER_REASON). 정산금액이 상한액을 넘는 줄은 사유가 필수다
+    read: '사용자가 말한 상한 초과 사유. 말하지 않았으면 null(기본 문구)'
+    example: 인근 숙소비 상승으로 인해 숙박비 내에 숙박이 어려움
+llm: false
+runner: trip.lodge
+uses:
+  - { module: src/trip.js, export: tripAfterLodgeAmount }
+  - { module: src/trip.js, export: tripAfterLodgeComment }
+  - { module: src/trip.js, export: tripAfterLodgeDelete }
+  - { module: src/after.js, export: lodgeSettle }
+next: 보낸 뒤 화면을 다시 읽어 그 줄의 정산금액·비고가 바뀌었는지(또는 줄이 없어졌는지)로 판정한다. 패널은 실제 금액·사유를 적어 두고(attendLodgeActual) 올린 내용의 칸을 맞춘다(patchLodgeInfo)

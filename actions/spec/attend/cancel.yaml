@@ -1,0 +1,41 @@
+# 근태 취소신청 — 결재완료 건을 무르는 취소신청서(src/attend.js CANCEL_FORMS: TRO·TR·LV·ET — 유연근무 FW 에는 없다). 저장 단계가 없고 결재요청이 유일한 쓰기다.
+# 신청 내역 줄의 `취소신청`(두 번 누름 — attendpanel.js act) 이 확인이다. 목록 줄(item — docNo·formId·status·summary …)은 ctx 이고 기록에는 식별자(docNo·formId)와 사유만 둔다(§14.2).
+# 어댑터는 ctx.item 의 docNo·formId 가 기록과 같은지 보고 다르면 ActionError. 취소신청서가 결재될 때까지 원 문서는 "취소 중"(attendCancelling — 패널이 적는다, 실행기 밖).
+# 출장이면 같은 누름으로 여비계산서까지 지운다(trip.delete — 패널 afterCancel 이 잇는다).
+id: attend.cancel
+title: 근태 취소신청
+hint: 취소신청
+summary: '취소신청 {formId} {docNo} · {reason}'
+fields:
+  docNo:
+    type: string
+    required: true
+    max: 30
+    label: 문서번호
+    desc: 무를 원 문서의 번호(결재완료 건)
+    read: 신청 내역에서 고른 문서번호 그대로. 지어내지 않습니다
+    example: '202610-11115-0002'
+  formId:
+    type: enum
+    required: true
+    values: [TRO, TR, LV, ET]    # src/attend.js CANCEL_FORMS 의 키
+    label: 신청서
+    desc: 원 문서의 신청서 — TRO 외근/교육 · TR 출장 · LV 휴가/공가 · ET 기타(외출). 취소신청서가 있는 것만
+    read: 신청 내역 줄의 formId 그대로
+    example: TR
+  reason:
+    type: string
+    required: true
+    max: 200
+    label: 취소 사유
+    desc: 취소 사유(필수 — 취소신청서의 사유 칸, buildCancelJob)
+    read: 사용자가 말한 취소 사유. 지어내지 않습니다
+    example: 일정 변경
+llm: false
+runner: attend.cancel
+uses:
+  - { module: src/attend.js, export: buildCancelJob }
+  - { module: src/hr.js, export: hrRunJob }
+then:
+  - { action: trip.delete, when: formId=TR }
+next: 올린 뒤 confirmInList 로 목록을 다시 읽는다(원 문서는 승인까지 그대로다). 패널이 "취소 중" 기록(attendCancelling)을 적고, 출장이면 여비계산서를 지운다(trip.delete)

@@ -1,0 +1,16 @@
+# 등록 지우기 — 항목을 장부에서, 금고의 본문·첨부도 지운다(mailtrack/panel.js removeItem → sync.remove(itemId)). 상세의 단추와 목록 줄의 `지우기` 둘 다 두 번 눌러 확인한다
+# (2026-10-15 사용자 지정 "등록한 메일을 취소하는 기능이 안보임" — 접힌 칸에 숨기지 않는다). Outlook 의 메일은 건드리지 않는다(effect draft).
+id: mail.delete
+title: 메일 등록 지우기
+status: planned
+confirm: true                  # 두 번 누름("한 번 더 누르면 지웁니다")이 확인이다
+effect: draft
+summary: '메일 등록 지움 {subject}'
+fields:
+  itemId:  { type: string, required: true, max: 300, label: 항목, desc: 지울 항목의 id(= 보낸 메일의 Outlook 메시지 id), read: 지울 항목의 id — 보고 있는 메일 그대로, llm: false }
+  subject: { type: string, max: 300, label: 제목, desc: 그 메일의 제목(기록용 — 어댑터가 id 의 항목과 같은지 본다), read: 그 메일의 제목 }
+llm: false
+runner: mail.delete
+uses:
+  - { module: mailtrack/sync.js, export: createSync }
+next: 목록으로 돌아가고 상태 줄에 지웠다고 적는다. 금고 지우기가 실패해도 장부에서는 지운다(sync 가 기록만 남긴다)

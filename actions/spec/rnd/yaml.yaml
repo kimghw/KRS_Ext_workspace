@@ -1,0 +1,30 @@
+# 연구개발계획서 YAML 넣기 — R&D 설정의 넣는 칸(끌어 놓기·파일 고르기·붙여 넣기 — rndpanel.js intakeFiles·intakeTexts). 종류를 가려(src/rndyaml.js kindOf — 스냅샷 → 개정 레지스트리 →
+# 예산 이력 → 참여연구원 이력 차례, 같은 종류는 판(r0 → r1) 차례) 장부에 넣는다(applyYaml). 이력 파일은 주석의 과제명으로 과제를 찾고 없으면 보고 있는 과제에 넣는다.
+# 스냅샷은 연구내용 공유의 기록(rerp/research.js)으로도 남기고, 이미 원노트에 올린 과제면 연구내용 페이지를 다시 올린다(rnd.research.share 가 auto 로 따라온다 — 2026-10-14 사용자 지정).
+# 글(text)은 기록에 담는다 — 바이트가 아니라 글이고 무엇을 넣었는지가 곧 기록이다(활동 로그에는 200자에서 잘린다, §5).
+id: rnd.yaml
+title: 연구개발계획서 YAML 넣기
+status: planned
+confirm: true                  # 파일을 놓거나 고른 누름이 확인이다
+effect: draft
+summary: 'R&D YAML 넣기 {count}건'
+preset:
+  current: { from: storage:rndBook.current.project, desc: 보고 있는 과제의 id(이력 파일에 과제명이 없을 때 넣을 과제 — applyYaml 의 current) }
+fields:
+  count: { type: integer, min: 1, max: 20, label: 파일 수, desc: 넣는 YAML 글의 수(texts 의 길이 — 활동 로그 한 줄용), read: 넣는 YAML 파일의 수, llm: false }
+  texts:
+    type: list
+    max: 20
+    label: YAML 글
+    desc: 넣는 YAML 글 — 파일마다 한 줄(이름과 글). RND 폴더의 KR_<과제>.yaml(스냅샷)이나 history/*.yaml(revisions·budget·researchers)
+    read: 이 칸은 사용자의 말로 채우지 않습니다 — 넣은 파일의 글이 그대로 들어갑니다
+    llm: false
+    item:
+      name: { type: string, max: 200, desc: 파일 이름(붙여 넣은 글이면 빈 글), read: 파일 이름 }
+      text: { type: string, required: true, max: 300000, desc: YAML 글 그대로(src/rndyaml.js 가 종류를 가린다), read: YAML 글 그대로 }
+llm: false
+runner: rnd.yaml
+uses:
+  - { module: src/rndyaml.js, export: kindOf }
+  - { module: src/rndyaml.js, export: applyYaml }
+next: 하나라도 들어갔으면 장부를 다시 그리고 저장한다. 스냅샷을 넣었고 그 과제의 연구내용 페이지가 원노트에 있으면 rnd.research.share(auto)가 따라온다(기다리지 않는다)

@@ -1,0 +1,31 @@
+# 메일 설정 바꾸기 — MCP 주소·내 메일 주소(패널 설정의 연결 갈래 — 2026-10-16 사용자 지정 "연결에는 mcp 서버 내용")·보낸 메일 기간·조회 창·같은 주소만 세기·헤더 쓰기·자동 갱신·수락해야 세기
+# (mailtrack/panel.js saveSettings → sync.settings(patch) — mailtrack/model.js normalizeSettings 가 꼴을 맞춘다). 서버 주소·계정이 바뀌면 도구 목록을 다시 본다(probe). 장부만 바뀐다(effect draft) —
+# 칸을 고치면 곧 저장한다(confirm false). 메일 주소는 활동 로그에 남기지 않는다(바꾼 칸 이름만 — clipRecord 와 별개로 어댑터가 ctx.text 로 정한다).
+id: mail.settings
+title: 메일 설정 바꾸기
+status: planned
+confirm: false
+effect: draft
+summary: '메일 설정 바꿈'
+fields:
+  patch:
+    type: object
+    label: 바꾼 설정
+    desc: 바꾼 칸만(model.js DEFAULTS 의 키 — 없는 키는 그대로)
+    read: 사용자가 바꾸라고 한 설정 칸만
+    fields:
+      mcpUrl:         { type: string, max: 200, desc: 'Outlook MCP 주소(기본 http://localhost:5001/mcp — checkMcpUrl 이 꼴을 본다)', read: 'MCP 서버 주소를 말했을 때만' }
+      userEmail:      { type: string, max: 200, desc: 내 메일 주소(비면 처음 등록한 보낸 메일의 보낸 주소), read: '내 메일 주소를 말했을 때만' }
+      sentDays:       { type: integer, min: 1, max: 365, desc: 등록 대화의 보낸 메일 기간(일 — 7·14·30·60), read: '보낸 메일을 며칠까지 보일지 말했을 때만' }
+      windowDays:     { type: integer, min: 1, max: 365, desc: 회신 조회 창(일), read: '회신을 며칠까지 찾을지 말했을 때만' }
+      ownByAddress:   { type: boolean, desc: 내 도메인은 주소마다 받을 곳으로 세운다(거짓이면 도메인마다), read: '같은 회사 사람을 따로 센다고 했을 때 true' }
+      useHeaders:     { type: boolean, desc: 받은 메일을 헤더로 잇는다(In-Reply-To·References), read: '헤더로 잇는다고 했을 때 true' }
+      autoRefreshMin: { type: integer, min: 0, max: 1440, desc: 자동 갱신 간격(분 — 0 이면 끔), read: '자동 갱신 간격(분)을 말했을 때만' }
+      requireAccept:  { type: boolean, desc: 회신이 와도 수락해야 센다(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지"), read: '수락해야 센다고 했을 때 true' }
+llm: false
+runner: mail.settings
+uses:
+  - { module: mailtrack/sync.js, export: createSync }
+  - { module: mailtrack/model.js, export: normalizeSettings }
+  - { module: mailtrack/panel.js, export: checkMcpUrl }
+next: 장부를 다시 그리고 저장했다고 적는다. 서버 주소·계정을 바꿨으면 연결을 다시 확인한다(runProbe)

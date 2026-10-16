@@ -1,0 +1,39 @@
+# 근태 문서에 버튼 하나 — 상신(임시저장 → 결재요청 apprRequest) · 회수(결재요청 → apprReqCancel) · 삭제(임시저장·회수한 문서 — hrDeleteDoc). 값은 건드리지 않는다
+# (src/attend.js buildDocJob). 신청 내역 줄의 버튼(상신은 바로, 회수·삭제는 두 번 누름 — attendpanel.js act)이 확인이다.
+# 목록 줄(item)은 ctx 이고 기록에는 식별자(docNo·formId)와 action 만 둔다(§14.2) — 어댑터가 ctx.item 과 같은지 본다. 회수한 문서의 삭제는 서버가 받지 않을 수 있다(2026-10-02).
+id: attend.doc
+title: 근태 문서 상신·회수·삭제
+hint: 상신·회수·삭제
+summary: '{action} {formId} {docNo}'
+fields:
+  docNo:
+    type: string
+    required: true
+    max: 30
+    label: 문서번호
+    desc: 그 문서의 번호
+    read: 신청 내역에서 고른 문서번호 그대로. 지어내지 않습니다
+    example: '202610-11115-0002'
+  formId:
+    type: enum
+    required: true
+    values: [TRO, TR, ET, LV, FW]   # src/attend.js FORMS 의 formId
+    label: 신청서
+    desc: 그 문서의 신청서 — TRO 외근/교육 · TR 출장 · ET 기타(외출) · LV 휴가/공가 · FW 유연근무
+    read: 신청 내역 줄의 formId 그대로
+    example: TRO
+  action:
+    type: enum
+    required: true
+    values: [request, recall, delete]
+    label: 무엇을
+    desc: request 상신(임시저장을 결재요청) · recall 회수(결재요청을 거둠) · delete 삭제(임시저장·회수한 문서)
+    read: 상신하라면 request, 회수하라면 recall, 지우라면 delete
+    example: request
+llm: false
+runner: attend.doc
+uses:
+  - { module: src/attend.js, export: buildDocJob }
+  - { module: src/hr.js, export: hrRunJob }
+  - { module: src/hr.js, export: hrDeleteDoc }
+next: 보낸 뒤 confirmInList 로 목록을 다시 읽는다 — 삭제는 목록에서 사라져야 하고 상신·회수는 상태가 바뀌어야 한다(패널이 outcome 으로 판정)

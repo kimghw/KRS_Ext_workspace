@@ -1,0 +1,33 @@
+# 양식 병합 — 내가 보낸 양식(xlsx·docx)에 고른 회신 첨부들을 합쳐 파일 하나로 내려받는다(mailtrack/panel.js runMerge → sync.mergeFiles(itemId, { templateAttachmentId, picks, options }) →
+# mailtrack/ooxml/merge.js mergeOffice). 2026-10-15 사용자 지정: "docx 파일이나 excel 양식으로 작성을 요청한 경우 받아서 병합까지". 출처는 회신마다(org · name <address> · date).
+# xlsx 는 머리글 줄 수(auto 또는 n), docx 는 쌓기(stack)·표 줄(rows). 금고에 없는 첨부는 report.skipped 에. 내려받기뿐이다(effect draft).
+id: mail.merge
+title: 양식 병합
+status: planned
+confirm: true
+effect: draft
+summary: '양식 병합 {kind} · 회신 {count}건'
+fields:
+  itemId:               { type: string, required: true, max: 300, label: 항목, desc: 병합할 항목의 id(보낸 메일), read: 보고 있는 메일의 id, llm: false }
+  templateAttachmentId: { type: string, required: true, max: 300, label: 양식, desc: '내가 보낸 양식 첨부의 id(항목의 templates[].attachmentId — 비면 첫 양식)', read: 병합할 양식 첨부의 id, llm: false }
+  kind:                 { type: enum, required: true, values: [xlsx, docx], label: 갈래, desc: 양식의 갈래(mergeKind — 옛 이진 형식 xls·doc 과 매크로 파일은 받지 않는다), read: '엑셀이면 xlsx, 워드면 docx' }
+  count:                { type: integer, min: 1, max: 50, label: 회신 수, desc: 합치는 회신 첨부 수(picks 의 길이 — 활동 로그 한 줄용), read: 합치는 회신 첨부의 수, llm: false }
+  picks:
+    type: list
+    max: 50
+    label: 합칠 회신 첨부
+    desc: 합칠 회신 첨부(사람이 끈 것은 빠진다 — mergeOff). 같은 갈래로 금고에 있는 것만
+    read: 사용자가 합치라고 고른 회신 첨부. 지어내지 않습니다
+    llm: false
+    item:
+      messageId:    { type: string, required: true, max: 300, desc: 회신의 메시지 id, read: 회신 메시지 id }
+      attachmentId: { type: string, required: true, max: 300, desc: 그 회신의 첨부 id, read: 첨부 id }
+  headerRows: { type: string, max: 10, default: auto, label: 머리글 줄, desc: 'xlsx — 머리글 줄 수(auto 또는 1 이상의 수)', read: '엑셀의 머리글이 몇 줄인지 말했으면 그 수, 아니면 auto', when: kind=xlsx }
+  mode:       { type: enum, values: [stack, rows], default: stack, label: 합치는 법, desc: 'docx — 쌓기(stack) 또는 표 줄로(rows)', read: '워드를 표의 줄로 합치라면 rows, 아니면 stack', when: kind=docx }
+llm: false
+runner: mail.merge
+uses:
+  - { module: mailtrack/sync.js, export: createSync }
+  - { module: mailtrack/ooxml/merge.js, export: mergeOffice }
+  - { module: mailtrack/ooxml/merge.js, export: mergedName }
+next: 합친 파일({ name, bytes, mime })을 내려받고 report(merged·rows·skipped·warnings)를 병합 칸에 적는다

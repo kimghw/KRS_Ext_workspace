@@ -1,0 +1,69 @@
+# 회의실 예약 — 격자에서 고른 칸(들)과 회의주제로 한 건씩 넣는다(sidepanel.js submitBooking → RUNNERS.room.reserve(payload, day)). 한 건 넣을 때마다 ViewState 가
+# 바뀌므로 다음 건은 새로 읽은 화면(day — ctx)으로 보낸다 — 그 차례는 패널에 그대로 있고 기록은 한 건이다. 실행기가 다시 조회해 확인된 것만 ok 다(verified).
+# 기록의 칸은 RUNNERS.room.payload 가 내는 모양 그대로(kind 만 빼고 — 갈래가 kind 다). `예약하기` 버튼이 확인이다.
+id: room.reserve
+title: 회의실 예약
+log: reserve
+summary: '{room} {date} {start}~{end} · {title}'
+preset:
+  region: { from: storage:region, desc: 보고 있던 지역(지역 버튼 — storage 의 region) }
+fields:
+  room:
+    type: string
+    required: true
+    max: 100
+    label: 회의실
+    desc: 회의실 이름(사이트 목록의 이름)
+    read: 조회 결과에서 고른 회의실 이름 그대로. 지어내지 않습니다
+    example: 대회의실
+  roomValue:
+    type: string
+    required: true
+    max: 50
+    desc: 사이트의 회의실 값(코드 — 폼의 선택 값)
+    read: 조회 결과의 회의실 값(코드) 그대로
+    llm: false
+    example: '12'
+  region:
+    type: enum
+    values: [부산, 서울]
+    label: 지역
+    desc: 지역(화면이 보고 있던 날의 지역 — day.region)
+    read: 고른 회의실의 지역
+    example: 부산
+  date:
+    type: date
+    required: true
+    label: 예약일
+    desc: 예약일
+    read: 예약일(YYYY-MM-DD)
+    example: '2026-10-20'
+  start:
+    type: time
+    required: true
+    label: 시작
+    desc: 시작 시각(격자의 칸 — 정시·30분)
+    read: 시작 시각 HH:MM
+    example: '09:00'
+  end:
+    type: time
+    required: true
+    label: 종료
+    desc: 종료 시각
+    read: 종료 시각 HH:MM
+    example: '11:00'
+  title:
+    type: string
+    required: true
+    max: 100
+    label: 회의주제
+    desc: 회의주제(사이트의 필수 칸 — RUNNERS.room.missing)
+    read: 사용자가 적은 회의주제. 지어내지 않습니다
+    example: 주간 회의
+checks:
+  - { left: start, op: '<', right: end, message: 종료 시각이 시작보다 늦어야 합니다 }
+llm: false                     # 1단계: 예약은 UI 가 고른 칸으로만 짓는다(말로 찾기는 room.search). 칸의 read 는 2단계 통합 명령창을 위해 둔다
+runner: booking.reserve
+uses:
+  - { module: src/runners.js, export: RUNNERS }
+next: 실행기가 다시 조회해 확인된 것만 ok 다(ok && verified) — 그 뒤 '내가 넣음' 기록(rememberBooked)과 내 이름(rememberName)은 패널이 남긴다. 실패하면 diagnose 작업이 원인을 읽는다

@@ -22,13 +22,19 @@ import {
   templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
   mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, projectRefs, moreLead,
-  writePlan, docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, outsideAuto,
+  docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, outsideAuto,
 } from './src/gongmun.js';
 import {
   HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, BOXES, normalizeHist, listMine, listBoxes, readOutsideReport, kindOf, stateOf, outsideSummary, outsideHistory, viewUrl,
 } from './src/gmlist.js';
 import { SEARCH_KEY, AGENT_KIND, DIRS, DIR_LABEL, DIR_BOXES, DIR_TITLE, CUSTOM, parseQuery, periodOf, filterRows, sameRead, normalizeSearch } from './src/gmsearch.js';
-import { writeGongmun, showTab } from './src/gmwrite.js';
+import { showTab } from './src/gmwrite.js';
+import { RECIPE } from './src/gmrecipe.js';
+import { createDispatcher } from './actions/dispatch.js';
+import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
+import { resolvePreset } from './actions/preset.js';
+import { ActionError } from './actions/gate.js';
+import { registerGongmun } from './actions/runners/gongmun.js';
 import { BOOK_KEY, normalizeBook, refsText, MAX_PROJECTS as RND_MAX } from './src/rnd.js';
 import { SET_KEY as RND_SET_KEY } from './src/rnderp.js';
 import { budgetCheck, budgetText, budgetTitle, itemOf } from './src/gmbudget.js';
@@ -85,8 +91,9 @@ const formLabel = (id) => FORMS.find((f) => f.id === id)?.label || id;
  *   webcap?:{front?:Function, start?:Function, parts?:Function}}} deps
  *   webcap 은 웹페이지를 찍는 길(src/pagecap.js — 보고 있는 탭 통째로·페이지 위의 부분 고르기·고른 부분 찍기) — 캡처 단추(webpick.js)에 넘긴다
  *   compareTab 은 비교작성 탭일 때의 갈래(sidepanel.html?compare=갈래 — sidepanel.js) — 그 갈래의 초안을 작성 내용(공문)·읽은 내용 두 칸으로 넓게 보인다
+ *   actions 는 행위 디스패처(actions/dispatch.js — sidepanel 이 만들어 근태·공문 패널이 같이 쓴다). 없으면(단독 테스트) 여기서 만든다
  */
-export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '', flash = () => {}, webcap = {}, compareTab = '' }) {
+export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '', flash = () => {}, webcap = {}, compareTab = '', actions: given = null, openSetting = null }) {
   const el = {
     root: $('gongmun'), kinds: $('gmKinds'), projBar: $('gmProjBar'), pick: $('gmPick'), projLabel: $('gmProjLabel'),
     intake: $('gmIntake'), evidenceCount: $('gmEvidenceCount'), evidenceToggle: $('gmEvidenceToggle'), evidenceBody: $('gmEvidenceBody'), file: $('gmFile'), dropLead: $('gmDropLead'), capture: $('gmCapture'),
@@ -162,6 +169,44 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   /** 결재선의 맥락 — 갈래·초안(금액·출장 구분)·이 공문에서 고른 전결권자까지(위임전결). */
   const lineCtx = (w) => ({ ...ctxOf(w), kind: st.kind, draft: w?.draft || {}, rank: w?.rank || '' });
   const tplOf = () => templateOf(st.kind, st.templates);
+  // 행위 디스패처(actions/dispatch.js) — sidepanel 이 만들어 근태·공문 패널이 같이 쓰는 것을 받고, 없으면(단독 테스트) 여기서 만든다.
+  // 공문 실행기(gongmun.write — actions/runners/gongmun.js)는 여기서 등록한다. 활동 로그는 디스패처가 run 마다 한 줄 남긴다.
+  const actions = given || createDispatcher({ log: (e) => logEvent(e.kind, e.ok, e.text, e.data) });
+  /**
+   * 관문이 막은 빈 곳으로 가는 단추의 표(src/jump.js) — 공문의 칸(제목·본문·전결권자·문서설정)은 공문 보기에, 초안 칸(draft.…)과 과제·첨부는
+   * 작성 내용에 있다. 내 이름은 설정 → 일반, 공문 설정(부서·부서장·소장·본부장·문서번호 부서)은 아래 공문 설정 칸이다.
+   */
+  const JUMPS = {
+    input: {
+      title: () => { selectView('doc'); flashFocus(el.title); },
+      body: () => { selectView('doc'); flashFocus(el.body); },
+      rank: () => { selectView('doc'); flashFocus(el.rank); },
+      setting: () => { selectView('doc'); flashFocus(el.setBox); },
+      attach: () => { selectView('draft'); flashFocus(el.intake); },
+    },
+    preset: {
+      me: openSetting ? { label: '내 이름', go: () => openSetting('general', 'myName') } : null,
+      setup: { label: '공문 설정', go: () => flashFocus(el.dept) },
+      project: { label: '과제', go: () => { selectView('draft'); flashFocus(el.projects); } },
+    },
+    field: (root, key) => {
+      if (root !== 'draft') return null;
+      const sub = String(key).split('.')[1];
+      const node = sub ? el.root.querySelector(`[data-key="${sub}"]`) : null;
+      return node ? () => { selectView('draft'); flashFocus(node); } : null;
+    },
+  };
+  registerGongmun(actions);
+  /**
+   * 사전설정이 읽는 저장소 — 공문 설정(gongmunPreset)은 이 패널이 쓰는 키라 들고 있는 것(st.preset — 저장소에서 읽어 고칠 때마다 400ms 뒤에 쓴다)이 최신이다.
+   * 고치자마자 공문 작성을 눌러도 화면에 보이는 설정으로 기록을 짓게 저장소 값 위에 얹는다. 나머지 키는 저장소 그대로.
+   */
+  const storageOf = async (keys) => {
+    const got = (await chrome.storage.local.get(keys)) || {};
+    return keys.includes(PRESET_KEY) ? { ...got, [PRESET_KEY]: st.preset } : got;
+  };
+  /** 행위의 사전설정 — 내 이름·오늘·저장소(공문 설정)·패널의 ctx(고른 과제)를 명세의 from 대로 채운다(actions/preset.js). 값이 없어도 키는 있다. */
+  const presetFor = (id, ctx = {}) => resolvePreset(actions.entry(id).preset, { storage: storageOf, me: me(), today: today(), recipe: RECIPE, ctx });
 
   function setStatus(msg, kind = '') {
     el.status.className = `status ${kind}`;
@@ -1953,14 +1998,14 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
    * 새 공문 창을 뒤 탭으로 열고 과제·제목·차수·본문·문서설정·결재선·첨부를 넣는다(src/gmwrite.js — 2026-10-08 사용자 지정 "공문작성은 백그라운드에서").
    * 패널은 그대로 두고 작성 기록과 상태 줄만 바뀌며, 창이 열리면 오른쪽 '공문 보기'로 그 탭을 앞으로 가져온다. 임시저장·상신은 창에서 사람이 한다.
    * 첨부는 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶어(첨부 PDF 저장과 같은 파일) 창의 파일첨부에 올린다.
+   * 쓰기는 행위 gongmun.<갈래>(actions/spec/gongmun)의 기록으로 간다 — 제목·본문·초안·양식·전결권자·문서설정·첨부 이름이 관문을 지나 기록이 되고(바이트는 ctx.files),
+   * 사전설정(내 이름·오늘·공문 설정·고른 과제)은 명세의 from 대로 채운다. 이 단추가 확인(confirmed: record.hash)이다. 실행기(actions/runners/gongmun.js)가
+   * writePlan → writeGongmun 을 부르고, 활동 로그 한 줄은 디스패처가 남긴다(outcome 이 최종 문구를 정한다).
    */
   async function writeDoc() {
     const w = cur();
     if (!w || st.writing) return undefined;
-    const plan = writePlan(st.kind, {
-      title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, setting: w.setting, rank: w.rank,
-    }, ctxOf(w));
-    if (!plan.values.title) return setStatus('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.', 'error');
+    if (!String(el.title.value ?? '').trim()) return setStatus('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.', 'error');
     st.writing = true;
     st.lastTab = null;
     st.writeDone = null;
@@ -1974,20 +2019,50 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       if (x.ok === null) paintWrite(`${x.label}${x.detail ? ` · ${x.detail}` : ''}`);
     };
     setStatus('뒤 탭에서 공문을 쓰는 중입니다 — 다른 일을 하셔도 됩니다.');
-    // 첨부 — 못 묶으면(그림이 깨짐 등) 첨부 없이 쓰고 그렇다고 말한다.
+    // 첨부 — 못 묶으면(그림이 깨짐 등) 첨부 없이 쓰고 그렇다고 말한다. 기록에는 파일 이름과 무엇의 문서인지(묶은 PDF 는 첨부 목록의 문서 이름)만 적는다.
     let files = [];
+    let attach = [];
     try {
-      files = (await attachPdfs(w)).map((p) => ({ name: p.name, type: 'application/pdf', base64: toBase64(p.bytes) }));
+      const pdfs = await attachPdfs(w);
+      files = pdfs.map((p) => ({ name: p.name, type: 'application/pdf', base64: toBase64(p.bytes) }));
+      attach = pdfs.map((p) => ({ name: p.name, kind: String(p.label || '').slice(0, 40) }));
     } catch (err) {
       setStatus(`첨부 PDF 를 만들지 못해 첨부 없이 씁니다 — ${err.message}`, 'error');
     }
-    // 원본 첨부(메일 첨부 등)는 묶은 PDF 뒤에 파일 그대로 — 창의 파일첨부는 다섯 칸이라 넘치는 것은 빼고 그렇다고 말한다.
+    // 원본 첨부(메일 첨부 등)는 묶은 PDF 뒤에 파일 그대로(기록에는 original) — 창의 파일첨부는 다섯 칸이라 넘치는 것은 빼고 그렇다고 말한다.
     const originals = originalFiles(w);
     const over = Math.max(files.length + originals.length - ATTACH_SLOTS, 0);
     files = [...files, ...originals].slice(0, ATTACH_SLOTS);
+    attach = [...attach, ...originals.map((f) => ({ name: f.name, kind: 'original' }))].slice(0, ATTACH_SLOTS);
     const left = over ? ` · 첨부 칸(${ATTACH_SLOTS}개)이 모자라 ${over}개는 넣지 못했습니다 — 창의 파일첨부에서 바꿔 넣으세요` : '';
+    // 기록 — 행위 gongmun.<갈래> 의 관문(실행 모드)을 지나 짓는다. 어긋나면(제목이 99자를 넘음·초안 칸이 틀림·공문 설정이 없음 …) 상태줄에 적고 멈춘다.
+    const id = `gongmun.${st.kind}`;
+    let record;
     try {
-      const res = await writeGongmun(plan, { onStep: paintStep, files, onTab: (id) => { st.lastTab = id; paintWrite('새 공문 창을 여는 중…'); } });
+      ({ record } = actions.build(id, {
+        input: { title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, rank: w.rank || null, setting: w.setting || {}, attach },
+        preset: await presetFor(id, { project: projectOf(w) }),
+      }));
+    } catch (err) {
+      st.writing = false;
+      el.writeLog.classList.add('hidden');
+      paintWrite();
+      setStatus(`공문을 쓸 수 없습니다 — ${err instanceof ActionError ? err.problems.join(' · ') : err.message}`, 'error');
+      // 어디가 비었는지 아는 것(관문의 missing)은 그 자리로 가는 단추를 상태줄 끝에 세운다 — 내 이름·공문 설정·초안의 칸.
+      paintJumps(el.status, jumpsOf(err, err instanceof ActionError && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
+      return undefined;
+    }
+    const head = `공문 작성 · ${KINDS[st.kind].title} · ${record.input.title}`;
+    try {
+      const res = await actions.run(record, {
+        confirmed: record.hash, files, onStep: paintStep, onTab: (tabId) => { st.lastTab = tabId; paintWrite('새 공문 창을 여는 중…'); },
+        text: head,
+        // 활동 로그의 최종 문구 — 문서 ID·첨부 수·안 된 단계까지(디스패처가 이 한 줄을 남긴다).
+        outcome: async (r) => {
+          const bad = r.steps.filter((x) => x.ok === false);
+          return { text: `${head}${r.docId ? ` · ${r.docId}` : ''}${files.length ? ` · 첨부 ${files.length}개` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}` };
+        },
+      });
       const bad = res.steps.filter((x) => x.ok === false);
       st.lastTab = res.tabId;
       st.writeDone = { ok: !bad.length, docId: res.docId || '', bad: bad.map((x) => x.label) };
@@ -1995,11 +2070,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         : `뒤 탭에 공문을 썼습니다${files.length ? '(첨부까지)' : ''} — 공문 보기로 열어 확인하고 임시저장 뒤 상신하세요.`) + left, bad.length || over ? 'error' : '');
       // 쓴 공문은 창에서 임시저장·상신해야 기안함에 선다 — 읽어 둔 이력을 묵은 것으로 두어 다음에 펴면 다시 읽는다.
       if (st.hist.at) st.hist.at = 1;
-      logEvent('gongmun', !bad.length, `공문 작성 · ${KINDS[st.kind].title} · ${plan.values.title}${res.docId ? ` · ${res.docId}` : ''}${files.length ? ` · 첨부 ${files.length}개` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}`);
     } catch (err) {
       st.writeDone = { ok: false, docId: '', bad: [], why: err.message };
       setStatus(`공문을 쓰지 못했습니다 — ${err.message}`, 'error');
-      logEvent('gongmun', false, `공문 작성 실패 · ${KINDS[st.kind].title} · ${err.message}`);
     } finally {
       st.writing = false;
       paintWrite();

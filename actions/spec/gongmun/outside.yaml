@@ -1,0 +1,85 @@
+# 외부강의등 신고서 작성 — 강의·자문·심사·발표·위원 위촉 요청 공문·초청장·요청 메일을 읽어(gongmun.outside) 신고서의 칸(요청인·주제·장소·일시·사례금 …)을 채운 뒤
+# 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc, 2026-10-15 사용자 지정: "현재 외부활동이 외부강의등 신고서인데 이 양식대로 작성하도록").
+# 칸 하나가 신고서 칸 하나다(레시피 kr_outside_lecture_report/fieldmap.yaml 의 source: draft — writePlan 의 values.draft). 사유 쓰기 작업은 없다(RECIPE.tasks 에 gongmunReason.outside 없음 —
+# 신고서에는 사유 칸이 없다). 과제를 고르지 않는다(purpose.yaml project: false — 신고서에 과제 칸이 없고 결재선은 담당 → 팀장뿐, 지난 신고서 HER-2026-000266 실측) — project 사전설정이 없다.
+# 직급·당월 누적·당해 연도 누적은 공문 이력의 지난 신고서로 패널이 셈한다(outsideAuto). 문서설정 프로파일은 외부활동(보존 3년·키워드 '외부활동').
+# 어댑터(gongmun.write): writePlan('outside', { title, body, draft, form, setting, rank } = rec.input, { me, preset: setup, today } = rec.preset) → writeGongmun(plan, { files: ctx.files, … }).
+id: gongmun.outside
+title: 외부강의등 신고서 작성
+summary: '{preset.kindTitle} · {title}'
+preset:
+  # 불투명 객체 — 키는 src/gongmun.js normalizePreset 의 dept·head·director·chief·docNo. 신고서의 결재는 부서장(팀장)이다. 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다.
+  setup:     { from: storage:gongmunPreset, type: object, required: true, desc: '공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다)' }
+  kindTitle: { value: 외부강의등 신고서, desc: 갈래 이름 — 활동 로그 한 줄에 쓴다 }
+fields:
+  form:
+    type: enum
+    required: true
+    values: [KR_EA_Research_Task, KR_Outside_Lecture_Report, KR_EA_Form2]
+    default: KR_Outside_Lecture_Report
+    label: 양식
+    desc: eclass 전자결재 양식(formsFor('outside') — 외부강의등 신고서가 기본. 연구업무추진품의·기안문은 본문 틀로 쓸 때)
+    read: '양식 — 외부강의등 신고서(KR_Outside_Lecture_Report)가 기본'
+  title:
+    type: string
+    required: true
+    max: 99
+    label: 제목
+    desc: 공문 제목(제목 틀을 채운 글 — 사람이 고쳤으면 그 글)
+    read: 제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것
+    example: 외부강의등 신고서(부산대학교 MVDC 차단기 기술 특강)
+  body:
+    type: string
+    required: true
+    max: 20000
+    label: 본문
+    desc: 본문(본문 틀을 채운 글 — 신고서 양식은 칸이 정해져 있어 본문은 비어 있을 수 있다. 양식을 바꿨으면 그 틀의 글)
+    read: 본문 틀을 채운 글
+    llm: false
+  # 초안 — 레시피 outside/purpose.yaml 의 fields(org·representative·contact·contactTel·subject·place·from·to·start·end·hours·mins·fee·expenses·rank·monthCount·yearTotal·note)를 생성기가 펼치고
+  # currency·attach 를 더한다(reads 는 없다). 신고서 칸에 넣는 값은 writePlan 의 draftValue(날짜·시각·숫자만 칸)가 고른다.
+  draft:
+    type: object
+    from: recipe
+    label: 초안
+    desc: 초안 칸(레시피 purpose.yaml 의 fields — 생성기가 펼친다). 읽은 문서(gongmun.outside)가 채우고 직급·누적은 패널이 셈하며 사람이 고친다
+    read: 읽은 문서로 채운 신고서의 칸
+  rank:
+    type: enum
+    values: [팀장, 소장, 본부장]
+    label: 전결권자
+    desc: 이 공문에서 사람이 고른 전결권자 직책. 비면 규정대로(외부활동 — 팀장)
+    read: '사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)'
+  setting:
+    type: object
+    label: 문서설정
+    desc: 이 공문에서 바꾼 문서설정만(settingPatch 의 키 — 없는 키는 레시피 프로파일 외부활동(보존 3년·키워드 외부활동)·공문 설정대로)
+    read: 사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만
+    llm: false
+    fields:
+      retention:     { type: enum, values: ['12', '24', '36', '60', '120', '240', '1200'], desc: 보존년한 코드(settings.yaml options.retention — 신고서는 3년이 기본), read: '보존년한을 말했으면 그 코드(3년이면 36)' }
+      docNo:         { type: string, max: 8, desc: 문서번호 부서 코드(숫자만), read: '문서번호 부서를 코드로 말했을 때만' }
+      receiver:      { type: enum, values: [내부결재, KRE], desc: 수신처, read: '수신처를 말했을 때만 — 내부결재 또는 KRE' }
+      scope:         { type: enum, values: [결재선, 기안부서], desc: 공개범위, read: '공개범위를 말했을 때만 — 결재선 또는 기안부서' }
+      emergency:     { type: boolean, desc: 긴급, read: '긴급이라고 했을 때만 true' }
+      approvingOpen: { type: boolean, desc: 진행공개, read: '진행공개라고 했을 때만 true' }
+      drm:           { type: boolean, desc: DRM, read: 'DRM 을 걸라고 했을 때만 true' }
+      tag:           { type: string, max: 60, desc: 검색 키워드(프로파일이 '외부활동' 으로 둔다 — 2026-10-12 사용자 지정), read: '검색 키워드를 말했을 때만' }
+  attach:
+    type: list
+    max: 5
+    label: 첨부
+    desc: 첨부 파일 이름(바이트는 ctx.files) — 요청 공문 PDF 와 원본 첨부(요청 메일의 첨부 등)
+    read: 첨부할 문서의 파일 이름 목록. 지어내지 않습니다
+    llm: false
+    item:
+      name: { type: string, required: true, max: 200, desc: 파일 이름, read: 파일 이름 }
+      kind: { type: string, max: 40, desc: '무엇의 문서인지(요청 공문·행사 안내문 …, 원본 첨부면 original)', read: '무엇의 문서인지. 모르면 null' }
+llm:
+  tasks:
+    - { task: gongmun.outside, fills: draft }
+runner: gongmun.write
+uses:
+  - { module: src/gongmun.js, export: writePlan }
+  - { module: src/gmwrite.js, export: writeGongmun }
+next: 뒤 탭에 신고서를 쓴다(제목·신고서 칸·문서설정·결재선·첨부 — 차수 칸이 없는 양식이라 제목만). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다

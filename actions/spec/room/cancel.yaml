@@ -1,0 +1,60 @@
+# 회의실 예약 취소 — 격자에서 고른 내 예약(cancelPicked)이나 내 예약 목록의 한 건(cancelFromMine)을 지운다(RUNNERS.room.cancel(record, day)).
+# 삭제는 그 날 화면의 ViewState 손잡이(fn_del 의 idx — 회의실은 예약 번호라 다시 읽어도 같은 건을 가리킨다)로 보낸다 — 산 손잡이(record)와 화면(day)은 ctx 다(§5).
+# 기록에는 무엇을 지우는지(회의실·날짜·시간·제목)만 둔다. 취소 버튼(두 번 확인)이 확인이다.
+id: room.cancel
+title: 회의실 예약 취소
+log: cancel
+summary: '{room} {date} {start}~{end}'
+preset:
+  region: { from: storage:region, desc: 보고 있던 지역 }
+fields:
+  room:
+    type: string
+    required: true
+    max: 100
+    label: 회의실
+    desc: 회의실 이름
+    read: 취소할 예약의 회의실 이름 그대로
+    example: 대회의실
+  date:
+    type: date
+    required: true
+    label: 예약일
+    desc: 예약일
+    read: 취소할 예약의 날짜(YYYY-MM-DD)
+    example: '2026-10-20'
+  start:
+    type: time
+    required: true
+    label: 시작
+    desc: 시작 시각
+    read: 취소할 예약의 시작 시각 HH:MM
+    example: '09:00'
+  end:
+    type: time
+    required: true
+    label: 종료
+    desc: 종료 시각
+    read: 취소할 예약의 종료 시각 HH:MM
+    example: '11:00'
+  title:
+    type: string
+    max: 100
+    label: 회의주제
+    desc: 그 예약의 회의주제(기록용)
+    read: 그 예약의 회의주제. 모르면 null
+    example: 주간 회의
+  region:
+    type: enum
+    values: [부산, 서울]
+    label: 지역
+    desc: 그 예약의 지역
+    read: 그 예약의 지역. 모르면 null
+    example: 부산
+checks:
+  - { left: start, op: '<', right: end, message: 종료 시각이 시작보다 늦어야 합니다 }
+llm: false
+runner: booking.cancel
+uses:
+  - { module: src/runners.js, export: RUNNERS }
+next: 지운 뒤 그 날을 다시 읽는다(패널 load). 내 예약 목록에서 지웠으면 justBooked 에서도 뺀다(패널)

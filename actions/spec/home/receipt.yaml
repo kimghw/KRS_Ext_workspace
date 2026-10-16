@@ -1,0 +1,28 @@
+# 증빙 한 장 읽기(사후정산 입력 화면) — eclass /BusinessTrip/AfterTrip 의 콘텐츠 스크립트(src/afterpage.js)가 놓은 증빙 한 장을 배경에 읽어 달라고 한다(background.js readReceipt →
+# src/llm.js receiptSmart — 로컬 CLI → API 키). 명세(input.yaml 의 receipt)를 지난 기록만 돌려준다 — 화면의 칸을 채우는 것(fillPlan)은 그 화면의 스크립트고 올리지는 않는다(사용자가 저장한다).
+# 그래서 읽기뿐이다(effect none, confirm false). 그 화면에 직접 놓은 것이라 기차표·버스표·택시 영수증도 교통비 줄이 된다(출장 카드는 여전히 쓰지 않는다).
+id: home.receipt
+title: 증빙 한 장 읽기
+status: planned
+confirm: false
+effect: none
+summary: '증빙 읽기 {name}'
+fields:
+  name: { type: string, required: true, max: 200, label: 파일 이름, desc: 읽을 파일의 이름(file.name — 활동 로그 한 줄용), read: 파일 이름 그대로, llm: false }
+  file: { type: file, required: true, label: 증빙 파일, desc: 읽을 파일의 참조(이름·형식·크기 — 바이트는 ctx.files. 이미지·PDF), read: 증빙 파일의 이름과 형식. 지어내지 않습니다, llm: false }
+  trip:
+    type: object
+    label: 출장
+    desc: 출장 정보(기간·출장지·번호 — receiptInput 이 입력 글에 적는다. 출장지에서 결제했는지(atDestination)의 기준)
+    read: 그 출장의 기간과 출장지. 화면에 있는 것 그대로
+    fields:
+      seq:      { type: string, max: 20, desc: 여비계산서 번호, read: 여비계산서 번호, example: '145580' }
+      from:     { type: date, desc: 출장 시작일, read: 출장 시작일(YYYY-MM-DD), example: 2026-10-20 }
+      to:       { type: date, desc: 출장 종료일, read: 출장 종료일(YYYY-MM-DD), example: 2026-10-21 }
+      location: { type: string, max: 200, desc: 출장지, read: 출장지, example: 대전(한국기계연구원) }
+llm: false
+runner: home.receipt
+uses:
+  - { module: src/llm.js, export: receiptSmart }
+  - { module: src/llm.js, export: receiptInput }
+next: '{ ok, record, via, note } 를 돌려준다 — 화면 스크립트가 record 로 줄을 더해 칸만 채운다(src/afterpage.js fillPlan). 어느 길(cli·api)로 읽었는지가 via 다'

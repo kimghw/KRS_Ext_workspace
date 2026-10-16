@@ -1,0 +1,26 @@
+# rERP 잇기 — 보고 있는 과제·차년도를 rERP 의 진행 과제(연차 행)와 잇는다(rndpanel.js linkErp·pickErp — rerp/erp.js fetchProjectRecs 로 목록을 받아 src/rnderp.js projectRecs·pickYearRec 로
+# 과제번호(없으면 과제명)와 차년도에 맞는 행을 고른다). 못 고르면 후보 목록(candidates)에서 사람이 고른다(prjNo). 끊는 것(unlinkErp — 두 번 누름)은 prjNo 를 비워 적는다.
+# rERP 는 읽기만 한다 — 바뀌는 것은 장부의 erp 손잡이(linkOf)뿐이다(effect draft). 2026-10-11 구현(rerp/ 폴더 — 정본은 kr_ext_rerp).
+id: rnd.erp.link
+title: rERP 잇기
+status: planned
+confirm: true
+effect: draft
+summary: 'rERP 잇기 {projectId} {year}차년도 → {prjNo}'
+preset:
+  erp: { from: storage:rndSettings, type: object, desc: R&D 설정(rERP 집행내역 켬·숨긴 비목·더하기 — src/rnderp.js SET_KEY). 꺼져 있으면 잇지 않는다 }
+fields:
+  projectId: { type: string, required: true, max: 40, label: 과제 id, desc: 보고 있는 과제의 id, read: 보고 있는 과제의 id, llm: false }
+  year:      { type: integer, required: true, min: 1, max: 20, label: 차년도, desc: 보고 있는 차년도(n), read: '몇 차년도인지(1부터)', example: 2 }
+  prjNo:     { type: string, max: 40, label: rERP 과제번호, desc: 고른 rERP 과제번호(목록에서 고른 것 — 비면 과제번호·과제명으로 저절로 찾는다. 끊을 때는 빈 글과 unlink), read: '사용자가 rERP 과제번호를 말했을 때만', example: P2026-012 }
+  manual:    { type: boolean, label: 손으로 고름, desc: 사람이 드롭다운에서 고른 것인가(linkOf 의 auto 반대 — 저절로 이은 것은 다음에 다시 찾는다), read: '사용자가 직접 골랐으면 true', llm: false }
+  unlink:    { type: boolean, label: 끊기, desc: 이어진 것을 끊는다(스냅샷을 버리고 맞춰진 비목의 집행은 다시 손으로 적는다 — 값은 남긴다), read: '끊으라고 했을 때만 true' }
+llm: false
+runner: rnd.erp.link
+uses:
+  - { module: rerp/erp.js, export: fetchProjectRecs }
+  - { module: src/rnderp.js, export: projectRecs }
+  - { module: src/rnderp.js, export: pickYearRec }
+  - { module: src/rnderp.js, export: candidates }
+  - { module: src/rnderp.js, export: linkOf }
+next: 이었으면 곧바로 집행내역을 받는다(rnd.erp.fetch force — 패널이 잇는다). 못 골랐으면 후보 목록을 보이고 사람이 고른 뒤 다시 짓는다

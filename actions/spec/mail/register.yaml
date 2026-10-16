@@ -1,0 +1,27 @@
+# 보낸 메일 등록 — 등록 대화에서 고른 보낸 메일들을 장부에 넣는다(mailtrack/panel.js doRegister → sync.register(ids)): 상세(To·CC·대화 id·본문) → 첨부 목록 → 첨부 바이트(한 세션), 본문·첨부는
+# 금고에, 항목은 장부에. 이미 등록한 id 는 건너뛴다(skipped). 처음 등록이면 보낸 메일의 보낸 주소가 곧 나(book.me). 큰 첨부는 서버가 바이트를 주지 않아 "서버에 저장" 으로 받는다(warnings).
+# Outlook MCP 는 읽기만 하고 바뀌는 것은 장부·금고(이 브라우저)뿐이다(effect draft). 등록 뒤 곧바로 한 번 찾는다(mail.refresh — 패널이 잇는다).
+id: mail.register
+title: 보낸 메일 등록
+status: planned
+confirm: true                  # 등록 대화의 `등록` 버튼이 확인이다
+effect: draft
+summary: '메일 등록 {count}건'
+fields:
+  count: { type: integer, min: 1, max: 50, label: 건수, desc: 등록하는 메일 수(mails 의 길이 — 활동 로그 한 줄용), read: 등록하는 메일의 수, llm: false }
+  mails:
+    type: list
+    max: 50
+    label: 보낸 메일
+    desc: 등록할 보낸 메일 — 등록 대화(sync.listSent)에서 고른 것. id 가 Outlook 메시지 id 다
+    read: 사용자가 고른 보낸 메일. 제목으로 찾은 메일의 id 그대로 — 지어내지 않습니다
+    llm: false
+    item:
+      id:      { type: string, required: true, max: 300, desc: Outlook 메시지 id(sync.register 의 ids), read: 메시지 id 그대로 }
+      subject: { type: string, max: 300, desc: 제목(기록용), read: 메일 제목 }
+llm: false
+runner: mail.register
+uses:
+  - { module: mailtrack/sync.js, export: createSync }
+  - { module: mailtrack/model.js, export: newItem }
+next: 결과(added·skipped·errors·warnings)를 등록 대화와 활동 로그에 적고, 새로 등록했으면 mail.refresh 를 한 번 돈다(등록 전에 와 있던 회신이 바로 이어지게)

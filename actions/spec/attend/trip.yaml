@@ -1,0 +1,181 @@
+# 출장 신청 — HR 출장 신청서(TR, 근태종류 DBT). 칸은 src/attend.js fieldsFor({kind:'trip'})·blankForm('trip') 과 맞춘다.
+# 결재요청(op=request)이 올라간 뒤 같은 누름으로 여비계산서(사전정산 — trip.create, settle 을 켰을 때)와 차량 신청(car.reserve — 차량 조회에서 누른 차)이
+# 이어진다(then) — 디스패처가 잇지 않고 패널(attendpanel.js send → makeTripDoc)이 차례로 부른다.
+# 실행기(attend.apply)는 blankForm('trip', today) 위에 이 기록의 input 을 얹은 폼으로 buildJob(form, { action: op, doc }) → hrRunJob 을 부른다.
+id: attend.trip
+title: 출장 신청
+hint: 출장                     # merged 작업의 kind 설명("trip(출장)")과 종류 규칙의 머리("종류가 trip(출장)일 때:")에 쓰는 짧은 이름
+summary: '출장 {dateFrom}~{dateTo} {place} · {purpose}'
+preset:
+  hrMe: { from: ctx:hrMe, type: object, desc: HR 의 나(사번 emplNo·이름 — attendpanel 의 st.me). 이어지는 여비계산서(trip.create)가 사번을 쓴다 }
+  workplace: { from: storage:attendWorkplace, desc: 근무지(서울·부산) — 근태 탭에 한 번 적으면 남는다(attendpanel 이 attendWorkplace 에 저장). 칸의 workplace 가 비면 이것 }
+fields:
+  dateFrom:
+    type: date
+    required: true
+    label: 출발일
+    desc: 출발일
+    read: '출발일(YYYY-MM-DD). "내일"·"다음 주 수요일" 은 오늘을 기준으로 실제 날짜로'
+    example: '2026-10-20'
+  start:
+    type: time
+    required: true
+    label: 출발
+    desc: 출발 시각(정시 단위 — 사이트가 출장의 분 칸을 잠근다)
+    read: '출발 시각 HH:MM(정시 단위). 말하지 않았으면 null — 폼의 기본값 07:00 이 그대로다'
+    default: '07:00'             # 아침 7시에 떠나 저녁 8시에 닿는 당일 하루가 기본(2026-10-02 사용자 지정 — blankForm)
+    example: '07:00'
+  dateTo:
+    type: date
+    required: true
+    label: 도착일
+    desc: 도착일 — 며칠간(days)에서 나온다(settle/tripDates). 달력으로 고르면 며칠간이 따라 바뀐다(2026-10-06 사용자 지정)
+    read: '여러 날 출장의 종료일(YYYY-MM-DD). 당일이면 null'
+    example: '2026-10-21'
+  end:
+    type: time
+    required: true
+    label: 도착
+    desc: 도착 시각(정시 단위)
+    read: '도착 시각 HH:MM(정시 단위). 말하지 않았으면 null — 폼의 기본값 20:00'
+    default: '20:00'
+    example: '20:00'
+  days:
+    type: integer
+    required: true
+    min: 1
+    max: 31                      # src/attend.js MAX_TRIP_DAYS — 한 달을 넘는 출장은 HR 에서 직접 올린다
+    label: 며칠간
+    desc: '며칠간(당일 1, 1박 2일이면 2) — 칩 1D~7D, 그보다 길면 도착일 달력에서'
+    read: '며칠간인지(당일 1, 1박 2일이면 2). "3일간" 처럼 기간으로 말했을 때'
+    default: 1
+    example: 2
+  place:
+    type: string
+    required: true
+    max: 200
+    label: 출장지
+    desc: 출장지(도시·지역) — 내릴 KTX 역을 여기서 찾는다. 여비계산서에는 "출장지(장소)" 로 들어간다(src/travel.js tripLocation)
+    read: '출장지 — 도시·지역(예: 대전). "대전 한국기계연구원" 이면 대전'
+    example: 대전
+  venue:
+    type: string
+    max: 200
+    label: 장소
+    desc: 찾아갈 기관·건물(출장지·장소는 사전정산과 상관없이 늘 묻는다 — 2026-10-08 사용자 지정)
+    read: '장소 — 찾아갈 기관·건물(예: 한국기계연구원). 장소만 말했으면("KAIST") 그 장소가 있는 도시를 place 에, 장소를 venue 에'
+    example: 한국기계연구원
+  purpose:
+    type: string
+    required: true
+    max: 200
+    label: 목적
+    desc: 목적 — HR 신청서의 "내용" 칸이다. 출장지·장소(사전정산이면 근무지도)가 뒤에 괄호로 붙어 올라간다(src/attend.js contentOf)
+    read: 목적·사유. 사용자가 말한 것만 — 지어내지 않습니다
+    example: 착수회의 참석
+  # 아래 넷은 HR 에 올라가지 않는 화면의 값이다 — 지금 input.yaml 의 attend 작업에 없던 칸이라 1단계에서는 LLM 이 채우지 않는다(llm: false).
+  settle:
+    type: boolean
+    label: 여비계산서 사전정산
+    desc: 결재요청이 올라간 뒤 eclass 여비계산서(사전정산)를 자동으로 만든다(2026-10-02 사용자 지정) — then 의 trip.create
+    read: 사용자가 여비계산서·사전정산을 말했을 때만 true
+    default: false
+    llm: false
+  car:
+    type: boolean
+    label: 차량 조회
+    desc: 폼의 날짜·시간에 빈 차량을 폼 아래에 보여 주고, 누르면 그 차량을 신청한다(2026-10-03 사용자 지정, src/carfind.js) — then 의 car.reserve
+    read: 사용자가 차량을 말했을 때만 true
+    default: false
+    llm: false
+  workplace:
+    type: string
+    max: 50
+    label: 근무지
+    desc: 떠나는 근무지(서울·부산). 사전정산을 켰을 때 묻고(기차가 끼면 KTX 역을 찾으므로 그때만 필수 — 기존 검증기 몫), 차량 조회만 켰을 때도 받는다(차량의 지역)
+    read: 근무지 — 서울 또는 부산
+    llm: false
+  transport:
+    type: tags
+    values: [train, plane, bus]  # src/travel.js TRANSPORTS(references/travel-rules.yaml transport.choices)
+    label: 교통편
+    desc: 교통편(여럿 — 기차 + 비행기). 사전정산을 켰을 때만 묻는다
+    read: 기차(train)·비행기(plane)·버스(bus) 가운데 말한 것
+    default: [train]             # travel-rules.yaml transport.default
+    llm: false
+    when: settle
+  trainGrade:
+    type: enum
+    values: [standard, first]    # travel-rules.yaml transport.train.grade_labels — 화면은 기차 아이콘을 한 번 더 누르면 특실
+    label: 좌석 등급
+    desc: 기차 좌석 등급(standard 일반석·first 특실) — 교통편 아이콘 안의 값이라 fieldsFor 에는 따로 없다
+    read: 특실이라고 했을 때만 first
+    default: standard
+    llm: false
+    when: settle
+  expense:
+    type: enum
+    values: ['Y', 'N']
+    label: 출장경비
+    desc: 출장경비(HR 의 biztripExpKind). 묻지 않는다 — 늘 선급 예산이라(2026-10-02 사용자 지정) blankForm 이 깐 'Y' 를 그대로 보낸다
+    read: 사용자가 정하지 않습니다 — 늘 Y
+    default: 'Y'
+    llm: false
+    ui: false
+  op:
+    type: enum
+    required: true
+    values: [save, request]
+    label: 올리는 길
+    desc: 임시저장(save)·결재요청(request) — 누른 버튼. 둘은 다른 확인이다(기록이 다르다)
+    read: 사용자가 말로 고르지 않습니다 — 버튼이 정합니다(임시저장이면 save, 결재요청이면 request)
+    llm: false
+    ui: false
+  doc:
+    type: object
+    label: 고쳐 올리는 문서
+    desc: 임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 종류는 못 바꾼다
+    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서
+    llm: false
+    ui: false
+    fields:
+      docNo: { type: string, max: 30, required: true, desc: 문서번호, read: 고치는 문서의 번호 그대로 }
+      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1), read: 그 문서의 상태 코드 그대로 }
+# blankForm('trip') 에는 있지만 이 종류의 기록에 담지 않는 화면 전용 키 — 까닭을 값으로 적는다.
+ignore:
+  kind: 행위 ID 가 종류다(attend.trip)
+  sub: 출장에는 갈래가 없다
+  half: 연차의 구분 — 출장에는 없다
+  span: 출장은 날을 넘기므로 몇 시간 칩 대신 출발·도착 시각을 그대로 받는다
+  flexStart: 유연근무의 칸
+  flexMode: 유연근무의 칸
+  flexMon: 유연근무의 칸
+  flexTue: 유연근무의 칸
+  flexWed: 유연근무의 칸
+  flexThu: 유연근무의 칸
+  flexFri: 유연근무의 칸
+  allDay: 건강검진의 칸
+  file: 건강검진의 첨부 — 출장 증빙은 신청할 때 묻지 않는다(신청 내역의 출장 카드에서, 2026-10-03 사용자 지정)
+  carPlace: 외근의 차량 행선지 — 출장은 출장지(장소)가 행선지다
+  wfa: 연차의 기념일 지원
+  wfaName: 연차의 기념일 지원
+  wfaRelation: 연차의 기념일 지원
+  wfaReason: 연차의 기념일 지원
+  wfaDate: 연차의 기념일 지원
+  wfaStayFrom: 연차의 기념일 지원
+  wfaStayTo: 연차의 기념일 지원
+  wfaPaid: 연차의 기념일 지원
+  wfaAsk: 연차의 기념일 지원
+  wfaCash: 연차의 기념일 지원
+rules:
+  - '출장(trip)은 출장지(place — 도시·지역)와 장소(venue — 찾아갈 기관·건물)를 나눠 넣습니다. "대전 한국기계연구원" 이면 place 는 대전, venue 는 한국기계연구원입니다. 장소만 말했으면("KAIST") 그 장소가 있는 도시를 place 에, 장소를 venue 에 넣습니다.'
+checks:
+  - { left: dateFrom, op: '<=', right: dateTo, drop: dateTo, message: 종료일이 시작일보다 앞서 종료일은 뺐습니다 }
+runner: attend.apply
+uses:
+  - { module: src/attend.js, export: buildJob }
+  - { module: src/hr.js, export: hrRunJob }
+then:
+  - { action: trip.create, when: settle }
+  - { action: car.reserve, when: car }
+next: 결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 trip.create 가, 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다)

@@ -1,0 +1,14 @@
+# 홈 카드 갈래 — e-Class 홈의 WORKSPACE 카드(콘텐츠 스크립트 src/home.js)와 사후정산 입력 화면(src/afterpage.js)이 배경(background.js)에 부탁하는 일. 2단계(§12, status planned).
+# 콘텐츠 스크립트는 Claude 도 보관함(IndexedDB)도 못 쓰므로 배경이 대신한다 — 증빙 받기(evidenceKeep → src/intake.js), 사후정산 올리기(홈 카드가 같은 출처라 바로 — src/afterup.js),
+# 증빙 한 장 읽기(receiptRead → src/llm.js receiptSmart). 1단계에서 서비스 워커·콘텐츠 스크립트는 actions/ 를 읽지 않는다(§2) — 2단계에 환경별 실행기를 따로 주입한다.
+# 활동 로그는 배경이 'trip' 으로 남긴다(tripBook — 한 권으로 줄 세워 쓴다). by 는 auto(홈 카드)다. LLM 작업은 없다(mode none — 증빙 읽기는 input.yaml 의 receipt).
+domain: home
+title: 홈 카드
+log: trip                      # background.js 가 남기는 기록과 같은 kind
+kinds: [evidence, afterup, receipt]
+preset:
+  today: { from: today, desc: 오늘(YYYY-MM-DD) }
+  me:    { from: me, desc: 내 이름 — 여비계산서 목록이 아는 이름(stages.me)이 비었을 때 대신. intakeEvidence·afterUp·receiptSmart 의 me }
+llm:
+  task: home
+  mode: none

@@ -10,12 +10,17 @@
 // 글자 층이 있는 PDF 는 글자만 보내고 파일을 붙이지 않으며, 그림·스캔본은 OCR 글자를 입력에 적고 파일도 붙인다. 어떻게 읽었는지는
 // 첨부마다 한 줄씩 read 로 온다(API 길만 — 다리 길은 다리 기록에 남는다).
 //
-// **어느 길로 온 답이든 입력 명세(input.yaml)의 관문을 지난 것만 돌려준다**(src/input.js 의 structure).
+// **어느 길로 온 답이든 명세(input.yaml·공문 레시피·행위 명세 actions/spec — src/input.js 의 TASKS)의 관문을 지난 것만 돌려준다**(structure).
 // 답이 명세와 다르면 그 길은 실패한 것으로 치고 다음 길로 내려간다. 여기서 나간 것은 그대로 실행자 쪽
 // (findSlots, applyPatch)으로 가므로, 구조가 틀린 것이 여기를 지나면 안 된다.
+//
+// 회의실·차량 조회(search.room·search.car)와 근태 조각(attend)의 작업은 행위 명세(actions/spec/<갈래>/*.yaml → tools/gen-actions.mjs →
+// actions/spec.js 의 tasks)가 만든다. fillAction(행위 ID) 이 행위에서 작업 이름과 입력 글의 꼴(갈래 llm.input → INPUTS)을 정해 같은 사다리를
+// 탄다 — parseSmart·fillAttendSmart 는 그 위에 규칙 해석(3)을 더한 것이다.
 
 import { callClaude } from './ai.js';
-import { structure, InputError } from './input.js';
+import { structure, InputError, TASKS } from './input.js';
+import { ACTIONS } from '../actions/spec.js';
 import { parseLocal } from './nlq.js';
 import { parseAttendLocal, fixRelativeDates } from './attend.js';
 import { parseSetupLocal, reasonInput, KINDS, REASON_KEYS } from './gongmun.js';
@@ -73,7 +78,7 @@ const joined = (...parts) => parts.flat().filter(Boolean).join(', ');
 
 /**
  * 첨부에서 글자를 먼저 뽑는 작업 — 출장 증빙(receipt)과 공문 문서(gongmun.<갈래>). 다리(native/host.mjs 의 TEXT_FIRST)와 같은 규칙이다.
- * 사유 쓰기(gongmunReason.*)와 공문 설정 채팅(gongmunSetup)은 글만 받으므로 아니다.
+ * 글만 받는 작업(search.room·search.car·attend·diagnose·공문 설정 채팅 gongmunSetup·사유 쓰기 gongmunReason.*)은 아니다.
  */
 export const textFirst = (task) => task === 'receipt' || task.startsWith('gongmun.');
 
@@ -97,12 +102,12 @@ async function extractText(input, files, docText = defaultDocText) {
  * 둘 다 안 되면 data 가 없다. 왜 내려왔는지는 fails 에 남는다 — 답이 명세와 달랐던 것도 실패다.
  * 첨부가 있는 글자 먼저 뽑기 작업(textFirst)은 API 길에서 여기서 뽑아 보낸다. CLI 길은 다리가 뽑고 read 를 다리 기록에 남기므로 돌려주지 않는다.
  *
- * @param {string} task input.yaml 의 작업 이름
+ * @param {string} task 작업 이름 — src/input.js 의 TASKS(input.yaml·공문 레시피·행위 명세에서 만든 작업)
  * @param {{apiKey?:string, useNative?:boolean, kind?:string, files?:{name:string,type:string,dataUrl:string}[], docText?:Function}} opts
- *   kind 는 화면이 정한 종류, files 는 첨부, docText 는 테스트가 끼우는 글자 뽑기(패널은 넘기지 않는다)
+ *   kind 는 화면이 정한 종류(관문의 variants — 차량이 받지 않는 칸), files 는 첨부, docText 는 테스트가 끼우는 글자 뽑기(패널은 넘기지 않는다)
  * @returns {Promise<{data?: object, notes?: string[], via?: 'cli'|'api', costUsd?: number, read?: string[], fails: string[]}>}
  */
-async function askClaude(task, input, { apiKey, useNative, kind, files = [], docText }) {
+export async function askClaude(task, input, { apiKey, useNative, kind, files = [], docText } = {}) {
   const fails = [];
   if (useNative) {
     try {
@@ -126,25 +131,36 @@ async function askClaude(task, input, { apiKey, useNative, kind, files = [], doc
 }
 
 /**
+ * 조회 조건 읽기에 줄 글 — 오늘과 찾는 대상(회의실·차량)을 머리에 적는다. 행위 명세의 갈래 llm.input: search(room·car 의 _domain.yaml).
+ * @param {{today: string, kind?: 'room'|'car'}} ctx
+ */
+export function searchInput(text, { today, kind = 'room' } = {}) {
+  const what = kind === 'car' ? '차량' : '회의실';
+  return `오늘은 ${today} 입니다.\n찾는 대상: ${what}\n\n요청: ${text}`;
+}
+
+/**
  * 자연어를 조회 조건으로 바꾼다.
  *
- * 회의실과 차량은 **조건의 모양이 같다**(날짜·시간·길이). 다른 것은 말투뿐이라
- * 무엇을 찾는지만 알려주고 같은 길을 쓴다. 차량이 받지 않는 조건(좌석 수·지역)은 관문이 비우고 note 에 적는다.
+ * 회의실과 차량은 **조건의 모양이 같다**(날짜·시간·길이). 다른 것은 말투뿐이라 무엇을 찾는지만 알려주고 같은 길을 쓴다.
+ * 작업은 행위 명세가 종류마다 만든 search.room·search.car(actions/spec/<갈래>/search.yaml 의 llm.task)다 — 차량 작업은 받지 않는 조건
+ * (좌석 수·지역)을 variants.car.clear 로 비우고 note 에 적는다. 규칙 해석(parseLocal)도 같은 작업의 관문을 지난다.
  *
  * @param {{apiKey?:string, today:string, useNative?:boolean, kind?:'room'|'car'}} opts
  * @returns {Promise<{filter: object, via: 'cli'|'api'|'local', costUsd?: number, note?: string, guessed?: boolean}>}
  *   guessed 는 규칙 해석이 날짜도 시간도 못 읽어 기본값으로 돌았다는 뜻이다.
  */
 export async function parseSmart(text, opts) {
-  const { today, kind = 'room' } = opts;
-  const what = kind === 'car' ? '차량' : '회의실';
-  const got = await askClaude('parse', `오늘은 ${today} 입니다.\n찾는 대상: ${what}\n\n요청: ${text}`, { ...opts, kind });
+  const { today } = opts;
+  const kind = opts.kind === 'car' ? 'car' : 'room';
+  const task = `search.${kind}`;
+  const got = await askClaude(task, searchInput(text, { today, kind }), { ...opts, kind });
   if (got.data) return { filter: got.data, via: got.via, costUsd: got.costUsd, note: joined(got.fails, got.notes) };
 
   // 규칙 해석도 같은 관문을 지난다. 여기서도 어긋나면 더 내려갈 길이 없다 — 찾지 않고 다시 적게 한다.
   const local = parseLocal(text, today);
   try {
-    const out = structure('parse', local, { kind });
+    const out = structure(task, local, { kind });
     return { filter: out.data, via: 'local', guessed: !!local.guessed, note: joined(got.fails, out.notes) };
   } catch (err) {
     if (!(err instanceof InputError)) throw err;
@@ -308,4 +324,70 @@ export async function fillAttendSmart(text, opts) {
   const local = parseAttendLocal(text, today, form);
   const out = structure('attend', local.patch, { kind: 'attend' });
   return { patch: out.data, reply: local.reply, via: 'local', note: joined(got.fails, out.notes) };
+}
+
+/* ------------------------------------------------------------ 행위 명세(actions/)의 LLM 어댑터 */
+
+/**
+ * 갈래 llm.input → 입력 글을 짓는 법. 행위 명세의 갈래마다 _domain.yaml 의 llm.input 이 여기의 키다(생성기는 이 표를 모른다 — 없는 이름이면 fillAction 이 던진다).
+ *   input(text, ctx)       Claude 에게 줄 글 — attend 는 attendInput(오늘·달력·지금 폼·앞선 대화), search 는 searchInput(오늘·찾는 대상)
+ *   fix(data, text, ctx)   답을 받은 뒤의 규칙 보정 — attend 는 상대 날짜 되셈(dated, fillAttendSmart 와 같다)
+ */
+const INPUTS = {
+  attend: {
+    input: (text, { form, today, history }) => attendInput(text, { form, today, history }),
+    fix: (data, text, { today }) => dated(data, text, today),
+  },
+  search: {
+    input: (text, { today, kind }) => searchInput(text, { today, kind }),
+  },
+};
+
+/**
+ * 행위 ID → 말로 채우는 작업. 갈래 llm.mode 가 merged 면 갈래의 작업 하나(attend), per-kind 면 종류 파일이 적은 작업(search.room·search.car) —
+ * 둘 다 생성기가 entry.task 에 적는다. recipe(공문 — 레시피의 작업은 gongmunSmart·gongmunReasonSmart 가 부른다)·none·llm: false 인 행위는 말로 채우지 않는다.
+ * @returns {{entry: object, domain: object, task: string}}
+ */
+function llmTaskOf(id) {
+  if (typeof id !== 'string' || !Object.hasOwn(ACTIONS.actions, id)) throw new Error(`모르는 행위 ${id}`);
+  const entry = ACTIONS.actions[id];
+  const domain = ACTIONS.domains[entry.domain];
+  const mode = domain?.llm?.mode || 'none';
+  const makes = mode === 'merged' || mode === 'per-kind';
+  const task = makes && entry.llm === true ? entry.task || (mode === 'merged' ? domain.llm.task : null) : null;
+  if (!task) {
+    const why = mode === 'recipe' ? '공문 레시피의 작업은 gongmunSmart·gongmunReasonSmart 가 부릅니다'
+      : !makes ? `갈래 ${entry.domain} 에는 LLM 작업이 없습니다(mode ${mode})`
+        : 'UI 가 고른 칸으로만 짓습니다(llm: false)';
+    throw new Error(`이 행위는 말로 채우지 않습니다 — ${id}: ${why}`);
+  }
+  if (!Object.hasOwn(TASKS, task)) throw new Error(`행위 ${id} 의 작업 ${task} 이 명세(TASKS)에 없습니다`);
+  return { entry, domain, task };
+}
+
+/**
+ * 행위 ID 로 말을 그 행위의 입력 칸으로 바꾼다 — 행위 명세(actions/spec)가 작업 이름과 입력 글의 꼴을 정하고, 길은 askClaude 의 사다리(로컬 CLI → API 키)다.
+ * 답은 작업의 관문(초안 모드 — 틀린 칸은 비우고 note 에 적는다)을 지난 것이고, reply(답 한 줄 — 근태)는 떼어 돌려준다. 돌려준 input 은 디스패처에
+ * 넣을 때 actions.build(id, { input, preset… }) 로 다시 실행 모드 검사를 지난다. 규칙 해석(3)은 여기 없다 — 둘 다 안 되면 던지지 않고 input 이 null 이다
+ * (부르는 쪽이 parseSmart·fillAttendSmart 처럼 내려갈지 정한다).
+ *
+ * @param {string} id 행위 ID(room.search·car.search·attend.out …). 근태는 merged 라 어느 종류 ID 로 불러도 작업 attend 하나다
+ * @param {string} text 사용자의 말
+ * @param {{today: string, form?: object, history?: object[]}} ctx 입력 글에 드는 맥락 — today 는 늘 필요하고, form·history 는 attend
+ * @param {{apiKey?: string, useNative?: boolean, docText?: Function}} opts askClaude 의 길 — kind 는 행위의 갈래로 정하므로 받지 않는다
+ * @returns {Promise<{input: object|null, reply?: string, via?: 'cli'|'api', costUsd?: number, note?: string, fails: string[]}>}
+ *   note 는 parseSmart 와 같이 내려온 까닭(fails)·관문의 알림·날짜 되셈을 한 줄로 합친 것이다
+ */
+export async function fillAction(id, text, ctx = {}, opts = {}) {
+  const { entry, domain, task } = llmTaskOf(id);
+  const make = INPUTS[domain.llm.input];
+  if (!make) throw new Error(`행위 ${id} — 모르는 입력 꼴 ${domain.llm.input}(src/llm.js 의 INPUTS 에 없습니다)`);
+  if (!ctx.today) throw new Error(`행위 ${id} — ctx.today(오늘, YYYY-MM-DD)가 필요합니다`);
+  // 관문의 종류(variants — 차량의 좌석 수·지역)와 입력 글의 찾는 대상은 행위의 갈래(room·car·attend)다. 패널이 opts.kind 를 줘도 행위가 정한다.
+  const kind = entry.domain;
+  const got = await askClaude(task, make.input(text, { ...ctx, kind }), { ...opts, kind });
+  if (!got.data) return { input: null, fails: got.fails };
+  const { reply = '', ...data } = got.data;
+  const out = make.fix ? make.fix(data, text, ctx) : { patch: data };
+  return { input: out.patch, reply, via: got.via, costUsd: got.costUsd, note: joined(got.fails, got.notes, out.note), fails: got.fails };
 }

@@ -1,0 +1,13 @@
+# 메일 탭(회신 추적 — mailtrack/) 갈래 — 2단계(§12, status planned). 내가 보낸 메일을 등록하면 받는 사람(To — 참조는 세지 않는다, 2026-10-15 사용자 지정)을 받을 곳으로 세우고
+# 받은 메일에서 회신을 찾아 이어 N/M 으로 센다. 본문·첨부는 금고(IndexedDB)에, 항목은 장부(chrome.storage 의 mailtrackBook — mailtrack/model.js)에 둔다. Outlook 은 KR_MS365_mcp(localhost:5001)로
+# 읽기만 한다 — 메일을 보내지 않는다. 지금은 mailtrack/panel.js 가 sync(mailtrack/sync.js createSync)를 바로 부르고 logEvent('mail', …) 를 남긴다. mailtrack/ 은 고치지 않는다(§10) —
+# 2단계에 어댑터를 주입한다(Codex 지적: mailtrack 은 주입). LLM 작업은 없다(mode none).
+domain: mail
+title: 메일
+log: mail                      # src/logbook.js KIND_LABEL 의 '메일'
+kinds: [register, refresh, delete, merge, settings]
+preset:
+  today: { from: today, desc: 오늘(YYYY-MM-DD) — 보낸 메일 기간·zip 이름의 기준 }
+llm:
+  task: mail
+  mode: none

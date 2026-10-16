@@ -1,0 +1,28 @@
+# 직원 및 직원가족 기념일 지원 신청 화면 채우기(2단계 — status: planned, §12). 연차에 기념일 지원(wfa)을 붙여 결재요청한 뒤 eclass 복지기금의 신청 화면
+# (WFA_Application_Save.aspx)을 새 탭에 열어 칸을 채워 둔다(src/welfare.js welfareFill → injected.pageFillWelfare). 증빙 파일은 스크립트로 넣을 수 없고
+# "저장 및 상신" 은 사람이 그 화면에서 누른다 — 그래서 effect 는 draft 다. 지금은 attendpanel.js fillWelfare 가 바로 한다(attend.leave 의 then).
+# 신청 내역의 올려 둔 연차에서도 따로 신청할 수 있다(welfareFormFor — 연차는 다시 올리지 않는다).
+# 입력은 연차 폼 그대로다 — form 칸이 attend.leave 의 칸을 그대로 펼친다(from: attend.leave — 같은 칸을 두 벌 적지 않는다). welfareFill 은 그 가운데
+# dateFrom·dateTo(연차휴가 사용일)와 wfa* 칸만 읽는다.
+id: attend.welfare
+title: 가족 기념일 지원 신청 화면 채우기
+hint: 기념일 지원
+status: planned
+confirm: true                  # 연차의 결재요청 누름(attend.leave 와 같은 누름) 또는 신청 내역 줄의 `기념일 지원` 이 확인이다
+effect: draft                  # 화면만 채운다 — 저장·상신은 사람이 누른다
+summary: '기념일 지원 신청 화면 채우기'
+fields:
+  form:
+    type: object
+    from: attend.leave
+    omit: [op, doc]            # 올리는 길·고쳐 올리는 문서는 HR 신청의 것 — 기념일 지원 화면에는 없다(객체 안에 객체를 둘 수도 없다)
+    required: true
+    label: 연차 폼
+    desc: 기념일 지원을 붙인 연차 폼(attend.leave 의 칸 그대로 — welfareFill 이 dateFrom·dateTo 와 wfa* 를 읽는다)
+    read: 사용자가 정하지 않습니다 — 결재요청한 연차 폼이 그대로 들어갑니다
+    llm: false
+llm: false
+runner: attend.welfare
+uses:
+  - { module: src/welfare.js, export: welfareFill }
+next: 새 탭에 신청 화면을 열고 칸을 채운다(pageFillWelfare — 못 채운 칸은 missed). 사람이 증빙을 붙이고 "저장 및 상신" 을 누른다

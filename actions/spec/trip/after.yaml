@@ -1,0 +1,135 @@
+# 사후정산 작성 — 증빙(숙박 영수증·예약서·항공권)을 읽은 기록을 숙박비·교통비·항공 마일리지로 묶어(src/after.js afterPlan) 사후정산 입력 화면의 폼으로 올린다
+# (src/trip.js tripAfterSave, AfterTrip/Save multipart). 2026-10-03 사용자 지정: 증빙을 넣는 순간 자동으로 짓고 올린다. 사후정산의 조건은 비행기를 탔거나 1박 이상이다.
+#
+# 들어오는 자리(모두 같은 실행기): 출장 카드의 증빙 넣기·붙여넣기·웹페이지 캡처(attendpanel.js runAfter — 읽은 기록으로 묶는다), 물은 것에 답한 뒤(answerAsk → sendAfter —
+# 답은 lodge 칸에 담겨 다시 지어진다), 홈 카드에서 읽어 보관해 둔 증빙 올리기(given), 바꾼 가는 편·오는 편만 올리기(records 가 비어 있음), 여비증빙 송부 칸의 `보내기` 가 보내기 전에
+# 저장하는 것(saveAfter — always: 새로 올릴 것이 없어도 화면의 폼을 그대로 저장해 단계를 "사후정산 작성" 으로 만든다). 증빙을 **읽는** 것(receiptSmart — input.yaml 의 receipt)은
+# 이 행위가 아니다 — 읽은 기록이 입력이다.
+#
+# 기록의 칸은 §14.2 대로 사용자가 정한 것이다: records · picks · workplace · lodge · exclude · always · preconfirm. ctx = row(목록 줄 — seq 와 같은지 어댑터가 본다)·detail(사전정산
+# 화면 — tripPreDetail 의 rows·sHour·eHour·transports)·files(증빙 바이트 [{ name, type, dataUrl }] — records[].file 은 참조뿐, §14.1)·onStage. 어댑터(trip.after)의 차례는 지금
+# runAfter/sendAfter 그대로다:
+#   plan = afterPlan(records − exclude, { trip: row, detail, picks, workplace }) → problems 면 올리지 않는다 → 사후정산 대상(need.needed)이 아니면 올리지 않는다
+#   → 사전정산이 아직 "작성" 이면 preconfirm 이 참일 때만 tripPreConfirm 부터(ensurePre — 2026-10-03 사용자 지정; 거짓이면 던진다) → 숙박 줄마다 tripLodgeMax 를 붙여 lodgeSettle
+#   → 이미 올라간 같은 줄은 그 금액으로(lodgeKnown — 2026-10-05 사용자 지정 "이게 확인이 안되나? 출장이랑 맞잖아") → lodge 에 적힌 결정(원화 금액·상한액/실제 금액·사유)을 같은 함수로
+#   되얹는다(krw 면 actual 에 amount 를 넣고 lodgeSettle, cap·actual 이면 lodgeDecide) → 아직 사람이 정할 것이 남았으면(lodgeAsk) 올리지 않고 ask 를 돌려준다(패널이 묻고 답을 lodge 에
+#   담아 새 기록을 짓는다) → tripAfterSave(row, trseq, plan, { name, onStage, always }). U5 가 test/lodgeask.test.mjs 로 맞춘다(2차 물결에서 이 파일을 고칠 수 있다 — §14.2).
+# 같은 숙박 줄이 화면에 이미 있으면 그 줄은 다시 올라가지 않는다(same). 첨부(lodge_file)는 서버에 남지 않았다(2026-10-03 실측) — 올라갔는지는 다시 읽은 줄로만 말한다.
+id: trip.after
+title: 사후정산 작성
+status: live
+confirm: true                  # 증빙을 넣은 누름(파일 선택·붙여넣기·끌어놓기)·`사후정산에 올리기`·물은 것의 답·팝업의 `저장·확정 후 보내기` 가 확인이다
+effect: write
+summary: '여비계산서 {seq} 사후정산 작성'
+preset:
+  tripMe: { from: ctx:tripMe, desc: 여비계산서 목록 화면이 아는 내 이름(st.trips.me) — 출장자 번호(trseq)를 고르고 내 계산서 화면을 연다(tripAfterSave·tripPreConfirm 의 name). 비면 갈래의 me }
+fields:
+  seq:
+    type: string
+    required: true
+    max: 20
+    label: 계산서 번호
+    desc: 여비계산서 번호(목록 줄의 seq — 줄은 ctx.row, 어댑터가 같은지 본다)
+    read: 사후정산을 올릴 여비계산서 번호 — 열린 출장 카드의 것 그대로. 지어내지 않습니다
+    example: '145580'
+  trseq:
+    type: string
+    max: 20
+    label: 출장자 번호
+    desc: 그 계산서에서 내 출장자 번호(목록 줄 travelers[].trseq — attendpanel 의 trseqOf). 사전정산을 확정하기 전에는 비어 있을 수 있다 — 그러면 어댑터가 확정한 뒤 다시 읽은 줄에서 찾는다
+    read: 내 출장자 번호. 모르면 null(어댑터가 찾는다)
+    example: '203311'
+  # 줄의 칸은 input.yaml 의 receipt 작업(docType·vendor·seller·payDate·checkIn·checkOut·nights·total·totalKRW·currency·flightDate·depPlace·arrPlace·… summary)을 생성기가 펼친다
+  # (from: task:receipt — §13). 거기에 file(참조 { name, type, size? } — 바이트는 ctx.files, §14.1)과 confirmed(사람이 이 출장의 증빙이 맞다고 확정한 기록 — src/evidence.js confirm 이
+  # record 에 적는다. 명세에 없는 키는 관문이 버리므로(§14.1) 여기 둬야 periodMiss 가 맞는 것으로 친다)를 더한다. 증빙을 읽는 LLM 작업은 receipt 그대로이고 이 칸은 LLM 작업에 넣지 않는다.
+  records:
+    type: list
+    max: 40
+    label: 읽은 증빙
+    desc: 증빙 한 장마다 한 줄 — receipt 명세를 지난 기록(숙박 영수증·예약서·항공권·그 밖의 영수증). 앞서 넣어 둔 항공권(a.tickets)과 물어 둔 숙박 증빙(a.ask.records)도 같이 담는다(같은 파일 이름이면 새것만). 비어 있으면 바꾼 가는 편·오는 편만 올린다
+    read: 이 칸은 사용자의 말로 채우지 않습니다 — 증빙 파일을 읽은 기록(receipt)이 그대로 들어갑니다
+    llm: false
+    item:
+      from: task:receipt
+      file:      { type: file, desc: 그 증빙 파일의 참조(이름·형식·크기 — 바이트는 ctx.files 에서 이름으로 찾아 숙박 줄의 첨부 lodge_file 로 올린다), read: 증빙 파일의 이름과 형식. 지어내지 않습니다 }
+      confirmed: { type: boolean, desc: 출장 기간과 안 맞아 알림 표시로 두었던 것을 사람이 이 출장의 증빙이 맞다고 확정했는가(periodMiss 가 맞는 것으로 친다 — 2026-10-05 사용자 지정), read: '사람이 보관 중인 증빙에서 `확정` 을 눌렀을 때만 true. 그 밖에는 null', llm: false }
+  # 가는 편·오는 편(2026-10-03 사용자 지정 — 처음에는 사전정산대로, 손으로 바꾸거나 항공권을 넣으면 그 날짜의 편이 비행기로). 저장소 attendLegs[docNo](attendpanel 의 st.legs — setLegs)의
+  # 꼴은 { go?: { t: 'train'|'plane'|'bus'|'', g: 'standard'|'first' }, back?: { t, g } } 다. object 안에 object 는 둘 수 없고(§3.3) 생성기가 fields 없는 object 도 받지 않아 편마다 두 칸으로
+  # 편다(goT·goG·backT·backG) — 어댑터가 { go: { t: goT, g: goG }, back: { t: backT, g: backG } } 로 되돌려 afterPlan 의 picks 로 넘긴다(t 가 null 인 편은 키를 두지 않는다 = 고르지 않음).
+  # 올린 뒤의 picks(표를 앉힌 결과)는 패널이 setLegs 로 담는다.
+  picks:
+    type: object
+    label: 가는 편·오는 편
+    desc: '카드에서 고른 가는 편·오는 편(afterPlan 의 picks 를 편 것). 고르지 않은 편은 t 가 null(사전정산 그대로). 항공권을 넣었거나 편이 사전정산과 달라졌을 때만 교통비 내역에 들어간다'
+    read: 사용자가 가는 편·오는 편의 교통편을 말했을 때만. 말하지 않은 편은 null
+    llm: false
+    fields:
+      goT:   { type: enum, values: [train, plane, bus], desc: 가는 편의 교통편, read: '가는 편 — 기차(train)·비행기(plane)·버스(bus). 말하지 않았으면 null' }
+      goG:   { type: enum, values: [standard, first], desc: 가는 편의 좌석 등급(기차·비행기 — 특실·비즈니스면 first. 항공 마일리지 적립률에도 든다), read: '가는 편이 특실·비즈니스라고 했을 때만 first' }
+      backT: { type: enum, values: [train, plane, bus], desc: 오는 편의 교통편, read: '오는 편 — 기차(train)·비행기(plane)·버스(bus). 말하지 않았으면 null' }
+      backG: { type: enum, values: [standard, first], desc: 오는 편의 좌석 등급, read: '오는 편이 특실·비즈니스라고 했을 때만 first' }
+  workplace:
+    type: string
+    max: 100
+    label: 근무지
+    desc: 근무지에 적어 둔 글(서울·부산 — storage attendWorkplace, 패널이 넣는다) — 가는 편의 떠나는 곳·오는 편의 닿는 곳(legPlan 의 workplace)
+    read: '근무지 — 서울 또는 부산. 말하지 않았으면 null'
+    llm: false
+    example: 부산
+  # 숙박 줄에서 사람이 정해 준 것(2026-10-03 사용자 지정: 외화 문서의 원화 금액은 묻고, 상한액을 넘으면 상한액/실제 금액을 고른다 · 2026-10-05 "상한액의 1.5배는 부서장 승인" ·
+  # 2026-10-08 실제 금액이면 비고에 상한 초과 사유 필수, 기본 문구는 LODGE_OVER_REASON). 줄의 열쇠는 그 줄을 이룬 증빙 파일 이름들(src/afterup.js lodgeKey — ' | ' 로 이음)이다.
+  lodge:
+    type: list
+    max: 10
+    label: 숙박 줄의 결정
+    desc: 상한액을 넘거나 원화 금액을 모르는 숙박 줄마다 사람이 고른 것. 처음 올릴 때는 비어 있고, 어댑터가 ask 로 되물은 뒤 답을 담아 새 기록을 짓는다(answerAsk·홈 카드의 pickSettle)
+    read: 사용자가 그 숙박을 상한액으로 할지 실제 금액으로 할지, 원화로 얼마를 냈는지 말했을 때만
+    llm: false
+    item:
+      key:    { type: string, required: true, max: 400, desc: 어느 숙박 줄인가 — 그 줄의 증빙 파일 이름들(lodgeKey), read: 그 숙박 줄의 증빙 파일 이름(여럿이면 ' | ' 로 이어서) }
+      settle: { type: enum, values: [cap, actual, krw], required: true, desc: '상한액으로(cap) · 실제 금액으로(actual — 1.5배 이내면 부서장 승인, 비고에 사유) · 외화 문서의 원화 금액을 적음(krw — amount 가 실제 금액이 된다)', read: '상한액으로 하겠다면 cap, 실제 금액으로 하겠다면 actual, 원화로 낸 금액을 말했으면 krw' }
+      amount: { type: number, min: 1, max: 100000000, desc: krw 일 때 실제로 낸 원화 금액(환율로 어림하지 않는다). cap·actual 이면 null, read: '사용자가 말한 원화 결제 금액(숫자만). 말하지 않았으면 null', example: 143000 }
+      reason: { type: string, max: 200, desc: 실제 금액으로 정산할 때 비고에 적는 상한 초과 사유(비면 기본 문구 — travel-rules.yaml lodging.over_cap.reason), read: '사용자가 상한 초과 사유를 말했을 때 그 글. 말하지 않았으면 null' }
+  # 안 올릴 증빙 — 읽은 기록은 두되 이번 묶음에서 뺀다(물은 것에 `올리지 않기` 로 답한 줄, 이미 올라간 줄의 증빙). 스칼라 목록 형이 없어 한 겹 목록 { name } 으로 적는다.
+  exclude:
+    type: list
+    max: 40
+    label: 안 올릴 증빙
+    desc: 이번에 사후정산에 넣지 않을 증빙의 파일 이름(records 에는 있어도 afterPlan 에 넘기지 않는다 — 보관함에는 그대로 남는다)
+    read: 사용자가 어떤 증빙은 올리지 말라고 했을 때 그 파일 이름
+    llm: false
+    item:
+      name: { type: string, required: true, max: 200, desc: 증빙 파일 이름, read: 올리지 않을 증빙의 파일 이름 그대로 }
+  always:
+    type: boolean
+    label: 그대로 저장
+    desc: 새로 올릴 것이 없어도 입력 화면의 폼을 그대로 저장한다(화면의 `저장` 버튼과 같다 — 송부 칸의 `보내기` 가 확정하기 전에 단계를 "사후정산 작성" 으로 만든다, saveAfter). 거짓이면 올릴 것이 없을 때 보내지 않는다(sent false)
+    read: '보내기 전에 저장만 하라는 뜻일 때 true. 그 밖에는 null'
+    llm: false
+  # 값을 모르는 편(항공권을 다시 넣어야 하는 비행기 편 등)이 있을 때 교통비 내역을 어떻게 하는가 — 들어오는 자리마다 다르다(2026-10-16 U5). 송부 칸의 `보내기` 가 보내기 전에
+  # 저장할 때(saveAfter)는 화면에 있는 그대로 둔다(아는 편만 올리면 화면에 있던 줄이 지워진다). 증빙을 넣어 올릴 때(runAfter)는 아는 편만 넣고 모르는 편은 notes 에 적는다.
+  keepTrans:
+    type: boolean
+    label: 모르는 편이면 교통 줄 그대로
+    desc: 값을 모르는 편(항공권이 없는 비행기 편 등)이 있으면 교통비 내역을 사후정산 화면에 있는 그대로 둔다 — 교통 줄을 하나도 넣지 않는다(saveAfter). 거짓이면 아는 편만 넣는다(runAfter — 화면에 있던 교통 줄은 지워지고 아는 편으로 바뀐다)
+    read: '보내기 전에 저장만 할 때처럼 교통비 내역은 건드리지 말라는 뜻일 때 true. 그 밖에는 null'
+    llm: false
+  preconfirm:
+    type: boolean
+    label: 사전정산 먼저 확정
+    desc: 사전정산이 아직 "작성" 이면 확정부터 하고 올린다(runAfter 의 ensurePre — 2026-10-03 사용자 지정). 거짓이면 그런 계산서에는 올리지 않고 던진다
+    read: '사전정산 확정까지 같이 하라고 했을 때 true. 그 밖에는 null'
+    llm: false
+llm: false
+runner: trip.after
+uses:
+  - { module: src/after.js, export: afterPlan }
+  - { module: src/after.js, export: lodgeSettle }
+  - { module: src/after.js, export: lodgeDecide }
+  - { module: src/after.js, export: lodgeAsk }
+  - { module: src/after.js, export: lodgeKnown }
+  - { module: src/trip.js, export: tripLodgeMax }
+  - { module: src/trip.js, export: tripAfterLodges }
+  - { module: src/trip.js, export: tripPreConfirm }
+  - { module: src/trip.js, export: tripAfterSave }
+next: 올린 뒤 목록을 다시 읽어 그 출장자의 사후정산이 "작성" 이상이 됐는지로 판정한다(tripAfterSave — 던지지 않으면 ok, sent false 도 정상, §14.3). 결과의 lodgeRows·lodgeSeqs 로 패널이 "이 패널이 올린 줄" 을 적어 두고(rememberMine), 보관함에 담고(evidence.keep — 실행기 밖), 숙박비 내역을 다시 읽는다(lodgeBox.reload). 보내려면 trip.postconfirm → trip.send 가 뒤따른다(송부 칸의 보내기가 잇는다)

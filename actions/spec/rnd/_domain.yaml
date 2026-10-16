@@ -1,0 +1,14 @@
+# R&D 탭 갈래(rndpanel.js) — 2단계(§12, status planned). 과제 장부(chrome.storage 의 rndBook — src/rnd.js)는 이 브라우저에만 남고, rERP 집행내역(rerp/ — kr_ext_rerp 에서 옮긴 것,
+# 읽기만)·OneNote 과제 정보 페이지(src/rndnote.js)·연구내용 페이지(rerp/researchsync.js)와 맞춘다. 지금은 rndpanel.js 가 src/rnd*.js·rerp/* 를 바로 부르고 logEvent('rnd', …) 를 남긴다 —
+# 여기 적은 칸은 그 함수들이 받는 값이다. 어댑터는 2단계에 쓴다(runner 이름만 맡아 둔다).
+# LLM 작업은 없다(mode none) — R&D 탭에는 말로 채우는 칸이 없다. read 는 2단계 통합 명령창을 위해 둔다.
+domain: rnd
+title: R&D
+log: rnd                       # rndpanel.js 가 지금 쓰는 'rnd'(src/logbook.js KIND_LABEL 에는 아직 이름이 없다 — 통합자)
+kinds: [project, delete, yaml, erp.link, erp.fetch, note.sync, research.share, skills.zip]
+preset:
+  today: { from: today, desc: 오늘(YYYY-MM-DD) — 차년도(오늘이 든 것)·변경이력 날짜·zip 이름 }
+  me:    { from: me, desc: 내 이름 — 연구내용 페이지의 올린 사람(by) }
+llm:
+  task: rnd
+  mode: none
