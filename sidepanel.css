@@ -251,32 +251,67 @@ button.pk-del:hover { color: var(--danger); }
 /* 설정 화면(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게") — 머리의 톱니로 열면 .app 에 settings-open 이 붙어 머리·설정·바닥글만 남고
    탭 줄·탭 내용은 숨는다(sidepanel.js showSettings). 갈래(일반 · LLM · 연결)는 머리 줄의 탭(.set-tab)이고 한 번에 하나만 보인다(.set-pane[hidden]). */
 .app.settings-open > :not(.app-header):not(.settings):not(.footer-note) { display: none; }
-.settings { padding: 0 16px 14px; }
-.settings-head { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
-.set-tabs { display: flex; flex: 1; min-width: 0; gap: 2px; }
-.set-tab { flex: none; min-height: 46px; margin-bottom: -1px; padding: 10px 12px; border-radius: 0; background: transparent; border-bottom: 2px solid transparent; color: var(--muted); font-size: 14px; font-weight: 600; }
-.set-tab:hover { background: transparent; color: var(--fg); }
-.set-tab.active { color: var(--pick); border-bottom-color: var(--pick); }
-.settings-close { flex: none; }
-.set-pane { padding-top: 4px; }
+.app.settings-open { padding-top: 16px; }
+.app.settings-open .app-header { margin-bottom: 12px; }
+.settings { padding: 14px 20px 16px; }
+.settings-head { display: flex; align-items: center; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.set-tabs { display: flex; flex: 1; min-width: 0; max-width: 360px; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-soft); }
+.set-tab { flex: 1; min-width: 0; min-height: 34px; padding: 6px 12px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; }
+.set-tab:hover { background: color-mix(in srgb, var(--surface) 65%, transparent); color: var(--fg); }
+.set-tab.active { background: var(--surface); color: var(--pick); border-color: var(--line); box-shadow: 0 1px 3px rgb(25 30 45 / 6%); }
+.settings :is(button, input, summary):focus-visible { outline-width: 2px; outline-offset: 2px; }
+.settings .set-tab:focus-visible { outline-offset: -2px; }
+.settings-close { flex: none; margin-left: auto; }
+.settings-close svg { width: 14px; height: 14px; }
+.set-pane { padding-top: 2px; min-width: 0; }
 .set-pane[hidden] { display: none; }
-.set-lead { margin: 10px 0 2px; }
-.set-note { margin: -6px 0 10px; }
+.settings .hint { font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.set-section { padding: 16px 0; }
+.set-section + .set-section { border-top: 1px solid var(--line); }
+.set-section-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; }
+.set-section-head h2, .set-intro h2 { margin: 0; color: var(--fg); font-size: 14px; line-height: 1.5; font-weight: 650; letter-spacing: -.2px; }
+.set-caption { color: var(--muted); font-size: 11px; }
+.set-description { margin: -4px 0 12px; }
+.set-name-row { display: flex; align-items: center; gap: 20px; }
+.set-name-row .key-row { flex: none; margin: 0; font-size: 13px; color: var(--fg); }
+.settings .set-name-row input { width: 220px; max-width: 100%; min-height: 38px; padding: 8px 12px; border-color: var(--line); background: var(--surface); font-size: 13px; }
+.set-name-row + .set-description { margin: 10px 0 0; }
+.set-intro { padding: 20px 0 16px; }
+.set-lead { margin: 6px 0 0; }
+.set-model { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; font-size: 11px; color: var(--muted); }
+.set-model code { padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--fg); overflow-wrap: anywhere; }
+.set-note { margin: 10px 0 0; }
 .set-note:empty { display: none; }
+.settings .set-footnote { margin: 14px 2px 0; }
 /* 머리의 새로고침은 결과를 예약 현황의 상태 줄(숨어 있다)에 적으니 설정 화면에서는 뗀다. */
 .app.settings-open #refresh { display: none; }
-/* 갈래 안의 덩이(로컬 CLI · API 키 · MCP 서버마다 하나) — 머리 줄(이름 + 배지·형편)과 몸통. 덩이 사이는 선 하나. */
-.set-block { padding: 12px 0; }
-.set-block + .set-block { border-top: 1px solid var(--line); }
-.set-block-head { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 4px; }
-.set-block-head > strong { flex: none; font-size: 14px; font-weight: 600; color: var(--fg); }
-.set-block-head > .badge, .set-block-head > .summary-detail { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 연결 항목은 같은 카드로 묶고, 긴 상태·설명도 좁은 패널에서 줄바꿈한다. */
+.set-block { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface-soft) 30%, var(--surface)); }
+.set-block + .set-block { margin-top: 12px; }
+.set-block-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; margin-bottom: 8px; }
+.set-block-head > strong { font-size: 13px; font-weight: 650; color: var(--fg); }
+.set-block-head > .badge, .set-block-head > .summary-detail { min-width: 0; max-width: 100%; margin-left: auto; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
 .set-block > .hint { margin: 4px 0 0; }
-.set-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.settings :is(.set-actions, .conn-row, .mt-actions) button.ghost { min-height: 30px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; }
+.settings :is(.set-actions, .conn-row, .mt-actions) button.ghost:hover { border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); color: var(--pick); background: var(--pick-soft); }
+/* 부가 설명은 정보 아이콘으로 펼친다. summary만 머리에 두고 본문은 제자리에서 늘어나 좁은 패널에서도 잘리지 않는다. */
+.set-has-help { position: relative; --set-help-inset: 16px; }
+.set-has-help > .set-block-head, .set-intro.set-has-help > h2 { padding-right: 32px; }
+.set-help > summary { position: absolute; top: var(--set-help-inset); right: var(--set-help-inset); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; color: var(--muted); cursor: pointer; list-style: none; }
+.set-help > summary::-webkit-details-marker { display: none; }
+.set-help > summary svg { width: 17px; height: 17px; }
+.set-help > summary:hover, .set-help[open] > summary { color: var(--pick); background: var(--pick-soft); }
+.set-intro .set-help > summary { top: 18px; right: 0; }
+.set-help-content { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.set-help-content > .hint { margin: 0; }
+.set-help-content > .hint + .hint { margin-top: 8px; }
+.set-help .bu-via { min-width: 3em; word-break: keep-all; }
 /* 로컬 CLI 덩이의 "다리가 하는 일" 표(src/bridgeuse.js) — 줄마다 하는 일(왼쪽)과 어디로 가는지(오른쪽, 흐리게). 배지(.badge)와 같은 12px.
    is-on 다리가 맡는다(보통) · is-alt 다른 길로 간다(강조색 — API 키·브라우저) · is-off 못 한다(위험색). */
-.bridge-uses { list-style: none; margin: 10px 0 0; padding: 0; font-size: 12px; line-height: 1.5; }
-.bridge-use { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px dashed var(--line); }
+.bridge-uses { list-style: none; margin: 14px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.5; }
+.bridge-uses:empty { display: none; }
+.bridge-use { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 6px 0; }
 .bridge-use:first-child { border-top: 0; }
 .bu-label { flex: 1 1 auto; min-width: 0; color: var(--fg); }
 .bu-via { flex: 0 1 auto; max-width: 55%; text-align: right; color: var(--muted); overflow-wrap: anywhere; }
@@ -284,7 +319,8 @@ button.pk-del:hover { color: var(--danger); }
 .bridge-use.is-off .bu-via { color: var(--danger); }
 /* 연결 갈래의 Teams·OneNote 줄 — 주소(바꾸지 않는다) · 배지 · 연결 확인. Outlook 은 메일 탭이 .conn-host 에 제 칸(mailtrack/panel.css .mt-conn)을 그린다. */
 .conn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
-.conn-addr { flex: 1; min-width: 0; font: 12px/1.6 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.conn-addr { flex: 1 1 180px; min-width: 0; font: 12px/1.6 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.conn-row > .badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .conn-host { margin-top: 2px; }
 .diag + .diag { border-top: 1px solid var(--line); }
 .diag summary { display: flex; align-items: center; gap: 9px; min-height: 43px; color: var(--muted); font-size: 14px; cursor: pointer; list-style: none; }
@@ -294,25 +330,63 @@ button.pk-del:hover { color: var(--danger); }
 .diag[open] > summary::after { transform: rotate(45deg); }
 .summary-detail { margin-left: auto; font-size: 12px; color: var(--faint); }
 .details-content { padding: 0 0 14px 24px; }
-/* 일반 갈래 끝의 접는 두 칸(활동 로그 · 페이지 구조 캡처) — 체크 줄 뒤에 선을 긋고 서고, 안의 내용은 더 들이지 않는다. */
-.set-pane > .diag { border-top: 1px solid var(--line); }
-.set-pane > .diag > .details-content { padding-left: 0; }
+/* 일반 갈래 끝의 두 진단 행은 한 테두리 안에 묶는다. */
+.set-tools-head { padding-top: 2px; }
+.set-pane > .diag { border: 1px solid var(--line); }
+.set-pane > .diag:first-of-type { border-radius: 12px 12px 0 0; }
+.set-pane > .diag + .diag { border-top: 0; border-radius: 0 0 12px 12px; }
+.set-pane > .diag > summary { min-height: 42px; padding: 8px 12px; border-radius: inherit; color: var(--fg); font-size: 13px; }
+.set-pane > .diag > summary:hover { background: var(--surface-soft); }
+.set-pane > .diag > summary > svg { color: var(--muted); }
+.set-pane > .diag .summary-detail { font-size: 11px; color: var(--muted); }
+.set-pane > .diag > .details-content { padding: 0 12px 12px; }
 .key-row { display: block; margin-bottom: 6px; font-size: 14px; color: var(--muted); }
 /* 설정 안의 켜고 끄기 줄. 머리의 알약(.home-toggle)과 달리 본문 글줄에 맞춘다. */
 .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 14px; color: var(--fg); cursor: pointer; user-select: none; }
 .check-row input { width: 15px; height: 15px; margin: 0; accent-color: var(--pick); cursor: pointer; }
-/* 설정의 보이는 탭 — 일곱 탭을 알약 모양 체크박스로 한 줄에(좁으면 줄을 바꾼다). 켠 것은 탭 색, 끈 것은 흐리게. */
-.tab-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 4px 0 14px; font-size: 14px; color: var(--fg); }
-.tab-picks-title { flex: none; margin-right: 4px; }
+/* 업무 도우미만 오른쪽 스위치로 표시한다. 네이티브 input의 저장·키보드 동작을 유지한다. */
+.set-options { padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface-soft) 35%, var(--surface)); }
+.set-options .check-row { justify-content: space-between; gap: 16px; min-height: 44px; margin: 0; padding: 9px 0; font-size: 13px; line-height: 1.6; }
+.set-options .check-row + .check-row { border-top: 1px solid var(--line); }
+.set-options .check-row > span { min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
+.set-options .check-row strong { font-weight: 600; }
+.set-options .check-row input { appearance: none; position: relative; flex: none; width: 32px; height: 20px; border: 1px solid var(--faint); border-radius: 999px; background: var(--faint); transition: background .16s ease, border-color .16s ease; }
+.set-options .check-row input::before { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 14%); transition: transform .16s ease; }
+.set-options .check-row input:checked { background: var(--pick); border-color: var(--pick); }
+.set-options .check-row input:checked::before { transform: translateX(12px); }
+.settings #docCirculateState { margin: 10px 2px 0; padding-left: 10px; border-left: 2px solid var(--line); font-size: 11px; }
+/* 선택한 탭은 연한 강조색으로 채우고, 체크 표시로 색 없이도 상태를 구분한다. */
+.tab-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; }
 .tab-pick {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
-  font-size: 13px; font-weight: 550; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap;
-  transition: color .16s ease, border-color .16s ease;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  font-size: 12px; font-weight: 550; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
 }
-.tab-pick input { width: 14px; height: 14px; margin: 0; accent-color: var(--pick); cursor: pointer; }
-.tab-pick:has(input:checked) { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 45%, var(--line)); }
-.tab-pick:hover { color: var(--fg); }
+.tab-pick input { flex: none; width: 13px; height: 13px; margin: 0; accent-color: var(--pick); cursor: pointer; }
+.tab-pick:has(input:checked) { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 22%, var(--line)); background: var(--pick-soft); }
+.tab-pick:hover { border-color: var(--pick); }
+@media (max-width: 440px) {
+  .settings { padding: 12px 14px 16px; }
+  .settings-head { gap: 8px; padding-bottom: 12px; }
+  .set-tabs { gap: 2px; }
+  .set-tab { padding-inline: 8px; }
+  .settings .settings-close { padding-inline: 6px; font-size: 12px; }
+  .settings-close svg { display: none; }
+  .set-section { padding-block: 16px; }
+  .set-block { padding: 12px; }
+  .set-block.set-has-help { --set-help-inset: 12px; }
+  .set-block-head > .summary-detail { flex-basis: 100%; margin-left: 0; }
+  .set-name-row { gap: 16px; }
+  .set-name-row input { flex: 1; }
+  .tab-picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .tab-pick { padding-inline: 5px; gap: 4px; }
+}
+@media (forced-colors: active) {
+  .set-options .check-row input { appearance: auto; background: none; }
+  .set-options .check-row input::before { display: none; }
+  .set-tab.active { border-color: Highlight; color: Highlight; }
+}
 
 .badge {
   font-size: 12px; padding: 1px 7px; border-radius: 8px;
