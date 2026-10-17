@@ -1,0 +1,214 @@
+# 구매의뢰 — 구매요청서(총무팀 수신). 구매 품의(연구업무추진품의)로 승인받은 물품을 총무팀이 사 주도록 의뢰하는 양식이다.
+# 2026-10-17 사용자 지정: "kr-weg-agent(krs-web-agents) 에 총무팀에 구매요청서 작성하는게 있거든 그거 참고해서 구매 시 총무팀에 구매의뢰 하는 공문기능을 추가해줘.
+# 그 의뢰서는 구매공문과 연동되어야 하고 … 아마 필요로 하는 정보가 좀 다른데 구매의뢰서는 작성할 수 있는 부분까지만 해줘봐."
+# 원본: krs-web-agents ea_approval/ea_recipes/purchase-order/forms/purchase_order/purposes/purchase_request(input.template.yaml·context.md·attach_rules.yaml).
+# 견적서·주문 화면은 구매 품의와 같이 읽고(품목·합계·구매처), 구매 품의에서 넘어오면(패널의 구매의뢰 작성 — src/gongmun.js orderFromPurchase) 읽은 값과 사유가 그대로 온다.
+# 칸 하나가 양식 칸 하나이거나(../../fieldmap.yaml 의 source: draft) 표의 셀(rows)이다. 양식에 과제(Job Id) 칸은 없지만 과제를 고른다 — 사업내용·계정과목명을 과제에서 가져온다.
+# 계정과목코드·I/O 코드·I/O 명·예산금액(비목의 당해 연도 배정액)은 R&D 탭의 과제에 둔 회계 I/O 와 회계 예산 스냅샷(e-accounting 부서 예산 요약 — src/eacct.js, 2026-10-17)에서 채운다
+# (orderAuto — 과제의 계정에 맞는 계정 줄의 계정과목코드·계정과목명·기초+전용 예산, I/O 코드·I/O 명). 원본은 ea_accounts·ea_projects 등록표였다. 회계 I/O 가 없는 과제면 사용자가 적는다.
+# 칸의 꼴과 from 의 뜻은 research-form/…/purchase/purpose.yaml 머리말과 같다. from: auto 칸은 패널이 다른 칸·첨부·과제로 셈한다(src/gongmun.js orderAuto) — 사용자가 고치면 그 값이 남는다.
+# 이 파일의 값 가운데 read·write·rules·example·context 는 그대로 Claude 에게 가는 지시문이다(# 주석은 사람만 본다).
+# Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt order`(사업내용 쓰기는 `--prompt order reason`).
+purpose_id: order
+label: 구매의뢰
+title: 구매요청서
+# 위임전결 — 구매 품의와 같은 연구비집행(2천만원 이하 팀장 · 초과 소장)을 준용한다. QI-01K Rev164 45절에서 구매요청서만의 규정 행을 찾지 못했고, 원본(krs-web-agents)도
+# 구매 구간을 준용했다(purposes/purchase_request/context.md "구매요청은 구매 구간 준용"). 규정 행을 찾으면 registries/delegation.yaml 에 더하고 여기를 고친다.
+rule_key: 연구비집행
+amount_field: total          # 위임전결의 기준 금액 — 구매 총액(예산 내역의 예산금액이 아니다)
+document_setting: 구매요청    # registries/settings.yaml — 보존 3년(새 구매요청서 창의 기본값, 2026-10-17 실측) · 수신 총무팀
+limit: null                  # 한도 없음 — 500만원 이상이면 비교견적서(업체 2곳 이상)가 든다고 알리기만 한다(src/gongmun.js FILL.order)
+account: ''                  # 계정의 기본값은 없다 — 계정과목명은 과제의 계정에서 채운다(orderAuto)
+# 과제를 고른다 — 사업내용(과제 내용으로 쓴다)·계정과목명(과제의 계정)·결재선(합의자)이 과제에서 온다.
+project: true
+
+reading:
+  docs: 견적서·거래명세서·쇼핑몰 주문 화면
+  rules:
+    - 구매라도 강의(온라인 강의·교육 상품)를 사는 화면이면 parts 에서 강의 소개·커리큘럼·수업 목록이 든 장은 content 입니다 — 오린 견적서와 함께 강의 내용으로 첨부합니다. 가격·결제 칸만 있는 장은 order 입니다.
+    - 구매대상구분(targetType)은 문서에 적혀 있지 않은 것이 보통입니다 — 품목을 보고 가려 적고, null 로 두지 않습니다.
+
+# 견적서 오리기 — 구매 품의와 같다(research-form/…/purchase/purpose.yaml 의 quote_crop).
+quote_crop:
+  when: 첨부한 그림이 견적서·거래명세서 양식이 아니라 쇼핑몰 상품·장바구니·주문 화면처럼 가격이 화면 일부에만 있는 캡처일 때
+  keep: [상품명, 모델·옵션, 수량, 단가, 할인, 배송비, 합계, 판매자]
+  drop: [추천 상품, 광고, 리뷰, 상품 상세 설명, 메뉴]
+  read: 가격 글자가 잘리지 않게 넉넉히 잡습니다. 그 칸이 두 장에 걸쳐 있으면 장마다 한 줄씩 위에서 아래 차례로 적습니다.
+
+# 차례가 화면의 차례이고 양식의 차례다. open 칸은 작성 내용 탭에, 나머지 읽은 칸은 읽은 내용 탭에 선다.
+fields:
+  - key: gist
+    label: 품목 요지 (제목)
+    wide: true
+    from: document            # 비어 오면 첫 품목 이름으로 "… 외 N건"(src/gongmun.js gistOf)
+    need: 품목
+    read: 공문 제목에 들어갈 짧은 품목 이름. 대표 품목을 짧게 적고(모델 번호는 빼도 됩니다), 품목이 둘 이상이면 "대표 품목 외 N건" 으로 적습니다.
+    example: 34인치 모니터 외 1건
+
+  - key: vendor
+    label: 구매처
+    from: document
+    read: 견적을 낸 업체·판매처 — 상호 그대로. 쇼핑몰 화면이면 판매자이고, 판매자가 없으면 쇼핑몰 이름입니다.
+    example: (주)OO상사
+
+  - key: total
+    label: '합계 (VAT 포함, 원)'
+    type: money
+    from: document            # 비어 오면 공급가액+부가세, 그것도 없으면 품목 금액의 합(그때는 알린다 — src/gongmun.js totalOf)
+    need: 합계
+    read: >-
+      부가세를 포함한 최종 합계(결제·청구할 금액). 할인이 있으면 할인을 뺀 금액입니다. 문서에 "부가세 별도" 이고 합계가 공급가액뿐이면
+      null 로 두고 supply 에 적습니다 — 셈해 넣지 않습니다.
+    example: 989000
+
+  # 양식의 구매대상구분 체크(PC류·자산·용역·SW·소모품) — 고른 것 하나가 켜진다(../../fieldmap.yaml 의 check 칸 다섯).
+  - key: targetType
+    label: 구매대상구분
+    type: choice
+    options: [PC류, 자산, 용역, SW, 소모품]
+    open: true
+    from: document
+    need: 구매대상구분
+    read: >-
+      구매대상구분 — 품목으로 가립니다. PC·노트북·모니터·프린터와 그 주변기기는 PC류, 시험 장비·계측기·기기·비품(자산으로 등록할 것)은 자산,
+      용역·서비스·제작·수리·교정은 용역, 소프트웨어·구독·라이선스는 SW, 그 밖(부품·재료·케이블·사무용품)은 소모품입니다. 품목이 여럿이면 금액이
+      가장 큰 품목으로 가립니다. 문서에 구분이 적혀 있지 않아도 품목을 보고 적습니다.
+    example: PC류
+
+  # 양식의 예산유형 체크(일반사업·국가수탁과제) — 과제 예산으로 사니 처음 값은 국가수탁과제다(options 의 첫째).
+  - key: budgetType
+    label: 예산유형
+    type: choice
+    options: [국가수탁과제, 일반사업]
+    open: true
+    from: user
+
+  - key: business
+    label: 사업내용 (목적 포함)
+    wide: true
+    area: true
+    open: true
+    placeholder: 과제명과 목적, 이 구매가 쓰이는 과업 — 비워 두지 않습니다
+    from: write
+    need: 사업내용
+    write: >-
+      이 구매가 어느 과제의 어떤 일에 쓰이는지 — 첫 문장에 과제명과 과제의 목적을, 다음 문장에 이 품목이 과제의 어느 연구 내용(시험·개발·분석)에
+      필요한지를 적어 2~3문장으로, "…필요함" 처럼 명사형으로 끝맺습니다. 총무팀(구매 담당)이 읽는 글이라 과제를 모르는 사람도 무엇을 위한 구매인지
+      알 수 있게 씁니다. 지금 적힌 사업내용(구매 품의의 구매사유)이 있으면 그것을 바탕으로 과제명과 목적을 더해 다듬습니다.
+    example: MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발 과제에서 MVDC 차단기의 단락 시험과 데이터 분석을 수행하고 있음. 시험 데이터를 저장·분석할 PC 와 모니터가 필요함
+
+  # 수요시기(납품일) — 비면 오늘부터 14일 뒤(orderAuto. 원본 calc_field "작성일 + 14일"). 고치면 그 값이 남는다.
+  - key: demandDate
+    label: 수요시기 (납품일)
+    type: date
+    open: true
+    from: auto
+    need: 수요시기
+
+  - key: place
+    label: 납품장소
+    wide: true
+    open: true
+    from: user
+    need: 납품장소
+    placeholder: 예) 한국선급 본부 N층 수소전기추진연구팀
+
+  # 특기사항 — 양식이 비면 막는다. 비면 선행 품의가 있을 때 "연구업무추진품의 {sourceDoc} 승인에 따른 구매 요청", 없으면 "해당 없음"(orderAuto).
+  - key: feature
+    label: 특기사항
+    wide: true
+    area: true
+    open: true
+    from: auto
+    need: 특기사항
+
+  # 예산 내역 표의 한 행(../../fieldmap.yaml rows.budget) — 계정과목코드·계정과목명·I/O 코드·I/O 명·예산금액은 과제의 회계 스냅샷(R&D 탭 과제 정보 카드의 회계 예산 — e-accounting)에서
+  # 비면 채운다(orderAuto — 과제의 계정에 맞는 계정 줄). 회계 I/O 가 없는 과제거나 다른 계정으로 사면 사용자가 적는다(회계 예산 표의 계정 줄을 눌러도 채워진다 — gongmunpanel.js).
+  - key: subjectCode
+    label: 계정과목코드
+    open: true
+    from: auto
+    placeholder: 과제의 회계 예산(R&D 탭)에서 — 없으면 총무팀·회계 확인
+
+  - key: subjectName
+    label: 계정과목명
+    open: true
+    from: setup               # 비워 두면 회계 스냅샷의 계정명(수탁과제(국가)_연구재료비 꼴), 그것도 없으면 과제의 계정(orderAuto)
+
+  - key: ioCode
+    label: I/O 코드 (예산부서 코드)
+    open: true
+    from: auto                # 과제의 회계 I/O(2145NR0124 꼴)
+
+  - key: ioName
+    label: I/O 명 (예산부서명)
+    open: true
+    from: auto                # 회계의 과제명(R- 접두를 뗀 것)
+
+  - key: budgetAmount
+    label: '예산금액 (비목의 당해 연도 배정액, 원)'
+    type: money
+    open: true
+    from: auto                # 구매 총액이 아니다 — 집행 비목의 당해 연도 배정액(회계 스냅샷의 기초+전용 예산. 원본 input.template.yaml 의 budget_rows.amount)
+
+  # 선행 품의 — 구매 품의에서 넘어오면 공문 이력 줄의 문서번호·제목(orderFromPurchase). 특기사항의 재료다.
+  - key: sourceDoc
+    label: 선행 품의 문서번호
+    open: true
+    from: user
+    placeholder: HER-2026-000097 꼴 — 구매 품의에서 넘어오면 저절로
+
+  - key: sourceTitle
+    label: 선행 품의 제목
+    wide: true
+    from: user
+
+  # 첨부자료 안내문구(양식 맨 아래 칸) — 비었거나 손대지 않았으면 첨부 목록으로 "1. 견적서 1부." 줄들(orderAuto).
+  - key: attachNote
+    label: 첨부자료 안내문구
+    wide: true
+    area: true
+    from: auto
+
+# 사업내용 쓰기 — context 는 Claude 에게 보여 줄 '품의할 것' 줄이다. 꼴은 body_spec.yaml 의 틀과 같고 자리 이름도 그 vars·lists 다({이름?} 는 비면 줄째 빠진다).
+# 금액·업체는 넣지 않는다 — 사유에 쓰지 말라는 것을 굳이 보여 주지 않는다. rules 는 이 갈래만의 쓰기 규칙(공통은 registries/writing.yaml).
+writing:
+  context: |-
+    {{#품목}}
+    품목: {품목명}
+      사양: {사양?}
+      수량: {수량?}
+    {{/품목}}
+    품목 요지: {품목요지?}
+    지금 적힌 사업내용: {사업내용?}
+  rules:
+    - 사업내용은 총무팀이 읽는 글입니다 — 과제명은 첫 문장에 과제 정보에 적힌 그대로(별명·줄임말이 아니라) 적습니다.
+
+# 칸에는 없지만 문서에서 더 읽는 것 — 구매 물품 표(../../fieldmap.yaml rows.items)와 미리보기의 품목 줄({{#품목}})·합계·품목 요지를 만드는 재료. 구매 품의의 reads 와 같다.
+reads:
+  - key: items
+    type: list
+    max: 30
+    read: 품목. 문서의 품목 표를 적힌 차례대로 한 줄씩 옮깁니다. 배송비·설치비처럼 따로 적힌 줄도 품목으로 넣습니다.
+    item:
+      - { key: name, required: true, max: 200, read: 품목명·모델명 — 문서에 적힌 그대로(요약하지 않습니다), example: LG 34WQ75C 34인치 모니터 }
+      - { key: spec, max: 300, read: "규격·사양 — 문서에 적힌 핵심을 ' · ' 로 나열", example: WQHD · 커브드 · USB-C }
+      - { key: qty, type: number, read: 수량, example: 1 }
+      - { key: unit, max: 10, read: 단위(개·대·EA·식 등), example: 대 }
+      - { key: unitPrice, type: money, read: 단가, example: 890000 }
+      - { key: amount, type: money, read: 그 줄의 금액 — 문서에 적힌 그대로, example: 890000 }
+
+  - key: quoteDate
+    type: date
+    read: 견적일·발행일·주문일. 쇼핑몰 화면이면 주문일이고, 주문 전 장바구니·상품 화면이면 null 입니다.
+    example: 2026-10-01
+
+  - key: supply
+    type: money
+    read: 공급가액 합계(부가세를 뺀 금액) — 문서에 따로 적혀 있을 때만
+    example: 899091
+
+  - key: vat
+    type: money
+    read: 부가세 합계 — 문서에 따로 적혀 있을 때만
+    example: 89909

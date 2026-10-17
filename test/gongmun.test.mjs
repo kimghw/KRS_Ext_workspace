@@ -2,10 +2,13 @@
 // 화면 쪽(탭 전환·채팅·한도 차단·새 공문 열기)은 test/wiring.test.mjs 의 "공문 탭" 이 본다.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 
 import {
-  delegationOf, docSettingOf, settingText, writePlan,
+  delegationOf, docSettingOf, settingText, writePlan, orderAuto, orderFromPurchase, rowsPlan,
 } from '../src/gongmun.js';
+import { RECIPE } from '../src/gmrecipe.js';
+import { injected as page, STEPS } from '../src/gmwrite.js';
 import { readRecipe, checkRecipe, render as renderRecipe, build as buildRecipe } from '../tools/gen-gongmun.mjs';
 import {
   KINDS, KIND_ORDER, FORMS, DEFAULT_TEMPLATES, MAX_PROJECTS, PURCHASE_LIMIT, FIELDS, VARS, varsFor,
@@ -27,6 +30,24 @@ let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
 const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o?.[k]]));
 const ta = async (name, fn) => { await fn(); pass++; console.log('  ok  ' + name); };
+const rx = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// 새 공문 창의 본문 틀 흉내(jsdom) — 페이지 함수(src/gmwrite.js 의 injected)는 전역 document·window·Event 를 보니 잠시 바꿔 둔다.
+const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
+const { JSDOM, VirtualConsole } = require('jsdom');
+async function withDom(html, fn, { scripts = false } = {}) {
+  const dom = new JSDOM(`<body>${html}</body>`, {
+    url: 'https://eclass.krs.co.kr/RealEANET/Forms/Drafts/KR_Purchase_Order.aspx', runScripts: scripts ? 'dangerously' : undefined, virtualConsole: new VirtualConsole(),
+  });
+  if (dom.window.document.readyState !== 'complete') await new Promise((r) => dom.window.addEventListener('load', r));
+  const prev = { document: globalThis.document, window: globalThis.window, Event: globalThis.Event };
+  Object.assign(globalThis, { document: dom.window.document, window: dom.window, Event: dom.window.Event });
+  try {
+    return await fn(dom.window);
+  } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
+  }
+}
 
 // 공문 설정에는 참조자가 없다(2026-10-15 사용자 지정) — 참조자는 과제의 refs(계획서 YAML 의 공문.참조자)에 공문 종류별로 있다.
 const PRESET = { dept: '연구본부 수소전기추진연구팀', head: '노길태' };
@@ -37,9 +58,9 @@ const PROJECT = {
 const CTX = { me: '김거화', preset: PRESET, project: PROJECT, today: '2026-10-07' };
 
 console.log('갈래와 양식');
-t('갈래는 구매·교육·출장·외부활동 넷이고 넷 다 문서를 넣어 읽는다(2026-10-08 사용자 지정)', () => {
-  assert.deepEqual(KIND_ORDER, ['purchase', 'edu', 'trip', 'outside']);
-  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].label), ['구매', '교육', '출장', '외부활동']);
+t('갈래는 구매·교육·출장·구매의뢰·외부활동 다섯이고 다섯 다 문서를 넣어 읽는다(2026-10-08 사용자 지정, 구매의뢰는 2026-10-17)', () => {
+  assert.deepEqual(KIND_ORDER, ['purchase', 'edu', 'trip', 'order', 'outside']);
+  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].label), ['구매', '교육', '출장', '구매의뢰', '외부활동']);
   for (const k of KIND_ORDER) assert.ok(KINDS[k].doc && KINDS[k].ask && KINDS[k].more, `${k} 에 문서 넣는 곳의 말`);
   assert.equal(KINDS.trip.ask, '행사·회의 안내문이나 초청장을 넣으세요');
   assert.deepEqual(FIELDS.trip.map((f) => f.key), ['place', 'from', 'to', 'who', 'cost', 'division', 'purpose', 'reason', 'account'], '출장 구분(국내·해외)은 위임전결을 가른다');
@@ -49,13 +70,15 @@ t('갈래는 구매·교육·출장·외부활동 넷이고 넷 다 문서를 �
   assert.deepEqual(FIELDS.outside.map((f) => f.key), ['org', 'representative', 'contact', 'contactTel', 'subject', 'place', 'from', 'to', 'start', 'end', 'hours', 'mins',
     'fee', 'expenses', 'rank', 'monthCount', 'yearTotal', 'note']);
   assert.deepEqual(FIELDS.outside.filter((f) => f.open).map((f) => f.key), ['rank', 'monthCount', 'yearTotal', 'note'], '펼쳐 두는 칸은 직급·당월 누적·당해 연도 누적·비고');
-  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].project), [true, true, true, false]);
+  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].project), [true, true, true, true, false], '구매의뢰도 과제를 고른다(과제 예산)');
 });
-t('외부활동의 양식은 외부강의등 신고서(칸이 정해진 폼) — 그 폼은 외부활동에서만 고르고, 다른 갈래의 기본 양식은 그대로 연구업무추진품의', () => {
-  assert.deepEqual(KIND_ORDER.map((k) => DEFAULT_TEMPLATES[k].form), ['KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_Outside_Lecture_Report']);
+t('외부활동의 양식은 외부강의등 신고서, 구매의뢰는 구매요청서(둘 다 칸이 정해진 폼) — 그 폼은 그 갈래에서만 고르고, 다른 갈래의 기본 양식은 그대로 연구업무추진품의', () => {
+  assert.deepEqual(KIND_ORDER.map((k) => DEFAULT_TEMPLATES[k].form),
+    ['KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_Outside_Lecture_Report']);
   assert.deepEqual(formsFor('outside').map((f) => f.id), ['KR_EA_Research_Task', 'KR_Outside_Lecture_Report', 'KR_EA_Form2']);
-  assert.deepEqual(formsFor('purchase').map((f) => f.id), ['KR_EA_Research_Task', 'KR_EA_Form2'], '신고서는 외부활동 초안의 칸이라 다른 갈래에는 없다');
-  assert.deepEqual(['KR_Outside_Lecture_Report', 'KR_EA_Research_Task', 'KR_EA_Form2', 'KR_X'].map(fieldForm), [true, false, false, false]);
+  assert.deepEqual(formsFor('order').map((f) => f.id), ['KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_EA_Form2']);
+  assert.deepEqual(formsFor('purchase').map((f) => f.id), ['KR_EA_Research_Task', 'KR_EA_Form2'], '신고서·구매요청서는 그 갈래 초안의 칸이라 다른 갈래에는 없다');
+  assert.deepEqual(['KR_Outside_Lecture_Report', 'KR_Purchase_Order', 'KR_EA_Research_Task', 'KR_EA_Form2', 'KR_X'].map(fieldForm), [true, true, false, false, false]);
   assert.equal(DEFAULT_TEMPLATES.outside.title, '외부강의등 신고서', '제목은 양식의 기본 제목 그대로(지난 신고서도 그랬다)');
 });
 t('구매만 100만원 한도가 있다', () => {
@@ -73,9 +96,10 @@ t('양식은 고친 것만 저장하고, 비운 칸은 기본으로 돌아간다
   assert.ok(!templateEdited('edu', saved));
   assert.equal(templateOf('edu', saved).form, 'KR_EA_Research_Task');
 });
-t('eclass 양식은 본문을 붙여 넣는 것과 칸 지도를 둔 외부강의등 신고서(외부활동만) — 구매요청서(칸 지도가 없는 폼)는 없다', () => {
-  assert.deepEqual(FORMS.map((f) => f.id), ['KR_EA_Research_Task', 'KR_Outside_Lecture_Report', 'KR_EA_Form2']);
+t('eclass 양식은 본문을 붙여 넣는 것과 칸 지도를 둔 구매요청서(구매의뢰만)·외부강의등 신고서(외부활동만) — manifest 의 order 차례', () => {
+  assert.deepEqual(FORMS.map((f) => f.id), ['KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_Outside_Lecture_Report', 'KR_EA_Form2']);
   assert.deepEqual(FORMS.find((f) => f.id === 'KR_Outside_Lecture_Report').only, ['outside']);
+  assert.deepEqual(FORMS.find((f) => f.id === 'KR_Purchase_Order').only, ['order']);
 });
 
 console.log('틀 채우기');
@@ -188,7 +212,7 @@ t('lead·refs 를 주면(공문 기록의 두 칸) 과제의 것 대신 — 빈 
   assert.deepEqual(approvalLine({ ...CTX, kind: 'outside', lead: '성춘향', refs: ['변학도'] }).steps.map((s) => s.role), ['기안', '결재'], '외부활동은 둘 다 없다');
 });
 
-console.log('행정지원 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람(2026-10-16)');
+console.log('행정지원 — R&D 탭 참여인력에서 공문 참조를 켠 사람(2026-10-16)');
 t('projectRefs — 공문 참조를 켠 행정지원이 먼저, 그 뒤에 YAML 의 이 갈래 참조자. 갈래를 가리지 않고 같은 이름은 한 번, 갈래를 모르면 비운다', () => {
   const p = { refs: { 구매: ['이몽룡', '홍길동'] }, support: [{ name: '홍길동', role: '행정 담당', ref: true }, { name: '변학도', role: '연구지원', ref: false }, { name: '' }] };
   assert.deepEqual(projectRefs(p, 'purchase'), ['홍길동', '이몽룡']);
@@ -359,6 +383,213 @@ t('외부활동 — 남은 것(신고서의 필수 칸 — 과제는 묻지 않�
     [{ label: '요청 공문', files: ['a.png'] }, { label: '활동 자료', files: ['b.png'] }]);
   assert.equal(attachName('outside', { org: '부산대학교 조선해양공학과' }, '2026-10-08'), '요청공문_부산대학교조선해양공학과_2026-10-08.pdf');
 });
+
+console.log('구매의뢰(구매요청서 KR_Purchase_Order — 총무팀 수신, 2026-10-17 사용자 지정)');
+{
+  const ORDER_REC = {
+    docType: 'quote', vendor: '(주)OO상사', gist: '', total: 5_500_000, targetType: '자산', quoteDate: '2026-10-10',
+    items: [
+      { name: '고전압 프로브', spec: '10kV · 100MHz', qty: 2, unit: '대', unitPrice: 2_500_000, amount: 5_000_000 },
+      { name: '케이블', spec: '', qty: 1, unit: '식', unitPrice: 500_000, amount: 500_000 },
+    ],
+  };
+  const ORDER_FORM = 'KR_Purchase_Order';
+  const ACCOUNT = { ...FULL, account: '연구재료비' };
+  t('읽은 견적서로 초안 — 구매처럼 품목 표·견적일·합계·품목 요지를 옮기고, 구매대상구분은 읽은 것, 예산유형은 국가수탁과제부터, 500만원 이상이면 비교견적서를 알린다(막지 않는다)', () => {
+    const { draft, notes } = fromRecord('order', ORDER_REC, { me: '김거화', files: ['견적.png'] });
+    assert.deepEqual(pick(draft, ['gist', 'vendor', 'total', 'targetType', 'budgetType', 'quoteDate', 'business', 'demandDate', 'place', 'feature', 'sourceDoc', 'attachNote']), {
+      gist: '고전압 프로브 외 1건', vendor: '(주)OO상사', total: 5_500_000, targetType: '자산', budgetType: '국가수탁과제', quoteDate: '2026-10-10',
+      business: '', demandDate: '', place: '', feature: '', sourceDoc: '', attachNote: '',
+    });
+    assert.deepEqual(draft.items.map((it) => it.name), ['고전압 프로브', '케이블']);
+    assert.deepEqual(draft.attach, [{ label: '견적서', files: ['견적.png'] }]);
+    assert.deepEqual(notes, ['구매 총액 500만원 이상 — 비교견적서(업체 2곳 이상)도 첨부하세요']);
+    assert.deepEqual(fromRecord('order', { ...ORDER_REC, total: 4_999_999 }).notes, [], '500만원 미만은 알리지 않는다');
+    assert.deepEqual(overLimit('order', draft), { over: false, unknown: false, limit: null, amount: 5_500_000 }, '한도는 없다');
+    assert.equal(delegationOf('order', { total: 20_000_001 }).rank, '소장', '위임전결은 구매와 같이 연구비 집행(2천만원)');
+    assert.equal(KINDS.order.title, '구매요청서');
+    assert.deepEqual(FIELDS.order.filter((f) => f.open).map((f) => f.key),
+      ['targetType', 'budgetType', 'business', 'demandDate', 'place', 'feature', 'subjectCode', 'subjectName', 'ioCode', 'ioName', 'budgetAmount', 'sourceDoc']);
+  });
+  t('orderAuto — 수요시기는 오늘+14일, 특기사항은 선행 품의가 있으면 그 승인에 따른 요청·없으면 "해당 없음", 계정과목명은 과제의 계정, 첨부자료 안내문구는 첨부 목록. 고친 칸은 둔다', () => {
+    const base = fromRecord('order', ORDER_REC, { files: ['견적.png'] }).draft;
+    const got = orderAuto(base, { project: ACCOUNT, today: '2026-10-17' });
+    assert.deepEqual(got.changed, ['demandDate', 'feature', 'subjectName', 'attachNote']);
+    assert.deepEqual(pick(got.draft, ['demandDate', 'feature', 'subjectName', 'attachNote']),
+      { demandDate: '2026-10-31', feature: '해당 없음', subjectName: '연구재료비', attachNote: '1. 견적서 1부.' });
+    assert.deepEqual(orderAuto(got.draft, { project: ACCOUNT, today: '2026-10-17' }).changed, [], '같으면 바꾼 것이 없다');
+    const withDoc = orderAuto({ ...base, sourceDoc: 'HER-2026-000097', sourceTitle: '고전압 프로브 구매 품의' }, { today: '2026-12-25' });
+    assert.equal(withDoc.draft.feature, '연구업무추진품의 HER-2026-000097(고전압 프로브 구매 품의) 승인에 따른 구매 요청');
+    assert.equal(withDoc.draft.demandDate, '2027-01-08', '해를 넘겨도 14일 뒤');
+    assert.equal(orderAuto({ ...base, sourceDoc: 'HER-2026-000097' }, {}).draft.feature, '연구업무추진품의 HER-2026-000097 승인에 따른 구매 요청', '제목이 없으면 번호만');
+    assert.equal(orderAuto({ ...got.draft, sourceDoc: 'HER-2026-000097' }, { today: '2026-10-17' }).draft.feature,
+      '연구업무추진품의 HER-2026-000097 승인에 따른 구매 요청', '이 함수가 쓴 특기사항은 손대지 않았으면 선행 품의를 따라간다');
+    const kept = orderAuto({ ...base, feature: '내가 쓴 특기사항', attachNote: '내가 쓴 안내', subjectName: '', demandDate: '' },
+      { project: ACCOUNT, today: '2026-10-17', touched: ['attachNote', 'subjectName'] });
+    assert.deepEqual(kept.changed, ['demandDate']);
+    assert.deepEqual(pick(kept.draft, ['feature', 'attachNote', 'subjectName']), { feature: '내가 쓴 특기사항', attachNote: '내가 쓴 안내', subjectName: '' }, '고친 칸은 두고, 비었어도 손댄 칸은 두며, 내가 쓴 특기사항은 따라가지 않는다');
+    assert.equal(orderAuto(base, { today: '' }).draft.demandDate, '', '오늘을 모르면 수요시기는 비워 둔다');
+    // 회계 I/O 와 회계 예산 스냅샷(R&D 탭의 회계 조회 — src/eacct.js, 2026-10-17)이 있으면 예산 내역 다섯 칸을 채운다 — 계정에 맞는 줄로, 빈 칸만.
+    const acct = { year: '2026', at: '2026-10-17T10:00:00.000Z', io: '2145NR0124', ioName: '대용량 모듈러 멀티레벨 컨버터 기반 고압 드라이브 시제품 개발', dept: 'HER', deptName: '수소전기추진연구팀',
+      rows: [{ code: '603010304', name: '수탁과제(국가)_연구활동비', base: 51500000, transfer: 0, budget: 51500000, actual: 29066990, pending: 0, available: 22433010 },
+        { code: '603010311', name: '수탁과제(국가)_연구재료비', base: 31376000, transfer: -1000000, budget: 30376000, actual: 0, pending: 0, available: 31376000 }] };
+    const ea = orderAuto(base, { project: { ...ACCOUNT, io: '2145NR0124', acct }, today: '2026-10-17' });
+    assert.deepEqual(ea.changed, ['demandDate', 'feature', 'ioCode', 'ioName', 'subjectCode', 'subjectName', 'budgetAmount', 'attachNote']);
+    assert.deepEqual(pick(ea.draft, ['subjectCode', 'subjectName', 'ioCode', 'ioName', 'budgetAmount']),
+      { subjectCode: '603010311', subjectName: '수탁과제(국가)_연구재료비', ioCode: '2145NR0124', ioName: '대용량 모듈러 멀티레벨 컨버터 기반 고압 드라이브 시제품 개발', budgetAmount: 30376000 });
+    const noAcct = orderAuto(base, { project: { ...FULL, account: '', io: '2145NR0124', acct }, today: '2026-10-17' });
+    assert.deepEqual(pick(noAcct.draft, ['subjectCode', 'subjectName', 'ioCode', 'budgetAmount']), { subjectCode: '', subjectName: '', ioCode: '2145NR0124', budgetAmount: null }, '계정이 없으면 I/O 만');
+    const mine = orderAuto({ ...base, subjectCode: '603010303', subjectName: '연구시설·장비비', budgetAmount: 1 }, { project: { ...ACCOUNT, io: '2145NR0124', acct }, today: '2026-10-17' });
+    assert.deepEqual(pick(mine.draft, ['subjectCode', 'subjectName', 'budgetAmount', 'ioCode']), { subjectCode: '603010303', subjectName: '연구시설·장비비', budgetAmount: 1, ioCode: '2145NR0124' }, '적힌 칸은 둔다');
+    assert.equal(orderAuto({ ...base, attach: [{ label: '견적서', files: ['a.png'] }, { label: '강의 내용', files: ['b.png'] }] }, {}).draft.attachNote, '1. 견적서 1부.\n2. 강의 내용 1부.');
+    assert.equal(orderAuto({ ...base, attach: [] }, {}).draft.attachNote, '1. 견적서 1부.', '첨부 목록이 비면 견적서 한 줄');
+  });
+  t('orderFromPurchase — 구매 품의 초안에서 구매의뢰 초안으로: 품목 요지·구매처·합계·품목·견적일·첨부를 옮기고, 사업내용은 구매사유(용도를 붙여), 선행 품의는 공문 이력의 줄. 초안 키는 관문이 아는 것만', () => {
+    const p = { ...fromRecord('purchase', { ...ORDER_REC, targetType: undefined }, { files: ['견적.png'] }).draft, reason: '시험 데이터 저장에 필요함', use: '시험용', account: '연구재료비' };
+    const doc = { id: 'HER-2026-000097', title: '고전압 프로브 외 1건 구매 품의', form: 'KR_EA_Research_Task' };
+    const o = orderFromPurchase(p, { me: '김거화', doc });
+    const allowed = new Set([...FIELDS.order.map((f) => f.key), ...RECIPE.purposes.order.reads.map((r) => r.key), 'currency', 'attach']);
+    assert.deepEqual(Object.keys(o).filter((k) => !allowed.has(k)), [], '구매의뢰 레시피의 fields ∪ reads ∪ { currency, attach } 밖의 키가 없다(실행 모드 관문)');
+    assert.deepEqual(pick(o, ['gist', 'vendor', 'total', 'quoteDate', 'currency', 'business', 'sourceDoc', 'sourceTitle', 'targetType', 'budgetType', 'demandDate', 'feature', 'place']), {
+      gist: '고전압 프로브 외 1건', vendor: '(주)OO상사', total: 5_500_000, quoteDate: '2026-10-10', currency: 'KRW',
+      business: '시험 데이터 저장에 필요함 (용도: 시험용)', sourceDoc: 'HER-2026-000097', sourceTitle: '고전압 프로브 외 1건 구매 품의',
+      targetType: 'PC류', budgetType: '국가수탁과제', demandDate: '', feature: '', place: '',
+    });
+    assert.deepEqual(o.items, p.items);
+    assert.notEqual(o.items, p.items, '품목 표는 복사한다(구매 초안과 따로 고친다)');
+    assert.notEqual(o.items[0], p.items[0]);
+    assert.deepEqual(o.attach, p.attach);
+    assert.notEqual(o.attach[0].files, p.attach[0].files);
+    assert.ok(!('reason' in o) && !('use' in o) && !('summary' in o) && !('account' in o), '구매만의 칸(구매사유·용도·요약·구매계정)은 넘어오지 않는다');
+    assert.equal(orderFromPurchase({ ...p, use: '' }, { doc }).business, '시험 데이터 저장에 필요함', '용도가 없으면 사유만');
+    const bare = orderFromPurchase(blankDraft('purchase'), { me: '김거화', doc: null });
+    assert.deepEqual(pick(bare, ['gist', 'total', 'business', 'sourceDoc', 'sourceTitle', 'currency']), { gist: '', total: null, business: '', sourceDoc: '', sourceTitle: '', currency: 'KRW' });
+    assert.deepEqual(bare.attach, [{ label: '견적서', files: [] }], '빈 구매 초안이면 구매의뢰의 빈 초안과 같다');
+    assert.deepEqual(orderFromPurchase(null, { doc: { id: ' HER-2026-000097 ' } }).sourceDoc, 'HER-2026-000097', '초안이 없어도 선행 품의만으로');
+  });
+  t('쓸 것(writePlan) — 구매요청서 칸마다 넣을 값: 체크 칸은 초안 값과 같은 것만 1, 날짜는 피커 꼴, 표는 품목 줄마다·평평한 칸으로 한 행(digits 는 쉼표 없는 수), 과제·합의 있음, 보존 3년·수신 총무팀', () => {
+    const base = orderFromPurchase({ ...fromRecord('purchase', ORDER_REC, { files: ['견적.png'] }).draft, reason: '시험에 필요함' }, { me: '김거화', doc: { id: 'HER-2026-000097', title: '프로브 구매 품의' } });
+    const draft = {
+      ...orderAuto({ ...base, targetType: '자산' }, { project: ACCOUNT, today: '2026-10-17' }).draft,
+      place: '한국선급 본부 3층 수소전기추진연구팀', subjectCode: '5210', ioCode: 'IO-8100', ioName: '수소전기추진연구팀', budgetAmount: 12_000_000,
+    };
+    const plan = writePlan('order', { title: '고전압 프로브 외 1건 구매 요청', body: '미리보기', draft, form: ORDER_FORM }, { ...CTX, project: ACCOUNT });
+    assert.deepEqual([plan.form, plan.known, plan.anchor], [ORDER_FORM, true, '#ctl00_ContentPlaceHolder_Content_SaUpNeYong']);
+    assert.match(decodeURIComponent(plan.url), /DocumentView\.aspx\?FORMID=KR_Purchase_Order&DOCID=&/);
+    assert.ok(!plan.fields.body && !plan.fields.job, '본문 편집기·과제 칸이 없는 폼');
+    assert.deepEqual(plan.values.draft, {
+      targetPc: '', targetAsset: '1', targetService: '', targetSw: '', targetSupply: '', business: '시험에 필요함',
+      budgetGeneral: '', budgetNational: '1', demandDate: '2026-10-31', place: '한국선급 본부 3층 수소전기추진연구팀',
+      feature: '연구업무추진품의 HER-2026-000097(프로브 구매 품의) 승인에 따른 구매 요청', attachNote: '1. 견적서 1부.',
+    });
+    assert.deepEqual(pick(plan.values.names, ['targetPc', 'budgetNational', 'feature', 'attachNote']), {
+      targetPc: { name: '구매대상구분', need: true }, budgetNational: { name: '예산유형', need: false }, feature: { name: '특기사항', need: true }, attachNote: { name: '첨부자료 안내문구', need: false },
+    });
+    assert.deepEqual(plan.rows, [
+      {
+        key: 'items', add: '#ctl00_ContentPlaceHolder_Content_LinkButton1',
+        probe: "input[id^='ctl00_ContentPlaceHolder_Content_rptRequet_ctl'][id$='_txtItemName']", cell: '#ctl00_ContentPlaceHolder_Content_rptRequet_ctl{nn}_{cell}',
+        rows: [
+          { txtItemName: '고전압 프로브', txtFuncAndReq: '10kV · 100MHz', txtUnit: '대', txtCnt: '2', txtUnitCost: '2500000', txtEstimate: '5000000' },
+          { txtItemName: '케이블', txtUnit: '식', txtCnt: '1', txtUnitCost: '500000', txtEstimate: '500000' },
+        ],
+      },
+      {
+        key: 'budget', add: '#ctl00_ContentPlaceHolder_Content_LinkButton2',
+        probe: "input[id^='ctl00_ContentPlaceHolder_Content_rptRequetBudget_ctl'][id$='_txtSubjectCode']", cell: '#ctl00_ContentPlaceHolder_Content_rptRequetBudget_ctl{nn}_{cell}',
+        rows: [{ txtSubjectCode: '5210', txtSubjectName: '연구재료비', txtDeptOrIoCode: 'IO-8100', txtDeptOrIoName: '수소전기추진연구팀', txtBudgetCost: '12000000' }],
+      },
+    ]);
+    assert.deepEqual(plan.values.job, { name: ACCOUNT.name, code: ACCOUNT.code, lead: ACCOUNT.lead }, '과제는 고른다(작성기는 과제 칸이 없어 쓰지 않는다)');
+    assert.deepEqual([plan.line.approvers, plan.line.agree, plan.line.refs, plan.line.rank], [['노길태'], ['박기도'], [], '팀장'], '참조자는 과제 YAML 의 구매의뢰 키가 없어 없음');
+    assert.deepEqual(pick(plan.setting, ['profile', 'retention', 'retentionText', 'receiver', 'receiverValue', 'tag', 'docNo']),
+      { profile: '구매요청', retention: '36', retentionText: '3년', receiver: '총무팀', receiverValue: '10820-,-(A13) General Affairs Team', tag: '차단기 과제', docNo: '8100' });
+    assert.equal(settingText(plan.setting), '보존 3년 · Doc No. 8100 · 수신 총무팀 · 공개 결재선 · 키워드 차단기 과제');
+    // 표 — 빈 초안이면 행이 없고(작성기가 단계를 건너뛴다), 셀이 모두 빈 줄은 빼며, 글 셀은 긴 줄표를 바꾸고 digits 는 쉼표·원을 뗀다.
+    assert.deepEqual(writePlan('order', { draft: blankDraft('order'), form: ORDER_FORM }, CTX).rows.map((r) => [r.key, r.rows.length]), [['items', 0], ['budget', 0]]);
+    const fm = RECIPE.forms[ORDER_FORM];
+    assert.deepEqual(rowsPlan(fm, { items: [{ name: ' 프로브 — A ', qty: '1,000', amount: '1,000원' }, { name: '', spec: '' }], budgetAmount: '' }).map((r) => r.rows),
+      [[{ txtItemName: '프로브 - A', txtCnt: '1000', txtEstimate: '1000' }], []]);
+    assert.deepEqual(rowsPlan(RECIPE.forms.KR_EA_Research_Task, draft), [], '표가 없는 폼은 빈 목록');
+    assert.deepEqual(writePlan('purchase', { title: 't', body: 'b', draft }, CTX).rows, []);
+  });
+  t('draftValue check — 초안 값(글이나 목록)이 on 과 같으면 1, 아니면 빈 글(작성기가 건드리지 않는다 = 체크 안 함)', () => {
+    assert.equal(draftValue({ kind: 'check', from: 'targetType', on: '자산' }, { targetType: '자산' }), '1');
+    assert.equal(draftValue({ kind: 'check', from: 'targetType', on: 'PC류' }, { targetType: '자산' }), '');
+    assert.equal(draftValue({ kind: 'check', from: 'targetType', on: 'SW' }, { targetType: ['자산', ' SW '] }), '1', '목록이면 하나라도');
+    assert.equal(draftValue({ kind: 'check', from: 'targetType', on: 'SW' }, { targetType: null }), '');
+    assert.equal(draftValue({ kind: 'check', from: 'targetType', on: 'SW' }, {}), '');
+  });
+  t('문서설정 — 구매요청은 보존 3년·수신 총무팀이고 receiverValue 는 수신처 창의 부서 값·글(레시피 receivers), 내부결재·KRE 는 이름 그대로', () => {
+    const s = docSettingOf('order', PRESET, {}, { project: FULL });
+    assert.deepEqual(pick(s, ['profile', 'retention', 'receiver', 'receiverValue', 'docNo', 'scope', 'tag']),
+      { profile: '구매요청', retention: '36', receiver: '총무팀', receiverValue: '10820-,-(A13) General Affairs Team', docNo: '8100', scope: '결재선', tag: '차단기 과제' });
+    assert.equal(docSettingOf('purchase', PRESET).receiverValue, '내부결재-,-내부결재');
+    assert.equal(docSettingOf('order', PRESET, { receiver: 'KRE' }).receiverValue, 'KRE-,-KRE', '이 공문에서 바꾼 수신처');
+    assert.equal(docSettingOf('order', PRESET, { receiver: '없는곳' }).receiver, '총무팀', '모르는 수신처는 버린다');
+    assert.ok(RECIPE.settings.options.receiver.includes('총무팀'));
+  });
+  t('구매요청서의 제목·본문(미리보기) — "{품목요지} 구매 요청", 구매대상구분·사업내용·수요시기·특기사항·예산 내역·구매 물품·합계·선행 품의·첨부', () => {
+    const base = orderFromPurchase({ ...fromRecord('purchase', ORDER_REC, { files: ['견적.png'] }).draft, reason: '시험에 필요함' }, { doc: { id: 'HER-2026-000097', title: '프로브 구매 품의' } });
+    const draft = { ...orderAuto(base, { project: ACCOUNT, today: '2026-10-17' }).draft, place: '본부 3층', subjectCode: '5210', budgetAmount: 12_000_000 };
+    const c = compose('order', draft, { ...CTX, project: ACCOUNT });
+    assert.equal(c.title, '고전압 프로브 외 1건 구매 요청');
+    assert.deepEqual(c.missing, []);
+    for (const line of ['■ 구매대상구분 : PC류', '■ 사업내용(목적 포함)\n    시험에 필요함', '■ 예산유형 : 국가수탁과제', '■ 수요시기(납품일) : 2026. 10. 31.', '■ 납품장소 : 본부 3층',
+      '■ 특기사항 : 연구업무추진품의 HER-2026-000097(프로브 구매 품의) 승인에 따른 구매 요청', '    계정과목코드 : 5210\n    계정과목명 : 연구재료비\n    예산금액 : 12,000,000원',
+      '    (1) 고전압 프로브\n        - 기능 및 요구사양 : 10kV · 100MHz\n        - 수량 : 2대\n        - 예상단가 : 2,500,000원\n        - 예상금액 : 5,000,000원', '    (2) 케이블\n        - 수량 : 1식',
+      '■ 합계 : 5,500,000원 (VAT 포함)', '■ 구매처 : (주)OO상사', '■ 선행 품의 : HER-2026-000097\n    제목 : 프로브 구매 품의', '    1. 견적서 1부.', '※ 첨 부\n    1. 견적서 1부.  끝.']) {
+      assert.ok(c.body.includes(line), `본문에 "${line}"\n---\n${c.body}`);
+    }
+    assert.ok(!/I\/O 코드/.test(c.body), '비운 예산 내역 줄은 빠진다');
+  });
+  t('남은 것 — 품목·합계·사업내용·수요시기·납품장소·특기사항(구매대상구분은 처음 값이 있다). 사유 쓰기는 사업내용 하나(gongmunReason.order)', () => {
+    assert.deepEqual(needs('order', blankDraft('order'), { preset: PRESET, project: FULL, projects: [FULL] }), ['품목', '합계', '사업내용', '수요시기', '납품장소', '특기사항']);
+    const full = { ...orderAuto(blankDraft('order'), { today: '2026-10-17' }).draft, gist: 'g', total: 1, business: 'b', place: 'p' };
+    assert.deepEqual(needs('order', full, { preset: PRESET, project: FULL, projects: [FULL] }), []);
+    assert.ok(TASKS['gongmun.order'] && TASKS['gongmunReason.order'], '읽기·사유 쓰기 작업');
+    assert.match(reasonInput('order', { gist: '프로브', business: '지금 적힌 것' }, FULL), /^품의 종류: 구매요청서\n[\s\S]*품목 요지: 프로브\n지금 적힌 사업내용: 지금 적힌 것$/);
+    assert.equal(applyReason('order', { business: '' }, { business: '과제에 필요함' }).business, '과제에 필요함');
+    assert.equal(attachName('order', { vendor: '(주)OO상사' }, '2026-10-17'), '견적서_(주)OO상사_2026-10-17.pdf');
+  });
+  t('작성 차례 — 표(품목·예산)는 새 공문 창 바로 뒤, 제목·칸보다 먼저(행추가 포스트백이 틀을 다시 그린다)', () => {
+    assert.deepEqual(STEPS.map((s) => s.key), ['open', 'rows', 'job', 'fields', 'report', 'body', 'setting', 'line', 'attach']);
+    assert.equal(STEPS.find((s) => s.key === 'rows').label, '표(품목·예산)');
+  });
+  await ta('페이지 함수 pageForm check — 꺼진 체크박스는 click 으로 켜고(change 이벤트까지 난다), 켜진 것은 두 번 눌러 끄지 않으며, 없는 칸은 why', async () => {
+    await withDom('<input type="checkbox" id="c0"><input type="checkbox" id="c1" checked><input id="t">', async (w) => {
+      const events = [];
+      for (const id of ['c0', 'c1']) for (const type of ['click', 'change']) w.document.getElementById(id).addEventListener(type, () => events.push(`${id}:${type}`));
+      const got = page.pageForm([
+        { key: 'a', kind: 'check', selector: '#c0', value: '1' }, { key: 'b', kind: 'check', selector: '#c1', value: '1' },
+        { key: 'x', kind: 'check', selector: '#nope', value: '1' }, { key: 't', kind: 'text', selector: '#t', value: '글 — 끝' },
+      ]);
+      assert.deepEqual(got, [{ key: 'a', ok: true, value: '1' }, { key: 'b', ok: true, value: '1' }, { key: 'x', ok: false, why: '칸이 없습니다' }, { key: 't', ok: true, value: '글 — 끝' }]);
+      assert.deepEqual([w.document.getElementById('c0').checked, w.document.getElementById('c1').checked], [true, true]);
+      assert.deepEqual(events, ['c0:click', 'c0:change'], '켜진 체크는 건드리지 않는다');
+    });
+  });
+  await ta('페이지 함수 pageRows — count 는 probe 로 센 행 수, add 는 행추가 단추(javascript:__doPostBack 인 a)를 눌러 포스트백을 돌린다', async () => {
+    const row = (n) => `<input id="ctl00_ContentPlaceHolder_Content_rptRequet_ctl${String(n).padStart(2, '0')}_txtItemName">`;
+    const spec = { add: '#ctl00_ContentPlaceHolder_Content_LinkButton1', probe: "input[id^='ctl00_ContentPlaceHolder_Content_rptRequet_ctl'][id$='_txtItemName']" };
+    const html = `<a id="ctl00_ContentPlaceHolder_Content_LinkButton1" href="javascript:__doPostBack('ctl00$ContentPlaceHolder_Content$LinkButton1','')">행추가</a><div id="rows">${row(1)}</div>`;
+    await withDom(html, async (w) => {
+      const calls = [];
+      w.__doPostBack = (target, arg) => { calls.push([target, arg]); w.document.getElementById('rows').insertAdjacentHTML('beforeend', row(calls.length + 1)); };
+      assert.deepEqual(page.pageRows('count', spec), { ready: true, count: 1 }, '처음부터 빈 행 1개');
+      assert.deepEqual(page.pageRows('add', spec), { ok: true });
+      const t0 = Date.now();
+      while (page.pageRows('count', spec).count < 2 && Date.now() - t0 < 2000) await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(calls, [['ctl00$ContentPlaceHolder_Content$LinkButton1', '']], '클릭의 기본 동작이 href 의 __doPostBack 을 부른다');
+      assert.deepEqual(page.pageRows('count', spec), { ready: true, count: 2 });
+      assert.deepEqual(page.pageRows('add', { ...spec, add: '#nope' }), { ok: false, why: '행추가 단추가 없습니다' });
+      assert.deepEqual(page.pageRows('x', spec), { ok: false, why: '모르는 동작 x' });
+      // 셀은 글 칸처럼 — cell 틀의 {nn}(두 자리)·{cell} 을 채운 selector.
+      const put = page.pageForm([{ key: 'items.2.txtItemName', kind: 'text', selector: '#ctl00_ContentPlaceHolder_Content_rptRequet_ctl02_txtItemName', value: '케이블' }]);
+      assert.deepEqual(put, [{ key: 'items.2.txtItemName', ok: true, value: '케이블' }]);
+    }, { scripts: true });
+  });
+}
 t('구매 — 제목은 그대로, 본문은 교육·출장처럼 가. 과제 개요부터(원본은 과제 개요를 빼는 lean 목적이었다 — 2026-10-16 사용자 지정으로 넣음)', () => {
   assert.equal(DEFAULT_TEMPLATES.purchase.title, '{품목요지} 구매 품의');
   const block = (kind) => DEFAULT_TEMPLATES[kind].body.split('\n').filter((l) => /과제 개요$|과 제 명|과제번호|연구기간|과제책임자/.test(l));
@@ -484,11 +715,12 @@ t('더 넣어 다시 읽으면 — 고친 칸과 새로 읽지 못한 칸은 두
 });
 
 console.log('과제 내용으로 사유 쓰기');
-t('사유 칸 — 구매는 구매사유·용도, 교육은 교육사유·교육목적, 출장은 출장사유·출장목적. 외부활동(외부강의등 신고서)은 사유 칸이 없다', () => {
+t('사유 칸 — 구매는 구매사유·용도, 교육은 교육사유·교육목적, 출장은 출장사유·출장목적, 구매의뢰는 사업내용 하나. 외부활동(외부강의등 신고서)은 사유 칸이 없다', () => {
   assert.deepEqual(REASON_KEYS, {
     purchase: { reason: 'reason', use: 'use' }, edu: { reason: 'reason', use: 'purpose' }, trip: { reason: 'reason', use: 'purpose' },
+    order: { reason: 'business', use: undefined },
   });
-  assert.deepEqual(REASON_LABEL, { purchase: '구매사유', edu: '교육사유', trip: '출장사유' });
+  assert.deepEqual(REASON_LABEL, { purchase: '구매사유', edu: '교육사유', trip: '출장사유', order: '사업내용 (목적 포함)' });
 });
 t('Claude 에 주는 글에 과제 내용과 품의할 것이 들어가고, 금액·업체는 없다', () => {
   const text = reasonInput('purchase', { items: [{ name: '34인치 모니터', spec: 'WQHD', qty: 1, unit: '대', amount: 890000 }], vendor: 'OO상사', use: '회의용' },
@@ -679,7 +911,7 @@ t('읽기는 오릴 칸(quoteArea)을 그림마다 % 로 돌려준다 — 범위
   assert.match(systemPrompt('gongmun.purchase'), /- quoteArea [^\n]*오린 칸에 꼭 들어갈 것: 상품명·모델·옵션·수량·단가·할인·배송비·합계·판매자\. 넣지 않을 것: 추천 상품/);
   assert.match(systemPrompt('gongmun.edu'), /오린 칸에 꼭 들어갈 것: 수강료\(정가·할인가·결제 금액\)·강의명/);
   assert.deepEqual(['trip', 'outside'].map((k) => 'quoteArea' in TASKS[`gongmun.${k}`].fields), [false, false]);
-  assert.deepEqual(KIND_ORDER.filter((k) => KINDS[k].cut), ['purchase', 'edu']);
+  assert.deepEqual(KIND_ORDER.filter((k) => KINDS[k].cut), ['purchase', 'edu', 'order'], '구매의뢰도 쇼핑몰 화면의 견적서를 오린다');
 });
 
 console.log('구매로 산 강의 — 견적서와 강의 내용');
@@ -726,7 +958,7 @@ console.log('R&D 탭의 과제 — 연구 내용으로 사유 쓰기·에이전�
     const [a, b] = rndProjects(book, preset, TODAY);
     assert.deepEqual({ ...a, content: a.content.slice(0, 11) }, {
       name: 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발', alias: 'SSCB', code: 'RS-2026-0001', job: '', lead: '박기도', period: '2026.04.01 ~ 2029.12.31',
-      about: '차단기 과제를 수행하고 있습니다', content: '[연구개발 계획 — ', account: '연구재료비', refs: { 구매: ['이몽룡'] }, support: [], rnd: { id: 'p1', year: 1, plan: 1, logs: 1 },
+      about: '차단기 과제를 수행하고 있습니다', content: '[연구개발 계획 — ', account: '연구재료비', refs: { 구매: ['이몽룡'] }, support: [], io: '', acct: null, rnd: { id: 'p1', year: 1, plan: 1, logs: 1 },
     });
     assert.deepEqual([b.lead, b.content, b.rnd.plan, b.refs], ['홍길동', '공문 설정에 적은 과제 내용', 0, {}], '연구 내용이 없으면 공문 설정의 과제 내용 — 참조자는 YAML 에만 있어 줄에서 채우지 않는다');
     assert.deepEqual(approvalLine({ me: '김거화', preset: PRESET, project: a, kind: 'purchase' }).refs, ['이몽룡'], 'R&D 과제의 참조자가 결재선에 선다');
@@ -800,6 +1032,56 @@ console.log('레시피(recipes/gongmun) — 위임전결·문서설정·쓸 것'
     assert.match(errs, /manifest\.yaml: only 의 nope 는 없는 목적입니다/);
     assert.match(errs, /outside\/purpose\.yaml: project 는 true·false 여야 합니다/);
     assert.match(errs, /research_task\/fieldmap\.yaml fields\.title: digits 는 source: draft 칸에만 씁니다/);
+    // 2026-10-17(Codex 검토) — 작성기가 넣을 줄 모르는 칸 종류에 source: draft 를 적거나, 칸이 정해진 폼에 only 가 없으면 막는다(생성은 지나고 작성 때 조용히 비던 틈).
+    const loose = structuredClone(readRecipe());
+    const report = loose.forms.find((f) => f.manifest.form_id === 'KR_Outside_Lecture_Report');
+    report.fieldmap.fields.subject.kind = 'picker';
+    delete report.manifest.only;
+    const errs2 = checkRecipe(loose).join('\n');
+    assert.match(errs2, /fields\.subject: source: draft 는 text·date·time·check 칸에만 씁니다\(작성기 pageForm 이 넣는 종류 — picker 는 안 됩니다\)/);
+    assert.match(errs2, /kr_outside_lecture_report\/manifest\.yaml: 칸이 정해진 폼\(source: draft 칸이 있는 폼\)은 only/);
+  });
+  t('구매요청서의 칸 지도(2026-10-17) — 체크 칸(check)의 selector·from 하나·on(고르는 칸의 options 안)·digits 금지, 표(rows)의 add·probe·cell({nn}·{cell})·cells·from(reads 의 list)·셀의 from, 수신처(receivers)의 꼴은 생성기가 막는다', () => {
+    const broken = structuredClone(readRecipe());
+    const form = broken.forms.find((f) => f.manifest.form_id === 'KR_Purchase_Order');
+    const fm = form.fieldmap;
+    delete fm.fields.targetPc.selector;
+    fm.fields.targetAsset.from = ['targetType', 'budgetType'];
+    delete fm.fields.targetService.on;
+    fm.fields.targetSw.on = 'S/W';
+    fm.fields.targetSupply.digits = true;
+    fm.fields.budgetGeneral.source = 'title';
+    fm.fields.place.on = 'demandDate';
+    fm.rows.items.cell = '#ctl00_ContentPlaceHolder_Content_rptRequet_ctl{nn}_txtItemName';
+    fm.rows.items.from = 'quoteDate';
+    delete fm.rows.budget.add;
+    fm.rows.budget.cells.txtSubjectCode.from = 'subject';
+    fm.rows.budget.cells.txtBudgetCost.digits = 'yes';
+    fm.rows.extra = { add: '#a', probe: 'input', cell: '#c{nn}_{cell}', cells: {} };
+    broken.settings.receivers.총무팀.code = '10820-1';
+    broken.settings.receivers.재무팀 = { code: '10911', text: '' };
+    const errs = checkRecipe(broken).join('\n');
+    const w = 'purchase-order/forms/kr_purchase_order/fieldmap\\.yaml';
+    assert.match(errs, new RegExp(`${w} fields\\.targetPc: selector 가 없습니다`));
+    assert.match(errs, new RegExp(`${w} fields\\.targetAsset: check 는 from\\(초안 칸\\)이 하나여야 합니다`));
+    assert.match(errs, new RegExp(`${w} fields\\.targetService: check 는 on\\(초안 칸의 값이 이것과 같으면 켠다\\)이 있어야 합니다`));
+    assert.match(errs, new RegExp(`${w} fields\\.targetSw: on\\(S/W\\)이 order/purpose\\.yaml 의 targetType 칸 options 에 없습니다`));
+    assert.match(errs, new RegExp(`${w} fields\\.targetSupply: digits 는 check 에 쓰지 않습니다`));
+    assert.match(errs, new RegExp(`${w} fields\\.budgetGeneral: check 는 source: draft 칸이어야 합니다`));
+    assert.match(errs, new RegExp(`${w} fields\\.place: on 은 time·check 칸에만 씁니다`));
+    assert.match(errs, new RegExp(`${w} rows\\.items: cell 에는 \\{nn\\}\\(행 번호\\)과 \\{cell\\}\\(셀 이름\\)이 들어야 합니다`));
+    assert.match(errs, new RegExp(`${w} rows\\.items: from 의 quoteDate 가 order/purpose\\.yaml 의 reads 에 목록\\(list\\)으로 없습니다`));
+    assert.match(errs, new RegExp(`${w} rows\\.budget: add\\(selector\\)가 없습니다`));
+    assert.match(errs, new RegExp(`${w} rows\\.budget\\.cells\\.txtSubjectCode: subject 가 order/purpose\\.yaml 의 fields 에 없습니다`));
+    assert.match(errs, new RegExp(`${w} rows\\.budget\\.cells\\.txtBudgetCost: digits 는 true·false 여야 합니다`));
+    assert.match(errs, new RegExp(`${w} rows\\.extra: cells\\(셀 이름 → \\{ from, digits \\}\\)가 비어 있습니다`));
+    assert.match(errs, /settings\.yaml receivers\.총무팀: code 는 숫자 글이어야 합니다/);
+    assert.match(errs, /settings\.yaml receivers\.재무팀: options\.receiver 에 없는 수신처입니다/);
+    assert.match(errs, /settings\.yaml receivers\.재무팀: text\(수신처 창의 부서 글\)가 비어 있습니다/);
+    // 셀의 from 이 목록 줄(item)의 키가 아니어도 막는다.
+    const cellBad = structuredClone(readRecipe());
+    cellBad.forms.find((f) => f.manifest.form_id === 'KR_Purchase_Order').fieldmap.rows.items.cells.txtUnit.from = 'units';
+    assert.match(checkRecipe(cellBad).join('\n'), new RegExp(`${w} rows\\.items\\.cells\\.txtUnit: units 가 order/purpose\\.yaml 의 reads items 의 item 에 없습니다`));
   });
   t('위임전결 — 연구비 집행은 2천만원 이하 팀장·넘으면 소장, 출장은 국내 팀장·해외 본부장, 외부활동은 팀장', () => {
     assert.equal(delegationOf('purchase', { total: 989_000 }).rank, '팀장');
@@ -942,7 +1224,7 @@ console.log('레시피 — 칸마다 읽는 법과 틀의 자리(인라인 프�
   t('사유 쓰기 — 칸의 write·example 이 지시문이 되고, 답의 키는 칸의 key, 사유 칸은 꼭 있어야 한다', () => {
     for (const k of KIND_ORDER.filter((x) => REASON_KEYS[x])) {
       const text = systemPrompt(`gongmunReason.${k}`);
-      assert.match(text, new RegExp(`${KINDS[k].title} 본문에 들어갈 다음 칸을 공문체로 씁니다: [^\\n]*${REASON_LABEL[k]}`));
+      assert.match(text, new RegExp(`${KINDS[k].title} 본문에 들어갈 다음 칸을 공문체로 씁니다: [^\\n]*${rx(REASON_LABEL[k])}`));
       for (const f of FIELDS[k].filter((x) => x.write)) {
         assert.ok(text.includes(`- ${f.key} (글${f.from === 'write' ? ', 필수' : ' 또는 null'})`), `${k}.${f.key}`);
         assert.ok(text.includes(flat(f.write).slice(0, 30)), `${k}.${f.key} 의 write`);
@@ -957,7 +1239,7 @@ console.log('레시피 — 칸마다 읽는 법과 틀의 자리(인라인 프�
   });
   t('읽은 문서의 이름·누구의 것·온라인으로 보는 말도 레시피에서', () => {
     assert.deepEqual([DOC_NAMES.quote, DOC_NAMES.request, DOC_NAMES.unknown], ['견적서', '요청 공문', '문서']);
-    assert.deepEqual(KIND_ORDER.map((k) => whoOf(k, { vendor: 'V', provider: 'P', place: 'L', org: 'O' })), ['V', 'P', 'L', 'O']);
+    assert.deepEqual(KIND_ORDER.map((k) => whoOf(k, { vendor: 'V', provider: 'P', place: 'L', org: 'O' })), ['V', 'P', 'L', 'V', 'O'], '구매의뢰도 구매처');
     assert.equal(eduModeOf({ provider: 'Coursera' }), '온라인교육', 'mode 칸의 online 에 있는 말(대소문자 무시)');
     assert.equal(eduModeOf({ place: '인터넷 강의' }), '온라인교육', '띄어쓰기는 보지 않는다');
   });

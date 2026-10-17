@@ -4,6 +4,8 @@
 # 답의 YAML 은 rndgen/yaml.js 가 검사하고(스냅샷 꼴인가) 마무리한다 — 판(meta.rev r0)·meta.차년도·meta.source·파일 머리 주석 두 줄은 코드가 적는다(LLM 이 아니라).
 # 미리보기 뒤 사람이 "넣기" 를 누르면 rnd.yaml 과 같은 길(rnd.intake → src/rndyaml.js applyYaml)로 장부에 들어가고 원문은 rndYamlText 에 남는다.
 # 스킬 문서의 절차(RND_PROJECT 폴더·_source 이동·md 변환·에이전트·/rnd-kr-history init·year_slice.py·JSON 사본)는 여기서 하지 않는다 — YAML 글 하나뿐이다.
+# 화면에서 "모든 차년도" 를 고르면(2026-10-16) 패널이 같은 재료로 1차년도부터 차년도마다 이 작업을 한 번씩 차례로 부른다(stageWanted 가 그 차년도) —
+# 몇 차년도까지는 대상 과제의 연구기간과 처음 읽힌 답의 meta.연차범위(rndgen/yaml.js stageCount). 답 칸·규칙은 그대로다.
 id: rnd.extract
 title: 사업계획서에서 스냅샷 YAML 뽑기
 status: planned
@@ -55,7 +57,7 @@ fields:
     max: 20
     llm: false
     label: 고른 차년도
-    desc: 화면에서 고른 차년도(비면 자동 — LLM 이 오늘이 든 차년도를 고른다. 빈 차년도 카드에서 열면 그 차년도)
+    desc: 화면에서 고른 차년도(비면 자동 — LLM 이 오늘이 든 차년도를 고른다. 빈 차년도 카드에서 열면 그 차년도. "모든 차년도" 면 차년도마다 한 번씩 물으며 그때마다 그 차년도)
     read: '사용자가 "N차년도" 를 집어 말했을 때만 그 번호. 아니면 null(오늘이 든 차년도)'
   projectId:
     type: string

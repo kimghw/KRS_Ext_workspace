@@ -105,8 +105,18 @@ const mcpFetch = async (url, init) => {
   catch (e) { return reply({ content: [{ type: 'text', text: JSON.stringify({ success: false, error: e.message }) }], isError: true }); }
 };
 let myName = '박기도';   // 설정의 내 이름 — 예상 비용 페이지는 과제책임자(== 내 이름)만 만든다
+// R&D PMS 과제 목록 흉내(Job Id 저절로 찾기가 받는다 — 줄은 PMS 그대로의 꼴, src/jobid.js slimJob 이 줄인다). 검사가 rows 를 정하고, fail 이 있으면 받지 못한 것으로.
+const jobsFake = { rows: [], fail: '', calls: 0 };
+// 회계(e-accounting) 흉내(회계 I/O 저절로 찾기·회계 예산 스냅샷 — src/eacct.js 의 fetchIoList·fetchAcct 자리). options 는 내 부서 과제(I/O) 목록, acct 는 받을 스냅샷(과제 코드 → 줄), fail 은 못 받은 까닭(login 이면 로그인).
+const acctFake = { options: [], acct: {}, fail: '', login: false, lists: 0, gets: 0 };
+const acctErr = () => { const e = new Error(acctFake.fail); e.login = acctFake.login; return e; };
 const make = () => createRndPanel({
   erp: erpFake, me: () => myName, mcpFetch,
+  jobs: async () => { jobsFake.calls++; if (jobsFake.fail) throw new Error(jobsFake.fail); return jobsFake.rows; },
+  acct: {
+    list: async () => { acctFake.lists++; if (acctFake.fail) throw acctErr(); return acctFake.options; },
+    get: async (year, io) => { acctFake.gets++; if (acctFake.fail) throw acctErr(); return acctFake.acct[io] ? { year, at: '2026-10-08T09:30:00.000Z', io, ...acctFake.acct[io] } : null; },
+  },
   openNote: async () => (one.up ? fakeNote : Promise.reject(new Error('이 PC 의 OneNote MCP 서버(http://localhost:5005/mcp)에 닿지 않습니다'))),
   $: (id) => doc.getElementById(id), escapeHtml,
   logEvent: (kind, ok, text) => logs.push({ kind, ok, text }),
@@ -159,7 +169,7 @@ t('과제 칩 하나(별칭)가 켜져 있고 머리는 별칭 한 줄 — 과�
   assert.equal($('rdName').textContent, '차단기 과제');
   assert.equal($('rdName').title, 'MVDC 차단기 개발');
   assert.ok(!$('rdInfo').open, '과제 정보는 처음엔 접혀 있다');
-  assert.ok($('rdInfo').contains($('rdEdit')), '과제 고치기도 접힌 칸 안에');
+  assert.ok($('rdInfo').querySelector('summary').contains($('rdEdit')) && $('rdEdit').querySelector('svg'), '과제 고치기는 머리 줄 별칭 옆의 연필 아이콘(2026-10-16)');
   assert.ok(hidden('rdAliasAsk'), '별칭이 있으면 정하는 칸은 없다');
   assert.match(metaText(), /MVDC 차단기 개발.*과제번호 RND-20-2026.*책임자 박기도.*연구기간 2026\.04\.01 ~ 2029\.12\.31 \(총 4차년도\)/);
   assert.match(status(), /공문 탭의 과제 1개를 가져왔습니다/);
@@ -182,7 +192,7 @@ t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 
   assert.ok(hidden('rdRosterTools') && hidden('rdPlanTools'), '복사할 것이 없으면 복사 아이콘도 없다');
   assert.ok(!$('rdRosterBox').open && !$('rdPlanBox').open && !$('rdLogBox').open, '참여연구자·연구개발 계획·진행 기록은 접혀 있다');
   assert.ok($('rdBudgetBox').open, '예산만 펴져 있다');
-  assert.deepEqual([...$('rdBody').querySelectorAll(':scope > details > summary > span:first-of-type')].map((s) => s.textContent), ['예산', '참여연구자 및 행정지원', '연구개발 계획', '진행 기록', '변경 및 이력 관리']);
+  assert.deepEqual([...$('rdBody').querySelectorAll(':scope > details > summary > span:first-of-type')].map((s) => s.textContent), ['예산', '참여인력', '연구개발 계획', '진행 기록', '변경 및 이력 관리']);
   // 변경 및 이력 관리(2026-10-16 사용자 지정 — 변경사항 반영 카드가 접혀 있던 변경이력 칸을 대체): 진행 기록 아래 카드 하나 —
   // 위는 rndgen 의 YAML 고치기(#rdgRevise), 아래는 변경이력(직접 적기 · 복사 · 목록). 손으로 적는 칸은 직접 적기를 누를 때만.
   // 같은 날 사용자 지정 "접어라" — 다른 칸처럼 접힌 한 줄(아이콘 · 이름 · 변경이력 형편 · 꺾쇠)로 선다.
@@ -618,7 +628,7 @@ await ta('스냅샷을 탭 어디에나 끌어다 놓으면 과제가 생기고(
   assert.deepEqual(logItems(), [], '진행 기록에는 없다');
   const roster = $('rdRoster');
   const plan = $('rdPlan');
-  assert.equal($('rdRosterState').textContent, '3명 · 인건비 3,000만');
+  assert.equal($('rdRosterState').textContent, '연구자 3명', '머리 줄은 연구자 수만 — 인건비는 적지 않는다(2026-10-17 사용자 지정)');
   assert.equal($('rdPlanState').textContent, '목표 2개 · 9개월');
   assert.deepEqual([$('rdRosterSrc').textContent, $('rdPlanSrc').textContent], ['연구개발계획서 r0 기준', '연구개발계획서 r0 기준']);
   assert.ok(!hidden('rdRosterTools') && !hidden('rdPlanTools'));
@@ -682,7 +692,7 @@ await ta('r2 재생성본과 history 세 파일을 한꺼번에 넣으면 차례
   assert.match(status(), /^연구개발계획서 스냅샷\(KR_test_r2\.yaml\): .* \/ 개정 레지스트리\(revisions\.yaml\): .* \/ 예산 이력\(budget_history\.yaml\): .*2건에 사유 붙임.* \/ 참여연구원 이력\(researchers_history\.yaml\): .*2건 넣음$/);
   assert.equal($('rdChangeState').textContent, '10건 · 사유 없음 2', '사유가 빈 것은 앞서 손으로 바꾼 차년도 기준 두 줄뿐 — 파일에서 온 줄은 사유가 있다');
   assert.deepEqual(rosterTable($('rdRoster')), [['홍길동', '수석', '27.45%', '9개월', '20,900,000원'], ['성춘향', '책임', '20%', '9개월', '9,100,000원']]);
-  assert.equal($('rdRosterState').textContent, '2명 · 인건비 3,000만');
+  assert.equal($('rdRosterState').textContent, '연구자 2명');
   assert.equal($('rdRosterSrc').textContent, '연구개발계획서 r2 기준');
   assert.equal(chips().at(-1)[0], 'TEST', '레지스트리의 project: TEST 는 이미 그 별칭인 과제로 찾았다');
 });
@@ -1233,34 +1243,195 @@ await ta('계획서를 다시 넣으면 올린 페이지를 저절로 고친다(
   assert.match(copied.at(-1), /^https:\/\/krclass-my\.sharepoint\.com\/.*\n\[연구내용 페이지 ID\] 1-b{32}!\d+-/);
 });
 
-await ta('행정지원 — 참여연구자 칸 안에서 사람을 더하고 이름·맡은 일·공문 참조를 적으면 과제에 남고 머리 줄에 보인다. 빈 줄은 저장소에서 다시 읽을 때 빠진다(2026-10-16)', async () => {
+await ta('행정지원 — 참여인력 칸 안에서 사람을 더하고 이름·맡은 일·공문 참조를 적으면 과제에 남고 머리 줄에 "행정 n명"으로 보인다(인건비·참조자 이름은 없다 — 2026-10-17 사용자 지정). 빈 줄은 저장소에서 다시 읽을 때 빠진다(2026-10-16)', async () => {
   const type = (node, v) => { node.value = v; node.dispatchEvent(new window.Event('input', { bubbles: true })); };
-  const row = () => $('rdSupport').querySelector('li:last-child');
-  assert.match($('rdSupportNote').textContent, /공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다/);
+  const row = () => $('rdSupport').querySelector('tbody tr:last-child');
+  assert.equal($('rdSupportNote'), null, '행정지원 머리의 설명문은 없다(2026-10-16 사용자 지정)');
+  assert.ok($('rdSupportAdd').classList.contains('rd-icon') && $('rdSupportAdd').querySelector('svg'), '사람 더하기는 아이콘 단추(2026-10-16 사용자 지정)');
+  assert.equal($('rdSupportAdd').getAttribute('aria-label'), '사람 더하기');
+  assert.match($('rdSupportAdd').title, /^사람 더하기 — /);
   $('rdSupportAdd').click();
-  assert.equal($('rdSupport').children.length, 1);
+  assert.equal($('rdSupport').querySelectorAll('.rd-support-row').length, 1);
+  assert.ok($('rdSupport').querySelector('table.rd-table'), '참여연구자 표와 같은 꼴의 표(2026-10-16)');
+  assert.deepEqual([...$('rdSupport').querySelectorAll('th')].map((x) => x.textContent), ['성명', '맡은 일', '공문 참조', '']);
   assert.ok(row().querySelector('[data-k="ref"]').checked, '새 사람은 공문 참조가 켜져 있다');
   type(row().querySelector('[data-k="name"]'), '홍길동');
   type(row().querySelector('[data-k="role"]'), '행정 담당');
-  assert.match($('rdRosterState').textContent, / · 행정지원 1명 · 공문 참조 홍길동$/);
+  assert.match($('rdRosterState').textContent, /^(연구자 \d+명|계획서 없음|있음) · 행정 1명$/, '머리 줄은 연구자 수 · 행정 수뿐 — 인건비·공문 참조 이름은 없다(2026-10-17 사용자 지정)');
   $('rdSupportAdd').click();
   type(row().querySelector('[data-k="name"]'), '이몽룡');
   const ref = row().querySelector('[data-k="ref"]');
   ref.checked = false;
   ref.dispatchEvent(new window.Event('change', { bubbles: true }));
-  assert.match($('rdRosterState').textContent, / · 행정지원 2명 · 공문 참조 홍길동$/);
+  assert.match($('rdRosterState').textContent, /^(연구자 \d+명|계획서 없음|있음) · 행정 2명$/);
   $('rdSupportAdd').click();
   await wait(500);
   const saved = () => store.rndBook.projects.find((x) => x.id === store.rndBook.current.project);
   assert.deepEqual(saved().support.slice(0, 2), [{ name: '홍길동', role: '행정 담당', ref: true }, { name: '이몽룡', role: '', ref: false }]);
   assert.deepEqual(normalizeBook(store.rndBook).projects.find((x) => x.id === store.rndBook.current.project).support.length, 2, '이름을 적지 않은 줄은 다시 읽을 때 빠진다');
-  $('rdSupport').querySelector('li:first-child [data-drop]').click();
+  $('rdSupport').querySelector('tbody tr:first-child [data-drop]').click();
   assert.deepEqual([...$('rdSupport').querySelectorAll('[data-k="name"]')].map((x) => x.value), ['이몽룡', '']);
-  assert.match($('rdRosterState').textContent, / · 행정지원 1명$/);
+  assert.match($('rdRosterState').textContent, / · 행정 1명$/);
   // 뒤의 시험이 보는 머리 줄을 그대로 두도록 비운다.
   for (let i = 0; i < 5 && $('rdSupport').querySelector('[data-drop]'); i++) $('rdSupport').querySelector('[data-drop]').click();
   assert.equal($('rdSupport').children.length, 0);
   await wait(500);
+});
+
+await ta('Job Id 저절로 찾기 — 과제 정보 카드가 후보(책임자 같은 과제 먼저 · 과제명 유사도 0.5 이상)를 보이고 이 번호로 저장을 누르면 과제에 남으며 묶음은 사라진다. 과제 고치기에서 비우면 다시 보인다(2026-10-16)', async () => {
+  const p = () => store.rndBook.projects.find((x) => x.id === store.rndBook.current.project);
+  const name = $('rdName').title;
+  const cands = () => [...$('rdJobList').querySelectorAll('.rd-job-cand')].map((b) => [b.querySelector('b').textContent, b.classList.contains('active')]);
+  assert.equal(p().job, '', '아직 Job Id 가 없다');
+  // 처음 열 때는 목록이 비어 있었다 — 후보 없음과 다시 찾기만.
+  await until(() => !hidden('rdJobBox') && !hidden('rdJobRetry'));
+  assert.ok(hidden('rdJobSave'));
+  assert.match(metaText(), /Job Id 없음 — 비슷한 과제가 없습니다\(과제 고치기에서 적으세요\)/);
+  assert.match($('rdJobMsg').textContent, /과제 목록이 비었습니다/);
+  jobsFake.rows = [
+    { Project_ID: 'RND00982026', Project_ID_DASH: 'RND-98-2026', Project_Name: `${name} 후속`, User_Name: '아무개', Process: '진행' },
+    { Project_ID: 'RND00992026', Project_ID_DASH: 'RND-99-2026', Project_Name: name, User_Name: p().lead || '', Process: '진행' },
+    { Project_ID: 'RND00012020', Project_ID_DASH: 'RND-01-2020', Project_Name: '전혀 다른 과제', User_Name: '아무개', Process: '완료' },
+  ];
+  const calls = jobsFake.calls;
+  $('rdJobRetry').click();
+  await until(() => cands().length === 2);
+  assert.equal(jobsFake.calls, calls + 1, '다시 찾기는 목록을 새로 받는다');
+  assert.deepEqual(cands(), [['RND00992026', true], ['RND00982026', false]], '과제명이 같은 것이 먼저 골라져 있고, 전혀 다른 과제는 후보가 아니다');
+  assert.match(metaText(), /Job Id RND00992026 \(후보 — 맞는지 보고 아래에서 저장\)/);
+  assert.ok(hidden('rdJobRetry') && !hidden('rdJobSave'));
+  assert.match($('rdJobMsg').textContent, /가장 비슷한 과제를 골라 두었습니다/);
+  // 다른 후보를 누르면 바뀐다.
+  $('rdJobList').querySelectorAll('.rd-job-cand')[1].click();
+  assert.deepEqual(cands().map((c) => c[1]), [false, true]);
+  assert.match(metaText(), /Job Id RND00982026 \(후보/);
+  $('rdJobList').querySelectorAll('.rd-job-cand')[0].click();
+  // 이 번호로 저장 — 묶음은 사라지고 표의 Job Id 줄만 남는다. 저장소에도.
+  $('rdJobSave').click();
+  assert.ok(hidden('rdJobBox'));
+  assert.match(metaText(), /Job Id RND00992026 · /);
+  assert.match(status(), /Job Id 를 저장했습니다 — RND00992026/);
+  assert.ok(logs.some((l) => l.kind === 'rnd' && /Job Id: .* → RND00992026/.test(l.text)));
+  await wait(500);
+  assert.equal(p().job, 'RND00992026');
+  // 과제 고치기의 Job Id 칸에 들어 있다 — 연필 아이콘은 과제 정보를 접거나 펴지 않는다. 비우고 저장하면 후보가 다시 보인다(목록은 다시 받지 않는다).
+  const wasOpen = $('rdInfo').open;
+  $('rdEdit').click();
+  assert.equal($('rdInfo').open, wasOpen);
+  assert.equal($('rdFJob').value, 'RND00992026');
+  $('rdFJob').value = '';
+  $('rdFSave').click();
+  assert.ok(!hidden('rdJobBox') && !hidden('rdJobSave'));
+  assert.deepEqual(cands(), [['RND00992026', true], ['RND00982026', false]]);
+  assert.equal(jobsFake.calls, calls + 1, '같은 세션의 목록을 다시 쓴다');
+  $('rdJobSave').click();
+  await wait(500);
+  assert.equal(p().job, 'RND00992026');
+  jobsFake.rows = [];
+});
+
+await ta('회계 I/O 저절로 찾기 — 과제 정보 카드가 회계(e-accounting)의 내 부서 과제 목록에서 후보(과제명 유사도 0.5 이상)를 보이고 이 코드로 저장을 누르면 과제에 남으며 바로 그 해의 계정과목별 예산 표가 선다. 로그인이 풀리면 링크, 고치기에서 비우면 다시(2026-10-17)', async () => {
+  const p = () => store.rndBook.projects.find((x) => x.id === store.rndBook.current.project);
+  const name = $('rdName').title;
+  const cands = () => [...$('rdIoList').querySelectorAll('.rd-job-cand')].map((b) => [b.querySelector('b').textContent, b.classList.contains('active')]);
+  const cells = () => [...$('rdAcctTable').querySelectorAll('tbody tr')].map((tr) => [...tr.cells].map((td) => td.textContent));
+  assert.equal(p().io, '', '아직 회계 I/O 가 없다');
+  assert.ok(hidden('rdAcctBox'), '회계 I/O 가 없으면 회계 예산 표도 없다');
+  // 처음 열 때는 목록이 비어 있었다 — 후보 없음과 다시 찾기만.
+  await until(() => !hidden('rdIoBox') && !hidden('rdIoRetry'));
+  assert.ok(hidden('rdIoSave') && hidden('rdIoLogin'));
+  assert.match(metaText(), /회계 I\/O 없음 — 비슷한 회계 과제가 없습니다\(과제 고치기에서 적으세요\)/);
+  assert.match($('rdIoMsg').textContent, /회계 과제 목록이 비었습니다/);
+  // 로그인이 풀려 못 받으면 까닭과 e-accounting 로그인 링크.
+  acctFake.fail = '로그인이 필요합니다. e-accounting 에 로그인한 뒤 다시 조회하세요.';
+  acctFake.login = true;
+  $('rdIoRetry').click();
+  await until(() => !hidden('rdIoLogin'));
+  assert.match($('rdIoMsg').textContent, /회계 과제 목록을 받지 못했습니다 — 로그인이 필요합니다/);
+  assert.match(metaText(), /회계 I\/O 없음 — e-accounting 로그인이 필요합니다/);
+  assert.equal($('rdIoLogin').getAttribute('href'), 'https://e-accounting.krs.co.kr/App_Usr/UsrStart.aspx');
+  acctFake.fail = '';
+  acctFake.login = false;
+  // 목록이 오면 과제명이 같은(잘린 이름도) 것이 먼저 골라져 있고, 전혀 다른 과제는 후보가 아니다.
+  acctFake.options = [
+    { code: '2176NR0126', name: `${name} 후속`, text: '' },
+    { code: '2145NR0124', name: name.slice(0, 20), text: '' },
+    { code: '2083LR9123', name: 'AIP 용역', text: '' },
+  ];
+  acctFake.acct = { '2145NR0124': { ioName: name, dept: 'HER', deptName: '수소전기추진연구팀', rows: [
+    { code: '603010304', name: '수탁과제(국가)_연구활동비', base: 51500000, transfer: 0, budget: 51500000, actual: 29066990, pending: 0, available: 22433010 },
+    { code: '603010311', name: '수탁과제(국가)_연구재료비', base: 31376000, transfer: -1000000, budget: 30376000, actual: 0, pending: 0, available: 31376000 },
+  ] } };
+  const lists = acctFake.lists;
+  $('rdIoRetry').click();
+  await until(() => cands().length === 2);
+  assert.equal(acctFake.lists, lists + 1, '다시 찾기는 목록을 새로 받는다');
+  assert.deepEqual(cands(), [['2145NR0124', true], ['2176NR0126', false]]);
+  assert.match(metaText(), /회계 I\/O 2145NR0124 \(후보 — 맞는지 보고 아래에서 저장\)/);
+  assert.ok(hidden('rdIoRetry') && !hidden('rdIoSave') && hidden('rdIoLogin'));
+  assert.match($('rdIoMsg').textContent, /가장 비슷한 회계 과제를 골라 두었습니다\(유사도 1\.00\)/);
+  $('rdIoList').querySelectorAll('.rd-job-cand')[1].click();
+  assert.deepEqual(cands().map((c) => c[1]), [false, true]);
+  $('rdIoList').querySelectorAll('.rd-job-cand')[0].click();
+  // 이 코드로 저장 — 묶음은 사라지고 표의 회계 I/O 줄만 남으며, 바로 계정과목별 예산을 받아 표로.
+  const gets = acctFake.gets;
+  $('rdIoSave').click();
+  assert.ok(hidden('rdIoBox'));
+  assert.match(status(), /회계 I\/O 를 저장했습니다 — 2145NR0124/);
+  assert.ok(logs.some((l) => l.kind === 'rnd' && /회계 I\/O: .* → 2145NR0124/.test(l.text)));
+  assert.ok(!hidden('rdAcctBox'));
+  await until(() => cells().length === 2);
+  assert.equal(acctFake.gets, gets + 1);
+  assert.deepEqual(cells(), [['603010304', '연구활동비', '51,500,000', '29,066,990', '22,433,010'], ['603010311', '연구재료비', '30,376,000', '0', '31,376,000']], '계정명은 끝마디(전체는 툴팁)');
+  assert.equal($('rdAcctTable').querySelector('tbody tr .rd-acct-name').title, '수탁과제(국가)_연구활동비');
+  assert.match($('rdAcctHead').textContent, /^회계 예산 2026년 · I\/O 2145NR0124 · 조회 \d\d:\d\d$/);
+  assert.equal($('rdAcctMsg').textContent, '');
+  assert.ok(metaText().includes(`회계 I/O 2145NR0124 ${name} · `), '표의 줄에는 회계의 과제명도');
+  await wait(500);
+  assert.equal(p().io, '2145NR0124');
+  assert.equal(p().acct.rows.length, 2, '스냅샷이 저장소에 남는다');
+  assert.equal(p().acct.year, '2026');
+  // 다시 조회(↻)는 다시 받는다 — 같은 과제를 다시 그려도 10분 안이면 받지 않는다.
+  $('rdAcctRefresh').click();
+  await until(() => acctFake.gets === gets + 2);
+  await until(() => !$('rdAcctRefresh').disabled);
+  // 못 받으면 까닭(스냅샷은 그대로)과 로그인 링크.
+  acctFake.fail = '로그인이 필요합니다. e-accounting 에 로그인한 뒤 다시 조회하세요.';
+  acctFake.login = true;
+  $('rdAcctRefresh').click();
+  await until(() => !hidden('rdAcctLogin'));
+  assert.match($('rdAcctMsg').textContent, /회계 예산을 받지 못했습니다 — 로그인이 필요합니다/);
+  assert.equal(cells().length, 2, '받아 둔 표는 그대로');
+  acctFake.fail = '';
+  acctFake.login = false;
+  // 요약 복사에 회계 줄이 든다.
+  $('rdCopy').click();
+  await until(() => copied.length && /■ 회계 예산 \(2026년 · I\/O 2145NR0124/.test(copied[copied.length - 1]));
+  assert.match(copied[copied.length - 1], /회계 I\/O: 2145NR0124 \(/);
+  assert.match(copied[copied.length - 1], /- 603010311 수탁과제\(국가\)_연구재료비: 예산 30,376,000원 · 실적 0원 · 가용 31,376,000원/);
+  // 과제 고치기의 회계 I/O 칸에 들어 있다 — 다른 코드로 고치면 스냅샷을 버리고 새로 받고, 비우고 저장하면 후보가 다시 보인다(목록은 다시 받지 않는다).
+  $('rdEdit').click();
+  assert.equal($('rdFIo').value, '2145NR0124');
+  $('rdFIo').value = '2176nr0126';
+  $('rdFSave').click();
+  await wait(500);
+  assert.equal(p().io, '2176NR0126', '대문자로');
+  assert.ok(!p().acct, '다른 코드로 고치면 전 스냅샷은 버린다');
+  await until(() => /회계가 계정 줄을 주지 않았습니다|아직 받지 못했습니다/.test($('rdAcctMsg').textContent));
+  assert.equal(cells().length, 0);
+  $('rdEdit').click();
+  $('rdFIo').value = '';
+  $('rdFSave').click();
+  await until(() => !hidden('rdIoBox') && !hidden('rdIoSave'));
+  assert.ok(hidden('rdAcctBox'));
+  assert.deepEqual(cands(), [['2145NR0124', true], ['2176NR0126', false]]);
+  assert.equal(acctFake.lists, lists + 1, '같은 세션의 목록을 다시 쓴다');
+  $('rdIoSave').click();
+  await until(() => cells().length === 2);
+  await wait(500);
+  assert.equal(p().io, '2145NR0124');
+  acctFake.options = [];
+  acctFake.acct = {};
 });
 
 console.log('과제 더하기 카드(rndgen)의 손잡이 — 2026-10-16 사용자 지정: "sscb 버튼 누르면 그리 안감, + 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출"');
@@ -1283,10 +1454,11 @@ await ta('새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 폼
   assert.equal(chips().at(-1)[1], true);
   assert.ok(!addChip().classList.contains('active'));
   assert.equal(addChip().getAttribute('aria-pressed'), 'false');
-  // 고치기 폼도 같다 — 칩이 꺼지고(＋ 는 켜지지 않는다), 칩을 누르면 닫힌다.
+  // 고치기 폼은 고치는 과제의 칩이 켜진 채다(2026-10-16 사용자 지정 "어떤 과제인지 선택이 안되잖아") — ＋ 는 켜지지 않고, 그 칩을 누르면 닫힌다.
   $('rdEdit').click();
   assert.ok(!hidden('rdForm'));
-  assert.deepEqual(chips().filter((c) => c[1]), []);
+  assert.deepEqual(chips().filter((c) => c[1]).map((c) => c[0]), ['TEST'], '고치는 과제의 칩이 켜져 있다');
+  assert.equal(chipOf('TEST').getAttribute('aria-pressed'), 'true');
   assert.ok(!addChip().classList.contains('active'));
   chipOf('TEST').click();
   assert.ok(hidden('rdForm'));

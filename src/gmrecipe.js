@@ -43,6 +43,159 @@ export const RECIPE = {
           "control": "ctl00_ContentPlaceHolder_Content_EditorControl1",
           "source": "body"
         }
+      },
+      "rows": {}
+    },
+    "KR_Purchase_Order": {
+      "id": "KR_Purchase_Order",
+      "label": "구매요청서",
+      "unit": "purchase-order",
+      "slug": "kr_purchase_order",
+      "only": [
+        "order"
+      ],
+      "anchor": "#ctl00_ContentPlaceHolder_Content_SaUpNeYong",
+      "fields": {
+        "title": {
+          "kind": "title",
+          "selector": "#ctl00_ApplineInfoInReportKRTA1_txtDocTitle",
+          "label": "#ctl00_ApplineInfoInReportKRTA1_lblDocTitle",
+          "max": 99,
+          "source": "title"
+        },
+        "targetPc": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_GuMeDeSang_0",
+          "source": "draft",
+          "from": "targetType",
+          "on": "PC류"
+        },
+        "targetAsset": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_GuMeDeSang_1",
+          "source": "draft",
+          "from": "targetType",
+          "on": "자산"
+        },
+        "targetService": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_GuMeDeSang_2",
+          "source": "draft",
+          "from": "targetType",
+          "on": "용역"
+        },
+        "targetSw": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_GuMeDeSang_3",
+          "source": "draft",
+          "from": "targetType",
+          "on": "SW"
+        },
+        "targetSupply": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_GuMeDeSang_4",
+          "source": "draft",
+          "from": "targetType",
+          "on": "소모품"
+        },
+        "business": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_SaUpNeYong",
+          "source": "draft",
+          "from": "business"
+        },
+        "budgetGeneral": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_YesanType_0",
+          "source": "draft",
+          "from": "budgetType",
+          "on": "일반사업"
+        },
+        "budgetNational": {
+          "kind": "check",
+          "selector": "#ctl00_ContentPlaceHolder_Content_YesanType_1",
+          "source": "draft",
+          "from": "budgetType",
+          "on": "국가수탁과제"
+        },
+        "demandDate": {
+          "kind": "date",
+          "control": "ctl00_ContentPlaceHolder_Content_dtpEDate",
+          "source": "draft",
+          "from": "demandDate"
+        },
+        "place": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_NapumPlace",
+          "source": "draft",
+          "from": "place"
+        },
+        "feature": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_Feature",
+          "source": "draft",
+          "from": "feature"
+        },
+        "attachNote": {
+          "kind": "text",
+          "selector": "#ctl00_ContentPlaceHolder_Content_TextBox1",
+          "source": "draft",
+          "from": "attachNote"
+        }
+      },
+      "rows": {
+        "items": {
+          "from": "items",
+          "add": "#ctl00_ContentPlaceHolder_Content_LinkButton1",
+          "probe": "input[id^='ctl00_ContentPlaceHolder_Content_rptRequet_ctl'][id$='_txtItemName']",
+          "cell": "#ctl00_ContentPlaceHolder_Content_rptRequet_ctl{nn}_{cell}",
+          "cells": {
+            "txtItemName": {
+              "from": "name"
+            },
+            "txtFuncAndReq": {
+              "from": "spec"
+            },
+            "txtUnit": {
+              "from": "unit"
+            },
+            "txtCnt": {
+              "from": "qty",
+              "digits": true
+            },
+            "txtUnitCost": {
+              "from": "unitPrice",
+              "digits": true
+            },
+            "txtEstimate": {
+              "from": "amount",
+              "digits": true
+            }
+          }
+        },
+        "budget": {
+          "add": "#ctl00_ContentPlaceHolder_Content_LinkButton2",
+          "probe": "input[id^='ctl00_ContentPlaceHolder_Content_rptRequetBudget_ctl'][id$='_txtSubjectCode']",
+          "cell": "#ctl00_ContentPlaceHolder_Content_rptRequetBudget_ctl{nn}_{cell}",
+          "cells": {
+            "txtSubjectCode": {
+              "from": "subjectCode"
+            },
+            "txtSubjectName": {
+              "from": "subjectName"
+            },
+            "txtDeptOrIoCode": {
+              "from": "ioCode"
+            },
+            "txtDeptOrIoName": {
+              "from": "ioName"
+            },
+            "txtBudgetCost": {
+              "from": "budgetAmount",
+              "digits": true
+            }
+          }
+        }
       }
     },
     "KR_Outside_Lecture_Report": {
@@ -211,7 +364,8 @@ export const RECIPE = {
           "source": "draft",
           "from": "note"
         }
-      }
+      },
+      "rows": {}
     },
     "KR_EA_Form2": {
       "id": "KR_EA_Form2",
@@ -242,13 +396,15 @@ export const RECIPE = {
           "control": "ctl00_ContentPlaceHolder_Content_EditorControl1",
           "source": "body"
         }
-      }
+      },
+      "rows": {}
     }
   },
   "order": [
     "purchase",
     "edu",
     "trip",
+    "order",
     "outside"
   ],
   "purposes": {
@@ -945,6 +1101,397 @@ export const RECIPE = {
         "who": "place"
       }
     },
+    "order": {
+      "id": "order",
+      "form": "KR_Purchase_Order",
+      "label": "구매의뢰",
+      "title": "구매요청서",
+      "rule_key": "연구비집행",
+      "amount_field": "total",
+      "document_setting": "구매요청",
+      "limit": null,
+      "account": "",
+      "project": true,
+      "fields": [
+        {
+          "key": "gist",
+          "label": "품목 요지 (제목)",
+          "wide": true,
+          "from": "document",
+          "need": "품목",
+          "read": "공문 제목에 들어갈 짧은 품목 이름. 대표 품목을 짧게 적고(모델 번호는 빼도 됩니다), 품목이 둘 이상이면 \"대표 품목 외 N건\" 으로 적습니다.",
+          "example": "34인치 모니터 외 1건"
+        },
+        {
+          "key": "vendor",
+          "label": "구매처",
+          "from": "document",
+          "read": "견적을 낸 업체·판매처 — 상호 그대로. 쇼핑몰 화면이면 판매자이고, 판매자가 없으면 쇼핑몰 이름입니다.",
+          "example": "(주)OO상사"
+        },
+        {
+          "key": "total",
+          "label": "합계 (VAT 포함, 원)",
+          "type": "money",
+          "from": "document",
+          "need": "합계",
+          "read": "부가세를 포함한 최종 합계(결제·청구할 금액). 할인이 있으면 할인을 뺀 금액입니다. 문서에 \"부가세 별도\" 이고 합계가 공급가액뿐이면 null 로 두고 supply 에 적습니다 — 셈해 넣지 않습니다.",
+          "example": 989000
+        },
+        {
+          "key": "targetType",
+          "label": "구매대상구분",
+          "type": "choice",
+          "options": [
+            "PC류",
+            "자산",
+            "용역",
+            "SW",
+            "소모품"
+          ],
+          "open": true,
+          "from": "document",
+          "need": "구매대상구분",
+          "read": "구매대상구분 — 품목으로 가립니다. PC·노트북·모니터·프린터와 그 주변기기는 PC류, 시험 장비·계측기·기기·비품(자산으로 등록할 것)은 자산, 용역·서비스·제작·수리·교정은 용역, 소프트웨어·구독·라이선스는 SW, 그 밖(부품·재료·케이블·사무용품)은 소모품입니다. 품목이 여럿이면 금액이 가장 큰 품목으로 가립니다. 문서에 구분이 적혀 있지 않아도 품목을 보고 적습니다.",
+          "example": "PC류"
+        },
+        {
+          "key": "budgetType",
+          "label": "예산유형",
+          "type": "choice",
+          "options": [
+            "국가수탁과제",
+            "일반사업"
+          ],
+          "open": true,
+          "from": "user"
+        },
+        {
+          "key": "business",
+          "label": "사업내용 (목적 포함)",
+          "wide": true,
+          "area": true,
+          "open": true,
+          "placeholder": "과제명과 목적, 이 구매가 쓰이는 과업 — 비워 두지 않습니다",
+          "from": "write",
+          "need": "사업내용",
+          "write": "이 구매가 어느 과제의 어떤 일에 쓰이는지 — 첫 문장에 과제명과 과제의 목적을, 다음 문장에 이 품목이 과제의 어느 연구 내용(시험·개발·분석)에 필요한지를 적어 2~3문장으로, \"…필요함\" 처럼 명사형으로 끝맺습니다. 총무팀(구매 담당)이 읽는 글이라 과제를 모르는 사람도 무엇을 위한 구매인지 알 수 있게 씁니다. 지금 적힌 사업내용(구매 품의의 구매사유)이 있으면 그것을 바탕으로 과제명과 목적을 더해 다듬습니다.",
+          "example": "MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발 과제에서 MVDC 차단기의 단락 시험과 데이터 분석을 수행하고 있음. 시험 데이터를 저장·분석할 PC 와 모니터가 필요함"
+        },
+        {
+          "key": "demandDate",
+          "label": "수요시기 (납품일)",
+          "type": "date",
+          "open": true,
+          "from": "auto",
+          "need": "수요시기"
+        },
+        {
+          "key": "place",
+          "label": "납품장소",
+          "wide": true,
+          "open": true,
+          "from": "user",
+          "need": "납품장소",
+          "placeholder": "예) 한국선급 본부 N층 수소전기추진연구팀"
+        },
+        {
+          "key": "feature",
+          "label": "특기사항",
+          "wide": true,
+          "area": true,
+          "open": true,
+          "from": "auto",
+          "need": "특기사항"
+        },
+        {
+          "key": "subjectCode",
+          "label": "계정과목코드",
+          "open": true,
+          "from": "auto",
+          "placeholder": "과제의 회계 예산(R&D 탭)에서 — 없으면 총무팀·회계 확인"
+        },
+        {
+          "key": "subjectName",
+          "label": "계정과목명",
+          "open": true,
+          "from": "setup"
+        },
+        {
+          "key": "ioCode",
+          "label": "I/O 코드 (예산부서 코드)",
+          "open": true,
+          "from": "auto"
+        },
+        {
+          "key": "ioName",
+          "label": "I/O 명 (예산부서명)",
+          "open": true,
+          "from": "auto"
+        },
+        {
+          "key": "budgetAmount",
+          "label": "예산금액 (비목의 당해 연도 배정액, 원)",
+          "type": "money",
+          "open": true,
+          "from": "auto"
+        },
+        {
+          "key": "sourceDoc",
+          "label": "선행 품의 문서번호",
+          "open": true,
+          "from": "user",
+          "placeholder": "HER-2026-000097 꼴 — 구매 품의에서 넘어오면 저절로"
+        },
+        {
+          "key": "sourceTitle",
+          "label": "선행 품의 제목",
+          "wide": true,
+          "from": "user"
+        },
+        {
+          "key": "attachNote",
+          "label": "첨부자료 안내문구",
+          "wide": true,
+          "area": true,
+          "from": "auto"
+        }
+      ],
+      "reads": [
+        {
+          "key": "items",
+          "type": "list",
+          "max": 30,
+          "read": "품목. 문서의 품목 표를 적힌 차례대로 한 줄씩 옮깁니다. 배송비·설치비처럼 따로 적힌 줄도 품목으로 넣습니다.",
+          "item": [
+            {
+              "key": "name",
+              "required": true,
+              "max": 200,
+              "read": "품목명·모델명 — 문서에 적힌 그대로(요약하지 않습니다)",
+              "example": "LG 34WQ75C 34인치 모니터"
+            },
+            {
+              "key": "spec",
+              "max": 300,
+              "read": "규격·사양 — 문서에 적힌 핵심을 ' · ' 로 나열",
+              "example": "WQHD · 커브드 · USB-C"
+            },
+            {
+              "key": "qty",
+              "type": "number",
+              "read": "수량",
+              "example": 1
+            },
+            {
+              "key": "unit",
+              "max": 10,
+              "read": "단위(개·대·EA·식 등)",
+              "example": "대"
+            },
+            {
+              "key": "unitPrice",
+              "type": "money",
+              "read": "단가",
+              "example": 890000
+            },
+            {
+              "key": "amount",
+              "type": "money",
+              "read": "그 줄의 금액 — 문서에 적힌 그대로",
+              "example": 890000
+            }
+          ]
+        },
+        {
+          "key": "quoteDate",
+          "type": "date",
+          "read": "견적일·발행일·주문일. 쇼핑몰 화면이면 주문일이고, 주문 전 장바구니·상품 화면이면 null 입니다.",
+          "example": "2026-10-01"
+        },
+        {
+          "key": "supply",
+          "type": "money",
+          "read": "공급가액 합계(부가세를 뺀 금액) — 문서에 따로 적혀 있을 때만",
+          "example": 899091
+        },
+        {
+          "key": "vat",
+          "type": "money",
+          "read": "부가세 합계 — 문서에 따로 적혀 있을 때만",
+          "example": 89909
+        }
+      ],
+      "reading": {
+        "docs": "견적서·거래명세서·쇼핑몰 주문 화면",
+        "rules": [
+          "구매라도 강의(온라인 강의·교육 상품)를 사는 화면이면 parts 에서 강의 소개·커리큘럼·수업 목록이 든 장은 content 입니다 — 오린 견적서와 함께 강의 내용으로 첨부합니다. 가격·결제 칸만 있는 장은 order 입니다.",
+          "구매대상구분(targetType)은 문서에 적혀 있지 않은 것이 보통입니다 — 품목을 보고 가려 적고, null 로 두지 않습니다."
+        ]
+      },
+      "quote_crop": {
+        "when": "첨부한 그림이 견적서·거래명세서 양식이 아니라 쇼핑몰 상품·장바구니·주문 화면처럼 가격이 화면 일부에만 있는 캡처일 때",
+        "keep": [
+          "상품명",
+          "모델·옵션",
+          "수량",
+          "단가",
+          "할인",
+          "배송비",
+          "합계",
+          "판매자"
+        ],
+        "drop": [
+          "추천 상품",
+          "광고",
+          "리뷰",
+          "상품 상세 설명",
+          "메뉴"
+        ],
+        "read": "가격 글자가 잘리지 않게 넉넉히 잡습니다. 그 칸이 두 장에 걸쳐 있으면 장마다 한 줄씩 위에서 아래 차례로 적습니다."
+      },
+      "writing": {
+        "context": "{{#품목}}\n품목: {품목명}\n  사양: {사양?}\n  수량: {수량?}\n{{/품목}}\n품목 요지: {품목요지?}\n지금 적힌 사업내용: {사업내용?}",
+        "rules": [
+          "사업내용은 총무팀이 읽는 글입니다 — 과제명은 첫 문장에 과제 정보에 적힌 그대로(별명·줄임말이 아니라) 적습니다."
+        ]
+      },
+      "template": {
+        "title": "{품목요지} 구매 요청",
+        "body": "■ 구매대상구분 : {구매대상구분}\n■ 사업내용(목적 포함)\n    {사업내용}\n■ 예산유형 : {예산유형}\n■ 수요시기(납품일) : {수요시기}\n■ 납품장소 : {납품장소}\n■ 특기사항 : {특기사항}\n■ 예산 내역\n    계정과목코드 : {계정과목코드?}\n    계정과목명 : {계정과목명?}\n    I/O 코드 : {IO코드?}\n    I/O 명 : {IO명?}\n    예산금액 : {예산금액?}\n■ 구매 물품\n{{#품목}}\n    ({번호}) {품목명}\n        - 기능 및 요구사양 : {사양?}\n        - 수량 : {수량?}\n        - 예상단가 : {단가?}\n        - 예상금액 : {금액?}\n{{/품목}}\n■ 합계 : {합계} (VAT 포함)\n■ 구매처 : {업체}\n■ 선행 품의 : {선행품의?}\n    제목 : {선행품의제목?}\n■ 첨부자료 안내문구 : {첨부안내?}\n\n※ 첨 부\n{첨부}"
+      },
+      "vars": {
+        "품목요지": {
+          "from": "gist",
+          "desc": "제목에 쓸 품목 이름"
+        },
+        "업체": {
+          "from": "vendor",
+          "desc": "구매처"
+        },
+        "견적일": {
+          "from": "quoteDate",
+          "show": "date",
+          "desc": "견적일 — 2026. 10. 1."
+        },
+        "합계": {
+          "from": "total",
+          "show": "won",
+          "desc": "합계 — 989",
+          "000원": null
+        },
+        "구매대상구분": {
+          "from": "targetType",
+          "desc": "PC류·자산·용역·SW·소모품 가운데 하나 — 양식의 체크"
+        },
+        "예산유형": {
+          "from": "budgetType",
+          "desc": "국가수탁과제·일반사업 — 양식의 체크"
+        },
+        "사업내용": {
+          "from": "business",
+          "desc": "사업내용(목적 포함 — 과제 내용으로 쓴다)"
+        },
+        "수요시기": {
+          "from": "demandDate",
+          "show": "date",
+          "desc": "수요시기(납품일) — 2026. 10. 31."
+        },
+        "납품장소": {
+          "from": "place",
+          "desc": "납품장소"
+        },
+        "특기사항": {
+          "from": "feature",
+          "desc": "특기사항(비면 선행 품의로 채운다)"
+        },
+        "계정과목코드": {
+          "from": "subjectCode",
+          "desc": "예산 내역 표의 계정과목코드"
+        },
+        "계정과목명": {
+          "from": "subjectName",
+          "desc": "예산 내역 표의 계정과목명(비면 과제의 계정)"
+        },
+        "IO코드": {
+          "from": "ioCode",
+          "desc": "예산 내역 표의 I/O(예산부서) 코드"
+        },
+        "IO명": {
+          "from": "ioName",
+          "desc": "예산 내역 표의 I/O(예산부서) 명"
+        },
+        "예산금액": {
+          "from": "budgetAmount",
+          "show": "won",
+          "desc": "예산 내역 표의 예산금액 — 비목의 당해 연도 배정액"
+        },
+        "선행품의": {
+          "from": "sourceDoc",
+          "desc": "선행 구매 품의의 문서번호 — HER-2026-000097"
+        },
+        "선행품의제목": {
+          "from": "sourceTitle",
+          "desc": "선행 구매 품의의 제목"
+        },
+        "첨부안내": {
+          "from": "attachNote",
+          "desc": "첨부자료 안내문구(양식 맨 아래 칸 — 비면 첨부 목록)"
+        },
+        "품목수": {
+          "from": "items",
+          "show": "count",
+          "desc": "품목 수"
+        }
+      },
+      "lists": {
+        "품목": {
+          "from": "items",
+          "desc": "품목마다 되풀이",
+          "vars": {
+            "품목명": {
+              "from": "name"
+            },
+            "사양": {
+              "from": "spec"
+            },
+            "수량": {
+              "from": [
+                "qty",
+                "unit"
+              ],
+              "show": "qty"
+            },
+            "단위": {
+              "from": "unit"
+            },
+            "단가": {
+              "from": "unitPrice",
+              "show": "won"
+            },
+            "금액": {
+              "from": "amount",
+              "show": "won"
+            }
+          }
+        }
+      },
+      "attach": {
+        "doc": "견적서",
+        "ask": "견적서를 넣으세요",
+        "more": "견적서 다음 쪽·거래명세서 더 넣기",
+        "need": [],
+        "parts": {
+          "quote": "견적서",
+          "statement": "거래명세서",
+          "order": "주문 내역",
+          "course": "강의 내용",
+          "content": "강의 내용",
+          "other": "참고 자료"
+        },
+        "who": "vendor"
+      }
+    },
     "outside": {
       "id": "outside",
       "form": "KR_Outside_Lecture_Report",
@@ -1281,6 +1828,16 @@ export const RECIPE = {
       "외부활동": {
         "retention": "36",
         "tag": "외부활동"
+      },
+      "구매요청": {
+        "retention": "36",
+        "receiver": "총무팀"
+      }
+    },
+    "receivers": {
+      "총무팀": {
+        "code": "10820",
+        "text": "(A13) General Affairs Team"
       }
     },
     "teams": {
@@ -1371,7 +1928,8 @@ export const RECIPE = {
       },
       "receiver": [
         "내부결재",
-        "KRE"
+        "KRE",
+        "총무팀"
       ]
     }
   },
@@ -2110,6 +2668,242 @@ export const RECIPE = {
         "과제 내용이 비었거나 품의할 것과 이어지는 대목이 없으면, 과제명과 품의할 것 자체의 쓰임만으로 일반적인 필요성을 씁니다.",
         "공문체로 씁니다 — 문장을 \"…필요함\"·\"…위함\" 처럼 명사형으로 끝맺고, 경어·구어(\"합니다\", \"해요\")를 쓰지 않습니다.",
         "금액·업체·날짜는 사유에 넣지 않습니다(본문의 다른 줄에 있습니다)."
+      ]
+    },
+    "gongmun.order": {
+      "title": "구매요청서에 넣을 문서 읽기 — 견적서·거래명세서·쇼핑몰 주문 화면",
+      "kinds": [
+        "order"
+      ],
+      "consumer": {
+        "module": "src/gongmun.js",
+        "export": "fromRecord"
+      },
+      "next": "src/gongmun.js fromRecord 가 초안으로 바꾼다 → 사용자가 과제를 고르고 칸을 고친다 → compose 가 틀에 넣어 제목·본문을 만든다",
+      "role": "당신은 사내 연구부서의 전자결재 품의 작성 도우미입니다. 첨부한 문서(견적서·거래명세서·쇼핑몰 주문 화면 등의 이미지나 PDF) 또는 붙여 넣은 글을 읽어 구매요청서에 넣을 값을 뽑습니다.",
+      "fields": {
+        "docType": {
+          "type": "enum",
+          "desc": "문서 종류. quote(견적서)·statement(거래명세서·청구서·인보이스)·order(쇼핑몰 주문서·장바구니·상품 화면)·course(교육 안내문·교육 신청 확인서)·event(행사·회의·학회 안내문·초청장·출장 일정표)·request(강의·자문·심사·발표·위원 위촉 등 외부활동 요청 공문·요청 메일)·other(그 밖)·unknown(모름)",
+          "required": true,
+          "values": [
+            "quote",
+            "statement",
+            "order",
+            "course",
+            "event",
+            "request",
+            "other",
+            "unknown"
+          ]
+        },
+        "gist": {
+          "type": "string",
+          "desc": "공문 제목에 들어갈 짧은 품목 이름. 대표 품목을 짧게 적고(모델 번호는 빼도 됩니다), 품목이 둘 이상이면 \"대표 품목 외 N건\" 으로 적습니다. 예: 34인치 모니터 외 1건",
+          "max": 200
+        },
+        "vendor": {
+          "type": "string",
+          "desc": "견적을 낸 업체·판매처 — 상호 그대로. 쇼핑몰 화면이면 판매자이고, 판매자가 없으면 쇼핑몰 이름입니다. 예: (주)OO상사",
+          "max": 200
+        },
+        "total": {
+          "type": "number",
+          "desc": "부가세를 포함한 최종 합계(결제·청구할 금액). 할인이 있으면 할인을 뺀 금액입니다. 문서에 \"부가세 별도\" 이고 합계가 공급가액뿐이면 null 로 두고 supply 에 적습니다 — 셈해 넣지 않습니다. 예: 989000",
+          "min": 0
+        },
+        "targetType": {
+          "type": "enum",
+          "desc": "구매대상구분 — 품목으로 가립니다. PC·노트북·모니터·프린터와 그 주변기기는 PC류, 시험 장비·계측기·기기·비품(자산으로 등록할 것)은 자산, 용역·서비스·제작·수리·교정은 용역, 소프트웨어·구독·라이선스는 SW, 그 밖(부품·재료·케이블·사무용품)은 소모품입니다. 품목이 여럿이면 금액이 가장 큰 품목으로 가립니다. 문서에 구분이 적혀 있지 않아도 품목을 보고 적습니다. 예: PC류",
+          "values": [
+            "PC류",
+            "자산",
+            "용역",
+            "SW",
+            "소모품"
+          ]
+        },
+        "items": {
+          "type": "list",
+          "desc": "품목. 문서의 품목 표를 적힌 차례대로 한 줄씩 옮깁니다. 배송비·설치비처럼 따로 적힌 줄도 품목으로 넣습니다.",
+          "max": 30,
+          "item": {
+            "name": {
+              "type": "string",
+              "desc": "품목명·모델명 — 문서에 적힌 그대로(요약하지 않습니다). 예: LG 34WQ75C 34인치 모니터",
+              "required": true,
+              "max": 200
+            },
+            "spec": {
+              "type": "string",
+              "desc": "규격·사양 — 문서에 적힌 핵심을 ' · ' 로 나열. 예: WQHD · 커브드 · USB-C",
+              "max": 300
+            },
+            "qty": {
+              "type": "number",
+              "desc": "수량. 예: 1",
+              "min": 0
+            },
+            "unit": {
+              "type": "string",
+              "desc": "단위(개·대·EA·식 등). 예: 대",
+              "max": 10
+            },
+            "unitPrice": {
+              "type": "number",
+              "desc": "단가. 예: 890000",
+              "min": 0
+            },
+            "amount": {
+              "type": "number",
+              "desc": "그 줄의 금액 — 문서에 적힌 그대로. 예: 890000",
+              "min": 0
+            }
+          }
+        },
+        "quoteDate": {
+          "type": "date",
+          "desc": "견적일·발행일·주문일. 쇼핑몰 화면이면 주문일이고, 주문 전 장바구니·상품 화면이면 null 입니다. 예: 2026-10-01"
+        },
+        "supply": {
+          "type": "number",
+          "desc": "공급가액 합계(부가세를 뺀 금액) — 문서에 따로 적혀 있을 때만. 예: 899091",
+          "min": 0
+        },
+        "vat": {
+          "type": "number",
+          "desc": "부가세 합계 — 문서에 따로 적혀 있을 때만. 예: 89909",
+          "min": 0
+        },
+        "quoteArea": {
+          "type": "list",
+          "desc": "견적서로 오릴 칸. 가격과 그 둘레가 함께 든 칸을 그림마다 한 줄, 그림의 % 로 적습니다 — 이 칸을 오려 공문의 견적서로 첨부합니다. 첨부한 문서에 견적서·거래명세서 양식이 있거나, 가격이 든 것이 PDF 이거나, 글만 붙여 넣었으면 null 입니다. 오리는 때: 첨부한 그림이 견적서·거래명세서 양식이 아니라 쇼핑몰 상품·장바구니·주문 화면처럼 가격이 화면 일부에만 있는 캡처일 때. 오린 칸에 꼭 들어갈 것: 상품명·모델·옵션·수량·단가·할인·배송비·합계·판매자. 넣지 않을 것: 추천 상품·광고·리뷰·상품 상세 설명·메뉴. 가격 글자가 잘리지 않게 넉넉히 잡습니다. 그 칸이 두 장에 걸쳐 있으면 장마다 한 줄씩 위에서 아래 차례로 적습니다.",
+          "max": 4,
+          "item": {
+            "file": {
+              "type": "string",
+              "desc": "그림 파일 이름(입력에 적힌 그대로)",
+              "required": true,
+              "max": 200
+            },
+            "left": {
+              "type": "number",
+              "desc": "칸의 왼쪽 끝 — 그림 폭의 %(0 이 왼쪽 끝)",
+              "required": true,
+              "min": 0,
+              "max": 100
+            },
+            "top": {
+              "type": "number",
+              "desc": "칸의 위쪽 끝 — 그림 높이의 %(0 이 맨 위)",
+              "required": true,
+              "min": 0,
+              "max": 100
+            },
+            "right": {
+              "type": "number",
+              "desc": "칸의 오른쪽 끝 — 그림 폭의 %(100 이 오른쪽 끝)",
+              "required": true,
+              "min": 0,
+              "max": 100
+            },
+            "bottom": {
+              "type": "number",
+              "desc": "칸의 아래쪽 끝 — 그림 높이의 %(100 이 맨 아래)",
+              "required": true,
+              "min": 0,
+              "max": 100
+            }
+          }
+        },
+        "currency": {
+          "type": "enum",
+          "desc": "금액의 화폐(ISO 세 글자 코드). 예: KRW",
+          "values": [
+            "KRW",
+            "USD",
+            "EUR",
+            "JPY",
+            "CNY",
+            "GBP"
+          ]
+        },
+        "parts": {
+          "type": "list",
+          "desc": "파일. 첨부한 파일마다 무슨 문서인지 — 공문의 첨부 목록이 된다. 글만 붙여 넣었으면 null",
+          "max": 10,
+          "item": {
+            "file": {
+              "type": "string",
+              "desc": "파일 이름(입력에 적힌 그대로)",
+              "required": true,
+              "max": 200
+            },
+            "kind": {
+              "type": "enum",
+              "desc": "quote(견적서)·statement(거래명세서·청구서)·order(주문 화면·예약 내역)·course(교육 안내문·신청 확인서)·content(교육 내용·커리큘럼·강의 계획·행사 일정·외부활동 자료)·event(행사·회의·학회 안내문·초청장)·request(외부활동 요청 공문·요청 메일·위촉장)·other(그 밖)",
+              "required": true,
+              "values": [
+                "quote",
+                "statement",
+                "order",
+                "course",
+                "content",
+                "event",
+                "request",
+                "other"
+              ]
+            }
+          }
+        },
+        "summary": {
+          "type": "string",
+          "desc": "무엇의 어떤 문서인지 한국어 한 줄. 예: OO상사 모니터 외 1건 견적서 989,000원",
+          "required": true,
+          "max": 200
+        }
+      },
+      "rules": [
+        "문서에 적힌 것만 채웁니다. 적혀 있지 않은 값은 null 이고, 추측하거나 지어내지 않습니다. 키의 설명이 \"없으면 … 적습니다\" 라고 한 키만 예외입니다.",
+        "금액은 쉼표·통화 기호 없이 숫자만 적습니다. 날짜는 YYYY-MM-DD 입니다.",
+        "첨부한 파일이 여러 개면 같은 건의 문서들입니다(견적서 여러 쪽, 견적서와 교육 내용 캡처 등). 값은 모두를 함께 보고 채우고, parts 에 파일마다 무슨 문서인지 적습니다.",
+        "품의에 넣을 문서가 아닌 화면(결재 화면·이 프로그램의 화면·메일 목록 등)이면 docType 은 unknown 이고 나머지 값은 null 이며, summary 에 무슨 화면인지 적습니다.",
+        "구매라도 강의(온라인 강의·교육 상품)를 사는 화면이면 parts 에서 강의 소개·커리큘럼·수업 목록이 든 장은 content 입니다 — 오린 견적서와 함께 강의 내용으로 첨부합니다. 가격·결제 칸만 있는 장은 order 입니다.",
+        "구매대상구분(targetType)은 문서에 적혀 있지 않은 것이 보통입니다 — 품목을 보고 가려 적고, null 로 두지 않습니다."
+      ]
+    },
+    "gongmunReason.order": {
+      "title": "구매요청서의 사업내용 (목적 포함) 쓰기",
+      "kinds": [
+        "order"
+      ],
+      "consumer": {
+        "module": "src/gongmun.js",
+        "export": "applyReason"
+      },
+      "next": "src/gongmun.js applyReason 이 초안의 칸에 넣는다 → 사용자가 고친다 → compose 가 본문에 넣는다",
+      "role": "당신은 연구부서의 전자결재 품의 작성 도우미입니다. 입력의 과제 정보(과제명·과제 내용)와 품의할 것을 보고 구매요청서 본문에 들어갈 다음 칸을 공문체로 씁니다: 사업내용 (목적 포함). 입력에 사용자의 말이 있으면 그 요청대로 고쳐 씁니다.",
+      "fields": {
+        "business": {
+          "type": "string",
+          "desc": "이 구매가 어느 과제의 어떤 일에 쓰이는지 — 첫 문장에 과제명과 과제의 목적을, 다음 문장에 이 품목이 과제의 어느 연구 내용(시험·개발·분석)에 필요한지를 적어 2~3문장으로, \"…필요함\" 처럼 명사형으로 끝맺습니다. 총무팀(구매 담당)이 읽는 글이라 과제를 모르는 사람도 무엇을 위한 구매인지 알 수 있게 씁니다. 지금 적힌 사업내용(구매 품의의 구매사유)이 있으면 그것을 바탕으로 과제명과 목적을 더해 다듬습니다. 예: MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발 과제에서 MVDC 차단기의 단락 시험과 데이터 분석을 수행하고 있음. 시험 데이터를 저장·분석할 PC 와 모니터가 필요함",
+          "required": true,
+          "max": 1000
+        },
+        "reply": {
+          "type": "string",
+          "desc": "사용자의 말이 있을 때 무엇을 어떻게 고쳤는지(또는 왜 못 고쳤는지) 한 줄. 사용자의 말이 없으면 null",
+          "max": 300
+        }
+      },
+      "rules": [
+        "과제 내용이 R&D 탭의 연구 내용이면 그 차년도의 연구개발 계획(개발목표·개발내용·성능목표·주요결과물·수행일정)과 진행 기록입니다. 그 가운데 품의할 것과 이어지는 목표·내용·결과물을 골라 사유의 근거로 삼습니다.",
+        "입력에 \"사용자의 말\"이 있으면 그 요청대로 사유와 용도를 고쳐 씁니다 — 지금 적힌 사유가 있으면 그것을 바탕으로 합니다. 요청이 사유·용도와 무관하면 지금 적힌 것을 그대로 돌려주고 reply 에 그렇게 적습니다. 요청이어도 과제 내용에 없는 과업·수치는 지어내지 않습니다.",
+        "사유는 과제 내용에 적힌 연구목표·연구내용을 근거로 씁니다. 과제 내용에 없는 연구 과업·수치·일정을 지어내지 않습니다.",
+        "과제 내용이 비었거나 품의할 것과 이어지는 대목이 없으면, 과제명과 품의할 것 자체의 쓰임만으로 일반적인 필요성을 씁니다.",
+        "공문체로 씁니다 — 문장을 \"…필요함\"·\"…위함\" 처럼 명사형으로 끝맺고, 경어·구어(\"합니다\", \"해요\")를 쓰지 않습니다.",
+        "금액·업체·날짜는 사유에 넣지 않습니다(본문의 다른 줄에 있습니다).",
+        "사업내용은 총무팀이 읽는 글입니다 — 과제명은 첫 문장에 과제 정보에 적힌 그대로(별명·줄임말이 아니라) 적습니다."
       ]
     },
     "gongmun.outside": {

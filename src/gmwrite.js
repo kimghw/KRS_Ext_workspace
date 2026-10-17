@@ -15,6 +15,10 @@
 //   · 본문 — <control>_SetHTMLBody(저장 뒤에도 남는 길)로 넣고 <control>_GetTextBody 로 다시 읽는다.
 //   · 칸이 정해진 폼(외부강의등 신고서 — 2026-10-15 사용자 지정) — 본문·과제 칸 대신 칸 지도의 source: draft 칸마다 넣는다(pageForm). 글 칸은 value,
 //     날짜·시각 칸은 Telerik 피커의 set_selectedDate. 성명·소속·연락처는 서버가 채워 둔 것을 둔다.
+//   · 구매요청서(KR_Purchase_Order — 구매의뢰, 2026-10-17 사용자 지정) — 체크 칸(구매대상구분·예산유형)은 칸 지도의 kind check 로 el.click()(체크박스는 click 이
+//     켜고 이벤트까지 낸다), 구매 물품·예산 내역 표는 칸 지도의 rows 로: 행 수(probe)를 세고 모자라면 행추가(href 가 javascript:__doPostBack 인 a 를 click)를 누른 뒤
+//     행이 늘 때까지 되묻는다(원본 ea_core/formfill.py _fill_rows 의 400ms 폴링 — 페이지에 RadAjaxManager 가 있어 포스트백이 부분일 수도 전체일 수도 있다).
+//     행이 다 서면 셀을 글 칸처럼 넣는다. 표는 제목·칸보다 먼저다 — 포스트백이 틀을 다시 그리면 먼저 넣은 글이 사라진다(원본: 행 전부 확보 후 일괄 기입).
 //   · 문서설정 — 툴바의 ShowSetupDocument 가 열 주소(DialogBoxReturn → DocumentSetting.aspx)를 숨은 틀로 열어 수신처는 SetReceiverValue('내부결재-,-내부결재')
 //     (수신처 창의 '내부결재' 단추와 확인이 opener 에 부르는 것), 칸을 고른 뒤 __Page_FormSubmitCallback(2)(발송경고 창의 '예'가 부르는 것).
 //     설정이 툴바의 SetupDocSetting 으로 돌아오면 됐다. 그 화면은 끝에 window.top.close() 를 부른다 — 공문 창이 닫히지 않게 그동안 막는다.
@@ -37,11 +41,14 @@ import { JOB_LIST_PATH, JOB_QUERY, rankJobs } from './jobid.js';
 const FRAME_WAIT_MS = 45000;
 const STEP_MS = 60000;
 const POLL_MS = 400;
+/** 표의 행추가 뒤 행이 늘기를 기다리는 한도 — 포스트백(전체면 틀이 다시 뜬다)이 돌 시간. 원본 formfill.py 는 400ms×25 였다. */
+const ROW_ADD_MS = 15000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 단계 — 화면의 작성 기록 차례다. */
+/** 단계 — 화면의 작성 기록 차례다. 표(rows)는 제목·칸보다 먼저다(행추가 포스트백이 틀을 다시 그릴 수 있다). */
 export const STEPS = [
   { key: 'open', label: '새 공문 창' },
+  { key: 'rows', label: '표(품목·예산)' },
   { key: 'job', label: '과제(Job Id)' },
   { key: 'fields', label: '제목·차수' },
   { key: 'report', label: '신고서 칸' },
@@ -130,13 +137,21 @@ function pageFill(list) {
 }
 
 /**
- * 칸이 정해진 폼(외부강의등 신고서)의 칸들 — 글 칸은 pageFill 과 같이 넣고, 날짜·시각 칸(Telerik RadDatePicker·RadDateTimePicker)은 $find(control).set_selectedDate
+ * 칸이 정해진 폼(외부강의등 신고서·구매요청서)의 칸들 — 글 칸은 pageFill 과 같이 넣고, 날짜·시각 칸(Telerik RadDatePicker·RadDateTimePicker)은 $find(control).set_selectedDate
  * 로 넣고 get_selectedDate 로 다시 읽는다(글 칸에 적으면 피커가 모르고, 상신 때 양식이 control 의 값으로 빈칸을 가린다). 피커가 아직 서지 않았으면 ready: false.
  * value 는 날짜면 'YYYY-MM-DD', 시각이면 'YYYY-MM-DD HH:MM'(src/gongmun.js 의 draftValue).
+ * 체크 칸(check — 구매요청서의 구매대상구분·예산유형)은 꺼져 있으면 el.click() 으로 켠다 — 체크박스는 click 이 checked 를 바꾸고 click·change 이벤트까지 내니
+ * 합성 이벤트를 따로 보내지 않는다(켜져 있으면 두 번 눌러 끄지 않는다). 목록에 든 체크 칸은 켤 것뿐이다(값이 빈 칸은 패널이 보내지 않는다 = 체크 안 함).
  */
 function pageForm(list) {
   return list.map((f) => {
     try {
+      if (f.kind === 'check') {
+        const el = document.querySelector(f.selector);
+        if (!el) return { key: f.key, ok: false, why: '칸이 없습니다' };
+        if (!el.checked) el.click();
+        return { key: f.key, ok: !!el.checked, value: el.checked ? '1' : '' };
+      }
       if (f.kind === 'date' || f.kind === 'time') {
         const c = typeof window.$find === 'function' ? window.$find(f.control) : null;
         if (!c || typeof c.set_selectedDate !== 'function') return { key: f.key, ok: false, ready: false, why: '날짜·시각 칸이 아직 서지 않았습니다' };
@@ -161,6 +176,28 @@ function pageForm(list) {
       return { key: f.key, ok: false, why: String((e && e.message) || e) };
     }
   });
+}
+
+/**
+ * 표(구매요청서의 구매 물품·예산 내역 — 레시피 fieldmap 의 rows, src/gongmun.js writePlan 의 plan.rows)의 행 — 한 번에 한 동작.
+ *   count  probe 로 센 지금 행 수와 문서가 다 떴는지(readyState) — 행추가 포스트백이 전체면 틀이 다시 뜨는 동안 ready: false 다.
+ *   add    행추가 단추(spec.add — href 가 javascript:__doPostBack(...) 인 a)를 click() — 클릭의 기본 동작이 그 href 를 돌려 포스트백이 돈다. 부분(RadAjaxManager)일 수도
+ *          전체일 수도 있어 됐는지는 여기서 모른다 — 패널이 count 를 되물어 행이 는 것으로 안다.
+ * 셀 넣기는 pageForm 의 글 칸 목록으로 한다(셀마다 selector 가 cell 의 {nn}·{cell} 을 채운 것).
+ */
+function pageRows(op, spec) {
+  try {
+    if (op === 'count') return { ready: document.readyState === 'complete', count: document.querySelectorAll(spec.probe).length };
+    if (op === 'add') {
+      const el = document.querySelector(spec.add);
+      if (!el) return { ok: false, why: '행추가 단추가 없습니다' };
+      el.click();
+      return { ok: true };
+    }
+    return { ok: false, why: `모르는 동작 ${op}` };
+  } catch (e) {
+    return { ok: false, why: String((e && e.message) || e) };
+  }
 }
 
 /** 본문 — 편집기 함수가 있으면 넣고(check 면 넣지 않고) 글로 다시 읽어 앞부분이 들어갔는지 본다. 편집기가 덜 떴으면 ready: false. */
@@ -315,7 +352,8 @@ function pageDialog(op, arg) {
         sel.dispatchEvent(new x.Event('change', { bubbles: true }));
         return true;
       };
-      if (s.receiver) x.SetReceiverValue(`${s.receiver}-,-${s.receiver}`);
+      // 수신처 — '<코드>-,-<글>'(수신처 고르기 창이 opener 에 부르는 꼴). 부서 수신(총무팀)은 src/gongmun.js docSettingOf 의 receiverValue(레시피 settings.yaml 의 receivers 표).
+      if (s.receiver) x.SetReceiverValue(s.receiverValue || `${s.receiver}-,-${s.receiver}`);
       choose('ddlSavePeriod', s.retention, '보존년한');
       if (s.docNo) choose('ddlDocNo', s.docNo, 'Doc No.(문서번호 부서)');
       else errors.push('문서번호 부서 코드가 없습니다(공문 설정)');
@@ -545,7 +583,10 @@ function pageDialog(op, arg) {
 }
 
 /** 테스트와 실제 브라우저 검사가 같은 함수를 쓰도록 내놓는다. */
-export const injected = { pageProbe, pageJob, pageFill, pageForm, pageBody, pageDialog };
+export const injected = { pageProbe, pageJob, pageFill, pageForm, pageRows, pageBody, pageDialog };
+
+/** 작성 기록이 표를 부르는 이름 — 레시피 fieldmap 의 rows 키(구매요청서). 모르는 키는 그대로. */
+const ROW_NAMES = { items: '구매 물품', budget: '예산 내역' };
 
 /* ------------------------------------------------------------ 패널 쪽 */
 
@@ -572,7 +613,9 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
   const steps = [];
   // 차수 칸이 없는 폼(기안문·외부강의등 신고서)의 '제목·차수' 단계는 제목만 넣는다.
   const noDegree = !Object.values(plan.fields || {}).some((f) => f.source === 'degree');
-  const label = (key) => (key === 'fields' && noDegree ? '제목' : STEPS.find((s) => s.key === key)?.label || key);
+  // 칸이 정해진 폼의 칸 단계는 그 폼의 이름으로 부른다 — 신고서는 '신고서 칸', 구매요청서는 '구매요청서 칸'(2026-10-17 — 폼이 둘이 되어 STEPS 의 이름만으로는 모자라다).
+  const reportLabel = plan.formLabel && !/신고서$/.test(plan.formLabel) ? `${plan.formLabel} 칸` : '신고서 칸';
+  const label = (key) => (key === 'fields' && noDegree ? '제목' : key === 'report' ? reportLabel : STEPS.find((s) => s.key === key)?.label || key);
   const report = (key, ok, detail = '') => {
     const step = { key, label: label(key), ok, detail };
     const i = steps.findIndex((s) => s.key === key);
@@ -655,6 +698,48 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
     try { return await fn(); } catch (err) { await dialog(`${key}:close`).catch(() => {}); throw err; }
   };
 
+  // 표(구매요청서의 구매 물품·예산 내역 — plan.rows) — 제목·칸보다 먼저. 행추가는 포스트백(RadAjaxManager 가 있어 부분일 수도 전체일 수도)이라 틀이 다시 뜰 수 있으니
+  // 글을 넣기 전에 행부터 세운다(원본 formfill.py _fill_rows: 행 전부 확보 후 일괄 기입 — ViewState 가 있던 행의 값을 지킨다). 표마다 행 수(probe)를 보고 모자라면
+  // 행추가를 누르고 행이 늘 때까지 400ms 마다 되묻는다(ROW_ADD_MS — 포스트백 중 executeScript 실패는 삼키고 다시). 안 늘면 그 표는 실패로 적고 다음 표로.
+  // 표가 없는 폼이거나 넣을 행이 하나도 없으면 이 단계는 기록에 남기지 않는다(다른 폼의 작성 기록이 바뀌지 않게).
+  const tables = (plan.rows || []).filter((tb) => Array.isArray(tb.rows) && tb.rows.length);
+  if (tables.length) {
+    const rowName = (tb) => ROW_NAMES[tb.key] || tb.key;
+    report('rows', null, `${tables.map((tb) => `${rowName(tb)} ${tb.rows.length}행`).join(' · ')} 세우는 중…`);
+    const count = (tb, test, ms) => until(() => run(tabId, form, pageRows, ['count', tb], 5000), (r) => r.ready === true && Number.isFinite(r.count) && test(r.count), ms);
+    const fillTable = async (tb) => {
+      const want = tb.rows.length;
+      const first = await count(tb, () => true, 10000);
+      if (first.timeout) return { ok: false, why: `${rowName(tb)} — 표의 행 수를 읽지 못했습니다` };
+      let have = first.count;
+      // 처음부터 빈 행 1개가 있다(2026-10-17 실측) — 모자란 만큼만 더한다. 원본처럼 want+4 번 넘게는 누르지 않는다(무한 되풀이 막기).
+      for (let tries = 0; have < want && tries < want + 4; tries++) {
+        const before = have;
+        await run(tabId, form, pageRows, ['add', tb], 5000).catch(() => null);
+        const grown = await count(tb, (n) => n > before, ROW_ADD_MS);
+        if (grown.timeout) return { ok: false, why: `${rowName(tb)} — 행추가 뒤에도 행이 ${before}개 그대로입니다(${want}행 필요). 창에서 적어 주세요`, have, want };
+        have = grown.count;
+      }
+      const list = tb.rows.flatMap((row, i) => Object.entries(row).map(([cell, value]) => ({
+        key: `${tb.key}.${i + 1}.${cell}`, kind: 'text', selector: String(tb.cell).replace('{nn}', String(i + 1).padStart(2, '0')).replace('{cell}', cell), value,
+      })));
+      const put = await until(() => run(tabId, form, pageForm, [list], 5000), (r) => Array.isArray(r), 10000);
+      if (!Array.isArray(put)) return { ok: false, why: `${rowName(tb)} — 셀을 넣지 못했습니다. 창에서 적어 주세요`, have, want };
+      const bad = put.filter((r) => !r.ok);
+      return bad.length
+        ? { ok: false, why: `${rowName(tb)} — ${bad.map((r) => `${r.key} ${r.why || '들어가지 않음'}`).join(' · ')}`, have, want }
+        : { ok: true, why: '', have, want, cells: put.length };
+    };
+    const results = [];
+    for (const tb of tables) {
+      const got = await guard('rows', () => fillTable(tb));
+      results.push(got || { ok: false, why: `${rowName(tb)} — 표를 넣지 못했습니다(창의 답이 없음)` });
+    }
+    const good = tables.map((tb, i) => (results[i].ok ? `${rowName(tb)} ${results[i].want}행` : '')).filter(Boolean);
+    const bad = results.filter((r) => !r.ok).map((r) => r.why);
+    report('rows', !bad.length, [good.join(' · '), bad.join(' / ')].filter(Boolean).join(' / '));
+  }
+
   // 과제(JOB-ID) — 연구업무추진품의는 고르기(picker), 기안문은 글 칸(과제 번호).
   let job = null;
   /** 규칙으로 고른 것이면 작성 기록에 그렇다고 — 무엇으로 골랐고 다른 후보가 무엇인지(사람이 창에서 확인한다). */
@@ -696,13 +781,17 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
   }
   if (jobField?.kind === 'text') report('job', !!job?.ok && !!filled?.find((r) => r.key === jobField.key)?.ok, job?.ok ? `${job.dash} (글 칸)${rankNote(job)}` : job?.why || '');
 
-  // 칸이 정해진 폼(외부강의등 신고서) — 초안의 칸마다(source: draft). 빈 값은 넣지 않고, 꼭 채울 칸이 비었으면 그렇다고 적는다(창에서 적는다).
+  // 칸이 정해진 폼(외부강의등 신고서·구매요청서) — 초안의 칸마다(source: draft). 빈 값은 넣지 않고, 꼭 채울 칸이 비었으면 그렇다고 적는다(창에서 적는다).
   const drafted = fields.filter((f) => f.source === 'draft');
   if (drafted.length) {
     const nameOf = (key) => v.names?.[key]?.name || key;
-    const list = drafted.map((f) => ({ key: f.key, kind: f.kind, selector: f.selector, control: f.control, value: v.draft?.[f.key] ?? '' }))
+    const has = (f) => !!String(v.draft?.[f.key] ?? '').trim();
+    const list = drafted.map((f) => ({ key: f.key, kind: f.kind, selector: f.selector, control: f.control, max: f.max, value: v.draft?.[f.key] ?? '' }))
       .filter((f) => String(f.value).trim());
-    const empty = drafted.filter((f) => v.names?.[f.key]?.need && !String(v.draft?.[f.key] ?? '').trim()).map((f) => nameOf(f.key));
+    // 체크 칸은 같은 초안 칸(from)을 보는 체크 가운데 하나라도 켜졌으면 빈 것이 아니다(구매대상구분 다섯 체크 중 하나만 켜져도 된다).
+    const checkedFrom = new Set(drafted.filter((f) => f.kind === 'check' && has(f)).flatMap((f) => [].concat(f.from ?? [])));
+    const empty = drafted.filter((f) => v.names?.[f.key]?.need && !has(f) && !(f.kind === 'check' && [].concat(f.from ?? []).some((k) => checkedFrom.has(k))))
+      .map((f) => nameOf(f.key));
     report('report', null, `${list.length}칸 넣는 중…`);
     // 날짜·시각 피커(Telerik)는 본문 틀이 뜬 뒤에 선다 — 설 때까지 다시 넣는다(이미 넣은 글 칸을 다시 넣어도 같다).
     const put = await guard('report', async () => {

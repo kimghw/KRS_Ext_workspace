@@ -72,6 +72,18 @@
 .rnd .rdg-warn { margin: 0 0 8px; padding: 6px 9px; border-radius: 10px; background: color-mix(in srgb, var(--mine) 12%, var(--surface)); font-size: 12px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
 .rnd .rdg-warn:empty { display: none; }
 
+/* 모든 차년도 — 차년도마다 한 줄(이름 · 합계·참여연구자·경고 또는 까닭 · YAML · 다시 뽑기). YAML 칸에 연 차년도는 파란 바탕. */
+.rnd .rdg-years { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.rnd .rdg-year { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0 -6px; padding: 2px 6px; border-radius: 8px; }
+.rnd .rdg-year.at { background: var(--pick-soft); }
+.rnd .rdg-year strong { flex: none; font-weight: 650; }
+.rnd .rdg-year-what { flex: 1 1 9em; min-width: 0; color: var(--muted); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.rnd .rdg-year.ok .rdg-year-what { color: var(--fg); }
+.rnd .rdg-year.asking .rdg-year-what { color: var(--pick); }
+.rnd .rdg-year.fail .rdg-year-what { color: var(--danger); }
+.rnd .rdg-year button.small { min-height: 24px; padding: 1px 7px; font-size: 12px; }
+.rnd .rdg-yaml-year { color: var(--pick); font-weight: 650; }
+
 .rnd .rdg-alias { display: flex; flex-direction: column; gap: 4px; max-width: 20em; margin: 0 0 8px; }
 .rnd .rdg-alias > span { color: var(--muted); font-size: 12px; }
 .rnd .rdg-alias .req { margin-left: 3px; color: var(--danger); font-size: 10px; font-weight: 700; }

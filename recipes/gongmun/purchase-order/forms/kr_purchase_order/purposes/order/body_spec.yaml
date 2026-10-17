@@ -1,0 +1,70 @@
+# 구매요청서의 제목과 미리보기 — 꼴(틀·vars·lists·show)은 research-form/…/purchase/body_spec.yaml 머리말과 같다.
+# 제목은 구매 품의와 같은 품목 요지로 "… 구매 요청" — 총무팀이 받는 요청이라 품의가 아니다(공문 이력은 '구매 요청·구매 의뢰' 로 이 갈래를 가른다, src/gmlist.js).
+# 구매요청서에는 본문 편집기가 없다 — 칸마다·표마다 넣는다(../../fieldmap.yaml). 아래 body 는 공문 탭에서 넣을 칸을 한눈에 보는 미리보기이고(외부강의등 신고서처럼),
+# 양식 칸에서 연구업무추진품의·기안문으로 바꾸면 그 본문이 된다. {이름?} 은 한 줄에 하나씩 둔다 — 비면 그 줄이 빠진다.
+title: '{품목요지} 구매 요청'
+body: |-
+  ■ 구매대상구분 : {구매대상구분}
+  ■ 사업내용(목적 포함)
+      {사업내용}
+  ■ 예산유형 : {예산유형}
+  ■ 수요시기(납품일) : {수요시기}
+  ■ 납품장소 : {납품장소}
+  ■ 특기사항 : {특기사항}
+  ■ 예산 내역
+      계정과목코드 : {계정과목코드?}
+      계정과목명 : {계정과목명?}
+      I/O 코드 : {IO코드?}
+      I/O 명 : {IO명?}
+      예산금액 : {예산금액?}
+  ■ 구매 물품
+  {{#품목}}
+      ({번호}) {품목명}
+          - 기능 및 요구사양 : {사양?}
+          - 수량 : {수량?}
+          - 예상단가 : {단가?}
+          - 예상금액 : {금액?}
+  {{/품목}}
+  ■ 합계 : {합계} (VAT 포함)
+  ■ 구매처 : {업체}
+  ■ 선행 품의 : {선행품의?}
+      제목 : {선행품의제목?}
+  ■ 첨부자료 안내문구 : {첨부안내?}
+
+  ※ 첨 부
+  {첨부}
+
+# 이 목적만의 자리 — {이름} 에 초안의 어느 칸이 어떤 꼴로 들어가는가. desc 는 양식 칸 아래 '틀에 쓰는 이름'에 보인다.
+vars:
+  품목요지: { from: gist, desc: 제목에 쓸 품목 이름 }
+  업체: { from: vendor, desc: 구매처 }
+  견적일: { from: quoteDate, show: date, desc: 견적일 — 2026. 10. 1. }
+  합계: { from: total, show: won, desc: 합계 — 989,000원 }
+  구매대상구분: { from: targetType, desc: 'PC류·자산·용역·SW·소모품 가운데 하나 — 양식의 체크' }
+  예산유형: { from: budgetType, desc: '국가수탁과제·일반사업 — 양식의 체크' }
+  사업내용: { from: business, desc: 사업내용(목적 포함 — 과제 내용으로 쓴다) }
+  수요시기: { from: demandDate, show: date, desc: '수요시기(납품일) — 2026. 10. 31.' }
+  납품장소: { from: place, desc: 납품장소 }
+  특기사항: { from: feature, desc: 특기사항(비면 선행 품의로 채운다) }
+  계정과목코드: { from: subjectCode, desc: 예산 내역 표의 계정과목코드 }
+  계정과목명: { from: subjectName, desc: 예산 내역 표의 계정과목명(비면 과제의 계정) }
+  IO코드: { from: ioCode, desc: 예산 내역 표의 I/O(예산부서) 코드 }
+  IO명: { from: ioName, desc: 예산 내역 표의 I/O(예산부서) 명 }
+  예산금액: { from: budgetAmount, show: won, desc: 예산 내역 표의 예산금액 — 비목의 당해 연도 배정액 }
+  선행품의: { from: sourceDoc, desc: 선행 구매 품의의 문서번호 — HER-2026-000097 }
+  선행품의제목: { from: sourceTitle, desc: 선행 구매 품의의 제목 }
+  첨부안내: { from: attachNote, desc: 첨부자료 안내문구(양식 맨 아래 칸 — 비면 첨부 목록) }
+  품목수: { from: items, show: count, desc: 품목 수 }
+
+# 목록 — {{#품목}} … {{/품목}} 을 품목 줄마다 되풀이한다(구매 물품 표의 행과 같다). 안에서는 아래 vars 와 {번호}(1·2…)를 쓴다.
+lists:
+  품목:
+    from: items
+    desc: 품목마다 되풀이
+    vars:
+      품목명: { from: name }
+      사양: { from: spec }
+      수량: { from: [qty, unit], show: qty }
+      단위: { from: unit }
+      단가: { from: unitPrice, show: won }
+      금액: { from: amount, show: won }

@@ -69,6 +69,35 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .app-header .git-sync[hidden] { display: none; }
 .app-header .git-sync[data-mode="new"], .app-header .git-sync[data-mode="reload"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 .app-header .git-sync[data-mode="error"] svg { opacity: .45; }
+/* 패널 캡처(src/panelcap.js — 2026-10-17 사용자 지정). 머리의 단추는 설정이 끄면 숨고(hidden — button 의 display 가 UA 의 [hidden] 을 이기므로 따로),
+   막이 씌워진 동안은 켜진 모양(aria-pressed). 막(.pcap)은 body 끝에 붙는 고정 겹이다 — 투명한 막(.pcap-veil) 위에 고른 칸의 파란 테두리와 번호(.pcap-box),
+   가리키는 칸의 점선(.pcap-hover)과 이름표(.pcap-tag), 맨 아래 가운데의 띠(.pcap-bar — 고른 수·코드 복사·이미지 복사·끝). 모양은 웹페이지 캡처의 막(pagePick)과
+   같되 띠는 아래에 둔다 — 패널은 좁아 위에 두면 머리(캡처·새로고침·설정 단추)를 가려 그것을 고를 수 없었다(2026-10-17 실측). */
+.app-header .panel-cap[hidden] { display: none; }
+.app-header .panel-cap[aria-pressed="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
+.pcap { position: fixed; inset: 0; z-index: 1000; }
+.pcap-veil { position: absolute; inset: 0; cursor: crosshair; }
+.pcap-box { position: fixed; pointer-events: none; border: 2px solid var(--pick); border-radius: 4px; background: rgb(0 122 255 / 14%); }
+.pcap-box.pcap-hover { border-style: dashed; background: rgb(0 122 255 / 6%); }
+/* 끌어 긋는 네모(.pcap-drag)와 그 안에 통째로 들어 놓으면 고를 것들의 점선(.pcap-pre 의 .pcap-in) — 2026-10-17 "드래그 하면 여러개 포함되도록". */
+.pcap-box.pcap-drag { border-width: 1px; border-style: dashed; border-radius: 2px; background: rgb(0 122 255 / 8%); }
+.pcap-box.pcap-in { border-style: dashed; background: rgb(0 122 255 / 18%); }
+.pcap-box b { position: absolute; top: -2px; left: -2px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 3px 0 7px 0; background: var(--pick); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
+.pcap-tag { position: absolute; bottom: 100%; left: -2px; max-width: calc(100vw - 24px); margin-bottom: 3px; padding: 1px 7px; border-radius: 5px; background: var(--fg); color: #fff; font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcap-tag.in { bottom: auto; top: 3px; left: 3px; margin: 0; }
+.pcap-bar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 20px); padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--fg); color: #fff; font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 24px rgb(0 0 0 / 28%); white-space: nowrap; }
+.pcap-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pcap-n b { display: block; font-weight: 600; }
+.pcap-n small { display: block; color: #b9b9c2; font-size: 11px; }
+.pcap-said .pcap-n b { color: #8fd3a3; }
+.pcap-fail .pcap-n b { color: #ff8a80; }
+.pcap-bar button { flex: none; min-height: 28px; padding: 3px 10px; border-radius: 8px; background: #3a3a3f; color: #fff; font-size: 12.5px; font-weight: 600; }
+.pcap-bar button.pcap-go { background: var(--pick); }
+.pcap-bar button:hover:not(:disabled) { background: #0069dd; }
+.pcap-bar button.pcap-no { width: 28px; padding: 0; }
+.pcap-bar button.pcap-no:hover { background: #55555c; }
+.pcap-bar button.pcap-no svg { width: 15px; height: 15px; stroke-width: 2; }
+.pcap-bar button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .git-sync.busy svg { animation: gitPulse .7s ease-in-out infinite alternate; }
 @keyframes gitPulse { to { opacity: .3; } }
 .git-count {
@@ -369,6 +398,7 @@ button.pk-del:hover { color: var(--danger); }
 .set-options .check-row input::before { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 14%); transition: transform .16s ease; }
 .set-options .check-row input:checked { background: var(--pick); border-color: var(--pick); }
 .set-options .check-row input:checked::before { transform: translateX(12px); }
+.set-options-cap { margin-top: 12px; }
 .settings #docCirculateState { margin: 10px 2px 0; padding-left: 10px; border-left: 2px solid var(--line); font-size: 11px; }
 /* 선택한 탭은 연한 강조색으로 채우고, 체크 표시로 색 없이도 상태를 구분한다. */
 .tab-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; }
@@ -1380,6 +1410,14 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-proj-info strong { width: 100%; color: inherit; font-size: 11px; font-weight: 600; }
 .gongmun .gm-proj-info b { color: var(--fg); font-weight: 600; }
 .gongmun .gm-proj-info .gm-miss { opacity: .7; font-style: italic; }
+/* 구매의뢰의 회계 계정 줄 칩(gmAcctRow — 과제의 회계 예산 스냅샷, 2026-10-17) — 계정명 끝마디와 예산(기초+전용). 지금 초안의 계정과목코드와 같은 칩이 켜진다. */
+.gongmun .gm-acct-chip {
+  display: inline-flex; align-items: baseline; gap: 5px; min-height: 26px; padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: inherit; font: inherit; font-size: 11px; line-height: 1.4; white-space: nowrap; cursor: pointer;
+}
+.gongmun .gm-acct-chip b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.gongmun .gm-acct-chip:hover { border-color: var(--pick); }
+.gongmun .gm-acct-chip.active { border-color: var(--pick); background: var(--pick-soft); color: var(--pick); }
 .gongmun .gm-proj-info button { margin-left: auto; }
 /* 예산 줄 — 과제 기본 내용 아래, 같은 연한 바탕. 이번 비용을 R&D 과제의 예산(rERP 잔액)과 견준 한 줄(src/gmbudget.js). 모자라면 한도 알림(.gm-limit)과 같은 붉은 틀, 견줄 예산이 없으면 흐리게. */
 .gongmun .gm-budget { margin: 6px 0 0; padding: 7px 10px; border: 1px solid transparent; border-radius: 10px; background: var(--surface-soft); font-size: 12px; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
@@ -1458,8 +1496,14 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-set-checks label { display: inline-flex; align-items: center; gap: 5px; }
 .gongmun .gm-set-checks input { width: auto; min-height: 0; margin: 0; }
 /* 공문 작성 · 공문 보기 — 같은 폭의 두 단추 한 줄(2026-10-12 사용자 지정: 우측에 공문 보기). 상태 줄은 쓰는 중(…)·다 씀(✓)·안 됨(✕)을 단추 바로 아래에 적는다. */
-.gongmun .gm-write-row { display: flex; gap: 6px; margin-top: 12px; }
+.gongmun .gm-write-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .gongmun .gm-write-row button { flex: 1 1 0; min-width: 0; min-height: 40px; margin-top: 0; }
+/* 구매의뢰 작성 — 구매 갈래에서만 보이는 세 번째 단추(2026-10-17 사용자 지정: "우측 하단에 구매의뢰하기 버튼 … 구매할때 같이 작성"). 두 단추는 40% 씩 기본 폭을 가져
+   좁은 패널에서는 이 단추가 아래 줄로 내려가 오른쪽 끝에 서고(우측 하단), 넓은 비교작성 탭에서는 같은 줄 오른쪽에 선다. 다른 갈래에서는 hidden — button 의 display 가
+   UA 의 [hidden] 을 이기므로 따로. */
+.gongmun .gm-write-row button { flex-basis: 40%; }
+.gongmun .gm-write-row button[hidden] { display: none; }
+.gongmun #gmOrder { flex: 0 0 auto; margin-left: auto; min-height: 34px; padding: 0 12px; }
 .gongmun .gm-write-state { margin: 8px 0 0; padding-left: 20px; position: relative; font-size: 12.5px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .gongmun .gm-write-state::before { position: absolute; left: 2px; top: 0; width: 14px; text-align: center; font-weight: 700; }
 .gongmun .gm-write-state.busy::before { content: "…"; color: var(--faint); }
@@ -1598,17 +1642,25 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-drop-how { color: var(--muted); font-size: 11px; word-break: keep-all; }
 .rnd .rd-intake[aria-busy="true"] .rd-drop { opacity: .65; cursor: progress; }
 
-/* 고른 과제의 머리 — 별칭 한 줄(예산 칸처럼 접힘, 펴면 과제 정보 표와 과제 고치기) · 차년도 칩. 오늘이 든 차년도에 "올해". */
+/* 고른 과제의 머리 — 별칭 한 줄(예산 칸처럼 접힘, 펴면 과제 정보 표)과 별칭 바로 오른쪽의 연필 아이콘(과제 고치기 — 2026-10-16 사용자 지정) · 차년도 칩. 오늘이 든 차년도에 "올해". */
 .rnd .rd-head, .rnd .rd-form { margin-bottom: 12px; padding: 14px 16px; }
 .rnd .rd-head { padding: 0 14px 12px; border-color: color-mix(in srgb, var(--pick) 25%, var(--line)); }
-.rnd .rd-info > summary > span:first-of-type { flex: 1 1 auto; min-width: 0; color: var(--pick); font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rd-info > summary > span:first-of-type { flex: 0 1 auto; min-width: 0; color: var(--pick); font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rd-info > summary .rd-edit { flex: none; width: 24px; min-height: 24px; margin-left: -4px; color: var(--faint); }
+.rnd .rd-info > summary .rd-edit:hover { color: var(--pick); }
+.rnd .rd-info > summary .rd-edit svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .rnd .rd-info > summary .summary-detail { flex: none; }
 .rnd .rd-info[open] { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.rnd .rd-info .rd-actions { margin-top: 6px; }
 .rnd .rd-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 12px; line-height: 1.5; }
 .rnd .rd-meta div { display: contents; }
 .rnd .rd-meta dt { color: var(--muted); }
 .rnd .rd-meta dd { margin: 0; overflow-wrap: anywhere; }
+/* Job Id 저절로 찾기 묶음(과제 정보 표 아래 — Job Id 가 빌 때만, rndpanel.js paintJob) — 후보 줄(높은 차례, 고른 것은 파랑 테두리) · 알림 줄 옆에 다시 찾기/이 번호로 저장. */
+.rnd .rd-jobbox { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.rnd .rd-job-act { display: flex; align-items: center; gap: 6px; }
+.rnd .rd-job-act .rd-job-msg { flex: 1; min-width: 0; }
+.rnd .rd-job-act .rd-job-msg:empty { display: block; }
+.rnd .rd-job-act button { flex: none; }
 /* 별칭이 없는 과제 — 그 자리에서 정하는 칸. */
 .rnd .rd-alias-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--mine) 12%, var(--surface)); }
 .rnd .rd-alias-ask p { flex: 1 1 100%; margin: 0; color: var(--muted); font-size: 12px; }
@@ -1636,11 +1688,8 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-field.wide { grid-column: 1 / -1; }
 .rnd .rd-field > span { color: var(--muted); font-size: 12px; }
 .rnd .rd-field .req { margin-left: 3px; color: var(--danger); font-size: 10px; font-weight: 700; }
-/* Job Id — 칸 옆에 찾기, 아래에 후보(높은 차례 — 고른 것은 파랑 테두리)와 알림 줄. */
-.rnd .rd-job > span small { margin-left: 4px; color: var(--faint); font-size: 11px; }
-.rnd .rd-job-row { display: flex; gap: 6px; align-items: center; }
-.rnd .rd-job-row input { flex: 1; min-width: 0; }
-.rnd .rd-job-row button { flex: none; min-height: 36px; }
+.rnd .rd-field > span small { margin-left: 4px; color: var(--faint); font-size: 11px; }
+/* Job Id 후보 줄(과제 정보 카드의 저절로 찾기 묶음) — 높은 차례, 고른 것은 파랑 테두리. */
 .rnd .rd-job-list { display: flex; flex-direction: column; gap: 4px; }
 .rnd .rd-job-cand {
   display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; row-gap: 1px; align-items: baseline; width: 100%;
@@ -1654,6 +1703,21 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-job-msg { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .rnd .rd-job-msg.bad { color: var(--danger); }
 .rnd .rd-job-msg:empty { display: none; }
+/* 회계 I/O 묶음(Job Id 묶음과 같은 꼴)의 e-accounting 로그인 링크 — 로그인이 풀렸을 때만. */
+.rnd .rd-ea-login { flex: none; color: var(--pick); font-size: 12px; text-decoration: underline; white-space: nowrap; }
+/* 회계 예산 표(과제 정보 카드 — 회계 I/O 가 있는 과제, rndpanel.js paintAcct) — 머리 줄(해 · I/O · 조회 시각 · ↻)과 계정과목별 예산·실적·가용(원). */
+.rnd .rd-acctbox { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.rnd .rd-acct-head { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }
+.rnd .rd-acct-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rnd .rd-acct-head .rd-icon { flex: none; width: 24px; min-height: 24px; color: var(--faint); }
+.rnd .rd-acct-head .rd-icon:hover { color: var(--pick); }
+.rnd .rd-acct-head .rd-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.rnd .rd-acct { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.4; }
+.rnd .rd-acct th, .rnd .rd-acct td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.rnd .rd-acct th { color: var(--muted); font-weight: 600; }
+.rnd .rd-acct th.num, .rnd .rd-acct td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rnd .rd-acct .rd-acct-name { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.rnd .rd-acct tbody tr:last-child td { border-bottom: 0; }
 .rnd .rd-check { flex-direction: row; align-items: flex-start; gap: 8px; padding: 2px 0; font-size: 12px; line-height: 1.5; color: var(--muted); cursor: pointer; }
 .rnd .rd-check input { flex: none; width: auto; min-height: 0; margin-top: 2px; }
 .rnd .rd-check strong { color: var(--fg); }
@@ -1716,22 +1780,23 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-icon.fail { color: var(--danger); }
 .rnd .rd-list:empty + .rd-box-tools, .rnd .rd-box-tools:has(+ .rd-list:empty) { display: none; }
 .rnd .rd-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-/* 행정지원 — 참여연구자 표 아래, 과제마다 손으로 적는 줄(이름 · 맡은 일 · 공문 참조 · 빼기, 2026-10-16). 좁으면 이름·맡은 일이 한 줄, 참조·빼기가 다음 줄. */
+/* 행정지원 — 참여연구자 표 아래, 과제마다 손으로 적는 사람(성명 · 맡은 일 · 공문 참조 · ×, 2026-10-16). 참여연구자 표(rd-table)와 같은 꼴의 표 — 칸은 표 안에서 바로 적는다
+   (테두리 없이 12px, 성명은 굵게·맡은 일은 연하게 — 참여연구자 줄과 같은 글씨. 올리거나 초점을 주면 칸 바탕이 드러난다). 2026-10-16 사용자 지정 "참여연구원들이랑 … 비슷하게 표기".
+   머리 줄은 제목과 오른쪽 끝의 사람 더하기 아이콘(rd-icon)뿐 — 설명문은 뺐다(2026-10-16 사용자 지정). */
 .rnd .rd-support { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-.rnd .rd-support-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rnd .rd-support-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .rnd .rd-support-head strong { flex: none; font-size: 13px; }
-.rnd .rd-support-head .rd-src { flex: 1; min-width: 0; line-height: 1.5; }
-.rnd .rd-support-head button { flex: none; }
-.rnd .rd-support-list { margin: 0; padding: 0; list-style: none; }
-.rnd .rd-support-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto auto; align-items: center; gap: 6px; padding: 3px 0; }
-.rnd .rd-support-row input[type="text"] { width: 100%; min-width: 0; }
-.rnd .rd-support-ref { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.rnd .rd-support-head .rd-icon { flex: none; margin-left: auto; }
+.rnd .rd-support-table { margin-top: 4px; }
+.rnd .rd-support .rd-support-table th { padding-left: 2px; }
+.rnd .rd-support .rd-support-table td { padding: 2px 4px 2px 0; vertical-align: middle; }
+.rnd .rd-support .rd-support-table th:nth-child(n+3), .rnd .rd-support .rd-support-table td:nth-child(n+3) { width: 1%; text-align: center; white-space: nowrap; }
+.rnd .rd-support .rd-support-table .rd-td-name { width: 32%; }
+.rnd .rd-support .rd-support-table input[type="text"] { min-height: 26px; padding: 2px 6px; border-radius: 7px; background: transparent; font-size: 12px; line-height: 1.4; }
+.rnd .rd-support .rd-support-table input[type="text"]:hover, .rnd .rd-support .rd-support-table input[type="text"]:focus { background: var(--surface-soft); }
+.rnd .rd-support .rd-support-table input[type="text"]::placeholder { font-weight: 400; color: var(--faint); }
+.rnd .rd-support-ref { display: inline-flex; align-items: center; justify-content: center; }
 .rnd .rd-support-ref input { width: auto; min-height: 0; margin: 0; }
-@media (max-width: 400px) {
-  .rnd .rd-support-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .rnd .rd-support-ref { justify-self: start; }
-  .rnd .rd-support-row .rd-del { justify-self: end; }
-}
 /* 원노트 공유(선택) — 켜기 · 섹션 고르기 · 지금 맞추기 · 마지막 결과. */
 .rnd .rd-note-how { margin: 6px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; word-break: keep-all; }
 .rnd .rd-note-row { display: flex; gap: 6px; align-items: center; }

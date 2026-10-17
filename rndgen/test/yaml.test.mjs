@@ -8,7 +8,7 @@ import { parse } from '../../vendor/yaml/index.js';
 import { normalizeBook } from '../../src/rnd.js';
 import { kindOf, readSnapshot, headerOf, applyYaml } from '../../src/rndyaml.js';
 import {
-  parseYaml, checkExtracted, finalizeExtracted, finalizeRevised, nextRev, summarizeSnapshot, diffYaml, diffLines, previewApply, bookToSnapshot, fileName,
+  parseYaml, checkExtracted, finalizeExtracted, finalizeRevised, nextRev, stageCount, summarizeSnapshot, diffYaml, diffLines, previewApply, bookToSnapshot, fileName,
 } from '../yaml.js';
 
 let pass = 0;
@@ -170,6 +170,20 @@ t('받은 것 가운데 가장 큰 판 + 1, 최소 r1 — 글·수·빈 것 섞�
   assert.equal(nextRev(null, undefined, '', 'v9', -3, 1.5), 'r1');
   assert.equal(nextRev('R4', 2, '7'), 'r8');
   assert.equal(nextRev(0), 'r1');
+});
+
+console.log('차년도 수(모든 차년도 뽑기)');
+t('meta.연차범위(목록·글) → 연차별기간의 키 → 연구기간 차례로 처음 읽히는 것, 못 읽으면 0', () => {
+  assert.equal(stageCount(parse(R0)), 4);
+  assert.equal(stageCount(parse(RAW)), 3);
+  assert.equal(stageCount({ meta: { 연차범위: '1~4차년도' } }), 4);
+  assert.equal(stageCount({ meta: { 연차범위: '1차년도 ~ 5차년도 (3+2)' } }), 5);
+  assert.equal(stageCount({ meta: { 연차범위: '2025~2028', 연차별기간: { '1차년도': '2025-04-01 ~ 2025-12-31', '2차년도': '2026-01-01 ~ 2026-12-31' } } }), 2, '연도만 적힌 글은 차년도가 아니다');
+  assert.equal(stageCount({ meta: { 과제명: '가', 기간: '2026-04-01 ~ 2028-12-31' } }), 3, '시작일부터 한 해씩');
+  assert.equal(stageCount({ meta: { 과제명: '가', 기간: '2026-04-01' } }), 0, '종료일이 없으면 모른다');
+  assert.equal(stageCount({ meta: { 연차범위: [] } }), 0);
+  assert.equal(stageCount({ 표지: {} }), 0);
+  assert.equal(stageCount(null), 0);
 });
 
 console.log('미리보기 요약');

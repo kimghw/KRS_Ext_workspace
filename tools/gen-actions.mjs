@@ -22,6 +22,10 @@
 //
 // 칸의 from(생성기가 펼친다): object 칸의 `from: <행위 ID>` 는 그 행위의 칸을 그대로(room.modify 의 back·next = room.reserve 의 칸), gongmun 종류의 `from: recipe` 는 레시피
 // purpose.yaml 의 fields ∪ reads ∪ { currency, attach }(§14.2), list 칸의 item 에 적은 `from: task:<이름>` 은 input.yaml 작업의 칸(trip/after.yaml 의 records = receipt).
+// 종류 파일의 `칸: { from: domain }` 은 갈래 공통 칸(_domain.yaml 의 fields — 공문 네 종류가 같은 글로 베껴 적던 form·title·body·rank·lead·refs·setting·attach, 2026-10-17)을
+// 그 자리에 그대로 가져온다(차례는 종류 파일의 자리, 다르게 쓰려면 칸을 통째로 적는다). 갈래 공통 preset 과 달리 저절로 합쳐지지 않는다 — 종류마다 있고 없는 칸이 달라서(외부활동에는 lead·refs 가 없다).
+// recipe 모드의 갈래(공문)는 kinds 가 레시피의 목적 차례(RECIPE.order)와 같아야 하고 종류의 llm.tasks 는 그 종류의 작업(이름이 `.<종류>` 로 끝남)이어야 한다 — 레시피에 목적을 더하고
+// 종류 YAML 을 빠뜨리면 패널에 갈래 단추는 서는데 공문 작성이 "없는 행위" 로 막히던 것을 여기서 잡는다(2026-10-17 Codex 검토).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,7 +44,7 @@ export const RUNNERS = [
   'booking.search', 'booking.reserve', 'booking.cancel', 'booking.modify',
   'attend.apply', 'attend.doc', 'attend.cancel',
   'trip.create', 'trip.presave', 'trip.preconfirm', 'trip.postconfirm', 'trip.delete', 'trip.after', 'trip.send', 'trip.lodge',
-  'gongmun.write',
+  'gongmun.write', 'gongmun.prior',
 ];
 /** 칸의 형 — input.yaml 의 형에 tags(값의 목록)·file(이름·형식 참조)·object(한 겹)를 더한 것(§3.3). */
 const TYPES = new Set(['date', 'time', 'integer', 'number', 'string', 'enum', 'boolean', 'list', 'tags', 'file', 'object']);
@@ -50,7 +54,7 @@ const MODES = new Set(['merged', 'per-kind', 'recipe', 'none']);
 const STATUSES = new Set(['live', 'planned']);
 const EFFECTS = new Set(['none', 'draft', 'write']);
 const OPS = new Set(['<', '<=']);
-const DOMAIN_KEYS = ['domain', 'title', 'log', 'kinds', 'preset', 'llm'];
+const DOMAIN_KEYS = ['domain', 'title', 'log', 'kinds', 'preset', 'fields', 'llm'];
 const LLM_KEYS = ['task', 'mode', 'partial', 'input', 'title', 'consumer', 'next', 'role', 'rules', 'fields'];
 const KIND_KEYS = ['id', 'title', 'hint', 'status', 'confirm', 'effect', 'log', 'summary', 'preset', 'fields', 'ignore', 'checks', 'rules', 'llm', 'runner', 'uses', 'then', 'next'];
 const FIELD_KEYS = ['type', 'required', 'label', 'desc', 'read', 'llm', 'ui', 'when', 'default', 'drop', 'example', 'min', 'max', 'values', 'item', 'fields', 'from', 'omit', 'hint'];
@@ -281,6 +285,23 @@ function exportProblem(repo, use) {
 }
 
 /**
+ * 종류의 칸 — `칸: { from: domain }` 은 갈래 공통 칸(_domain.yaml fields)의 같은 이름 칸으로 바뀐다(차례는 종류 파일의 자리). 다른 키가 섞여 있거나 공통 칸이 없으면
+ * at 에 적고 그 칸은 뺀다. 검사(checkActions)와 만들기(buildActions)가 같은 것을 본다 — 펼친 뒤의 칸만 보므로 그 뒤의 검사는 from: domain 을 모른다.
+ */
+function kindFields(domain, data, at, kw) {
+  const common = isObj(domain?.fields) ? domain.fields : {};
+  const out = {};
+  for (const [key, f] of Object.entries(isObj(data?.fields) ? data.fields : {})) {
+    if (!(isObj(f) && f.from === 'domain')) { out[key] = f; continue; }
+    const extra = Object.keys(f).filter((k) => k !== 'from');
+    if (extra.length) at(`${kw} fields ${key}`, `from: domain 칸에는 다른 키(${extra.join('·')})를 두지 않습니다 — 다르게 쓰려면 칸을 통째로 적습니다`);
+    if (!isObj(common[key])) { at(`${kw} fields ${key}`, `from: domain 이 가리키는 공통 칸이 _domain.yaml 의 fields 에 없습니다`); continue; }
+    out[key] = clone(common[key]);
+  }
+  return out;
+}
+
+/**
  * 명세 전체의 모양과 서로 가리키는 것(id 와 파일 자리 · 갈래 kinds 와 파일 · 칸의 형·desc·read · from 의 대상 · checks·summary 의 칸 · preset 의 from 문법 ·
  * runner(live 면 §6.6 의 이름) · uses 의 module·export · then 의 행위 · recipe 모드의 작업)을 본다. 만든 작업의 검사(checkSpec)와 merged 의 키 충돌은 buildActions 가 본다.
  */
@@ -306,6 +327,12 @@ export function checkActions({ domains, errors: readErrors = [] }, { repo = REPO
     for (const k of Object.keys(kinds)) if (!kindList.includes(k)) at(dw, `${name}/${k}.yaml 이 kinds 에 없습니다`);
     for (const [key, p] of Object.entries(isObj(domain.preset) ? domain.preset : {})) checkPreset(at, `${dw} preset`, key, p, { recipe, tasks });
     if ('preset' in domain && !isObj(domain.preset)) at(dw, 'preset 은 이름: { from | value, desc } 꼴이어야 합니다');
+    // 갈래 공통 칸 — 종류 파일이 { from: domain } 으로 가져온다. 칸의 꼴은 종류의 칸과 같다(from: domain 은 여기 둘 수 없다 — 자기 자신).
+    if ('fields' in domain && !(isObj(domain.fields) && Object.keys(domain.fields).length)) at(dw, 'fields 는 이름: 칸 꼴이어야 합니다(갈래 공통 칸 — 종류 파일이 { from: domain } 으로 가져온다)');
+    for (const [key, f] of Object.entries(isObj(domain.fields) ? domain.fields : {})) {
+      if (isObj(f) && f.from === 'domain') { at(`${dw} fields ${key}`, 'from: domain 은 종류 파일의 칸에만 씁니다'); continue; }
+      checkField(at, `${dw} fields`, key, f, { siblings: domain.fields, tasks });
+    }
     // 갈래의 LLM 작업
     const llm = isObj(domain.llm) ? domain.llm : {};
     if ('llm' in domain && !isObj(domain.llm)) at(dw, 'llm 은 { mode, … } 꼴이어야 합니다');
@@ -313,6 +340,17 @@ export function checkActions({ domains, errors: readErrors = [] }, { repo = REPO
     const mode = llm.mode ?? 'none';
     if (!MODES.has(mode)) at(`${dw} llm`, `모르는 mode ${mode} — ${[...MODES].join('·')}`);
     const makes = mode === 'merged' || mode === 'per-kind';
+    // recipe 모드(공문)의 종류 가운데 레시피의 목적인 것은 레시피의 목적 차례와 같다 — 레시피에 목적을 더하면 종류 YAML 도 더한다(패널의 갈래 단추는 RECIPE.order 로 서므로 빠지면 공문 작성이 "없는 행위" 로 막힌다).
+    // 목적이 아닌 종류(선행 품의 읽기 prior — 2026-10-17 "이것도 명세서를 만든 다음에 러너로")는 그 뒤에 둘 수 있고, 레시피가 작업을 만들지 않으니 llm: false 여야 한다.
+    if (mode === 'recipe') {
+      const purposes = kindList.filter((k) => Object.hasOwn(recipe?.purposes || {}, k));
+      if (JSON.stringify(purposes) !== JSON.stringify(list(recipe?.order))) {
+        at(dw, `recipe 모드의 kinds 가운데 레시피의 목적(${purposes.join(' · ')})은 레시피의 목적 차례(RECIPE.order — ${list(recipe?.order).join(' · ')})와 같아야 합니다. 종류 YAML 을 더하거나 뺀 뒤 kinds 를 맞추세요`);
+      }
+      const extras = kindList.filter((k) => !Object.hasOwn(recipe?.purposes || {}, k));
+      if (extras.length && kindList.indexOf(extras[0]) < purposes.length) at(dw, `레시피의 목적이 아닌 종류(${extras.join(' · ')})는 kinds 에서 목적들 뒤에 둡니다`);
+      for (const k of extras) if (isObj(kinds[k]) && kinds[k].llm !== false) at(`${name}/${k}.yaml`, '레시피의 목적이 아닌 종류는 llm: false 여야 합니다(레시피가 이 종류의 작업을 만들지 않습니다)');
+    }
     if (makes) {
       for (const k of ['task', 'title', 'next', 'role', 'input']) if (!isStr(llm[k])) at(`${dw} llm`, `${k} 가 비어 있습니다(${mode} 모드)`);
       if (isStr(llm.task) && !/^[A-Za-z][\w.]*$/.test(llm.task)) at(`${dw} llm`, `task(${llm.task})는 영문·숫자·점 이름이어야 합니다`);
@@ -357,12 +395,14 @@ export function checkActions({ domains, errors: readErrors = [] }, { repo = REPO
         for (const t of isObj(kl) ? list(kl.tasks) : []) {
           if (!isObj(t) || !isStr(t.task) || !isStr(t.fills)) { at(kw, 'llm.tasks 의 줄은 { task, fills } 여야 합니다'); continue; }
           if (!Object.hasOwn(recipe.tasks, t.task)) at(kw, `llm.tasks 의 ${t.task} 가 레시피의 작업(RECIPE.tasks)에 없습니다`);
+          // 레시피의 작업은 목적마다 만들어지고 이름이 `.<목적>` 으로 끝난다 — 다른 종류의 작업(있는 이름)을 잘못 가리키는 것을 잡는다.
+          else if (!t.task.endsWith(`.${kind}`)) at(kw, `llm.tasks 의 ${t.task} 는 이 종류(${kind})의 작업이 아닙니다 — 레시피의 작업 이름은 .${kind} 로 끝나야 합니다`);
           if (!isObj(data.fields) || !(t.fills in data.fields)) at(kw, `llm.tasks 의 fills(${t.fills})가 fields 에 없습니다`);
         }
       } else if (kl !== undefined && kl !== false) at(kw, `갈래의 llm.mode 가 ${mode} 라 llm 은 false 뿐입니다`);
-      // 칸
-      const fields = isObj(data.fields) ? data.fields : {};
-      if (!isObj(data.fields) || !Object.keys(fields).length) at(kw, 'fields 가 비어 있습니다');
+      // 칸 — { from: domain } 은 갈래 공통 칸으로 바꾼 뒤 본다.
+      const fields = kindFields(domain, data, at, kw);
+      if (!isObj(data.fields) || !Object.keys(data.fields).length) at(kw, 'fields 가 비어 있습니다');
       for (const [key, f] of Object.entries(fields)) {
         checkField(at, `${kw} fields`, key, f, { siblings: fields, inTask: makes && llmOn && f?.llm !== false, tasks });
         if (isObj(f) && f.type === 'object' && isStr(f.from) && f.from !== 'recipe') froms.push({ kw, key, from: f.from, omit: list(f.omit) });
@@ -578,7 +618,7 @@ export function buildActions({ domains }, { recipe = RECIPE } = {}) {
       const kw = `${name}/${kind}.yaml`;
       const fields = {};
       const drops = {};
-      for (const [key, f] of Object.entries(data.fields)) {
+      for (const [key, f] of Object.entries(kindFields(domain, data, at, kw))) {
         const nf = normField(f, { top: true });
         // gongmun 종류의 draft — 레시피의 초안 칸·읽는 키를 펼친다(§3.5·§14.2).
         if (f.type === 'object' && f.from === 'recipe') nf.fields = recipeDraftFields(recipe.purposes[kind]);

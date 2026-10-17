@@ -8,6 +8,9 @@
 - `spec.js` 는 **생성물**이다 — 고치지 않는다. YAML 을 고친 뒤 `node tools/gen-actions.mjs`(`npm run gen` 에도 든다). 어긋나면 `actions/test/spec.test.mjs` 가 빨갛다.
 - 패널의 **설정 → 일반 → 행위 명세**가 `spec/` 의 YAML 원본을 갈래 → 종류로 보여 준다(읽기만 — `src/specview.js`, 목록은 `ACTIONS` 에서). 갈래 폴더를 새로 만들면 `src/specview.js` 의 `DOMAIN_ORDER` 에 자리를 준다(없으면 맨 끝).
 - LLM 작업(`attend`·`search.room`·`search.car`)은 여기서 만들어 `src/input.js` 의 `TASKS` 에 합쳐진다. 공문의 작업(`gongmun.<갈래>`·`gongmunReason.<갈래>`)은 레시피(`recipes/gongmun` → `src/gmrecipe.js`)의 것을 **가리키기만** 한다 — 공문 초안 칸은 YAML 에 다시 적지 않고 `draft: { from: recipe }` 로 펼친다. `recipes/gongmun` 은 여기서 고치지 않는다.
+- 공문 종류 파일의 공통 칸(form·title·body·rank·lead·refs·setting·attach)은 `spec/gongmun/_domain.yaml` 의 `fields` 에만 적고 종류 파일은 `칸: { from: domain }` 으로 가져온다(2026-10-17) — 종류 파일에 같은 글을 다시 적지 않는다. 종류만 다른 칸(외부활동의 `form`·`body`)만 통째로 적는다.
+- `recipe` 모드의 `kinds` 가운데 레시피의 목적인 것은 레시피의 목적 차례(`RECIPE.order`)와 같아야 한다 — 레시피에 목적을 더했으면 종류 YAML 도 더한다(차례는 `recipes/gongmun/README.md`). 목적이 아닌 종류(선행 품의 읽기 `prior` — 조회, 2026-10-17)는 그 뒤에 두고 `llm: false` 다(레시피가 작업을 만들지 않는다). 공문의 `form` 은 닫힌 enum 이 아니다(양식 ID 직접 적기 — 꼴·`only` 는 어댑터가 본다).
+- 새 실행기 이름은 `tools/gen-actions.mjs` 의 `RUNNERS` 와 `docs/actions-design.md` §6.6 에 같이 적는다 — YAML 이 없는 실행기를 가리키면 생성기가 막는다(2026-10-17 `gongmun.prior` 가 그렇게 들어갔다).
 - R&D 의 LLM 작업 `rnd.extract`(사업계획서 → 그 차년도 스냅샷 YAML)·`rnd.revise`(변경 글 → 고친 YAML)도 여기서 만들어 `TASKS` 에 합쳐진다(per-kind, status planned — 2026-10-16). 디스패처 전이라 패널 `rndgen/` 이 `rndgen/llm.js askRndTask` 로 askClaude 를 바로 부른다. 두 작업의 한도(effort·max_tokens·입력 길이·시간·API 스트리밍)는 `src/tasktune.js` 에 있고 다른 작업은 그대로다.
 
 ## 경계

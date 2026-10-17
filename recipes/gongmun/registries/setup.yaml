@@ -1,6 +1,10 @@
 # 공문 설정 채우기 — 공문 탭의 채팅 칸에 과제명·과제책임자 등을 붙여 넣으면(과제 목록 표를 복사한 것, 메모, 문장) 공문 설정에 얹는다
 # (2026-10-07 사용자 지정). 과제책임자는 품의의 합의자다. 과제 별명은 교육·출장 품의 제목("[과제 별명] 수행을 위한 … 품의"),
 # 연구기간은 본문 '과제 개요'에 들어간다(2026-10-07 사용자 지정).
+#
+# ※ 화면에서는 쓰지 않는 보존 경로다 — 그 채팅 칸은 2026-10-09 에 뺐다(공문 설정은 손으로 적고, 과제는 R&D 탭의 것). 작업 gongmunSetup(생성물 RECIPE.tasks)·
+# src/llm.js gongmunSetupSmart·src/gongmun.js parseSetupLocal·mergeSetup 은 남아 있고 테스트만 부른다. 행위 명세(actions/)에서는 2026-10-16 에 걷어냈다(gongmun.setup 없음).
+# 되살리려면 패널에 칸을 다시 두고 행위 명세를 더한다 — 지우려면 이 파일·생성기(tools/gen-gongmun.mjs setupTaskOf)·그 함수들·test/gongmun.test.mjs 를 함께 정리한다.
 # 조각은 부분 수정이다 — 말하지 않은 칸은 빠지고, 과제는 이름(또는 번호)이 같은 것을 고치고 없으면 더한다(열 개까지 — R&D 탭과 같은 한도, 2026-10-10 사용자 지정. src/gongmun.js 의 mergeSetup).
 # Claude 가 닿지 않으면 규칙 해석(src/gongmun.js 의 parseSetupLocal)이 표·"책임자 ○○○" 꼴을 읽는다.
 #

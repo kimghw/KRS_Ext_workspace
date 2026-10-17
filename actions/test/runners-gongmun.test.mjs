@@ -1,6 +1,6 @@
 // 공문 어댑터(actions/runners/gongmun.js) — 기록 → writePlan·writeGongmun 의 인자 변환(갈래는 entry 에서, 입력 칸 그대로, preset.setup → ctx.preset,
-// me·project·today) · 첨부 이름 ↔ ctx.files 검사 · ok 판정(안 된 단계가 없을 때) · 공문 갈래는 네 종류뿐(공문 설정은 종류마다의 preset.setup) ·
-// 얼린 기록으로 진짜 writePlan 이 돌고 화면 상태를 바로 넣던 예전 길과 같은 계획이 나온다.
+// me·project·today) · 첨부 이름 ↔ ctx.files 검사 · ok 판정(안 된 단계가 없을 때) · 공문 갈래는 다섯 종류뿐(공문 설정은 종류마다의 preset.setup) ·
+// 얼린 기록으로 진짜 writePlan 이 돌고 화면 상태를 바로 넣던 예전 길과 같은 계획이 나온다 · 구매의뢰(gongmun.order — 구매요청서, 2026-10-17)는 구매 품의에서 넘어온 초안이 그대로 writePlan('order') 에 간다.
 //
 // 명세는 생성물(actions/spec.js)의 진짜 gongmun.* 를 쓴다 — 칸 이름·사전설정 키가 어긋나면 여기서 드러난다.
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { ACTIONS } from '../spec.js';
 import { createDispatcher } from '../dispatch.js';
 import { ActionError } from '../gate.js';
-import { registerGongmun, writeOk } from '../runners/gongmun.js';
+import { registerGongmun, writeOk, formProblem } from '../runners/gongmun.js';
 import { writePlan, blankDraft } from '../../src/gongmun.js';
 
 let pass = 0;
@@ -48,6 +48,20 @@ const OUT_INPUT = {
   },
   rank: '', setting: {}, attach: [],
 };
+// 구매의뢰(구매요청서 KR_Purchase_Order — 총무팀 수신) — 구매 품의에서 넘어온 초안의 꼴(src/gongmun.js orderFromPurchase: 품목·합계·구매처·첨부는 구매 초안의 것, 구매사유는 사업내용으로,
+// 선행 품의 문서번호·제목은 공문 이력의 줄). 계정과목코드·I/O 코드·예산금액은 이 확장이 모르는 칸이라 빈 채로 둔다. 본문 칸은 양식에 없어(when: form!=KR_Purchase_Order) 입력에 두지 않는다.
+const ORDER_PRESET = { me: '김거화', today: '2026-10-16', setup: SETUP, project: PROJECT, kindTitle: '구매요청서' };
+const ORDER_INPUT = {
+  form: 'KR_Purchase_Order', title: '모니터 구매 요청',
+  draft: {
+    ...blankDraft('order', { me: '김거화' }),
+    gist: '모니터', vendor: '업체', total: 1200000, targetType: 'PC류', budgetType: '국가수탁과제',
+    business: 'MVDC 차단기 개발 과제의 단락 시험 데이터를 저장·분석할 모니터가 필요함', demandDate: '2026-10-30', place: '한국선급 본부 3층 수소전기추진연구팀',
+    feature: '연구업무추진품의 HER-2026-000097 승인에 따른 구매 요청', sourceDoc: 'HER-2026-000097', sourceTitle: '모니터 구매 품의', attachNote: '1. 견적서 1부.',
+    items: [{ name: '모니터', qty: 2, unitPrice: 600000, amount: 1200000 }], quoteDate: '2026-10-01', attach: [{ label: '견적서', files: ['견적서.png'] }],
+  },
+  rank: '', setting: { retention: '36', receiver: '총무팀' }, attach: [{ name: '견적서_업체_2026-10-16.pdf', kind: '견적서' }],
+};
 
 /** 가짜 writePlan·writeGongmun 을 끼운 디스패처 — 무엇을 받았는지(calls)와 로그 한 줄을 본다. spec 을 주면 그 명세로. */
 function make({ result = RESULT, plan = { fake: 'plan' }, spec = ACTIONS } = {}) {
@@ -62,16 +76,18 @@ function make({ result = RESULT, plan = { fake: 'plan' }, spec = ACTIONS } = {})
 }
 
 console.log('등록');
-t('gongmun.write 를 등록한다 — 같은 디스패처에 두 번은 throw. 공문 갈래는 네 종류뿐이고 모두 gongmun.write 로 돈다', () => {
+t('gongmun.write 를 등록한다 — 같은 디스패처에 두 번은 throw. 공문 갈래는 다섯 종류뿐(구매의뢰 order 는 출장과 외부활동 사이 — 레시피 RECIPE.order 의 차례)이고 모두 gongmun.write 로 돈다', () => {
   const { d } = make();
-  assert.throws(() => registerGongmun(d), /gongmun\.write 는 이미 등록/);
-  const ids = ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside'];
-  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'outside']);
-  assert.deepEqual(Object.keys(ACTIONS.actions).filter((id) => id.startsWith('gongmun.')), ids);
+  assert.throws(() => registerGongmun(d), /gongmun\.prior 는 이미 등록/, '둘(prior·write)을 등록하고 prior 가 먼저다');
+  const ids = ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.order', 'gongmun.outside'];
+  // 선행 품의 읽기(prior — 조회, 2026-10-17 "이것도 명세서를 만든 다음에 러너로")는 레시피의 목적이 아니라 목적들 뒤에 서고 실행기가 다르다(gongmun.prior).
+  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'order', 'outside', 'prior']);
+  assert.deepEqual(Object.keys(ACTIONS.actions).filter((id) => id.startsWith('gongmun.')), [...ids, 'gongmun.prior']);
   for (const id of ids) assert.equal(ACTIONS.actions[id].runner, 'gongmun.write', id);
+  assert.deepEqual([ACTIONS.actions['gongmun.prior'].runner, ACTIONS.actions['gongmun.prior'].confirm, ACTIONS.actions['gongmun.prior'].llm], ['gongmun.prior', false, false]);
 });
 t('공문 설정은 따로 된 행위가 아니라 종류마다의 사전설정 setup 이다(저장소 gongmunPreset, 없으면 관문이 막는다 — 채우던 채팅 칸은 2026-10-09 에 뺐다)', () => {
-  for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.outside']) {
+  for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.order', 'gongmun.outside']) {
     const { from, type, required } = ACTIONS.actions[id].preset.setup;
     assert.deepEqual({ from, type, required }, { from: 'storage:gongmunPreset', type: 'object', required: true }, id);
   }
@@ -142,6 +158,64 @@ await ta('gongmun.outside — 갈래는 outside, 과제 사전설정이 없어 w
   assert.deepEqual(calls.plan[0].input.draft.start, '14:00');
   assert.deepEqual(calls.write[0].opts, { files: [], onStep: undefined, onTab: undefined, dry: undefined });
 });
+await ta('gongmun.order — 갈래는 order(구매요청서). 구매 품의에서 넘어온 초안(품목·합계·사업내용·선행 품의 문서번호)이 그대로 writePlan 에 가고, 모르는 칸은 빈 채로, 본문 칸은 없다(when: form!=KR_Purchase_Order)', async () => {
+  const { d, calls, log } = make();
+  const { record, notes } = d.build('gongmun.order', { input: ORDER_INPUT, preset: ORDER_PRESET });
+  assert.deepEqual(notes, []);
+  assert.equal(record.action, 'gongmun.order');
+  assert.ok(!('body' in record.input), '구매요청서 기록에는 body 가 없다(공문 탭의 본문은 넣을 칸의 미리보기)');
+  assert.deepEqual(Object.keys(record.input).sort(), ['attach', 'draft', 'form', 'lead', 'rank', 'refs', 'setting', 'title']);
+  assert.equal(record.input.setting.receiver, '총무팀', '수신처 총무팀은 문서설정 enum 에 있다(레시피 settings options.receiver — 프로파일 구매요청의 수신처)');
+  await d.run(record, { confirmed: record.hash, files: [FILES[0]] });
+  assert.equal(calls.plan.length, 1);
+  assert.equal(calls.plan[0].kind, 'order', '갈래는 명세(entry.kind)에서 — 기록에 kind 는 없다');
+  assert.deepEqual(Object.keys(calls.plan[0].input).sort(), ['body', 'draft', 'form', 'lead', 'rank', 'refs', 'setting', 'title']);
+  const { form, title, body, draft, setting, rank, lead, refs } = calls.plan[0].input;
+  assert.deepEqual([form, title, body, rank, lead, refs], ['KR_Purchase_Order', '모니터 구매 요청', undefined, null, null, null], '본문은 기록에 없어 undefined 로 간다(작성기가 쓰지 않는다)');
+  assert.deepEqual(
+    [draft.gist, draft.vendor, draft.total, draft.targetType, draft.budgetType, draft.business, draft.demandDate, draft.place, draft.feature, draft.sourceDoc, draft.sourceTitle, draft.attachNote, draft.quoteDate, draft.currency],
+    ['모니터', '업체', 1200000, 'PC류', '국가수탁과제', ORDER_INPUT.draft.business, '2026-10-30', ORDER_INPUT.draft.place, ORDER_INPUT.draft.feature, 'HER-2026-000097', '모니터 구매 품의', '1. 견적서 1부.', '2026-10-01', 'KRW'],
+  );
+  assert.deepEqual(draft.items, [{ name: '모니터', spec: null, qty: 2, unit: null, unitPrice: 600000, amount: 1200000 }], '품목 줄은 구매 초안과 같은 꼴');
+  assert.deepEqual([draft.subjectCode, draft.subjectName, draft.ioCode, draft.ioName, draft.budgetAmount], [null, null, null, null, null], '계정과목코드·I/O·예산금액은 이 확장이 모른다 — 빈 채로 가고 사람이 적는다');
+  assert.deepEqual(draft.attach, [{ label: '견적서', files: ['견적서.png'] }]);
+  assert.deepEqual(setting, { retention: '36', docNo: null, receiver: '총무팀', scope: null, emergency: null, approvingOpen: null, drm: null, tag: null });
+  assert.deepEqual(calls.plan[0].ctx, { me: '김거화', preset: SETUP, project: PROJECT, today: '2026-10-16' }, '과제를 고르는 갈래 — ctx.project 가 든다');
+  assert.equal(calls.write.length, 1);
+  assert.deepEqual([log[0].kind, log[0].ok, log[0].text], ['gongmun', true, '구매요청서 · 모니터 구매 요청'], '활동 로그 kind 는 gongmun 그대로');
+  // 양식을 본문 편집기가 있는 것(연구업무추진품의·기안문)으로 바꾸면 본문이 꼭 있어야 한다 — 신고서와 같은 규칙. 구매요청서는 이 갈래에서만 고른다(only).
+  assert.throws(() => d.build('gongmun.order', { input: { ...ORDER_INPUT, form: 'KR_EA_Research_Task' }, preset: ORDER_PRESET }), /body 가 없습니다/);
+  assert.equal(d.build('gongmun.order', { input: { ...ORDER_INPUT, form: 'KR_EA_Research_Task', body: '본문 글' }, preset: ORDER_PRESET }).record.input.body, '본문 글');
+  assert.equal(formProblem('KR_Purchase_Order', 'order'), '');
+  assert.match(formProblem('KR_Purchase_Order', 'edu'), /양식 KR_Purchase_Order 은 order 에서만 고를 수 있습니다\(edu 에서는 안 됩니다\)/);
+});
+
+console.log('양식 ID — 닫힌 목록이 아니다(공문 탭의 "양식 ID 직접 적기"는 칸 지도가 없는 양식을 창만 연다, 2026-10-17 Codex 검토)');
+await ta('목록에 없는 양식 ID 는 관문과 어댑터를 지나 writePlan 에 그대로 간다 · 꼴이 틀린 ID · 다른 갈래 전용 폼(only)은 어댑터가 막는다', async () => {
+  const { d, calls } = make();
+  // 레시피에 없는 양식 ID(칸 지도가 없다 — 창만 연다). 구매요청서 KR_Purchase_Order 는 2026-10-17 부터 레시피에 있고 only: [order] 라 여기서는 못 쓴다(아래).
+  const { record } = d.build('gongmun.purchase', { input: { ...INPUT, form: 'KR_Something' }, preset: PRESET });
+  assert.equal(record.input.form, 'KR_Something');
+  await d.run(record, { confirmed: record.hash, files: FILES });
+  assert.equal(calls.plan[0].input.form, 'KR_Something');
+  const bad = d.build('gongmun.purchase', { input: { ...INPUT, form: 'KR Purchase; Order' }, preset: PRESET }).record;
+  await rejects(d.run(bad, { confirmed: bad.hash, files: FILES }), /양식 ID\(KR Purchase; Order\)는 영문·숫자·_ 로만/);
+  const only = d.build('gongmun.purchase', { input: { ...INPUT, form: 'KR_Outside_Lecture_Report' }, preset: PRESET }).record;
+  await rejects(d.run(only, { confirmed: only.hash, files: FILES }), /양식 KR_Outside_Lecture_Report 은 outside 에서만 고를 수 있습니다\(purchase 에서는 안 됩니다\)/);
+  const order = d.build('gongmun.purchase', { input: { ...INPUT, form: 'KR_Purchase_Order' }, preset: PRESET }).record;
+  await rejects(d.run(order, { confirmed: order.hash, files: FILES }), /양식 KR_Purchase_Order 은 order 에서만 고를 수 있습니다\(purchase 에서는 안 됩니다\)/);
+  assert.equal(formProblem('KR_EA_Form2', 'outside'), '', 'only 가 없는 폼은 어느 갈래든 된다');
+  assert.equal(formProblem('KR_Outside_Lecture_Report', 'outside'), '');
+  assert.match(formProblem('', 'purchase'), /영문·숫자·_/);
+});
+t('외부강의등 신고서에는 본문 칸이 없다(when: form!=KR_Outside_Lecture_Report) — 편집기 양식으로 바꾸면 본문이 꼭 있어야 한다', () => {
+  const { d } = make();
+  const { record } = d.build('gongmun.outside', { input: OUT_INPUT, preset: OUT_PRESET });
+  assert.ok(!('body' in record.input), '신고서 기록에는 body 가 없다(미리보기 글은 기록이 아니다)');
+  const editor = d.build('gongmun.outside', { input: { ...OUT_INPUT, form: 'KR_EA_Research_Task', body: '본문 글' }, preset: OUT_PRESET }).record;
+  assert.equal(editor.input.body, '본문 글');
+  assert.throws(() => d.build('gongmun.outside', { input: { ...OUT_INPUT, form: 'KR_EA_Research_Task', body: '' }, preset: OUT_PRESET }), /body 가 없습니다/);
+});
 
 console.log('성패와 첨부 검사');
 t('writeOk — 단계에 ok:false 가 없으면 됐다(skip·하는 중 null 은 안 된 것이 아니다)', () => {
@@ -185,15 +259,16 @@ await ta('확인(confirmed: record.hash) 없이는 안 돈다 — 공문 작성 
 });
 
 console.log('진짜 writePlan');
-await ta('얼린 기록으로 진짜 writePlan 이 돌고, 화면 상태를 바로 넣던 예전 길(writePlan 직접)과 같은 계획이 나온다 — 구매·외부활동', async () => {
-  for (const [id, input, preset, kind] of [['gongmun.purchase', INPUT, PRESET, 'purchase'], ['gongmun.outside', OUT_INPUT, OUT_PRESET, 'outside']]) {
+await ta('얼린 기록으로 진짜 writePlan 이 돌고, 화면 상태를 바로 넣던 예전 길(writePlan 직접)과 같은 계획이 나온다 — 구매·외부활동·구매의뢰', async () => {
+  for (const [id, input, preset, kind] of [['gongmun.purchase', INPUT, PRESET, 'purchase'], ['gongmun.outside', OUT_INPUT, OUT_PRESET, 'outside'], ['gongmun.order', ORDER_INPUT, ORDER_PRESET, 'order']]) {
     const calls = [];
     const d = createDispatcher({ spec: ACTIONS, now: () => NOW });
     registerGongmun(d, { writeGongmun: async (plan) => { calls.push(plan); return RESULT; } });
     const { record } = d.build(id, { input, preset });
     await d.run(record, { confirmed: record.hash, files: FILES });
-    const { title, body, draft, form, setting, rank } = input;
-    const old = writePlan(kind, { title, body, draft, form, setting, rank }, { me: preset.me, preset: preset.setup, project: preset.project || null, today: preset.today });
+    // 본문은 기록의 것 — 신고서(외부활동)에는 본문 칸이 없어(when) 기록에 없고 writePlan 에는 빈 글로 간다(예전 길은 미리보기 글을 넘겼지만 작성기가 쓰지 않았다).
+    const { title, draft, form, setting, rank } = input;
+    const old = writePlan(kind, { title, body: record.input.body ?? '', draft, form, setting, rank }, { me: preset.me, preset: preset.setup, project: preset.project || null, today: preset.today });
     assert.deepEqual(calls[0], old, id);
     assert.equal(calls[0].kind, kind);
   }
@@ -206,6 +281,18 @@ await ta('얼린 기록으로 진짜 writePlan 이 돌고, 화면 상태를 바�
   assert.deepEqual([plans[0].values.title, plans[0].setting.docNo, plans[0].setting.retention, plans[0].line.agree, plans[0].line.approvers, plans[0].line.rank],
     ['연구 데이터 저장용 모니터 구매 품의', '8100', '36', ['박기도'], ['노길태'], '팀장']);
   assert.deepEqual(plans[0].line.refs, ['홍길동'], '기록에 참조자가 없으면 과제의 것(계획서 YAML 의 공문.참조자.구매)');
+  // 구매의뢰(구매요청서) — 표(rows: 구매 물품은 품목 줄마다 한 행, 예산 내역은 계정과목·I/O·예산금액이 비어 행 없음), 문서설정은 프로파일 구매요청(보존 3년 · 수신 총무팀 — 레시피 settings
+  // receivers 의 코드가 receiverValue 로 SetReceiverValue 에 간다), 결재선은 구매와 같은 연구비집행 준용(120만 원은 팀장 전결, 과제책임자 합의). 2026-10-17.
+  const od = createDispatcher({ spec: ACTIONS, now: () => NOW });
+  const oplans = [];
+  registerGongmun(od, { writeGongmun: async (plan) => { oplans.push(plan); return RESULT; } });
+  const { record: orec } = od.build('gongmun.order', { input: ORDER_INPUT, preset: ORDER_PRESET });
+  await od.run(orec, { confirmed: orec.hash, files: FILES });
+  const [op] = oplans;
+  assert.deepEqual([op.kind, op.form, op.values.title], ['order', 'KR_Purchase_Order', '모니터 구매 요청']);
+  assert.deepEqual([op.setting.profile, op.setting.retention, op.setting.receiver, op.setting.receiverValue], ['구매요청', '36', '총무팀', '10820-,-(A13) General Affairs Team']);
+  assert.deepEqual([op.line.agree, op.line.approvers, op.line.rank], [['박기도'], ['노길태'], '팀장']);
+  assert.deepEqual(op.rows.map((r) => [r.key, r.rows]), [['items', [{ txtItemName: '모니터', txtCnt: '2', txtUnitCost: '600000', txtEstimate: '1200000' }]], ['budget', []]], '표 두 개 — 빈 셀은 빠지고 셀이 모두 빈 행은 없다');
 });
 await ta('기록의 과제 책임자·참조자(문서설정의 두 칸 — 과제마다)가 과제의 것을 이긴다 — 책임자가 기안자 본인이면 합의는 빠지고, 빈 참조자 목록은 참조 없음(2026-10-16)', async () => {
   const d = createDispatcher({ spec: ACTIONS, now: () => NOW });
@@ -221,6 +308,55 @@ await ta('기록의 과제 책임자·참조자(문서설정의 두 칸 — 과�
   assert.deepEqual((await run({ lead: '', refs: null })).slice(0, 2), [['박기도'], ['홍길동']], '빈 책임자·참조자는 과제의 것');
   const { record } = d.build('gongmun.outside', { input: OUT_INPUT, preset: OUT_PRESET });
   assert.ok(!('lead' in record.input) && !('refs' in record.input), '외부활동(과제를 고르지 않음)에는 두 칸이 없다');
+});
+
+console.log('선행 품의 읽기(gongmun.prior — 공문 이력 카드의 구매의뢰, 2026-10-17 "이것도 명세서를 만든 다음에 러너로 실행하도록")');
+const PRIOR_DOC = {
+  title: '차단기 과제 수행을 위한 시험 장비 구매 품의', job: 'RND00202026', degree: '1', receive: '', reference: '', lines: [], text: '본문 글',
+  items: [{ name: '모니터', spec: 'WQHD', qty: 2, unit: '대', unitPrice: 600000, amount: 1200000, currency: 'KRW', use: '', reason: '', account: '', period: '', note: '' }],
+  total: 1200000, currency: 'KRW', vendor: '쿠팡', account: '연구활동비(연구실운용비)', use: '자료 검토', reason: '대화면이 필요함', period: '', overview: '', summary: '모니터를 구매하고자', attach: ['견적서'],
+};
+const PRIOR_PRESET = { me: '김거화', today: '2026-10-17', setup: SETUP };
+await ta('조회라 확인 없이 돈다 — 기록의 문서번호·양식(기본 연구업무추진품의)·제목으로 readPrior 를 부르고, 구매의뢰 초안(품목·합계·구매처·사업내용·선행 품의 칸·계정과목명은 그 품의의 구매계정)·과제(ctx.projects 의 Job Id)·첨부·알림을 돌려준다. 바이트는 로그에 들지 않는다', async () => {
+  const log = [];
+  const asked = [];
+  const d = createDispatcher({ spec: ACTIONS, log: (e) => log.push(e), now: () => NOW });
+  registerGongmun(d, { readPrior: async (row) => { asked.push(row); return { doc: PRIOR_DOC, files: [{ name: '견적서_2.pdf', type: 'application/pdf', size: 4, bytes: new Uint8Array([1, 2, 3, 4]) }], notes: ['사양서.pdf 을(를) 내려받지 못했습니다 — HTTP 500'] }; } });
+  const { record } = d.build('gongmun.prior', { input: { id: 'HER-2026-000128', title: PRIOR_DOC.title }, preset: PRIOR_PRESET });
+  assert.ok(!record.input.form, '양식을 안 적으면 기록에도 없다(명세의 default 는 폼 기본값) — 실행기가 연구업무추진품의로 본다');
+  const res = await d.run(record, { projects: [{ name: 'MVDC 차단기 개발', job: 'RND00202026', alias: 'SSCB', code: 'RND-20-2026' }, { name: '다른 과제', job: '', alias: '', code: '' }], text: '선행 품의 읽기 · HER-2026-000128' });
+  assert.deepEqual(asked, [{ id: 'HER-2026-000128', form: 'KR_EA_Research_Task', title: PRIOR_DOC.title }]);
+  assert.equal(res.ok, true);
+  assert.deepEqual([res.draft.gist, res.draft.vendor, res.draft.total, res.draft.sourceDoc, res.draft.sourceTitle, res.draft.subjectName, res.draft.business],
+    ['모니터', '쿠팡', 1200000, 'HER-2026-000128', PRIOR_DOC.title, '연구활동비(연구실운용비)', '대화면이 필요함 (용도: 자료 검토)']);
+  assert.deepEqual(res.draft.items, [{ name: '모니터', spec: 'WQHD', qty: 2, unit: '대', unitPrice: 600000, amount: 1200000 }]);
+  assert.deepEqual(new Set(Object.keys(res.draft)), new Set(Object.keys(blankDraft('order', { me: '김거화' }))), '초안의 키는 구매의뢰 초안의 것뿐');
+  assert.equal(res.project, 'MVDC 차단기 개발');
+  assert.deepEqual(res.files.map((f) => [f.name, f.type, f.size]), [['견적서_2.pdf', 'application/pdf', 4]]);
+  assert.deepEqual(res.notes, ['사양서.pdf 을(를) 내려받지 못했습니다 — HTTP 500']);
+  assert.deepEqual(res.doc, { title: PRIOR_DOC.title, job: 'RND00202026', items: 1, total: 1200000, currency: 'KRW', summary: '모니터를 구매하고자', text: '본문 글' });
+  assert.equal(log.length, 1);
+  assert.deepEqual([log[0].kind, log[0].ok, log[0].text], ['gongmun', true, '선행 품의 읽기 · HER-2026-000128']);
+  assert.ok(!('files' in log[0].data.result) && !('draft' in log[0].data.result), '로그에는 수·글만(바이트·초안은 아니다)');
+  assert.equal(log[0].data.record.action, 'gongmun.prior');
+});
+await ta('원화가 아니면(구독 품의의 USD) 고치라는 알림이 앞에 서고, 과제를 못 고르면 빈 글, readPrior 가 던지면 ✕ 한 줄과 함께 다시 던진다', async () => {
+  const log = [];
+  const d = createDispatcher({ spec: ACTIONS, log: (e) => log.push(e), now: () => NOW });
+  registerGongmun(d, { readPrior: async () => ({ doc: { ...PRIOR_DOC, currency: 'USD', total: 1320, job: 'RND00999999', title: '무관한 제목' }, files: [], notes: [] }) });
+  const { record } = d.build('gongmun.prior', { input: { id: 'HER-2026-000097' }, preset: PRIOR_PRESET });
+  const res = await d.run(record, { projects: [{ name: 'MVDC 차단기 개발', job: 'RND00202026', alias: 'SSCB' }] });
+  assert.deepEqual(res.notes, ['선행 품의의 금액이 USD 입니다 — 합계와 품목 금액을 원화로 고쳐 주세요']);
+  assert.deepEqual([res.project, res.draft.currency, res.draft.sourceTitle], ['', 'USD', '무관한 제목'], '제목을 안 적으면 읽은 제목');
+  const d2 = createDispatcher({ spec: ACTIONS, log: (e) => log.push(e), now: () => NOW });
+  registerGongmun(d2, { readPrior: async () => { throw new Error('로그인이 필요합니다.'); } });
+  const { record: r2 } = d2.build('gongmun.prior', { input: { id: 'HER-2026-000097' }, preset: PRIOR_PRESET });
+  await assert.rejects(d2.run(r2, { text: '선행 품의 읽기' }), /로그인이 필요합니다/);
+  assert.deepEqual([log.at(-1).ok, log.at(-1).data.result.error], [false, '로그인이 필요합니다.']);
+});
+t('문서번호가 없으면 관문이 막는다 — 조회라 confirmed 는 받지 않는다', () => {
+  const d = createDispatcher({ spec: ACTIONS, now: () => NOW });
+  assert.throws(() => d.build('gongmun.prior', { input: { title: '제목만' }, preset: PRIOR_PRESET }), ActionError);
 });
 
 console.log(`\n통과 ${pass}건`);

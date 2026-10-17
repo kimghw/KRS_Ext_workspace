@@ -16,7 +16,19 @@
 > - 단독 패널 테스트가 `actions` 없이 패널을 만들므로 패널 팩토리는 deps.actions 가 없으면 스스로 디스패처를 만든다.
 > - `references/input.yaml` 에는 `receipt`·`diagnose` 만 남았다(옮기기 전 모습은 `actions/test/fixtures/tasks-before.json`). `src/logbook.js` 에 `trip`·`rnd` 이름을 더했다.
 > - 2단계로 남긴 것: §12 의 planned 행위 배선(메일·홈 카드·배경·회람 — R&D·기념일 지원은 아래 범위대로 이번에 옮기지 않는다), 재현용 원장, 통합 명령창. 콘텐츠 스크립트가 `actions/` 를 읽게 되면 `manifest.json` 의 web_accessible_resources 에 더해야 한다.
-> - 범위(2026-10-16 사용자 지정: "근태·공문·회의실·차량만 하면 됨", R&D·기념일 지원은 이번 범위 밖): 숙박 줄 `trip.lodge` 를 live 로 배선했다(lodgebox.js 가 기록을 짓고 actions/runners/trip.js 가 상한액·비고를 셈한다). `gongmun.setup` 은 걷어냈다 — 그 명세는 2026-10-09 사용자가 뺀 공문 설정 채팅 칸의 것이었고, 공문 설정 자체는 공문 4종 기록의 `preset.setup` 으로 공문안과 같이 간다.
+> - 범위(2026-10-16 사용자 지정: "근태·공문·회의실·차량만 하면 됨", R&D·기념일 지원은 이번 범위 밖): 숙박 줄 `trip.lodge` 를 live 로 배선했다(lodgebox.js 가 기록을 짓고 actions/runners/trip.js 가 상한액·비고를 셈한다). `gongmun.setup` 은 걷어냈다 — 그 명세는 2026-10-09 사용자가 뺀 공문 설정 채팅 칸의 것이었고, 공문 설정 자체는 공문 4종(2026-10-17 부터 5종 — 다음 메모) 기록의 `preset.setup` 으로 공문안과 같이 간다.
+
+> **2026-10-17 메모(Codex 3차 검토 — 일관성·편의성·공문 양식 추가)** — 공문 갈래를 손봤다. 구현이 정본이다.
+> - `_domain.yaml` 에 **갈래 공통 칸 `fields`** 가 생겼고 종류 파일은 `칸: { from: domain }` 으로 같은 자리에 가져온다(공문 네 종류가 form·title·body·rank·lead·refs·setting·attach 를 같은 글로 베껴 적던 것 — 이미 설명이 어긋나 있었다). 갈래 공통 preset 과 달리 저절로 합쳐지지 않는다(외부활동에는 lead·refs 가 없다). 공문 설정 `setup` 은 갈래 공통 preset 으로, `kindTitle` 은 `from: recipe:purposes.<종류>.title` 로.
+> - `mode: recipe` 갈래의 `kinds` 는 `RECIPE.order` 와 같아야 하고 종류의 `llm.tasks` 는 `.<종류>` 로 끝나는 작업이어야 한다 — 레시피에 목적을 더하고 종류 YAML 을 빠뜨리면 생성기가 막는다(전에는 공문 작성 단추를 눌러야 "없는 행위" 로 드러났다).
+> - 공문의 `form` 은 **닫힌 enum 이 아니라 글**이다 — 공문 탭의 "양식 ID 직접 적기"(칸 지도가 없는 양식은 창만 연다)가 2026-10-16 의 enum 에 막히던 회귀. ID 의 꼴과 레시피 폼의 `only` 는 어댑터(`actions/runners/gongmun.js formProblem`)가 본다. 외부활동의 `body` 는 `when: form!=KR_Outside_Lecture_Report` — 신고서 기록에는 본문이 없다.
+> - 패널: 공문 작성은 누른 순간의 갈래·제목·본문·양식·과제를 잡아 둔다(첨부 PDF 를 묶는 동안 갈래를 바꾸면 섞이던 경로), 비교작성 탭은 읽은 문서가 있는 초안을 쓰지 않고 사이드패널로 보낸다(파일 바이트가 거기에만 있어 첨부가 조용히 빠졌다), 첨부 PDF 를 못 만든 것은 최종 상태 줄·활동 로그에 남는다. 갈래 리터럴(PICK_FIRST·비교작성 제목·기본 갈래·품목 표)은 KINDS·KIND_ORDER 에서.
+> - 레시피 생성기: `source: draft` 는 text·date·time 칸에만, 칸이 정해진 폼은 `only` 필수. 공문 이력은 `only` 가 하나인 폼을 그 갈래로 바로 가른다. 새 종류·양식 더하기의 차례는 `recipes/gongmun/README.md`.
+
+> **2026-10-17 메모(구매의뢰 `gongmun.order` — 공문 5종)** — 사용자 지정("kr-weg-agent 에 보면 총무팀에 구매요청서 작성하는게 있거든 … 구매의뢰 하는 공문기능을 추가해줘. 그 의뢰서는 구매공문과 연동되어야 하고, 우측 하단에 구매의뢰하기 버튼을 넣던지, 구매할때 같이 작성할 수 있던지")으로 공문이 다섯 종류가 됐다. 아래의 "공문 4종"·"네 종류" 는 그 전의 셈이다.
+> - 구매요청서(`KR_Purchase_Order`, 총무팀 수신, 본문 편집기 없이 칸이 정해진 폼에 표 둘)는 레시피가 먼저다 — 유닛 `purchase-order`·목적 `order`(`recipes/gongmun/README.md` 의 새 양식 더하기 차례). 칸 지도에 kind `check`(초안 값이 `on` 과 같으면 체크)와 `rows` 절(행추가·행 수 probe·셀 틀 `{nn}`/`{cell}`·digits), 문서설정에 부서 수신처 `receivers`(수신처 창의 값과 글 — 총무팀 `10820`·`(A13) General Affairs Team`, 2026-10-17 CDP 실측)가 생겼다.
+> - 행위는 `gongmun/order.yaml` 하나(purchase 와 같은 꼴 — `project`·`lead`·`refs` 를 두고 `body` 는 `when: form!=KR_Purchase_Order`), LLM 작업은 `gongmun.order`(문서 읽기)·`gongmunReason.order`(사업내용 쓰기), 실행기는 그대로 `gongmun.write`(`writePlan` 이 `plan.rows` 를 더 내고 작성기의 단계에 `표(품목·예산)` 가 open 뒤에 선다). 같은 날 뒤에 **`gongmun/prior.yaml`(선행 품의 읽기 — 조회, confirm false, 실행기 `gongmun.prior`)** 이 더해졌다: 공문 이력 카드의 `구매의뢰` 가 문서번호·제목만 옮기던 것을 보고 사용자가 "다른 것들이 들어가 있지를 않네?" → "이것도 명세서를 만든 다음에 러너로 실행하도록" 이라 해서, 실행기(`src/gmprior.js readPrior`)가 그 품의의 본문 틀(세 틀 — 이 확장의 구매 틀·원본 구매·원본 구독)과 첨부 목록·첨부(견적서 PDF)를 읽어 구매의뢰 초안·첨부·과제(Job Id)를 돌려준다. 레시피의 목적이 아닌 종류라 `_domain.yaml kinds` 의 목적들 뒤에 서고 `llm: false` 다(생성기가 목적 부분만 `RECIPE.order` 와 맞춘다). 실행기 등록 목록(§6.6·`tools/gen-actions.mjs RUNNERS`)에 `gongmun.prior` 가 들었다. 기록 꼴은 바뀌지 않았다 — draft 가 레시피의 칸(gist·vendor·total·targetType·budgetType·business·demandDate·place·feature·subjectCode·subjectName·ioCode·ioName·budgetAmount·sourceDoc·sourceTitle·attachNote)과 reads(items·quoteDate·supply·vat)로 펼쳐질 뿐이다.
+> - 구매 품의와 잇는 두 길(구매 갈래의 `구매의뢰 작성` 단추, 공문 이력 구매 카드의 `구매의뢰` 단추 — 선행 품의 문서번호·제목이 `sourceDoc`·`sourceTitle` 로 가 특기사항이 된다)은 패널이 `orderFromPurchase` 로 구매 초안을 구매의뢰 초안으로 옮겨 **같은 기록 꼴**로 가는 것이라 행위 층에 새 행위는 없다. 저절로 채우는 칸(`orderAuto` — 수요시기 오늘+14·특기사항·계정과목명·첨부 안내문구)도 패널의 초안 단계다. 계정과목코드·I/O 코드·I/O 명·예산금액·납품장소는 사람이 적는다(원본의 `ea_accounts`·`ea_projects` 레지스트리는 가져오지 않았다).
 
 > 아래부터는 구현 전에 쓴 계약 원문이다(에이전트의 유일한 계약이었다). 이름(파일·함수·행위 ID·칸 이름)은 구현과 같고, 다른 곳은 위 메모와 §14 가 이긴다.
 
@@ -44,7 +56,7 @@ LLM(말·문서)   ──  명세에서 만든 작업 ───┘
 | 말 | 뜻 |
 |---|---|
 | 갈래(domain) | room · car · attend · trip · gongmun · (2단계) rnd · mail · home · circulate |
-| 종류(kind) | 갈래 안의 행위 하나. 파일 하나. 근태는 trip·out·leaveout·leave·flex·health + cancel·doc, 공문은 purchase·edu·trip·outside(setup 은 2026-10-16 걷어냄 — 머리 메모) |
+| 종류(kind) | 갈래 안의 행위 하나. 파일 하나. 근태는 trip·out·leaveout·leave·flex·health + cancel·doc, 공문은 purchase·edu·trip·order·outside(order 구매의뢰는 2026-10-17, setup 은 2026-10-16 걷어냄 — 머리 메모) |
 | 행위 ID | `<갈래>.<종류>` — `attend.trip`, `gongmun.purchase`, `room.reserve` |
 | 사전설정(preset) | 사용자가 그때그때 적지 않는 값 — 내 이름·오늘·근무지·공문 설정(부서·부서장·소장·본부장·문서번호 부서)·고른 과제·종류의 기본값. 저장소·레시피·상수에서 **실행 전에 채워 기록에 같이 담는다** |
 | 입력(input) | 사용자(UI) 또는 LLM 이 정하는 칸의 값 |
@@ -63,7 +75,7 @@ actions/
     car/_domain.yaml   car/search.yaml   car/reserve.yaml   car/cancel.yaml   car/modify.yaml
     attend/_domain.yaml  attend/trip.yaml  attend/out.yaml  attend/leaveout.yaml  attend/leave.yaml  attend/flex.yaml  attend/health.yaml  attend/cancel.yaml  attend/doc.yaml
     trip/_domain.yaml  trip/create.yaml  trip/presave.yaml  trip/preconfirm.yaml  trip/postconfirm.yaml  trip/after.yaml  trip/delete.yaml  trip/send.yaml
-    gongmun/_domain.yaml  gongmun/purchase.yaml  gongmun/edu.yaml  gongmun/trip.yaml  gongmun/outside.yaml   (setup.yaml 은 2026-10-16 걷어냄 — 머리 메모)
+    gongmun/_domain.yaml  gongmun/purchase.yaml  gongmun/edu.yaml  gongmun/trip.yaml  gongmun/order.yaml  gongmun/outside.yaml   (order.yaml 은 2026-10-17 구매의뢰, setup.yaml 은 2026-10-16 걷어냄 — 머리 메모)
     rnd/… mail/… home/… circulate/…   (status: planned — 2단계)
   spec.js                   생성물 — 고치지 않는다(`node tools/gen-actions.mjs`)
   gate.js                   관문 — 기록을 명세로 검증·정규화(초안/실행 모드)
@@ -432,6 +444,7 @@ export function registerTrip(d)
 // gongmun.js
 export function registerGongmun(d)
   'gongmun.write' (rec, { files, onStep, onTab, dry }) → writeGongmun(writePlan(rec.kind, { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me, preset: setup, project, today } = rec.preset), { files, onStep, onTab, dry })
+  'gongmun.prior' (rec, { projects })  → readPrior({ id, form, title } = rec.input) → priorToPurchase(doc) → orderFromPurchase(…, { me, doc }) · priorProject(doc, ctx.projects)   // 조회(confirm false) — 공문 이력 카드의 구매의뢰: 선행 품의의 본문·첨부를 읽어 구매의뢰 초안·첨부·과제를 돌려준다(2026-10-17)
   // 'gongmun.setup' 은 2026-10-16 걷어냄(머리 메모)
 ```
 
@@ -528,7 +541,7 @@ R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 
 
 ## 13. 추측·미결(통합자가 결정한다 — 에이전트는 계약대로 간다)
 
-- `gongmunSetupSmart`(공문 설정 채우기)는 지금 패널에서 부르는 곳이 없다 → `gongmun.setup` 은 status: planned. (2026-10-16 결정: 그 채팅 칸은 2026-10-09 사용자가 뺐으므로 `gongmun.setup` 명세·실행기를 걷어냈다. 공문 설정은 공문 4종의 `preset.setup` 이다.)
+- `gongmunSetupSmart`(공문 설정 채우기)는 지금 패널에서 부르는 곳이 없다 → `gongmun.setup` 은 status: planned. (2026-10-16 결정: 그 채팅 칸은 2026-10-09 사용자가 뺐으므로 `gongmun.setup` 명세·실행기를 걷어냈다. 공문 설정은 공문 4종(2026-10-17 부터 5종)의 `preset.setup` 이다.)
 - 근태 `attend.doc`(상신·회수·삭제)과 `attend.cancel`(취소신청)의 input 은 `{ docNo, formId, action | reason }` 이고 목록 줄(item)은 ctx 다.
 - `room.modify` 의 input `{ back, next }` 두 object 칸은 reserve 칸과 같은 fields 를 쓴다(생성기가 `from: room.reserve` 로 펼친다 — U1 이 `from: <행위 ID>` 를 지원한다).
 - 여비 `trip.after` 의 `records` 는 `list` 칸이고 item 은 `from: task:receipt`(input.yaml 의 receipt 칸) + `file`(이름·형식) — U1b 가 적고 U1 의 생성기가 `from: task:<이름>` 을 지원한다.
@@ -555,7 +568,7 @@ R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 
 - 대상 식별자는 **기록에** 둔다: attend.doc `{ docNo, formId, action: enum[request, recall, delete] }` · attend.cancel `{ docNo, formId, reason }` · trip.* `{ seq, trseq? }` · trip.send `{ seq, docNo, account, to: object{ id, name }, channel: enum[teams, memo], reason, file }` · gongmun 의 `attach` 는 파일 이름 목록. 어댑터는 ctx 의 산 대상(item·row·files)이 기록의 식별자와 같은지 확인하고 다르면 ActionError.
 - trip.after 는 사용자가 정한 것을 기록에 담는다: `records`(list — item `from: task:receipt` + `file` 참조) · `picks`(object — 가는 편·오는 편) · `workplace` · `lodge`(list — 숙박 줄마다 `{ key(줄 식별 글 — src/afterup.js lodgeKey 꼴), settle: enum[cap, actual, krw], amount: number, reason: string }`) · `exclude`(list of string — 안 올릴 증빙 이름) · `always: boolean` · `preconfirm: boolean`. 어댑터가 afterPlan 으로 다시 짓고 lodge 결정을 같은 함수(lodgeDecide·lodgeSettle …)로 되얹는다 — U5 가 test/lodgeask.test.mjs 로 맞춘다. U1b 는 칸을 두고, U5 가 2차 물결에서 `trip/after.yaml` 을 고칠 수 있다(그때는 U5 소유).
 - gongmun 의 `setting` object 칸 = `settingPatch` 가 받는 키 전부: retention · docNo · receiver · scope · emergency(boolean) · approvingOpen(boolean) · drm(boolean) · tag.
-- gongmun draft 펼치기(`from: recipe`): 레시피 `fields` ∪ `reads` ∪ `{ currency: enum[KRW, USD, EUR, JPY, CNY, GBP], attach: list{ name: string(required), kind: string } }` — reads 의 item 배열은 key 로 묶은 객체로, 생략된 type 은 text→string, item 의 required 는 그대로. draft 안에 required 는 두지 않는다(need 는 안내용이고 작성을 막지 않는다).
+- gongmun draft 펼치기(`from: recipe`): 레시피 `fields` ∪ `reads` ∪ `{ currency: enum[KRW, USD, EUR, JPY, CNY, GBP], attach: list{ label: string(required), files: tags } }`(구현 — `recipeDraftFields`. 패널의 `draft.attach`(attachList)가 `{ label, files }` 라서다. `{ name, kind }` 는 바깥의 실행용 `input.attach` 다 — 2026-10-17 Codex 검토로 바로잡음) — reads 의 item 배열은 key 로 묶은 객체로, 생략된 type 은 text→string, item 의 required 는 그대로. draft 안에 required 는 두지 않는다(need 는 안내용이고 작성을 막지 않는다).
 - U1 테스트의 방향: `fieldsFor(form)` 의 키 ⊆ YAML fields(반대가 아니다 — fields 에는 trainGrade 처럼 fieldsFor 가 안 내는 칸도 있다). 그리고 종류마다 `blankForm(kind)` 의 키 ⊆ fields ∪ YAML 의 `ignore`(기록에 안 담는 화면 전용 키 목록 — 까닭 주석) — dateTo·end 처럼 settle 이 만드는 파생 키도 fields 에 있어야 한다.
 - `attend/welfare.yaml` 은 **U1** 이 쓴다(status: planned, `_domain.kinds` 에 welfare 를 더한다). U1b 는 쓰지 않는다.
 
@@ -572,6 +585,7 @@ R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 
 | trip.presave · preconfirm · postconfirm · delete · after | `{row, stage, sent, …}` / `{seq}` | 던지지 않으면 true(`sent:false` 도 정상일 수 있다) |
 | trip.send | 어댑터가 `{ ok: true, channel, to, file, pages }` 를 돌려준다 | `r.ok` |
 | gongmun.write | `{tabId, docId, steps}` | `!r.steps.some((x) => x.ok === false)` |
+| gongmun.prior | `{ok, draft(구매의뢰 초안), purchase, project, files(이름·형식·바이트 — 로그에는 들지 않음), notes, doc}` | `r.ok === true` — 던지면(로그인·모양이 다름) 패널이 문서번호·제목만 넣는다 |
 
 어댑터 주입: `register<갈래>(d, deps = {})` — deps 의 키는 실제 함수 이름과 같고 기본값은 src 모듈의 진짜 함수다(테스트는 가짜를 넣는다). 갈래별 테스트 파일은 §9 대로 `actions/test/runners-<갈래>.test.mjs` 다(§8 의 공용 runners.test.mjs 는 없다).
 

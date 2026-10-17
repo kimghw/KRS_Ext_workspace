@@ -12,8 +12,8 @@ LLM(말·문서)   ── 명세에서 만든 작업 ───┘
 
 | 파일 | 역할 |
 |---|---|
-| `spec/<갈래>/<종류>.yaml` | **정본.** 행위 하나에 파일 하나 — 근태 6종(`attend/trip.yaml` …)·공문 4종(`gongmun/purchase.yaml` …)·회의실·차량·여비계산서·(2단계) R&D·메일·홈·회람. 칸마다 `read`(LLM 에게 가는 인라인 프롬프트)와 `preset`(사전설정) |
-| `spec/<갈래>/_domain.yaml` | 갈래 공통 — LLM 작업을 어떻게 만드는지(`llm.mode`), 공통 규칙·공통 사전설정, 종류 차례 |
+| `spec/<갈래>/<종류>.yaml` | **정본.** 행위 하나에 파일 하나 — 근태 6종(`attend/trip.yaml` …)·공문 5종(`gongmun/purchase.yaml` … — 구매의뢰 `order.yaml` 은 2026-10-17)과 선행 품의 읽기(`gongmun/prior.yaml` — 공문 이력 카드의 `구매의뢰`, 조회라 confirm 없음, 같은 날 "이것도 명세서를 만든 다음에 러너로")·회의실·차량·여비계산서·(2단계) R&D·메일·홈·회람. 칸마다 `read`(LLM 에게 가는 인라인 프롬프트)와 `preset`(사전설정) |
+| `spec/<갈래>/_domain.yaml` | 갈래 공통 — LLM 작업을 어떻게 만드는지(`llm.mode`), 공통 규칙·공통 사전설정(종류 preset 앞에 저절로 합쳐진다), **공통 칸 `fields`**(종류 파일이 `칸: { from: domain }` 으로 같은 자리에 가져온다 — 공문의 form·title·body·rank·lead·refs·setting·attach, 2026-10-17), 종류 차례(`recipe` 모드에서는 레시피의 목적 차례와 같아야 한다) |
 | `spec.js` | **생성물** — `node tools/gen-actions.mjs`(`npm run gen` 에도 든다). 행위(`ACTIONS.actions`)·갈래·LLM 작업(`ACTIONS.tasks` — `src/input.js` 의 `TASKS` 에 합쳐진다) |
 | `gate.js` | 관문 — 기록을 명세로 검증·정규화. **초안 모드**(LLM 조각 — 틀린 칸은 비우고 알림)와 **실행 모드**(사람이 보낸 기록 — 잃는 보정이 생기면 막는다) |
 | `preset.js` | 사전설정 채우기 — `from: today · me · storage:<키>[.경로] · recipe:<레지스트리>.<경로> · ctx:<이름>` 또는 `value:` |
@@ -81,6 +81,8 @@ then: [{ action: trip.create, when: settle }]   # 뒤따르는 행위(패널이 
 - **모든 칸에 `read` 가 있다.** 지금 LLM 이 채우지 않는 칸(`llm: false` — 첨부·체크박스·교통편 …)도 read 를 둔다 — 나중에 LLM 을 넣을 때 그대로 쓴다.
 - `preset` 은 그때그때 적지 않는 값 — 내 이름·오늘·근무지·공문 설정(부서·부서장·소장·본부장·문서번호 부서)·고른 과제·HR 의 나. 실행 전에 채워 기록에 같이 담긴다. 폼의 기본값(출장 07:00~20:00 같은 것)은 preset 이 아니라 칸의 `default` 다.
 - LLM 작업은 갈래의 `llm.mode` 로 만든다 — `merged`(근태: LLM 이 종류를 고른다 — 종류별 칸을 합쳐 작업 `attend` 하나), `per-kind`(회의실·차량 조회: `search.room`·`search.car`), `recipe`(공문: 작업은 레시피 `recipes/gongmun` 의 `gongmun.<갈래>`·`gongmunReason.<갈래>` 를 가리킨다 — 공문 초안 칸은 YAML 에 다시 적지 않고 `draft: { from: recipe }` 로 펼친다), `none`.
+- **갈래 공통 칸** — 여러 종류가 같은 글로 적는 칸은 `_domain.yaml` 의 `fields` 에 한 번 적고 종류 파일에서 `칸: { from: domain }` 으로 가져온다(차례는 종류 파일의 자리, 다르게 쓰려면 칸을 통째로 적는다 — 외부활동의 `form`·`body`). 공통 preset 과 달리 저절로 합쳐지지 않는다(종류마다 있고 없는 칸이 달라서).
+- `recipe` 모드의 갈래(공문)는 `kinds` 가 레시피의 목적 차례(`RECIPE.order`)와 같아야 하고 종류의 `llm.tasks` 는 그 종류의 작업(`.<종류>` 로 끝남)이어야 한다 — 생성기가 막는다. 공문 종류·양식을 더하는 차례는 [`recipes/gongmun/README.md`](../recipes/gongmun/README.md).
 - per-kind 의 또 한 보기는 R&D 다 — `rnd.extract`(사업계획서 → 그 차년도 KR 스냅샷 YAML)·`rnd.revise`(아무 꼴의 변경 글 → 고친 YAML). 갈래의 consumer 는 `rndgen/llm.js askRndTask` 하나이고, 디스패처 전이라 패널 `rndgen/` 이 askClaude 를 바로 부른다(2026-10-16 — 자세히 `rndgen/README.md`).
 - `references/input.yaml` 에는 **읽기 작업**(출장 증빙 `receipt`·실패 원인 `diagnose`)만 남는다. 조회 조건(`parse`)·근태 조각(`attend`)은 이 폴더가 만든다.
 - 고친 뒤: `node tools/gen-actions.mjs` → `node --test "actions/test/*.test.mjs"` → `npm test`. 틀린 명세는 생성기가 무엇이 틀렸는지만 말하고 끝낸다(없는 칸을 summary 가 가리킴·모르는 형·read 없음·없는 실행기·uses 의 없는 export …).
@@ -128,4 +130,4 @@ const found = await actions.run(q, { onProgress, loadDay });
 ## 아직 안 옮긴 것(2단계 — `status: planned`)
 
 R&D 탭(과제·YAML 넣기·rERP·원노트·연구내용 공유·스킬 zip), 메일 탭(등록·갱신·지우기·병합·설정), 홈 카드(증빙 받기·사후정산 올리기)·사후정산 입력 화면의 증빙 읽기, DOC-Cruiser 회람, 기념일 지원 화면 채우기. 명세 파일은 있고(`spec/rnd` …) 실행기 등록과 배선이 없다 — `dispatch.run` 은 planned 를 돌리지 않는다. 같은 입력으로 계획을 다시 짓는 재현용 원장, LLM 이 허용 행위 가운데 고르는 통합 명령창도 2단계다.
-2026-10-16 사용자 지정 범위는 근태·공문·회의실·차량이다 — 숙박 줄 고치기(`trip.lodge`)는 그날 live 로 옮겼고, R&D·기념일 지원은 이번에 옮기지 않는다. 공문 설정 채우기(`gongmun.setup`)는 걷어냈다(그 채팅 칸은 2026-10-09 에 뺐다 — 공문 설정은 공문 4종의 `preset.setup` 이다).
+2026-10-16 사용자 지정 범위는 근태·공문·회의실·차량이다 — 숙박 줄 고치기(`trip.lodge`)는 그날 live 로 옮겼고, R&D·기념일 지원은 이번에 옮기지 않는다. 공문 설정 채우기(`gongmun.setup`)는 걷어냈다(그 채팅 칸은 2026-10-09 에 뺐다 — 공문 설정은 공문 5종의 `preset.setup` 이다).

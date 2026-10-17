@@ -4,6 +4,8 @@
 //   ＋ 칩 · 과제 더하기 · 빈 차년도 카드의 단추 → rnd.onAdd → openAdd(대상) — 덮개(rnd.setOverlay('add'))라 머리·몸통은 숨고 ＋ 칩이 켜진다
 //     → YAML 파일은 rnd.intake 로 바로 넣고, 문서는 source.readDocument → llm.askExtract → yaml.checkExtracted → finalizeExtracted
 //     → 미리보기(과제·차년도·비목별 예산·참여연구자·경고 · 별칭 · YAML 원문) → 넣기(rnd.intake · setAlias · pick) / YAML 파일로 저장 / 다시 뽑기
+//     차년도 고르기의 "모든 차년도"(2026-10-16 사용자 지정)는 같은 재료로 1차년도부터 차년도마다 한 번씩 차례로 묻고(몇 차년도까지는 대상 과제의 연구기간,
+//     그리고 처음 읽힌 답의 meta.연차범위 — yaml.stageCount) 차년도별 줄(합계·참여연구자·경고 · YAML · 다시 뽑기)로 보인 뒤 한 번에 넣는다 / 차년도 폴더 zip 으로 저장
 //   과제를 보고 있고 그 차년도에 예산 정보가 있으면 변경 및 이력 관리 카드의 위쪽(YAML 고치기) — 글·문서 → llm.askRevise → nextRev · finalizeRevised
 //     → 구조 차이(diffYaml)·새로 남을 변경이력(previewApply) 미리보기 → 반영(rnd.intake) / YAML 파일로 저장
 //
@@ -15,9 +17,13 @@
 
 import { yearsOf, currentYear, yearLabel, aliasOwner } from '../src/rnd.js';
 import { kindOf, findProject } from '../src/rndyaml.js';
+import { buildZip } from '../src/zip.js';
 
 const NEED_AI = 'Claude 연결(로컬 CLI 또는 API 키)이 필요합니다 — 설정 → LLM';
 const ASKING_EXTRACT = 'Claude 에게 묻는 중 — 큰 문서는 몇 분 걸릴 수 있습니다(최대 10분)';
+const ASKING_ALL = 'Claude 에게 차년도마다 차례로 묻는 중 — 차년도마다 몇 분 걸릴 수 있습니다';
+/** 차년도 고르기의 "모든 차년도" 값. */
+const ALL = 'all';
 const ASKING_REVISE = 'Claude 에게 묻는 중 — 기준 YAML 을 고치고 있습니다. 몇 분 걸릴 수 있습니다(최대 10분)';
 const LOSSY_BASE = '기준: 장부로 지음(손실 있음) — 원문 YAML 을 넣어 두면 정확합니다';
 /** 과제를 모를 때 차년도 고르기에 둘 칸 수. */
@@ -45,7 +51,7 @@ const ADD_HTML = `
   <label class="rdg-drop" for="rdgFile">
     <input type="file" id="rdgFile" accept=".yaml,.yml,.pdf,.hwpx,.docx,.xlsx,.pptx,.txt,.md" multiple />
     <span class="rdg-drop-lead">${UPLOAD_ICON}<span>YAML 또는 사업계획서 넣기</span></span>
-    <span class="rdg-drop-how">KR_&lt;과제&gt;.yaml · history/*.yaml 은 그대로 들어가고, 사업계획서·연구계획서(PDF · HWPX · DOCX · XLSX · TXT)는 이 차년도의 KR 스냅샷 YAML 을 뽑습니다 — 끌어다 놓기 · 눌러서 고르기</span>
+    <span class="rdg-drop-how">KR_&lt;과제&gt;.yaml · history/*.yaml 은 그대로 들어가고, 사업계획서·연구계획서(PDF · HWPX · DOCX · XLSX · TXT)는 아래에서 고른 차년도(모든 차년도도 됩니다)의 KR 스냅샷 YAML 을 뽑습니다 — 끌어다 놓기 · 눌러서 고르기</span>
     <span class="rdg-drop-note">옛 한글(.hwp)은 뽑지 못합니다 — 한글에서 PDF 로 저장해 넣으세요(.hwpx 는 그대로 됩니다)</span>
   </label>
   <div class="rdg-row">
@@ -57,7 +63,7 @@ const ADD_HTML = `
     <p class="rdg-read"></p>
     <dl class="rdg-meta"></dl>
     <label class="rdg-alias"><span>별칭 <span class="req">필수</span></span><input type="text" id="rdgAlias" autocomplete="off" spellcheck="false" placeholder="별칭 — 예) SSCB" /></label>
-    <details class="rdg-yaml"><summary>YAML 원문 보기/고치기</summary><textarea id="rdgYaml" rows="14" spellcheck="false" aria-label="뽑은 스냅샷 YAML"></textarea></details>
+    <details class="rdg-yaml"><summary>YAML 원문 보기/고치기<span class="rdg-yaml-year"></span></summary><textarea id="rdgYaml" rows="14" spellcheck="false" aria-label="뽑은 스냅샷 YAML"></textarea></details>
     <div class="rdg-actions">
       <button type="button" id="rdgApply" class="primary small">넣기</button>
       <button type="button" id="rdgSave" class="ghost small">YAML 파일로 저장</button>
@@ -122,6 +128,24 @@ const defaultToday = () => { const d = new Date(); return `${d.getFullYear()}-${
 const usable = (m) => !!(m && (m.chars || m.file));
 const projectIn = (book, id) => (id ? (book?.projects || []).find((p) => p.id === id) || null : null);
 
+/* 모든 차년도 — 차년도마다 한 줄(Year). state: wait(차례를 기다림) · asking(묻는 중) · ok(스냅샷) · fail(못 뽑음 — 꼴이 아닌 답이면 원문은 text 에). */
+const blankYear = (n) => ({ n, state: 'wait', text: '', sum: null, warnings: [], error: '', alias: '', edited: false });
+/** 넣을 차년도 — 뽑은 것, 그리고 못 뽑았어도 사람이 원문을 고친 것. */
+const readyYears = (all) => (all?.years || []).filter((y) => y.text.trim() && (y.state === 'ok' || y.edited));
+const yearsText = (ys) => ys.map((y) => yearLabel(y.n)).join('·');
+const projectKey = (s) => str(s).replace(/\s/g, '').toLowerCase();
+/** 같은 과제로 들어가는가 — src/rndyaml.js findProject 와 같은 잣대(둘 다 과제번호가 있으면 과제번호, 아니면 과제명). */
+const sameProject = (a, b) => (a.code && b.code ? projectKey(a.code) === projectKey(b.code) : projectKey(a.name) === projectKey(b.name));
+/** 여러 번 물은 것의 "로컬 CLI · $1.2345" — 길은 겹치지 않게, 값은 더한다. */
+function viaOfAll(outs) {
+  const costs = outs.filter((o) => Number.isFinite(o?.costUsd)).map((o) => Number(o.costUsd));
+  return {
+    text: [uniq(outs.map((o) => VIA_LABEL[o?.via] || o?.via || '')).join('·'), costs.length ? `$${costs.reduce((a, c) => a + c, 0).toFixed(4)}` : ''].filter(Boolean).join(' · '),
+    via: uniq(outs.map((o) => o?.via || '')).join(','),
+    ...(costs.length ? { costUsd: costs.reduce((a, c) => a + c, 0) } : {}),
+  };
+}
+
 /**
  * 더하기 카드(hosts.add 안)와 변경 및 이력 관리 카드의 YAML 고치기 몫(hosts.revise 안 — 카드 틀은 바깥 #rdChangeBox)을 그린다. 모든 의존은 주입(계약 §4.4).
  * @param {{
@@ -153,7 +177,8 @@ export function createRndGenPanel({
     // 마지막으로 받은 장부 화면(View — 계약 §2.4). 저장된 YAML 원문은 처음 과제를 볼 때 한 번 읽는다(loading) — 다 읽기 전에는 기준 줄이 "찾는 중".
     view: null, loading: null, loaded: false,
     // 더하기 카드 — run 은 지금 도는 일의 번호(닫거나 새 일을 시작하면 올라가 늦게 온 답을 버린다).
-    add: { open: false, target: null, material: null, text: '', sum: null, known: null, file: '', warnings: [], busy: false, run: 0 },
+    // all 은 "모든 차년도" 로 뽑았을 때만 — { total(몇 차년도까지 · 모르면 0), counted(답에서 읽었나), at(YAML 칸에 연 차년도), years: Year[] }. 그때 text·sum·file 은 비고 warnings 는 공통 경고.
+    add: { open: false, target: null, material: null, text: '', sum: null, known: null, file: '', warnings: [], all: null, busy: false, run: 0 },
     // 변경사항 카드 — key 는 보고 있는 "과제:차년도"(바뀌면 입력·미리보기를 비운다), files 는 붙인 문서(File), result 는 미리보기.
     rev: { key: '', files: [], result: null, busy: false, run: 0 },
   };
@@ -174,7 +199,7 @@ export function createRndGenPanel({
       A = {
         host: h, card: q('.rdg-add'), target: q('#rdgTarget'), close: q('#rdgAddClose'), drop: q('.rdg-drop'), file: q('#rdgFile'), stage: q('#rdgStage'),
         manual: q('#rdgManual'), msg: q('#rdgAddMsg'), preview: q('#rdgPreview'), read: q('.rdg-read'), meta: q('.rdg-meta'),
-        aliasRow: q('.rdg-alias'), alias: q('#rdgAlias'), yamlBox: q('.rdg-yaml'), yaml: q('#rdgYaml'),
+        aliasRow: q('.rdg-alias'), alias: q('#rdgAlias'), yamlBox: q('.rdg-yaml'), yamlYear: q('.rdg-yaml-year'), yaml: q('#rdgYaml'),
         apply: q('#rdgApply'), save: q('#rdgSave'), retry: q('#rdgRetry'), cancel: q('#rdgCancel'),
       };
       paintStage(null, 0);
@@ -199,6 +224,7 @@ export function createRndGenPanel({
     if (A) {
       A.host.addEventListener('click', onAddClick);
       A.host.addEventListener('change', onAddChange);
+      A.host.addEventListener('input', onAddInput);
       for (const type of ['dragover', 'dragleave', 'drop']) A.host.addEventListener(type, onAddDrag);
     }
     if (R) {
@@ -247,36 +273,42 @@ export function createRndGenPanel({
 
   /* ---------------------------------------------------------- 과제 더하기 카드 */
 
-  /** 차년도 고르기 — 자동(오늘이 든 차년도) + 1차년도…(과제가 있으면 그 차년도 수, 없으면 10). */
+  /** 차년도 고르기 — 자동(오늘이 든 차년도) · 모든 차년도 + 1차년도…(과제가 있으면 그 차년도 수, 없으면 10). */
   function paintStage(project, n) {
     if (!A) return;
     const doc = A.host.ownerDocument;
     const count = Math.max(project ? yearsOf(project).length : STAGE_UNKNOWN, n || 0);
     const opt = (value, text) => { const o = doc.createElement('option'); o.value = value; o.textContent = text; return o; };
-    A.stage.replaceChildren(opt('', '자동(오늘이 든 차년도)'), ...Array.from({ length: count }, (_, i) => opt(String(i + 1), yearLabel(i + 1))));
+    A.stage.replaceChildren(opt('', '자동(오늘이 든 차년도)'), opt(ALL, '모든 차년도'), ...Array.from({ length: count }, (_, i) => opt(String(i + 1), yearLabel(i + 1))));
     A.stage.value = n ? String(n) : '';
   }
 
   function paintAddButtons() {
     if (!A) return;
-    const { busy, text, material } = st.add;
+    const { busy, text, material, all } = st.add;
+    const has = all ? readyYears(all).length > 0 : !!text;
     A.file.disabled = busy;
     A.stage.disabled = busy;
-    A.apply.disabled = busy || !text;
-    A.save.disabled = busy || !text;
+    A.apply.disabled = busy || !has;
+    A.save.disabled = busy || !has;
+    A.save.textContent = all ? 'YAML 묶음 저장(zip)' : 'YAML 파일로 저장';
     A.retry.disabled = busy || !usable(material);
+    A.retry.title = all ? '같은 문서로 모든 차년도를 처음부터 다시 뽑습니다 — 한 차년도만은 그 줄의 다시 뽑기' : '같은 문서로 위 차년도를 다시 뽑습니다';
+    for (const b of A.meta.querySelectorAll('button')) b.disabled = busy;
   }
 
   /** 미리보기 — 무엇을 읽었는가 · 뽑은 것의 요약 · 별칭 · YAML 원문. YAML 칸의 글은 여기서 덮지 않는다(사람이 고쳤을 수 있다). */
   function paintAddPreview({ openYaml = false } = {}) {
     if (!A) return;
     const s = st.add;
-    A.preview.classList.toggle('hidden', !(s.material || s.text));
+    const all = s.all;
+    A.preview.classList.toggle('hidden', !(s.material || s.text || all));
     A.read.textContent = s.material?.read || '';
     A.read.classList.toggle('hidden', !s.material?.read);
     paintMeta();
-    A.aliasRow.classList.toggle('hidden', !s.text);
-    A.yamlBox.classList.toggle('hidden', !s.text);
+    A.aliasRow.classList.toggle('hidden', all ? !all.years.some((y) => y.state === 'ok') : !s.text);
+    A.yamlBox.classList.toggle('hidden', all ? !all.years.some((y) => y.text) : !s.text);
+    A.yamlYear.textContent = all?.at ? ` — ${yearLabel(all.at)}` : '';
     if (openYaml) A.yamlBox.open = true;
     paintAddButtons();
   }
@@ -284,8 +316,8 @@ export function createRndGenPanel({
   function paintMeta() {
     const doc = A.host.ownerDocument;
     const s = st.add;
-    const rows = [];
-    if (s.sum) {
+    const rows = s.all ? allRows(doc) : [];
+    if (!s.all && s.sum) {
       const m = s.sum;
       rows.push(['과제명', m.name || '—']);
       rows.push(['차년도', [m.n ? yearLabel(m.n) : '', m.rev].filter(Boolean).join(' · ') || '—']);
@@ -296,10 +328,12 @@ export function createRndGenPanel({
       if (m.goals?.length) rows.push(['개발목표', `${m.goals.length}개`]);
       rows.push(['넣을 곳', s.known ? `${s.known.alias || s.known.name} — 장부에 있는 과제` : '새 과제']);
     }
-    if (s.warnings.length) {
+    // 모든 차년도면 공통 경고(재료·대상) 뒤에 차년도마다의 경고를 "N차년도: " 를 앞에 붙여.
+    const warns = s.all ? [...s.warnings, ...s.all.years.flatMap((y) => y.warnings.map((w) => `${yearLabel(y.n)}: ${w}`))] : s.warnings;
+    if (warns.length) {
       const ul = doc.createElement('ul');
       ul.className = 'rdg-warns';
-      for (const w of s.warnings) { const li = doc.createElement('li'); li.textContent = w; ul.append(li); }
+      for (const w of warns) { const li = doc.createElement('li'); li.textContent = w; ul.append(li); }
       rows.push(['경고', ul]);
     }
     A.meta.replaceChildren(...rows.map(([k, v]) => {
@@ -333,10 +367,82 @@ export function createRndGenPanel({
     return table;
   }
 
+  /** 모든 차년도의 미리보기 줄 — 공통(과제명·과제번호·책임자·연구기간 — 처음 뽑힌 차년도의 것) · 차년도별 · 넣을 곳. */
+  function allRows(doc) {
+    const s = st.add;
+    const first = s.all.years.find((y) => y.state === 'ok');
+    const rows = [];
+    if (first) {
+      const m = first.sum;
+      rows.push(['과제명', m.name || '—'], ['과제번호', m.code || '—'], ['책임자', m.lead || '—']);
+      if (m.start || m.end) rows.push(['연구기간', `${dot(m.start)} ~ ${dot(m.end)}`]);
+    }
+    rows.push(['차년도별', yearList(doc)]);
+    if (first) rows.push(['넣을 곳', s.known ? `${s.known.alias || s.known.name} — 장부에 있는 과제` : '새 과제']);
+    return rows;
+  }
+
+  /** 차년도마다 한 줄 — 이름 · 형편(합계·참여연구자·경고 / 까닭) · YAML(아래 칸에 연다) · 다시 뽑기(그 차년도만). YAML 칸에 연 차년도는 .at. */
+  function yearList(doc) {
+    const all = st.add.all;
+    const ul = doc.createElement('ul');
+    ul.className = 'rdg-years';
+    const button = (text, key, n, title) => {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.className = 'ghost small';
+      b.dataset[key] = String(n);
+      b.textContent = text;
+      b.title = title;
+      return b;
+    };
+    for (const y of all.years) {
+      const li = doc.createElement('li');
+      li.className = `rdg-year ${y.state}${all.at === y.n ? ' at' : ''}`;
+      const name = doc.createElement('strong');
+      name.textContent = yearLabel(y.n);
+      const what = doc.createElement('span');
+      what.className = 'rdg-year-what';
+      what.textContent = y.state === 'wait' ? '기다림'
+        : y.state === 'asking' ? '뽑는 중…'
+          : y.state === 'fail' ? `뽑지 못함 — ${y.error}${y.edited ? ' · 원문을 고침(넣기에 듦)' : ''}`
+            : [y.sum.totalThousand ? `합계 ${y.sum.totalThousand}천원` : '예산 없음', `참여연구자 ${Number(y.sum.people) || 0}명`,
+              y.edited ? '원문을 고침' : '', y.warnings.length ? `경고 ${y.warnings.length}` : ''].filter(Boolean).join(' · ');
+      li.append(name, what);
+      if (y.text) li.append(button('YAML', 'rdgYearShow', y.n, `${yearLabel(y.n)} YAML 원문을 아래 칸에 엽니다`));
+      if (y.state === 'ok' || y.state === 'fail') li.append(button('다시 뽑기', 'rdgYearRedo', y.n, `같은 문서로 ${yearLabel(y.n)}만 다시 뽑습니다`));
+      ul.append(li);
+    }
+    return ul;
+  }
+
+  /** 그 차년도의 YAML 을 아래 칸에 연다(고친 글은 칸에 적을 때마다 그 차년도에 남아 있다 — onAddInput). */
+  function showYear(n) {
+    const all = st.add.all;
+    const y = all?.years.find((x) => x.n === n);
+    if (!y?.text) return;
+    all.at = n;
+    A.yaml.value = y.text;
+    paintAddPreview({ openYaml: true });
+  }
+
+  /** 모든 차년도에서 YAML 칸을 고치면 그 차년도의 글로 — 못 뽑은 차년도도 고친 원문이면 넣기에 든다. */
+  function onAddInput(e) {
+    const all = st.add.all;
+    if (e.target?.id !== 'rdgYaml' || !all) return;
+    const y = all.years.find((x) => x.n === all.at);
+    if (!y) return;
+    y.text = A.yaml.value;
+    if (!y.edited) {
+      y.edited = true;
+      paintAddPreview();
+    }
+  }
+
   /** 카드의 일을 비운다(열린 채로) — 재료·뽑은 것·알림. 도는 일은 run 을 올려 늦게 온 답을 버린다. */
   function resetAdd() {
     st.add.run++;
-    Object.assign(st.add, { material: null, text: '', sum: null, known: null, file: '', warnings: [] });
+    Object.assign(st.add, { material: null, text: '', sum: null, known: null, file: '', warnings: [], all: null });
     if (!A) return;
     setBusy('add', false);
     say('add', '');
@@ -402,7 +508,9 @@ export function createRndGenPanel({
   function onAddClick(e) {
     const b = e.target?.closest?.('button');
     if (!b || !A.host.contains(b) || b.disabled) return;
-    if (b.id === 'rdgAddClose' || b.id === 'rdgCancel') closeAdd();
+    if (b.dataset.rdgYearShow) showYear(Number(b.dataset.rdgYearShow));
+    else if (b.dataset.rdgYearRedo) extractYears([Number(b.dataset.rdgYearRedo)]);
+    else if (b.id === 'rdgAddClose' || b.id === 'rdgCancel') closeAdd();
     else if (b.id === 'rdgManual') { hideAdd(); rnd.addManually(); }   // 덮개는 rndpanel 이 (close 없이) 풀고 새 과제 폼을 연다
     else if (b.id === 'rdgRetry') extract();
     else if (b.id === 'rdgApply') applyAdd();
@@ -484,7 +592,7 @@ export function createRndGenPanel({
       return;
     }
     const run = ++st.add.run;
-    Object.assign(st.add, { material: null, text: '', sum: null, known: null, file: '', warnings: [] });
+    Object.assign(st.add, { material: null, text: '', sum: null, known: null, file: '', warnings: [], all: null });
     A.yaml.value = '';
     paintAddPreview();
     setBusy('add', true);
@@ -508,42 +616,69 @@ export function createRndGenPanel({
     await extract();
   }
 
-  /** 메모리의 재료로 뽑는다(다시 뽑기도 이것 — 차년도 고르기의 지금 값으로). */
-  async function extract() {
+  /** 뽑기 앞 — 재료가 있고 실을 것이 있고 Claude 가 이어져 있는가. 아니면 알리고 null, 맞으면 ai() 의 값. */
+  function readyToAsk() {
     const material = st.add.material;
-    if (!A || st.add.busy) return;
-    if (!material) { say('add', '먼저 사업계획서를 넣으세요', 'error'); return; }
+    if (!material) { say('add', '먼저 사업계획서를 넣으세요', 'error'); return null; }
     if (!usable(material)) {
       // 읽기는 됐으나 실을 것이 없다 — 몇 분을 기다려 빈 답을 받지 않게 묻지 않고, 까닭(material.warnings)을 알린다.
       const why = `${material.name}: Claude 에게 줄 글자도 붙일 PDF 도 없어 뽑지 않았습니다 — ${(material.warnings || []).join(' / ') || '글자를 읽지 못했습니다'}`;
       say('add', why, 'error');
       logEvent('rnd', false, `R&D 스냅샷 뽑기 실패: ${why}`, { file: material.name });
-      return;
+      return null;
     }
     const a = ai();
-    if (!hasAi(a)) { say('add', NEED_AI, 'error'); return; }
+    if (!hasAi(a)) { say('add', NEED_AI, 'error'); return null; }
+    return a;
+  }
+
+  /**
+   * 한 차년도 묻기 — askExtract → checkExtracted → (스냅샷 꼴이면) finalizeExtracted · summarizeSnapshot. 그사이 닫히거나 새 일이 시작되면(live() 가 거짓) null.
+   * stage 가 null(자동)이면 답의 stage 로 검사한다. 꼴이 아닌 답은 ok:false 로 돌려주고, 던지는 것은 묻기·마무리의 실패뿐이다.
+   */
+  async function askOne(material, { stage, t, target, docs, a, live }) {
+    const project = target ? { name: target.name, code: target.code, alias: target.alias, start: target.start, end: target.end, calendar: !!target.calendar } : null;
+    const out = await llm.askExtract(material, { today: t, stage, project, currentStage: target ? currentYear(target, t) : null, docs }, { ai: a });
+    if (!live()) return null;
+    const data = out?.data || {};
+    const raw = str(data.yaml);
+    // 차년도 — 고른 것, 없으면 LLM 이 적은 stage. 둘 다 없고 meta.차년도 도 없으면 checkExtracted 가 문제로 친다.
+    const want = stage || (Number.isInteger(Number(data.stage)) && Number(data.stage) >= 1 ? Number(data.stage) : null);
+    const chk = await yaml.checkExtracted(raw, { stage: want });
+    if (!live()) return null;
+    const warnings = uniq([...(chk.warnings || []), ...splitWarn(data.warnings)]);
+    if (!chk.ok) return { ok: false, out, data, raw, chk, warnings };
+    const n = want || chk.snap?.n || 1;
+    const fin = await yaml.finalizeExtracted(raw, { stage: n, today: t, source: material.name });
+    if (!live()) return null;
+    return { ok: true, out, data, raw, chk, warnings, n, fin, sum: yaml.summarizeSnapshot(fin.obj) };
+  }
+
+  /** 메모리의 재료로 뽑는다(다시 뽑기도 이것 — 차년도 고르기의 지금 값으로). "모든 차년도" 면 extractYears. */
+  async function extract() {
+    const material = st.add.material;
+    if (!A || st.add.busy) return;
+    const a = readyToAsk();
+    if (!a) return;
+    if (A.stage.value === ALL) { await extractYears(null); return; }
     const run = ++st.add.run;
+    const live = () => run === st.add.run;
     const stage = Number(A.stage.value) || null;
     const t = today();
     const target = projectIn(rnd.book(), st.add.target?.projectId);
-    Object.assign(st.add, { text: '', sum: null, known: null, file: '', warnings: [] });
+    Object.assign(st.add, { text: '', sum: null, known: null, file: '', warnings: [], all: null });
     A.yaml.value = '';
     paintAddPreview();
     setBusy('add', true);
     startTick('add', ASKING_EXTRACT);
     try {
       const docs = await llm.loadSkillDocs(readAssetFn);
-      const project = target ? { name: target.name, code: target.code, alias: target.alias, start: target.start, end: target.end, calendar: !!target.calendar } : null;
-      const out = await llm.askExtract(material, { today: t, stage, project, currentStage: target ? currentYear(target, t) : null, docs }, { ai: a });
-      if (run !== st.add.run) return;
-      const data = out?.data || {};
-      const raw = str(data.yaml);
-      // 차년도 — 고른 것, 없으면 LLM 이 적은 stage. 둘 다 없고 meta.차년도 도 없으면 checkExtracted 가 문제로 친다.
-      const want = stage || (Number.isInteger(Number(data.stage)) && Number(data.stage) >= 1 ? Number(data.stage) : null);
-      const chk = await yaml.checkExtracted(raw, { stage: want });
-      if (run !== st.add.run) return;
-      const warnings = uniq([...(chk.warnings || []), ...splitWarn(data.warnings), ...(material.warnings || [])]);
-      if (!chk.ok) {
+      if (!live()) return;
+      const r = await askOne(material, { stage, t, target, docs, a, live });
+      if (!r) return;
+      const { out, data, raw, chk } = r;
+      const warnings = uniq([...r.warnings, ...(material.warnings || [])]);
+      if (!r.ok) {
         // 원문은 YAML 칸에 펴 둔다 — 사람이 고쳐 넣기를 누를 수 있게.
         const guess = chk.snap?.project?.name || material.name.replace(/\.[^.]+$/, '');
         Object.assign(st.add, { text: raw, file: raw ? yaml.fileName({ name: guess }, { rev: 'r0' }) : '', warnings });
@@ -555,10 +690,7 @@ export function createRndGenPanel({
         logEvent('rnd', false, `R&D 스냅샷 뽑기 실패: ${why}`, { file: material.name, via: out?.via, costUsd: out?.costUsd });
         return;
       }
-      const n = want || chk.snap?.n || 1;
-      const fin = await yaml.finalizeExtracted(raw, { stage: n, today: t, source: material.name });
-      if (run !== st.add.run) return;
-      const sum = yaml.summarizeSnapshot(fin.obj);
+      const { n, fin, sum } = r;
       const book = rnd.book();
       const known = findProject(book, { code: sum.code, name: sum.name });
       if (target && known?.id !== target.id) warnings.push(`고른 과제(${target.alias || target.name})와 과제명·과제번호가 달라 ${known ? `${known.alias || known.name} 과제` : '새 과제'}로 들어갑니다`);
@@ -583,9 +715,204 @@ export function createRndGenPanel({
     }
   }
 
+  /** 모든 차년도의 줄 — 있으면 그것, 없으면 기다림으로 만들어 차례 자리에. */
+  function yearOf(all, n) {
+    let y = all.years.find((x) => x.n === n);
+    if (!y) {
+      y = blankYear(n);
+      all.years.push(y);
+      all.years.sort((p, q) => p.n - q.n);
+    }
+    return y;
+  }
+
+  /**
+   * 모든 차년도(stages 가 null) 또는 그 차년도들만 다시(stages: [n] — 줄의 다시 뽑기) — 같은 재료로 차년도마다 한 번씩 **차례로** 묻는다
+   * (로컬 CLI 를 여럿 띄우거나 API 한도에 걸리지 않게 한 번에 하나). 몇 차년도까지: 대상 과제(빈 차년도 카드)의 연구기간이 있으면 그것으로 시작하고,
+   * 처음 읽힌 답의 meta.연차범위 · 연차별기간 · 기간(yaml.stageCount)이 있으면 그것을 따른다(문서가 이긴다). 둘 다 모르면 1차년도만 뽑고 알린다.
+   * 한 차년도가 실패해도 다음 차년도로 간다. 끝나면 알림 한 줄·활동 로그 한 줄.
+   */
+  async function extractYears(stages = null) {
+    const material = st.add.material;
+    if (!A || st.add.busy) return;
+    const fresh = !stages;
+    if (!fresh && !st.add.all) return;
+    const a = readyToAsk();
+    if (!a) return;
+    const run = ++st.add.run;
+    const live = () => run === st.add.run;
+    const t = today();
+    const target = projectIn(rnd.book(), st.add.target?.projectId);
+    if (fresh) {
+      const total = target?.start ? yearsOf(target).length : 0;
+      Object.assign(st.add, { text: '', sum: null, known: null, file: '', warnings: [], all: { total, counted: false, at: 0, years: [] } });
+      for (let k = 1; k <= total; k++) yearOf(st.add.all, k);
+      A.yaml.value = '';
+      A.yamlBox.open = false;
+    }
+    const all = st.add.all;
+    const outs = [];
+    const asked = [];
+    setBusy('add', true);
+    paintAddPreview();
+    try {
+      const docs = await llm.loadSkillDocs(readAssetFn);
+      if (!live()) return;
+      for (let i = 0; fresh ? i < Math.max(all.total, 1) : i < stages.length; i++) {
+        const k = fresh ? i + 1 : stages[i];
+        const y = yearOf(all, k);
+        Object.assign(y, { state: 'asking', error: '' });
+        paintAddPreview();
+        startTick('add', `${ASKING_ALL} · ${yearLabel(k)}${fresh ? ` (${k}/${all.total || '?'})` : ''}`);
+        let r = null;
+        try {
+          r = await askOne(material, { stage: k, t, target, docs, a, live });
+          if (!r) return;
+        } catch (err) {
+          if (!live()) return;
+          Object.assign(y, { state: 'fail', text: '', sum: null, warnings: [], error: err?.message || String(err), alias: '', edited: false });
+        }
+        if (r) {
+          outs.push(r.out);
+          if (r.ok) Object.assign(y, { state: 'ok', text: r.fin.text, sum: r.sum, warnings: r.warnings, error: '', alias: str(r.data.alias), edited: false });
+          else Object.assign(y, { state: 'fail', text: r.raw, sum: null, warnings: r.warnings, error: `스냅샷 꼴이 아닙니다 — ${(r.chk.problems || []).join(' / ') || '까닭 모름'}`, alias: '', edited: false });
+          // 몇 차년도까지 — 처음 읽힌 답의 것. 줄어들면 아직 묻지 않은 뒤쪽 줄을 거두고, 늘면 기다림 줄을 더한다.
+          const c = fresh && !all.counted ? yaml.stageCount(r.ok ? r.fin.obj : r.chk?.obj) : 0;
+          if (c) {
+            all.counted = true;
+            all.total = c;
+            all.years = all.years.filter((x) => x.n <= c || x.state !== 'wait');
+            for (let j = 1; j <= c; j++) yearOf(all, j);
+          }
+        }
+        asked.push(y);
+        // YAML 칸 — 아직 연 차년도가 없으면 처음 글이 온 차년도를, 열어 둔 차년도를 다시 뽑았으면 새 글을.
+        if (y.text && (!all.at || all.at === k)) {
+          all.at = k;
+          A.yaml.value = y.text;
+        }
+        paintAddPreview();
+      }
+    } catch (err) {
+      if (!live()) return;
+      setBusy('add', false);
+      for (const y of all.years) if (y.state === 'asking') y.state = 'wait';
+      paintAddPreview();
+      const why = err?.message || String(err);
+      say('add', `스냅샷을 뽑지 못했습니다 — ${why}`, 'error');
+      logEvent('rnd', false, `R&D 스냅샷 뽑기 실패: ${why}`, { file: material.name });
+      return;
+    } finally {
+      if (live() && st.add.busy) setBusy('add', false);
+    }
+    if (!live()) return;
+    finishYears({ fresh, asked, outs, target, material });
+  }
+
+  /** 모든 차년도 묻기가 끝남 — 넣을 곳(장부의 과제)·별칭·공통 경고, 알림 한 줄, 활동 로그 한 줄. */
+  function finishYears({ fresh, asked, outs, target, material }) {
+    const all = st.add.all;
+    const first = all.years.find((y) => y.state === 'ok');
+    const known = first ? findProject(rnd.book(), { code: first.sum.code, name: first.sum.name }) : null;
+    const common = [...(material.warnings || [])];
+    if (target && first && known?.id !== target.id) common.push(`고른 과제(${target.alias || target.name})와 과제명·과제번호가 달라 ${known ? `${known.alias || known.name} 과제` : '새 과제'}로 들어갑니다`);
+    if (fresh && !all.counted && !target?.start) common.push('몇 차년도까지인지 읽지 못해 1차년도만 뽑았습니다 — 표지의 연차별 연구개발기간을 확인하거나, 차년도를 골라 하나씩 뽑으세요');
+    const others = all.years.filter((y) => y.state === 'ok' && !sameProject(y.sum, first.sum));
+    if (others.length) common.push(`${yearsText(others)}의 과제명·과제번호가 ${yearLabel(first.n)}와 달라 넣지 않습니다 — YAML 원문의 meta.과제명·연구개발과제번호를 맞추거나 그 차년도를 다시 뽑으세요`);
+    Object.assign(st.add, { known, warnings: uniq(common) });
+    if (first && (fresh || !A.alias.value.trim())) {
+      A.alias.value = known ? known.alias || first.alias : first.alias;
+      A.alias.readOnly = !!known?.alias;
+    }
+    paintAddPreview();
+    const got = asked.filter((y) => y.state === 'ok');
+    const failed = asked.filter((y) => y.state !== 'ok');
+    const via = viaOfAll(outs);
+    const notes = uniq(outs.map((o) => str(o?.note)));
+    const name = first?.sum.name || material.name;
+    const data = { file: material.name, via: via.via, ...(via.costUsd != null ? { costUsd: via.costUsd } : {}) };
+    if (!got.length) {
+      const why = failed.map((y) => `${yearLabel(y.n)}: ${y.error}`).join(' / ') || '까닭 모름';
+      say('add', `스냅샷을 뽑지 못했습니다 — ${why}${failed.some((y) => y.text) ? ' · 그 줄의 YAML 로 원문을 열어 고치면 넣을 수 있습니다' : ''}`, 'error');
+      logEvent('rnd', false, `R&D 스냅샷 뽑기 실패: ${fresh ? '모든 차년도' : yearsText(failed)} — ${why}`, data);
+      return;
+    }
+    say('add', `뽑았습니다 — ${name} ${yearsText(got)}${via.text ? ` · ${via.text}` : ''}${failed.length ? ` · ${yearsText(failed)}는 뽑지 못했습니다(그 줄의 다시 뽑기)` : ''}. 확인하고 넣기를 누르세요${notes.length ? ` (${notes.join(', ')})` : ''}`);
+    logEvent('rnd', true, `R&D 사업계획서에서 ${fresh ? '모든 차년도 ' : ''}스냅샷 뽑음 — ${name} ${yearsText(got)}${failed.length ? ` · 못 뽑음 ${yearsText(failed)}` : ''}${via.text ? ` (${via.text})` : ''}`, { ...data, stages: got.map((y) => y.n) });
+  }
+
+  /**
+   * 모든 차년도 넣기 — 넣을 차년도(readyYears)마다 칸의 글을 다시 풀어 스냅샷인지·같은 과제인지 보고, 별칭을 검사하고, 한 번의 rnd.intake 로 넣는다
+   * (이름은 "N차년도/KR_<과제>.yaml" — rndgen/index.js 가 원문을 차년도마다 짝지어 남긴다). 하나라도 들어갔으면 닫고 그 과제의 오늘이 든 차년도(없으면 처음 넣은 차년도)로.
+   */
+  async function applyAll() {
+    const ys = readyYears(st.add.all);
+    if (!ys.length) { say('add', '넣을 차년도가 없습니다 — 먼저 사업계획서에서 뽑으세요', 'error'); return; }
+    const run = ++st.add.run;
+    setBusy('add', true);
+    say('add', `${yearsText(ys)} 넣는 중…`);
+    try {
+      const texts = [];
+      let head = null;
+      for (const y of ys) {
+        const parsed = await yaml.parseYaml(y.text);
+        if (!parsed?.ok) throw new Error(`${yearLabel(y.n)}: YAML 을 읽지 못했습니다 — ${parsed?.error || ''}`);
+        if (kindOf(parsed.obj) !== 'snapshot') throw new Error(`${yearLabel(y.n)}: 스냅샷 YAML 이 아닙니다 — meta.과제명 이 있어야 합니다`);
+        const sum = yaml.summarizeSnapshot(parsed.obj);
+        head ||= { ...sum, n: sum.n || y.n };
+        if (!sameProject(sum, head)) throw new Error(`${yearLabel(y.n)}: 과제명·과제번호가 ${yearLabel(head.n)}와 다릅니다 — YAML 원문의 meta.과제명·연구개발과제번호를 맞추세요`);
+        texts.push({ name: `${yearLabel(sum.n || y.n)}/${yaml.fileName({ name: sum.name }, { rev: sum.rev })}`, text: y.text.trim() });
+      }
+      const book = rnd.book();
+      const known = findProject(book, { code: head.code, name: head.name });
+      const alias = known?.alias || A.alias.value.trim();
+      if (!known?.alias) {
+        if (!alias) { A.alias.focus?.(); throw new Error('별칭을 적으세요 — 예) SSCB'); }
+        const owner = aliasOwner(book, alias, known?.id || '');
+        if (owner) { A.alias.focus?.(); throw new Error(`같은 별칭의 과제가 있습니다 — ${owner.name}`); }
+      }
+      const res = await rnd.intake(texts, { source: 'extract' });
+      if (run !== st.add.run) return;
+      const results = res?.results || [];
+      const applied = results.filter((r) => r.applied && r.projectId);
+      if (!applied.length) throw new Error(res?.error || results.map((r) => `${r.label}: ${r.summary}`).join(' / ') || '넣지 못했습니다');
+      const pid = applied[0].projectId;
+      const p = projectIn(rnd.book(), pid);
+      if (p && !p.alias && alias) {
+        const set = rnd.setAlias(pid, alias);
+        if (!set?.ok) logEvent('rnd', false, `R&D 별칭 붙이기 실패: ${set?.error || alias}`);
+      }
+      const cur = p ? currentYear(p, today()) : 0;
+      closeAdd();
+      rnd.pick(pid, applied.some((r) => r.n === cur) ? cur : applied[0].n);
+    } catch (err) {
+      if (run !== st.add.run) return;
+      setBusy('add', false);
+      say('add', err?.message || String(err), 'error');
+    } finally {
+      if (run === st.add.run && st.add.busy) setBusy('add', false);
+    }
+  }
+
+  /** 모든 차년도 저장 — 넣을 차년도를 스킬의 연차 폴더 꼴(N차년도/KR_<과제>.yaml)로 담은 zip 하나. */
+  async function saveAll(btn) {
+    const ys = readyYears(st.add.all);
+    if (!ys.length) { say('add', 'YAML 이 비었습니다', 'error'); return; }
+    const head = st.add.all.years.find((y) => y.state === 'ok')?.sum;
+    const base = yaml.fileName({ name: head?.name || str(st.add.material?.name).replace(/\.[^.]+$/, '') });
+    try {
+      const bytes = buildZip(ys.map((y) => ({ name: `${yearLabel(y.n)}/${base}`, data: y.text })));
+      await downloadFn(bytes, base.replace(/\.yaml$/, '_모든차년도.zip'), 'application/zip');
+      flash(btn, '저장됨 ✓');
+    } catch (err) {
+      say('add', `저장하지 못했습니다 — ${err?.message || err}`, 'error');
+    }
+  }
+
   /** 넣기 — YAML 칸의 글(사람이 고쳤을 수 있다)을 다시 풀어 스냅샷인지·별칭을 보고 rnd.intake → 별칭 → 닫고 그 과제·차년도로. */
   async function applyAdd() {
     if (st.add.busy) return;
+    if (st.add.all) { await applyAll(); return; }
     const text = A.yaml.value.trim();
     if (!text) { say('add', 'YAML 이 비었습니다 — 먼저 사업계획서에서 뽑으세요', 'error'); return; }
     const run = ++st.add.run;
@@ -626,6 +953,7 @@ export function createRndGenPanel({
   }
 
   async function saveAdd(btn) {
+    if (st.add.all) { await saveAll(btn); return; }
     const text = A.yaml.value;
     if (!text.trim()) { say('add', 'YAML 이 비었습니다', 'error'); return; }
     try {
@@ -951,6 +1279,10 @@ export function createRndGenPanel({
       add: {
         open: s.open, busy: s.busy, target: s.target ? { ...s.target } : null, material: s.material ? { name: s.material.name, kind: s.material.kind, read: s.material.read } : null,
         text: s.text, file: s.file, warnings: [...s.warnings], known: s.known ? s.known.id : '', alias: A?.alias.value || '',
+        all: s.all ? {
+          total: s.all.total, counted: s.all.counted, at: s.all.at,
+          years: s.all.years.map((y) => ({ n: y.n, state: y.state, error: y.error, edited: y.edited, text: y.text, warnings: [...y.warnings] })),
+        } : null,
       },
       revise: {
         key: r.key, busy: r.busy, visible: !!R && !R.host.classList.contains('hidden'), files: r.files.map((f) => f.name),

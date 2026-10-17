@@ -1,4 +1,4 @@
-// 전자결재 과제(Job Id) 찾기 — 규칙(src/jobid.js), R&D 탭 과제 폼의 찾기(rndpanel.js), 공문 작성의 고르기(src/gmwrite.js).
+// 전자결재 과제(Job Id) 찾기 — 규칙(src/jobid.js), R&D 탭 과제 정보 카드의 저절로 찾기(rndpanel.js autoJob — 2026-10-16 사용자 지정), 공문 작성의 고르기(src/gmwrite.js).
 // 2026-10-16 사용자 지정: "과제 책임자로 우선 검색하고 유사도가 높은 0.5 이상인 걸 … 규칙식으로 검색해서 가장 높은 걸 가져오고 선택할 수 있도록".
 // 어디에도 보내지 않는다 — 과제 목록은 흉내다.
 
@@ -58,9 +58,9 @@ test('책임자가 같은 과제 먼저, 그 안에서 유사도 높은 차례(�
   assert.equal(rankJobs(ROWS, { name: NAME }, { limit: 1 }).list.length, 1);
 });
 
-/* ------------------------------------------------------------ R&D 탭 과제 폼의 찾기 */
+/* ------------------------------------------------------------ R&D 탭 과제 정보 카드의 저절로 찾기(2026-10-16 사용자 지정) */
 
-test('과제 폼 — 찾기를 누르면 가장 높은 후보가 Job Id 칸에 들어가고, 다른 후보를 누르면 바뀌고, 저장하면 남는다', async () => {
+test('과제 정보 카드 — Job Id 가 비면 저절로 찾아 가장 높은 후보를 골라 두고, 다른 후보를 누르면 바뀌고, 이 번호로 저장을 누르면 남으며 묶음은 사라진다. 못 받으면 까닭과 다시 찾기', async () => {
   const html = fs.readFileSync(new URL('../sidepanel.html', import.meta.url), 'utf8');
   const { window } = new JSDOM(html, { url: 'https://example.org/' });
   const doc = window.document;
@@ -78,61 +78,75 @@ test('과제 폼 — 찾기를 누르면 가장 높은 후보가 Job Id 칸에 �
     $: (id) => doc.getElementById(id), escapeHtml, logEvent: () => {}, today: () => '2026-10-16', erp,
     openNote: async () => { throw new Error('없음'); }, readAsset: async () => { throw new Error('없음'); },
     jobs: async () => { asked++; if (fail) throw fail; return ROWS; },
+    // 회계(e-accounting — 회계 I/O 저절로 찾기, 2026-10-17)는 이 검사의 것이 아니다 — 빈 목록으로 흉내(어디에도 보내지 않게).
+    acct: { list: async () => [], get: async () => null },
   });
+  // 처음엔 목록을 못 받는다(로그인 안 됨) — 열자마자 찾고, 까닭과 다시 찾기만 보인다.
+  fail = new Error('로그인이 필요합니다');
   panel.wire();
   await panel.show();
   const $ = (id) => doc.getElementById(id);
   const settle = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+  const hidden = (id) => $(id).classList.contains('hidden');
+  const cands = () => [...$('rdJobList').querySelectorAll('[data-job]')];
+  const picked = () => $('rdJobList').querySelector('[aria-pressed="true"] b').textContent;
 
-  $('rdEdit').click();
-  assert.equal($('rdFJob').value, '', 'Job Id 는 과제번호(국가과제 번호)와 따로 — 처음엔 비어 있다');
-  assert.ok($('rdFJobList').classList.contains('hidden'));
-
-  $('rdFJobFind').click();
   await settle();
-  assert.equal(asked, 1);
-  assert.equal($('rdFJob').value, 'RND00202026', '가장 높은 것(책임자 같음 · 진행)');
-  const cands = [...$('rdFJobList').querySelectorAll('[data-job]')];
-  assert.deepEqual(cands.map((b) => [b.querySelector('b').textContent, b.getAttribute('aria-pressed')]),
+  assert.equal(asked, 1, '과제를 고르면 폼을 열지 않아도 저절로 한 번 받는다');
+  assert.ok(!hidden('rdJobBox') && !hidden('rdJobRetry') && hidden('rdJobSave'));
+  assert.match($('rdMeta').textContent, /Job Id\s*없음 — 과제 목록을 받지 못했습니다\(아래 다시 찾기\)/);
+  assert.match($('rdJobMsg').textContent, /과제 목록을 받지 못했습니다 — 로그인이 필요합니다/);
+  assert.ok($('rdJobMsg').classList.contains('bad'));
+  assert.equal(cands().length, 0);
+
+  // 다시 찾기 — 새로 받아 후보를 높은 차례로, 가장 높은 것을 골라 둔다. 표의 Job Id 줄에도 그 후보.
+  fail = null;
+  $('rdJobRetry').click();
+  await settle();
+  assert.equal(asked, 2);
+  assert.ok(!hidden('rdJobBox') && hidden('rdJobRetry') && !hidden('rdJobSave'));
+  assert.match($('rdMeta').textContent, /Job Id\s*RND00202026 \(후보 — 맞는지 보고 아래에서 저장\)/);
+  assert.deepEqual(cands().map((b) => [b.querySelector('b').textContent, b.getAttribute('aria-pressed')]),
     [['RND00202026', 'true'], ['RND00992024', 'false'], ['RND00102025', 'false']]);
-  assert.match(cands[0].textContent, /책임자 김거화 같음 · 진행 · 유사도 1\.00/);
-  assert.match($('rdFJobMsg').textContent, /가장 비슷한 과제를 넣었습니다\(책임자 김거화 같음 · 유사도 1\.00\)/);
+  assert.match(cands()[0].textContent, /책임자 김거화 같음 · 진행 · 유사도 1\.00/);
+  assert.match($('rdJobMsg').textContent, /가장 비슷한 과제를 골라 두었습니다\(책임자 김거화 같음 · 유사도 1\.00\)/);
+  assert.ok(!$('rdJobMsg').classList.contains('bad'));
 
-  cands[2].click();
-  assert.equal($('rdFJob').value, 'RND00102025');
-  assert.equal($('rdFJobList').querySelector('[aria-pressed="true"] b').textContent, 'RND00102025');
-  assert.match($('rdFJobMsg').textContent, /RND-10-2025 로 바꿨습니다 — 저장해야 남습니다/);
+  cands()[2].click();
+  assert.equal(picked(), 'RND00102025');
+  assert.match($('rdMeta').textContent, /Job Id\s*RND00102025 \(후보/);
+  assert.equal(asked, 2, '후보를 바꿔도 다시 받지 않는다');
 
-  // 다시 찾아도 적혀 있는 것이 후보에 있으면 그대로 둔다.
-  $('rdFJobFind').click();
-  await settle();
-  assert.equal($('rdFJob').value, 'RND00102025');
-  assert.match($('rdFJobMsg').textContent, /적혀 있던 Job Id 가 후보에 있습니다/);
+  // 폼은 손으로 고치는 곳 — 찾기 단추가 없고 칸은 저장 전엔 비어 있다. 폼을 닫아도 고른 후보는 그대로.
+  $('rdEdit').click();
+  assert.equal($('rdFJob').value, '', 'Job Id 는 과제번호(국가과제 번호)와 따로 — 저장 전엔 비어 있다');
+  assert.equal($('rdFJobFind'), null, '폼에는 찾기가 없다 — 과제 정보 카드가 저절로 찾는다');
+  $('rdFCancel').click();
+  assert.equal(picked(), 'RND00102025');
 
-  $('rdFJobList').querySelector('[data-job="0"]').click();
-  $('rdFSave').click();
+  // 이 번호로 저장 — 묶음은 사라지고 표의 Job Id 줄만 남는다. 과제번호는 그대로.
+  cands()[0].click();
+  $('rdJobSave').click();
+  assert.ok(hidden('rdJobBox'));
+  assert.match($('rdMeta').textContent, /Job Id\s*RND00202026\s*회계 I\/O\s*없음[^책]*책임자/, '표의 Job Id 줄 다음은 회계 I/O 줄(2026-10-17 — 여기서는 빈 목록이라 없음)');
   await settle(500);
   assert.equal(store.rndBook.projects[0].job, 'RND00202026');
   assert.equal(store.rndBook.projects[0].code, 'RS-2026-25547199', '과제번호는 그대로');
-  assert.match($('rdMeta').textContent, /Job Id\s*RND00202026/);
 
-  // 목록을 못 받으면 까닭을 적고 칸은 건드리지 않는다. 과제명이 없으면 묻지 않는다.
+  // 과제 고치기에서 손으로 고친다. 비우고 저장하면 같은 세션의 목록으로 후보가 다시 보인다(다시 받지 않는다).
   $('rdEdit').click();
   assert.equal($('rdFJob').value, 'RND00202026');
-  fail = new Error('로그인이 필요합니다');
-  $('rdFJobFind').click();
-  await settle();
-  assert.equal($('rdFJob').value, 'RND00202026');
-  assert.match($('rdFJobMsg').textContent, /과제 목록을 받지 못했습니다 — 로그인이 필요합니다/);
-  assert.ok($('rdFJobMsg').classList.contains('bad'));
-  fail = null;
-  $('rdFName').value = '';
-  $('rdFJobFind').click();
-  await settle();
-  assert.equal(asked, 3, '과제명이 없으면 목록을 받지 않는다');
-  assert.match($('rdFJobMsg').textContent, /과제명을 먼저 적으세요/);
-  $('rdFCancel').click();
-  assert.equal($('rdFJobMsg').textContent, '', '폼을 닫으면 후보·알림을 치운다');
+  $('rdFJob').value = 'RND-10-2025';
+  $('rdFSave').click();
+  await settle(500);
+  assert.equal(store.rndBook.projects[0].job, 'RND-10-2025');
+  assert.ok(hidden('rdJobBox'));
+  $('rdEdit').click();
+  $('rdFJob').value = '';
+  $('rdFSave').click();
+  assert.equal(asked, 2, '같은 세션의 목록을 다시 쓴다');
+  assert.ok(!hidden('rdJobBox') && !hidden('rdJobSave'));
+  assert.equal(picked(), 'RND00202026');
 });
 
 /* ------------------------------------------------------------ 공문 작성 — 하나로 못 고르면 규칙으로 */

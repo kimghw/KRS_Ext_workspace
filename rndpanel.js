@@ -11,9 +11,9 @@
 
 import {
   BOOK_KEY, MAX_PROJECTS, CHANGE_KINDS, BUDGET_ITEMS, normalizeBook, normalizeProject, projectOf, aliasOwner, viewYear, yearBook, yearsOf, currentYear, yearLabel, yearState,
-  periodText, dot, todayStr, isYmd, amountOf, comma, shortWon, budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst, newId,
+  periodText, dot, todayStr, isYmd, comma, shortWon, budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst, newId,
   fromGongmun, mergeProjects, restoreBook, exportJson, exportName, importJson, summaryText, parseRoster, parseSections, fileLog, noteLogs,
-  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand, refsText, normalizeSupport, supportRefs, SUPPORT_MAX,
+  budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand, refsText, normalizeSupport, SUPPORT_MAX,
 } from './src/rnd.js';
 import { SET_KEY, normalizeSet, includeNames, isHidden, nameKey, projectRecs, pickYearRec, candidates, linkOf, isLive, isFresh, fetchSnapshot, applySnapshot, erpExtras, erpHead, clock as erpClock } from './src/rnderp.js';
 // kr_ext_rerp 에서 옮긴 것(rerp/ — 출처·갱신 규칙은 rerp/README.md): rERP 호출(erp), 예상 비용 저장소와 입력 처리(PLAN), 과제집행비율 표(budgetTable), 원노트 동기화 배선(createPlusSync).
@@ -28,6 +28,7 @@ import KRX_MCP from './rerp/mcp.js';
 import KRX_ONENOTE from './rerp/onenote.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
 import { JOB_LIST_PATH, JOB_QUERY, parseJobRows, rankJobs, jobLine } from './src/jobid.js';
+import { fetchIoList, fetchAcct, rankIo, ioLine, acctFresh, fiscalYearOf, EA_HOME } from './src/eacct.js';
 import { siteFetch } from './src/net.js';
 import { ORIGIN } from './src/config.js';
 import { kindOf, applyYaml, KIND_ORDER, revOf, readSnapshot } from './src/rndyaml.js';
@@ -59,9 +60,10 @@ const copyBtn = (attr, what) => `<button type="button" class="rd-icon" ${attr} t
  *   readAsset 은 확장 안의 파일(rnd/skills.json · rnd/skills/…)을 읽는 길, today 는 검사에서 날짜를 못 박는 데 쓴다,
  *   openNote 는 OneNote MCP 서버에 붙는 길(검사에서는 흉내), erp 는 rERP 를 부르는 것(rerp/erp.js — 검사에서는 흉내), me 는 내 이름(설정),
  *   mcpFetch 는 예상 비용 원노트 동기화가 MCP 서버를 두드릴 fetch(검사에서는 흉내, 없으면 전역),
- *   jobs 는 과제 폼의 Job Id 찾기가 받는 R&D PMS 과제 목록(줄 배열 — 검사에서는 흉내)
+ *   jobs 는 과제 정보 카드의 Job Id 저절로 찾기가 받는 R&D PMS 과제 목록(줄 배열 — 검사에서는 흉내),
+ *   acct 는 회계(e-accounting — src/eacct.js)를 부르는 것 { list(year) → 내 부서 과제(I/O) 목록, get(year, io, options) → 그 과제의 회계 예산 스냅샷 } (검사에서는 흉내)
  */
-export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote, erp = ERP, me = () => '', mcpFetch = undefined, jobs = defaultJobs }) {
+export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote, erp = ERP, me = () => '', mcpFetch = undefined, jobs = defaultJobs, acct = defaultAcct }) {
   const el = {
     root: $('rnd'), projects: $('rdProjects'), empty: $('rdEmpty'), emptyImport: $('rdEmptyImport'), emptyAdd: $('rdEmptyAdd'),
     intake: $('rdIntake'), yaml: $('rdYaml'),
@@ -69,13 +71,16 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     aliasAsk: $('rdAliasAsk'), aliasIn: $('rdAliasIn'), aliasSet: $('rdAliasSet'),
     form: $('rdForm'), formTitle: $('rdFormTitle'), fName: $('rdFName'), fAlias: $('rdFAlias'), fCode: $('rdFCode'), fLead: $('rdFLead'),
     fStart: $('rdFStart'), fEnd: $('rdFEnd'), fCalendar: $('rdFCalendar'), fNote: $('rdFNote'), fNeed: $('rdFNeed'), fSave: $('rdFSave'), fCancel: $('rdFCancel'), fDel: $('rdFDel'),
-    // Job Id(전자결재 과제 찾기 — 2026-10-16) — 칸 · 찾기 · 후보 줄 · 알림 줄.
-    fJob: $('rdFJob'), fJobFind: $('rdFJobFind'), fJobList: $('rdFJobList'), fJobMsg: $('rdFJobMsg'),
+    // Job Id(전자결재 과제 찾기 — 2026-10-16) — 폼의 글 칸과, 과제 정보 카드의 저절로 찾기 묶음(후보 줄 · 알림 줄 · 다시 찾기 · 이 번호로 저장).
+    fJob: $('rdFJob'), jobBox: $('rdJobBox'), jobList: $('rdJobList'), jobMsg: $('rdJobMsg'), jobRetry: $('rdJobRetry'), jobSave: $('rdJobSave'),
+    // 회계 I/O(e-accounting 과제 코드 — 2026-10-17) — 폼의 글 칸과, 과제 정보 카드의 저절로 찾기 묶음(Job Id 와 같은 꼴 + 로그인 링크)과 회계 예산 표(머리 줄 · 다시 조회 · 표 · 알림 줄).
+    fIo: $('rdFIo'), ioBox: $('rdIoBox'), ioList: $('rdIoList'), ioMsg: $('rdIoMsg'), ioRetry: $('rdIoRetry'), ioSave: $('rdIoSave'), ioLogin: $('rdIoLogin'),
+    acctBox: $('rdAcctBox'), acctHead: $('rdAcctHead'), acctRefresh: $('rdAcctRefresh'), acctTable: $('rdAcctTable'), acctMsg: $('rdAcctMsg'), acctLogin: $('rdAcctLogin'),
     status: $('rdStatus'), body: $('rdBody'), yearEmpty: $('rdYearEmpty'),
     budgetState: $('rdBudgetState'), budget: $('rdBudget'), budgetSum: $('rdBudgetSum'), budgetCopy: $('rdBudgetCopy'),
     rosterState: $('rdRosterState'), roster: $('rdRoster'), rosterTools: $('rdRosterTools'), rosterSrc: $('rdRosterSrc'), rosterCopy: $('rdRosterCopy'),
-    // 행정지원(과제마다 — 이름·맡은 일·공문 참조, 2026-10-16) — 참여연구자 칸 안에 손으로 적는다.
-    support: $('rdSupport'), supportAdd: $('rdSupportAdd'), supportNote: $('rdSupportNote'),
+    // 행정지원(과제마다 — 이름·맡은 일·공문 참조, 2026-10-16) — 참여인력 칸(2026-10-17 까지는 '참여연구자 및 행정지원') 안에 손으로 적는다.
+    support: $('rdSupport'), supportAdd: $('rdSupportAdd'),
     planState: $('rdPlanState'), plan: $('rdPlan'), planTools: $('rdPlanTools'), planSrc: $('rdPlanSrc'), planCopy: $('rdPlanCopy'),
     logState: $('rdLogState'), logDate: $('rdLogDate'), logTitle: $('rdLogTitle'), logText: $('rdLogText'), logAdd: $('rdLogAdd'), logCancel: $('rdLogCancel'), logs: $('rdLogs'), logsCopy: $('rdLogsCopy'),
     changeState: $('rdChangeState'), chDate: $('rdChDate'), chKind: $('rdChKind'), chItem: $('rdChItem'), chBefore: $('rdChBefore'), chAfter: $('rdChAfter'),
@@ -100,9 +105,15 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // editing 은 고치는 중인 과제 id('new' 는 새 과제). snap 은 그린 시점의 예산 줄 — 계획이 바뀌었는지 이것과 견준다.
     // overlay 는 머리·몸통을 덮는 카드({ name, close } — rndgen 의 과제 더하기 'add', 2026-10-16). 폼·덮개가 열려 있으면 과제 칩은 어느 것도 켜지지 않고 ＋ 칩이 켜진다.
     editing: null, overlay: null, snap: [], logEdit: null, chEdit: null,
-    // 과제 폼의 Job Id 후보(src/jobid.js rankJobs 의 list — 높은 차례)와 도는 중인 찾기(폼을 닫거나 다른 과제를 열면 그 답은 버린다).
-    jobList: [], jobRun: 0,
-    // 참여연구자 칸 머리 줄의 앞쪽(계획서의 참여연구자 수·인건비) — 뒤에 행정지원이 붙는다(paintSupportState).
+    // Job Id 저절로 찾기(과제 정보 카드 — 2026-10-16 사용자 지정): for 는 찾은 과제 id(같은 과제는 다시 찾지 않는다 — 다시 찾기만), run 은 도는 중인 찾기(다른 과제로 가면 그 답은 버린다),
+    // state 는 idle·busy·done·fail, list 는 후보(src/jobid.js rankJobs — 높은 차례), pick 은 고른 후보의 번호, msg/bad 는 알림 줄.
+    // jobRows 는 이 세션에 받아 둔 R&D PMS 과제 목록 — 과제를 바꿔도 다시 받지 않는다(다시 찾기만 새로 받는다).
+    job: { for: '', run: 0, state: 'idle', list: [], pick: 0, msg: '', bad: false }, jobRows: null,
+    // 회계 I/O 저절로 찾기(과제 정보 카드 — 2026-10-17 사용자 지정, Job Id 와 같은 꼴 — src/eacct.js rankIo): ioOpts 는 이 세션에 받아 둔 회계의 내 부서 과제(I/O) 목록, login 은 로그인이 풀려 못 받았는가.
+    // acctRun 은 회계 예산 스냅샷 받기의 형편 — for 는 받아 본 과제:I/O(한 세션에 한 번, 다시 조회만 새로), busy·msg·bad·login.
+    io: { for: '', run: 0, state: 'idle', list: [], pick: 0, msg: '', bad: false, login: false }, ioOpts: null,
+    acctRun: { for: '', run: 0, busy: false, msg: '', bad: false, login: false },
+    // 참여인력 칸 머리 줄의 앞쪽(계획서의 참여연구자 수 — "연구자 3명") — 뒤에 행정지원 수가 붙는다(paintSupportState). 인건비·참조자 이름은 적지 않는다(2026-10-17 사용자 지정: "연구자 n명, 행정 1명 이렇면 될듯").
     rosterText: '',
     // 예산 정보가 없는 차년도를 보는 중이면 그 과제:차년도(emptyKey) — 들어올 때 R&D 설정을 저절로 폈으면(setAuto) 나갈 때 도로 접는다(2026-10-11 사용자 지정).
     emptyKey: '', setAuto: false,
@@ -179,11 +190,13 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   function paintProjects() {
     const p = cur();
     const full = st.book.projects.length >= MAX_PROJECTS;
-    // 폼·덮개(과제 더하기 카드)가 열려 있으면 보고 있던 과제의 칩도 꺼진다 — 그 칩을 누르면 폼·덮개를 닫고 그 과제로 간다(pickProject).
+    // 새 과제 폼·덮개(과제 더하기 카드)가 열려 있으면 과제 칩은 모두 꺼지고 ＋ 칩이 켜진다. 고치기 폼은 고치는 과제의 칩이 켜진 채다(2026-10-16 사용자 지정
+    // "어떤 과제인지 선택이 안되잖아" — 전에는 꺼져 어느 과제를 고치는지 보이지 않았다). 켜진 칩을 눌러도 폼·덮개를 닫고 그 과제로 간다(pickProject).
     const covered = st.editing != null || !!st.overlay;
     const adding = st.editing === 'new' || st.overlay?.name === 'add';
+    const onId = st.editing != null && st.editing !== 'new' ? st.editing : (covered ? null : p?.id);
     const chips = st.book.projects.map((x) => {
-      const on = !covered && x.id === p?.id;
+      const on = !!onId && x.id === onId;
       return `<button type="button" class="rd-proj${on ? ' active' : ''}" data-proj="${x.id}" aria-pressed="${on}" title="${escapeHtml(x.name)}${x.code ? ` · ${escapeHtml(x.code)}` : ''}">${escapeHtml(label(x))}</button>`;
     });
     chips.push(`<button type="button" class="rd-proj rd-proj-add${adding ? ' active' : ''}" data-add="1" aria-pressed="${adding}" aria-label="과제 더하기" title="${full ? `과제는 ${MAX_PROJECTS}개까지입니다` : '과제 더하기 — YAML 을 넣거나 사업계획서에서 뽑거나 직접 적습니다'}"${full ? ' disabled' : ''}>＋</button>`);
@@ -238,16 +251,27 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.name.title = p.name;
     el.aliasAsk.classList.toggle('hidden', !!p.alias);
     const ys = yearsOf(p);
+    // Job Id 가 비면 저절로 찾는다(한 과제에 한 번 — 폼이 열려 있을 때는 아니다). 표의 Job Id 줄은 있으면 그대로, 비면 고른 후보나 형편.
+    // 회계 I/O 도 같다 — 비면 회계의 과제 목록에서 찾고, 있으면 그 해의 계정과목별 예산을 받아 둔다(acctAuto — 스냅샷이 이 해의 것이고 10분 안이면 받지 않는다).
+    if (!editing) {
+      autoJob(p);
+      autoIo(p);
+      acctAuto(p);
+    }
     // 과제 정보는 접힌 칸 안에 — 머리에는 별칭 한 줄과 차년도 칩만 늘 보인다.
     const meta = [['과제명', p.name]];
     if (p.code) meta.push(['과제번호', p.code]);
-    if (p.job) meta.push(['Job Id', p.job]);
+    meta.push(['Job Id', p.job || jobRowText()]);
+    meta.push(['회계 I/O', p.io ? `${p.io}${p.acct?.ioName ? ` ${p.acct.ioName}` : ''}` : ioRowText()]);
     if (p.lead) meta.push(['책임자', p.lead]);
     // 공문 참조자(계획서 YAML 의 공문.참조자 — 공문 종류마다)는 보이기만 한다. 적는 곳은 YAML 이고 공문 탭이 결재선에 쓴다(2026-10-15).
     if (Object.keys(p.refs || {}).length) meta.push(['공문 참조자', refsText(p.refs)]);
     meta.push(['연구기간', p.start ? `${periodText(p)} (총 ${ys.length}차년도${p.calendar ? ' · 1월 1일 기준' : ''})` : '미정 — 과제 고치기에서 시작일·종료일을 적으세요']);
     if (p.note) meta.push(['비고', p.note]);
     el.meta.innerHTML = meta.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join('');
+    paintJob(p);
+    paintIo(p);
+    paintAcct(p);
     const now = currentYear(p, today());
     const view = curYear(p);
     el.years.innerHTML = ys.map((y) => {
@@ -329,7 +353,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.fAlias.value = p.alias;
     el.fCode.value = p.code;
     el.fJob.value = p.job;
-    clearJobs();
+    el.fIo.value = p.io;
     el.fLead.value = p.lead;
     el.fStart.value = p.start;
     el.fEnd.value = p.end;
@@ -346,86 +370,233 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   function closeForm() {
     st.editing = null;
-    clearJobs();
     el.form.classList.add('hidden');
     paintAll();
   }
 
-  /* ---------------------------------------------------------- Job Id 찾기(과제 폼 — 2026-10-16 사용자 지정) */
-  // "과제 책임자로 우선 검색하고 유사도가 높은 0.5 이상인 걸 … 규칙식으로 검색해서 가장 높은 걸 가져오고 선택할 수 있도록" — 규칙은 src/jobid.js.
-  // 찾기를 누르면 R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것)을 받아 후보를 높은 차례로 보이고 가장 높은 것을 칸에 넣는다. 저장해야 남는다.
+  /* ---------------------------------------------------------- Job Id 저절로 찾기(과제 정보 카드 — 2026-10-16 사용자 지정) */
+  // "job_id 찾기를 자동으로 하고 여기 페이지에서 맞는지 확인하면 버튼은 사라지고 Jobid 저장만 하도록 … 과제 고치기에서 수정은 할지라도" — 규칙("과제 책임자로 우선 검색하고
+  // 유사도가 높은 0.5 이상인 걸 … 가장 높은 걸 가져오고 선택할 수 있도록")은 src/jobid.js. Job Id 가 빈 과제를 고르면 R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것 — 읽기만)을
+  // 받아 후보를 높은 차례로 보이고 가장 높은 것을 고른 채로 둔다. '이 번호로 저장'을 누르면 과제에 남고 묶음은 사라진다(표의 Job Id 줄만). 과제 고치기의 Job Id 칸은 손으로 고치는 곳 —
+  // 비우고 저장하면 후보가 다시 보인다(같은 세션의 목록으로, 다시 받지 않는다).
 
-  function clearJobs() {
-    st.jobList = [];
-    st.jobRun++;
-    el.fJobFind.disabled = false;
-    el.fJobList.innerHTML = '';
-    el.fJobList.classList.add('hidden');
-    setJobMsg('');
+  const jobPicked = () => st.job.list[st.job.pick] || null;
+
+  /** 과제 정보 표의 Job Id 줄 — Job Id 가 빌 때의 글(고른 후보나 형편). */
+  function jobRowText() {
+    const j = st.job;
+    if (j.state === 'busy') return '찾는 중 — R&D PMS 과제 목록을 읽습니다…';
+    if (j.state === 'done' && j.list.length) return `${jobPicked().id} (후보 — 맞는지 보고 아래에서 저장)`;
+    if (j.state === 'fail') return '없음 — 과제 목록을 받지 못했습니다(아래 다시 찾기)';
+    if (j.state === 'done') return '없음 — 비슷한 과제가 없습니다(과제 고치기에서 적으세요)';
+    return '없음';
   }
 
-  function setJobMsg(text, bad = false) {
-    el.fJobMsg.textContent = text;
-    el.fJobMsg.classList.toggle('bad', !!bad);
+  /** Job Id 가 빈 과제를 보면 한 번 찾는다 — 같은 과제는 다시 찾지 않는다(fresh 는 다시 찾기 — 목록도 새로 받는다). 답이 오면 머리를 다시 그린다. */
+  function autoJob(p, fresh = false) {
+    if (!p || p.job || (!fresh && st.job.for === p.id)) return;
+    const run = ++st.job.run;
+    st.job = { for: p.id, run, state: 'busy', list: [], pick: 0, msg: '', bad: false };
+    if (fresh) st.jobRows = null;
+    (async () => {
+      let rows;
+      try {
+        rows = st.jobRows || await jobs();
+      } catch (err) {
+        if (run !== st.job.run) return;
+        st.job = { ...st.job, state: 'fail', msg: `과제 목록을 받지 못했습니다 — ${err?.message || err}`, bad: true };
+        paintHead();
+        return;
+      }
+      if (run !== st.job.run) return;
+      st.jobRows = rows;
+      const { by, list } = rankJobs(rows, { name: p.name, lead: p.lead });
+      const top = list[0];
+      const why = !top ? '' : by === 'lead' ? `책임자 ${top.lead} 같음 · ` : p.lead ? `책임자 ${p.lead} 의 과제는 비슷한 것이 없어 과제명으로만 · ` : '';
+      const msg = top ? `가장 비슷한 과제를 골라 두었습니다(${why}유사도 ${top.score.toFixed(2)}) — 맞으면 이 번호로 저장, 아니면 다른 후보를 누르세요.`
+        : rows?.length ? `과제명이 비슷한 과제(유사도 0.5 이상)가 없습니다 — 과제 목록 ${rows.length}개를 봤습니다. 과제 고치기에서 Job Id 를 직접 적으세요.`
+          : '과제 목록이 비었습니다 — eclass 에 로그인되어 있는지 보세요.';
+      st.job = { ...st.job, state: 'done', list, pick: 0, msg, bad: !top };
+      paintHead();
+    })();
   }
 
-  const jobKey = (s) => String(s ?? '').replace(/[^0-9a-z]/gi, '').toLowerCase();
-  const isPicked = (r) => !!el.fJob.value.trim() && [r.id, r.dash].some((v) => jobKey(v) === jobKey(el.fJob.value));
-
-  function paintJobs() {
-    el.fJobList.classList.toggle('hidden', !st.jobList.length);
-    el.fJobList.innerHTML = st.jobList.map((r, i) => {
-      const on = isPicked(r);
+  /** 과제 정보 표 아래의 Job Id 묶음 — Job Id 가 비어 있을 때만. 후보 줄(고른 것은 파랑)과 알림 줄, 다시 찾기(못 받았거나 후보가 없을 때)·이 번호로 저장(후보가 있을 때). */
+  function paintJob(p) {
+    const j = st.job;
+    const show = !!p && !p.job && j.for === p.id && j.state !== 'idle';
+    el.jobBox.classList.toggle('hidden', !show);
+    if (!show) return;
+    el.jobList.innerHTML = j.list.map((r, i) => {
+      const on = i === j.pick;
       const meta = [r.sameLead ? `책임자 ${r.lead} 같음` : r.lead ? `책임자 ${r.lead}` : '', r.proc, `유사도 ${r.score.toFixed(2)}`].filter(Boolean).join(' · ');
       return `<button type="button" class="rd-job-cand${on ? ' active' : ''}" data-job="${i}" aria-pressed="${on}" title="${escapeHtml(jobLine(r))}">`
         + `<b>${escapeHtml(r.id)}</b><span class="rd-job-name">${escapeHtml(r.name)}</span><small>${escapeHtml(meta)}</small></button>`;
     }).join('');
-  }
-
-  async function findJob() {
-    const name = el.fName.value.trim();
-    const lead = el.fLead.value.trim();
-    if (!name) {
-      setJobMsg('과제명을 먼저 적으세요 — 과제명이 비슷한 과제를 찾습니다.', true);
-      el.fName.focus();
-      return;
-    }
-    const run = ++st.jobRun;
-    el.fJobFind.disabled = true;
-    setJobMsg('R&D PMS 과제 목록에서 찾는 중…');
-    let rows;
-    try {
-      rows = await jobs();
-    } catch (err) {
-      if (run !== st.jobRun) return;
-      el.fJobFind.disabled = false;
-      setJobMsg(`과제 목록을 받지 못했습니다 — ${err?.message || err}`, true);
-      return;
-    }
-    if (run !== st.jobRun) return;
-    el.fJobFind.disabled = false;
-    const { by, list } = rankJobs(rows, { name, lead });
-    st.jobList = list;
-    if (!list.length) {
-      paintJobs();
-      setJobMsg(rows?.length ? `과제명이 비슷한 과제(유사도 0.5 이상)가 없습니다 — 과제 목록 ${rows.length}개를 봤습니다. Job Id 를 직접 적으세요.`
-        : '과제 목록이 비었습니다 — eclass 에 로그인되어 있는지 보세요.', true);
-      return;
-    }
-    const kept = list.some(isPicked);
-    if (!kept) el.fJob.value = list[0].id;
-    paintJobs();
-    const why = by === 'lead' ? `책임자 ${list[0].lead} 같음 · ` : lead ? `책임자 ${lead} 의 과제는 비슷한 것이 없어 과제명으로만 · ` : '';
-    setJobMsg(kept ? `적혀 있던 Job Id 가 후보에 있습니다 — 다른 후보를 누르면 바뀝니다(저장해야 남습니다).`
-      : `가장 비슷한 과제를 넣었습니다(${why}유사도 ${list[0].score.toFixed(2)}) — 맞는지 보고 저장하세요. 다른 후보를 누르면 바뀝니다.`);
+    el.jobList.classList.toggle('hidden', !j.list.length);
+    el.jobMsg.textContent = j.state === 'busy' ? 'R&D PMS 과제 목록에서 찾는 중…' : j.msg;
+    el.jobMsg.classList.toggle('bad', !!j.bad);
+    el.jobRetry.classList.toggle('hidden', j.state === 'busy' || !!j.list.length);
+    el.jobSave.classList.toggle('hidden', !j.list.length);
   }
 
   function pickJob(i) {
-    const r = st.jobList[i];
-    if (!r) return;
-    el.fJob.value = r.id;
-    paintJobs();
-    setJobMsg(`${r.dash || r.id} 로 바꿨습니다 — 저장해야 남습니다.`);
+    if (!st.job.list[i] || i === st.job.pick) return;
+    st.job.pick = i;
+    paintHead();
+  }
+
+  /** 고른 후보를 과제의 Job Id 로 — 묶음은 사라지고 표의 Job Id 줄만 남는다. 변경이력에는 남기지 않는다(과제 고치기와 같다 — projectChanges 는 책임자·연구기간만). */
+  function saveJob() {
+    const p = cur();
+    const r = jobPicked();
+    if (!p || p.job || st.job.for !== p.id || !r) return;
+    p.job = r.id;
+    setStatus(`Job Id 를 저장했습니다 — ${r.id}${r.name ? ` (${r.name})` : ''}`);
+    logEvent('rnd', true, `R&D 과제 Job Id: ${label(p)} → ${r.id}`);
+    paintHead();
+    save();
+  }
+
+  /* ---------------------------------------------------------- 회계 I/O 저절로 찾기 · 회계 예산(e-accounting — 2026-10-17 사용자 지정) */
+  // "R&D 에서 과제 등록 할때 jobid 갖어 오는데 … 계정과목코드 계정과목명, 예산부서코드 또는 I/O 입력 예산금액도 같이 조회 해야 하거든 … 부서 예산요약 가보면 해당연도 부서/과제 코드랑
+  // 부서/과제명. 과제코드 계정명, 과제명 이런거 e-accounting.krs.co.kr 에 조회할 수 있도록" — Job Id 와 같은 길이다(src/eacct.js). 회계 I/O 가 빈 과제를 고르면 회계(부서 예산 요약 화면이 받는
+  // 내 부서 과제 목록 — 읽기만)에서 과제명 유사도 0.5 이상의 후보를 높은 차례로 보이고 가장 높은 것을 고른 채로 둔다. '이 코드로 저장'을 누르면 과제에 남고 묶음은 사라지며, 바로 그 해의
+  // 계정과목(보조세목)별 예산(기초·전용·실적·가용)을 받아 과제의 회계 스냅샷(acct)으로 두고 표로 보인다 — 구매요청서(공문 탭 구매의뢰)의 예산 내역이 이것으로 채워진다(src/gongmun.js orderAuto).
+  // 손으로 고치는 곳은 과제 고치기의 회계 I/O 칸 — 비우고 저장하면 후보가 다시 보인다. 로그인(e-accounting 은 eclass 와 따로)이 풀리면 까닭과 로그인 링크.
+
+  const ioPicked = () => st.io.list[st.io.pick] || null;
+  const fiscal = () => fiscalYearOf(today());
+
+  /** 과제 정보 표의 회계 I/O 줄 — 비어 있을 때의 글(고른 후보나 형편). */
+  function ioRowText() {
+    const j = st.io;
+    if (j.state === 'busy') return '찾는 중 — 회계의 과제 목록을 읽습니다…';
+    if (j.state === 'done' && j.list.length) return `${ioPicked().code} (후보 — 맞는지 보고 아래에서 저장)`;
+    if (j.state === 'fail') return j.login ? '없음 — e-accounting 로그인이 필요합니다(아래 링크)' : '없음 — 회계 과제 목록을 받지 못했습니다(아래 다시 찾기)';
+    if (j.state === 'done') return '없음 — 비슷한 회계 과제가 없습니다(과제 고치기에서 적으세요)';
+    return '없음';
+  }
+
+  /** 회계 I/O 가 빈 과제를 보면 한 번 찾는다 — 같은 과제는 다시 찾지 않는다(fresh 는 다시 찾기 — 목록도 새로 받는다). 답이 오면 머리를 다시 그린다. */
+  function autoIo(p, fresh = false) {
+    if (!p || p.io || (!fresh && st.io.for === p.id)) return;
+    const run = ++st.io.run;
+    st.io = { for: p.id, run, state: 'busy', list: [], pick: 0, msg: '', bad: false, login: false };
+    if (fresh) st.ioOpts = null;
+    (async () => {
+      let opts;
+      try {
+        opts = st.ioOpts || await acct.list(fiscal());
+      } catch (err) {
+        if (run !== st.io.run) return;
+        st.io = { ...st.io, state: 'fail', msg: `회계 과제 목록을 받지 못했습니다 — ${err?.message || err}`, bad: true, login: !!err?.login };
+        paintHead();
+        return;
+      }
+      if (run !== st.io.run) return;
+      st.ioOpts = opts;
+      const { list } = rankIo(opts, { name: p.name });
+      const top = list[0];
+      const msg = top ? `가장 비슷한 회계 과제를 골라 두었습니다(유사도 ${top.score.toFixed(2)}) — 맞으면 이 코드로 저장, 아니면 다른 후보를 누르세요.`
+        : opts?.length ? `과제명이 비슷한 회계 과제(유사도 0.5 이상)가 없습니다 — 내 부서 과제 ${opts.length}개를 봤습니다. 과제 고치기에서 회계 I/O 를 직접 적으세요.`
+          : '회계 과제 목록이 비었습니다 — e-accounting 에 로그인되어 있는지 보세요.';
+      st.io = { ...st.io, state: 'done', list, pick: 0, msg, bad: !top };
+      paintHead();
+    })();
+  }
+
+  /** 과제 정보 표 아래의 회계 I/O 묶음 — 회계 I/O 가 비어 있을 때만(Job Id 묶음과 같은 꼴). 로그인이 풀렸으면 로그인 링크. */
+  function paintIo(p) {
+    const j = st.io;
+    const show = !!p && !p.io && j.for === p.id && j.state !== 'idle';
+    el.ioBox.classList.toggle('hidden', !show);
+    if (!show) return;
+    el.ioList.innerHTML = j.list.map((r, i) => {
+      const on = i === j.pick;
+      return `<button type="button" class="rd-job-cand${on ? ' active' : ''}" data-io="${i}" aria-pressed="${on}" title="${escapeHtml(ioLine(r))}">`
+        + `<b>${escapeHtml(r.code)}</b><span class="rd-job-name">${escapeHtml(r.name)}</span><small>${escapeHtml(`유사도 ${r.score.toFixed(2)}`)}</small></button>`;
+    }).join('');
+    el.ioList.classList.toggle('hidden', !j.list.length);
+    el.ioMsg.textContent = j.state === 'busy' ? '회계(e-accounting)의 내 부서 과제 목록에서 찾는 중…' : j.msg;
+    el.ioMsg.classList.toggle('bad', !!j.bad);
+    el.ioLogin.classList.toggle('hidden', !j.login);
+    el.ioRetry.classList.toggle('hidden', j.state === 'busy' || !!j.list.length);
+    el.ioSave.classList.toggle('hidden', !j.list.length);
+  }
+
+  function pickIo(i) {
+    if (!st.io.list[i] || i === st.io.pick) return;
+    st.io.pick = i;
+    paintHead();
+  }
+
+  /** 고른 후보를 과제의 회계 I/O 로 — 묶음은 사라지고 표의 회계 I/O 줄만 남으며, 바로 그 해의 계정과목별 예산을 받는다. 변경이력에는 남기지 않는다(Job Id 와 같다). */
+  function saveIo() {
+    const p = cur();
+    const r = ioPicked();
+    if (!p || p.io || st.io.for !== p.id || !r) return;
+    p.io = r.code;
+    delete p.acct;
+    setStatus(`회계 I/O 를 저장했습니다 — ${r.code}${r.name ? ` (${r.name})` : ''}`);
+    logEvent('rnd', true, `R&D 과제 회계 I/O: ${label(p)} → ${r.code}`);
+    st.acctRun = { ...st.acctRun, for: '', msg: '', bad: false, login: false };
+    paintHead();
+    save();
+  }
+
+  /**
+   * 회계 I/O 가 있는 과제의 그 해 계정과목별 예산을 받아 스냅샷(p.acct)으로 둔다 — 스냅샷이 이 해의 것이고 10분 안이면, 또는 이 세션에 이미 받아 봤으면(과제:I/O) 받지 않는다.
+   * fresh 는 다시 조회(↻). 답이 오면 머리를 다시 그리고 저장한다. 다른 과제로 가면 그 답은 버린다.
+   */
+  function acctAuto(p, fresh = false) {
+    if (!p?.io) return;
+    const key = `${p.id}:${p.io}`;
+    if (!fresh && (st.acctRun.for === key || acctFresh(p.acct, { today: today() }))) return;
+    const run = ++st.acctRun.run;
+    st.acctRun = { for: key, run, busy: true, msg: '', bad: false, login: false };
+    paintAcct(p);
+    (async () => {
+      try {
+        const got = await acct.get(fiscal(), p.io, st.ioOpts);
+        if (run !== st.acctRun.run) return;
+        if (got) p.acct = got;
+        st.acctRun = { ...st.acctRun, busy: false, msg: got ? '' : '회계가 계정 줄을 주지 않았습니다.', bad: !got };
+        save();
+      } catch (err) {
+        if (run !== st.acctRun.run) return;
+        st.acctRun = { ...st.acctRun, busy: false, msg: `회계 예산을 받지 못했습니다 — ${err?.message || err}`, bad: true, login: !!err?.login };
+      }
+      paintHead();
+    })();
+  }
+
+  const wonOf = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('ko-KR') : '');
+  /** 회계 계정명의 끝마디 — '수탁과제(국가)_연구재료비' → '연구재료비'(표가 좁다 — 전체 이름은 툴팁과 요약 복사에). */
+  const acctShort = (name) => String(name || '').split('_').pop() || String(name || '');
+
+  /** 과제 정보 카드의 회계 예산 표 — 회계 I/O 가 있을 때. 머리 줄(해 · I/O · 조회 시각)과 계정 줄(계정과목코드 · 계정명 끝마디 · 예산(기초+전용) · 실적 · 가용 — 원), 형편 줄. */
+  function paintAcct(p) {
+    const show = !!p && !!p.io;
+    el.acctBox.classList.toggle('hidden', !show);
+    if (!show) return;
+    const a = p.acct && p.acct.io === p.io ? p.acct : null;
+    const run = st.acctRun;
+    const when = a?.at ? new Date(a.at) : null;
+    const stamp = when && !Number.isNaN(when.getTime()) ? `조회 ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
+    el.acctHead.textContent = a ? `회계 예산 ${a.year}년 · I/O ${a.io}${a.year !== fiscal() ? ' · 지난 해 스냅샷' : ''}${stamp ? ` · ${stamp}` : ''}` : `회계 예산 ${fiscal()}년 · I/O ${p.io}`;
+    el.acctRefresh.disabled = !!run.busy;
+    const rows = a?.rows || [];
+    el.acctTable.innerHTML = rows.length
+      ? '<thead><tr><th>계정과목코드</th><th>계정명</th><th class="num">예산</th><th class="num">실적</th><th class="num">가용</th></tr></thead><tbody>'
+        + rows.map((r) => `<tr><td>${escapeHtml(r.code)}</td><td class="rd-acct-name" title="${escapeHtml(r.name)}">${escapeHtml(acctShort(r.name))}</td><td class="num" title="기초 ${wonOf(r.base)} · 전용 ${wonOf(r.transfer)}">${wonOf(r.budget)}</td><td class="num">${wonOf(r.actual)}</td><td class="num">${wonOf(r.available)}</td></tr>`).join('')
+        + '</tbody>'
+      : '';
+    el.acctTable.classList.toggle('hidden', !rows.length);
+    const msg = run.busy ? '회계(e-accounting)에서 계정과목별 예산을 받는 중…' : run.msg || (!a ? '아직 받지 못했습니다 — 다시 조회를 누르세요.' : !rows.length ? '이 해에 계정 줄이 없습니다.' : '');
+    el.acctMsg.textContent = msg;
+    el.acctMsg.classList.toggle('bad', !!run.bad);
+    el.acctLogin.classList.toggle('hidden', !run.login);
   }
 
   /* ---------------------------------------------------------- rndgen 손잡이(과제 더하기·변경사항 카드 — 2026-10-16) */
@@ -500,7 +671,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   function saveForm() {
     const draft = normalizeProject({
-      id: st.editing === 'new' ? '' : st.editing, name: el.fName.value, alias: el.fAlias.value, code: el.fCode.value, job: el.fJob.value, lead: el.fLead.value,
+      id: st.editing === 'new' ? '' : st.editing, name: el.fName.value, alias: el.fAlias.value, code: el.fCode.value, job: el.fJob.value, io: el.fIo.value, lead: el.fLead.value,
       start: el.fStart.value, end: el.fEnd.value, calendar: el.fCalendar.checked, note: el.fNote.value,
     });
     if (!draft.name) {
@@ -532,7 +703,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       const p = projectOf(st.book, st.editing);
       if (!p) return closeForm();
       const changes = projectChanges(p, draft, today());
-      Object.assign(p, { name: draft.name, alias: draft.alias, code: draft.code, job: draft.job, lead: draft.lead, start: draft.start, end: draft.end, calendar: draft.calendar, note: draft.note });
+      // 회계 I/O 를 고치면 전 과제의 회계 예산 스냅샷은 버린다 — 새 코드로 다시 받는다(acctAuto).
+      if (draft.io !== p.io) {
+        delete p.acct;
+        st.acctRun = { ...st.acctRun, for: '', msg: '', bad: false, login: false };
+      }
+      Object.assign(p, { name: draft.name, alias: draft.alias, code: draft.code, job: draft.job, io: draft.io, lead: draft.lead, start: draft.start, end: draft.end, calendar: draft.calendar, note: draft.note });
       if (changes.length) {
         // 연구기간이 바뀌어 차년도가 달라졌을 수 있다 — 고친 뒤의 보고 있는 차년도에 남긴다.
         yearBook(p, viewYear(st.book, p, today())).changes.push(...changes);
@@ -773,9 +949,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
     const roster = fileLog(b, 'roster');
     const people = roster ? parseRoster(roster.text) : null;
-    const pay = (people || []).reduce((a, x) => a + (amountOf(x.pay) || 0), 0);
     el.roster.innerHTML = roster ? (people ? rosterHtml(people) : `<p class="rd-text">${escapeHtml(roster.text)}</p>`) : none('참여연구자가');
-    st.rosterText = !roster ? '계획서 없음' : people ? `${people.length}명${pay ? ` · 인건비 ${shortWon(pay)}` : ''}` : '있음';
+    st.rosterText = !roster ? '계획서 없음' : people ? `연구자 ${people.length}명` : '있음';
     el.rosterSrc.textContent = roster ? src : '';
     el.rosterTools.classList.toggle('hidden', !roster);
     paintSupport();
@@ -805,25 +980,25 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const p = cur();
     if (!p) return;
     const rows = supportRows(p);
-    el.support.innerHTML = rows.map((s, i) => `<li class="rd-support-row" data-i="${i}">`
-      + `<input type="text" data-k="name" value="${escapeHtml(s.name)}" placeholder="이름" aria-label="행정지원 ${i + 1} 이름" maxlength="40" autocomplete="off" spellcheck="false" />`
-      + `<input type="text" data-k="role" value="${escapeHtml(s.role)}" placeholder="맡은 일 — 예) 행정 담당" aria-label="행정지원 ${i + 1} 맡은 일" maxlength="40" autocomplete="off" />`
-      + `<label class="rd-support-ref" title="이 과제의 공문(구매·교육·출장)마다 결재선의 참조자로 넣습니다"><input type="checkbox" data-k="ref"${s.ref ? ' checked' : ''} /> 공문 참조</label>`
-      + `<button type="button" class="ghost small rd-del" data-drop="${i}" aria-label="행정지원 ${i + 1} 빼기">빼기</button></li>`).join('');
+    // 참여연구자 표(rosterHtml)와 같은 꼴의 표 — 성명·맡은 일은 표 안의 칸에 바로 적고, 공문 참조는 체크, 빼기는 예산 줄과 같은 ×(2026-10-16 사용자 지정 "참여연구원들이랑 … 비슷하게 표기").
+    el.support.innerHTML = !rows.length ? '' : '<table class="rd-table rd-support-table"><thead><tr><th>성명</th><th>맡은 일</th><th>공문 참조</th><th></th></tr></thead><tbody>'
+      + rows.map((s, i) => `<tr class="rd-support-row" data-i="${i}">`
+        + `<td class="rd-td-name"><input type="text" data-k="name" value="${escapeHtml(s.name)}" placeholder="이름" aria-label="행정지원 ${i + 1} 이름" maxlength="40" autocomplete="off" spellcheck="false" /></td>`
+        + `<td class="rd-td-role"><input type="text" data-k="role" value="${escapeHtml(s.role)}" placeholder="예) 행정 담당" aria-label="행정지원 ${i + 1} 맡은 일" maxlength="40" autocomplete="off" /></td>`
+        + `<td class="rd-td-ref"><label class="rd-support-ref" title="이 과제의 공문(구매·교육·출장)마다 결재선의 참조자로 넣습니다"><input type="checkbox" data-k="ref"${s.ref ? ' checked' : ''} aria-label="행정지원 ${i + 1} 공문 참조" /></label></td>`
+        + `<td class="rd-td-del"><button type="button" class="rd-brow-del" data-drop="${i}" title="이 사람 빼기" aria-label="행정지원 ${i + 1} 빼기">×</button></td></tr>`).join('')
+      + '</tbody></table>';
     el.supportAdd.disabled = rows.length >= SUPPORT_MAX;
-    el.supportAdd.title = el.supportAdd.disabled ? `행정지원은 과제마다 ${SUPPORT_MAX}명까지입니다` : '행정 담당 등을 더합니다 — 공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다';
+    el.supportAdd.title = el.supportAdd.disabled ? `행정지원은 과제마다 ${SUPPORT_MAX}명까지입니다` : '사람 더하기 — 행정 담당 등. 공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다';
     paintSupportState();
   }
 
-  /** 참여연구자 칸 머리 줄(참여연구자 · 행정지원 · 참조자)과 행정지원 안내 — 줄을 다시 그리지 않고(적는 중인 칸을 지키게) 글만 바꾼다. */
+  /** 참여인력 칸 머리 줄("연구자 3명 · 행정 1명" — 인건비·참조자 이름은 없다, 2026-10-17 사용자 지정) — 줄을 다시 그리지 않고(적는 중인 칸을 지키게) 글만 바꾼다. 행정지원 머리의 설명문은 없다(2026-10-16 사용자 지정 — 공문 참조의 뜻은 단추·칸의 title 로). */
   function paintSupportState() {
     const p = cur();
     if (!p) return;
     const named = normalizeSupport(p.support);
-    const refs = supportRefs(p);
-    el.rosterState.textContent = [st.rosterText, named.length ? `행정지원 ${named.length}명` : '', refs.length ? `공문 참조 ${refs.join(', ')}` : ''].filter(Boolean).join(' · ');
-    el.supportNote.textContent = named.length ? (refs.length ? '공문 참조를 켠 사람은 이 과제의 공문마다 참조자로 들어갑니다' : '공문 참조를 켠 사람이 없습니다')
-      : '행정 담당 등을 적고 공문 참조를 켜면 이 과제의 공문마다 참조자로 들어갑니다';
+    el.rosterState.textContent = [st.rosterText, named.length ? `행정 ${named.length}명` : ''].filter(Boolean).join(' · ');
   }
 
   /** 행정지원 줄을 고쳤을 때 — 이름·맡은 일은 적는 대로, 공문 참조는 누르는 대로 과제에 남긴다(빈 줄은 그대로 두고 저장소에서 다시 읽을 때 빠진다). */
@@ -861,7 +1036,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     p.support = [...rows, { name: '', role: '', ref: true }];
     save();
     paintSupport();
-    el.support.querySelector('li:last-child [data-k="name"]')?.focus();
+    el.support.querySelector('tbody tr:last-child [data-k="name"]')?.focus();
   }
 
   /* ---------------------------------------------------------- 진행 기록(손으로 적는 연구내역) */
@@ -2091,7 +2266,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       if (p && e.target instanceof Element && e.target.closest('[data-rdg-extract]')) openAdd({ projectId: p.id, n: curYear(p) });
     });
     el.emptyImport.addEventListener('click', () => importGongmun());
-    el.edit.addEventListener('click', () => { const p = cur(); if (p) openForm(p.id); });
+    // 연필 아이콘은 과제 정보의 summary 안에 있다 — 누름이 접기/펴기로 번지지 않게 막는다.
+    el.edit.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const p = cur(); if (p) openForm(p.id); });
     el.aliasSet.addEventListener('click', setAlias);
     el.aliasIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setAlias(); } });
     el.years.addEventListener('click', (e) => {
@@ -2101,12 +2277,21 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.fSave.addEventListener('click', saveForm);
     el.fCancel.addEventListener('click', closeForm);
     el.fDel.addEventListener('click', delProject);
-    el.fJobFind.addEventListener('click', findJob);
-    el.fJobList.addEventListener('click', (e) => {
+    // Job Id 저절로 찾기(과제 정보 카드) — 후보 고르기 · 이 번호로 저장 · 다시 찾기(목록도 새로 받는다).
+    el.jobList.addEventListener('click', (e) => {
       const b = e.target instanceof Element ? e.target.closest('[data-job]') : null;
       if (b) pickJob(+b.dataset.job);
     });
-    el.fJob.addEventListener('input', () => { if (st.jobList.length) paintJobs(); });
+    el.jobSave.addEventListener('click', saveJob);
+    el.jobRetry.addEventListener('click', () => { const p = cur(); if (p) { autoJob(p, true); paintHead(); } });
+    // 회계 I/O 저절로 찾기(과제 정보 카드 — 2026-10-17) — 후보 고르기 · 이 코드로 저장 · 다시 찾기(목록도 새로 받는다) · 회계 예산 다시 조회(↻).
+    el.ioList.addEventListener('click', (e) => {
+      const b = e.target instanceof Element ? e.target.closest('[data-io]') : null;
+      if (b) pickIo(+b.dataset.io);
+    });
+    el.ioSave.addEventListener('click', saveIo);
+    el.ioRetry.addEventListener('click', () => { const p = cur(); if (p) { autoIo(p, true); paintHead(); } });
+    el.acctRefresh.addEventListener('click', () => { const p = cur(); if (p) acctAuto(p, true); });
     el.form.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target instanceof HTMLElement && e.target.tagName === 'INPUT') {
         e.preventDefault();
@@ -2245,6 +2430,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     download, readAsset,
   };
 }
+
+/** 회계(e-accounting) — 내 부서 과제(I/O) 목록과 과제 하나의 계정과목별 예산 스냅샷(src/eacct.js — 확장에서 바로, host_permissions 로 쿠키가 실린다. 로그인은 e-accounting 자체 세션). */
+const defaultAcct = {
+  list: (year) => fetchIoList(year),
+  get: (year, io, options) => fetchAcct(year, io, { options: options || null }),
+};
+/** 로그인하러 가는 곳 — 과제 정보 카드의 링크가 가리킨다(sidepanel.html 의 href 와 같다). */
+export const EA_LOGIN_URL = EA_HOME;
 
 /** R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것) — 확장에서 바로(쿠키가 실린다), 안 되면 eclass 탭을 거쳐(src/net.js). */
 async function defaultJobs() {

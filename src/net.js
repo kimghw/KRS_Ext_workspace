@@ -274,3 +274,35 @@ export async function siteFetch(url, init) {
   }
   throw new AuthError(LOGIN_MESSAGE[portal] || LOGIN_MESSAGE.unknown, { portal });
 }
+
+/**
+ * 사이트에서 파일을 바이트 그대로 받는다 — 전자결재 첨부 내려받기(Manager/AttachFileDown.aspx?…&View=0). 선행 품의의 견적서를 구매요청서에 다시 붙이려고
+ * (2026-10-17 사용자 지정 "그 의뢰서는 구매공문과 연동" — src/gmprior.js). 직접 요청뿐이다(host_permissions 로 쿠키가 실린다 — 탭 경유는 바이트를 넘기기 무거워 두지 않았다).
+ * HTML 이 오면 파일이 아니다 — 미인증 화면이면 AuthError, 그 밖은 오류. 파일은 커서 보통 요청의 세 배를 기다린다.
+ * @returns {Promise<{bytes: Uint8Array, type: string, name: string}>} type 은 Content-Type 의 앞부분, name 은 Content-Disposition 의 파일 이름(없으면 빈 글)
+ */
+export async function siteFetchBytes(url) {
+  const ac = new AbortController();
+  const ms = REQUEST_TIMEOUT_MS * 3;
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    const res = await fetch(url, { credentials: 'include', redirect: 'follow', signal: ac.signal });
+    const type = String(res.headers?.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const buf = await res.arrayBuffer();
+    const asText = () => new TextDecoder('utf-8').decode(buf.slice(0, 20000));
+    if (!res.ok) throw httpError(res.status, res.statusText, /html/.test(type) ? asText() : '');
+    if (!type || /^text\/html/.test(type)) {
+      if (looksUnauthenticated(asText())) throw new AuthError(LOGIN_MESSAGE.unknown);
+      throw new Error('파일이 아니라 화면이 왔습니다');
+    }
+    const m = String(res.headers?.get('content-disposition') || '').match(/filename\*?=(?:UTF-8''|utf-8'')?"?([^";]+)/i);
+    let name = '';
+    try { name = m ? decodeURIComponent(m[1].trim()) : ''; } catch { name = m ? m[1].trim() : ''; }
+    return { bytes: new Uint8Array(buf), type, name };
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`파일이 ${ms / 1000}초 안에 오지 않았습니다.`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}

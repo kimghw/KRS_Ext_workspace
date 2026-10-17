@@ -19,7 +19,7 @@ LLM(말·문서) ─ 명세가 만든 작업 → askClaude(CLI → API 키) ─�
 - **디스패처** `actions/dispatch.js`: 실행 직전에 관문 재검사·지문 확인 → `confirm` 행위(기본)는 사람이 누른 핸들러가 넣은 `confirmed: record.hash` 가 있어야 돈다(LLM 답에서 받지 않는다. 조회처럼 `confirm: false` 인 것만 바로) → 실행기 한 번 → 활동 로그 한 줄. 재시도·되돌리기는 하지 않는다.
 - **실행기** `actions/runners/<갈래>.js`: 기록을 기존 함수(`src/runners.js`·`src/attend.js`+`src/hr.js`·`src/trip.js`·`src/gongmun.js` …)의 인자로 바꾸는 어댑터일 뿐이다. 사이트 특유의 순서는 기존 코드에 둔다.
 - `status: planned`(R&D·메일·홈 카드·회람 …)는 명세만 있고 아직 디스패처를 거치지 않는다(2단계).
-- 새 행위·칸은 **YAML 먼저** → `node tools/gen-actions.mjs` → 실행기 등록 → 패널이 디스패처로 부르게.
+- 새 행위·칸은 **YAML 먼저** → `node tools/gen-actions.mjs` → 실행기 등록 → 패널이 디스패처로 부르게. 새 **공문 종류·양식**은 레시피(`recipes/gongmun`)가 먼저다 — 차례는 `recipes/gongmun/README.md`(행위 명세의 종류 목록이 레시피의 목적과 다르면 생성기가 막는다).
 - 확장 안에서 보기: **설정 → 일반 → 행위 명세**(갈래 → 종류 → YAML 원본, `src/specview.js`). 갈래 폴더를 새로 만들면 `src/specview.js` 의 `DOMAIN_ORDER` 에 자리를 준다.
 
 자세히: [actions/CLAUDE.md](actions/CLAUDE.md)(고칠 때의 규칙) · [actions/README.md](actions/README.md)(흐름·기록 꼴·YAML 쓰는 법) · `docs/actions-design.md`(설계·2단계).

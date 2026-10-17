@@ -193,10 +193,14 @@ t('문서 보기 주소 — loginbyname 을 거쳐 DocumentView 로(새 공문 �
 });
 
 console.log('갈래·상태·누계');
-t('갈래 — 외부강의등 신고서와 "외부활동" 은 외부활동, 출장 → 교육 → 구매 차례로 제목의 말, 모르면 빈 것', () => {
+t('갈래 — 외부강의등 신고서와 "외부활동" 은 외부활동, 구매요청서와 "구매 요청·구매 의뢰" 는 구매의뢰(2026-10-17), 출장 → 교육 → 구매 차례로 제목의 말, 모르면 빈 것', () => {
   assert.equal(kindOf(R1), 'outside');
   assert.equal(kindOf(R3), 'outside');
   assert.equal(kindOf(R2), 'purchase');
+  assert.equal(kindOf({ form: 'KR_Purchase_Order', title: '고전압 프로브 외 1건 구매 요청' }), 'order', '구매요청서는 폼으로 바로(only 가 하나)');
+  assert.equal(kindOf({ form: RESEARCH_FORM, title: '모니터 구매 요청' }), 'order', '구매의 말보다 먼저 본다');
+  assert.equal(kindOf({ form: RESEARCH_FORM, title: '시험 장비 구매의뢰' }), 'order');
+  assert.equal(kindOf({ form: RESEARCH_FORM, title: '모니터 구매 품의' }), 'purchase', '"구매 요청·의뢰" 가 아니면 구매');
   assert.equal(kindOf({ form: RESEARCH_FORM, title: '인천항내 이동을 위한 자가용 대여 품의' }), 'purchase');
   assert.equal(kindOf({ form: RESEARCH_FORM, title: '회의비 사용 품의 (스마트항만)' }), 'purchase');
   assert.equal(kindOf({ form: RESEARCH_FORM, title: '[SSCB] 수행을 위한 대전 출장 품의' }), 'trip');

@@ -1,9 +1,9 @@
 # 문서 읽기 — 공통. 공문 탭에 넣은 문서(캡처·끌어다 놓은 그림·PDF·붙여 넣은 글·웹페이지 캡처의 화면 글자)를 Claude 가 읽을 때 주는
-# 지시문 가운데 갈래(구매·교육·출장·외부활동)와 무관한 부분이다. 갈래만의 칸과 읽는 법은 purposes/<목적>/purpose.yaml 의 fields·reads·reading 에 있다.
+# 지시문 가운데 갈래(목적 — 구매·교육·출장·외부활동 …, manifest 의 purposes)와 무관한 부분이다. 갈래만의 칸과 읽는 법은 purposes/<목적>/purpose.yaml 의 fields·reads·reading 에 있다.
 #
 # 값(role·rules·read·example)은 그대로 Claude 에게 가는 지시문이다(인라인 프롬프트). # 주석은 사람만 본다 — Claude 는 보지 못한다.
 # 고친 뒤 `npm run gen`(또는 `node tools/gen-gongmun.mjs`)을 돌리면 확장이 새 지시문으로 읽는다.
-# Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt <갈래>`(purchase·edu·trip·outside)로 본다.
+# Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt <갈래>`(목적 id — purchase·edu·trip·outside …)로 본다. 새 갈래·양식을 더하는 차례는 ../README.md.
 #
 # 지시문은 이 차례로 붙는다:
 #   role → 출력 키(before · 갈래의 fields(from: document)·reads · quote_area · after — 키마다 read 와 example) → rules → 갈래의 reading.rules

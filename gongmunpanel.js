@@ -11,9 +11,14 @@
 // 외부활동은 외부강의등 신고서(칸이 정해진 폼)다(2026-10-15 사용자 지정) — 과제를 고르지 않고, 직급·당월 누적·당해 연도 누적·총 시간과 요청인의 대표자·담당자는
 // 공문 이력의 지난 신고서와 다른 칸으로 셈해 채우며(outsideAuto), 공문 탭의 본문은 넣을 칸의 미리보기다(고쳐도 신고서에 들어가지 않는다).
 //
+// 구매의뢰는 구매요청서(KR_Purchase_Order — 총무팀 수신, 칸이 정해진 폼)다(2026-10-17 사용자 지정: "구매 시 총무팀에 구매의뢰 하는 공문기능 … 그 의뢰서는 구매공문과 연동되어야
+// 하고, 우측 하단에 구매의뢰하기 버튼을 넣던지, 구매할때 같이 작성할 수 있던지") — 구매 품의에서 두 길로 든다: 공문 작성 줄의 '구매의뢰 작성'(지금 구매 초안으로 — orderFromHere)과
+// 공문 이력의 구매 품의 카드 우측 하단의 '구매의뢰'(그 줄을 선행 품의로 — orderFromRow). 둘 다 src/gongmun.js 의 orderFromPurchase 로 초안을 만들고, 수요시기·특기사항·계정과목명·
+// 첨부자료 안내문구는 orderAuto 가 셈해 채운다(autoFill).
+//
 // 양식(eclass 양식·제목 틀·본문 틀)과 공문 설정(부서·부서장·소장·본부장·문서번호 부서·과제 — R&D 탭에 과제가 있으면 그 과제들)은 이 탭 아래의 접힌 칸에서 고친다.
 // 공문 설정에는 참조자 칸이 없다(2026-10-15 사용자 지정: "참조자는 공문마다·과제마다 들어가는 사람이 다르므로 전역 설정에 둘 수 없다") — 과제의 계획서
-// YAML(공문.참조자)에 공문 종류별로 적거나, R&D 탭의 '참여연구자 및 행정지원'에서 행정 담당 등을 참조로 고른다(그 과제의 공문마다 — 2026-10-16 사용자 지정
+// YAML(공문.참조자)에 공문 종류별로 적거나, R&D 탭의 '참여인력'에서 행정 담당 등을 참조로 고른다(그 과제의 공문마다 — 2026-10-16 사용자 지정
 // "과제 별로 동일한 사람이 들어 갈 수 있도록", "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록"). 결재선에 고른 과제·고른 갈래의 것이
 // 선다(src/gongmun.js 의 projectRefs). 어디에도 없으면 비운다. 문서설정의 결재선 줄은 그것을 보이기만 한다(paintLineSet).
 // 갈래·틀·칸·위임전결·문서설정의 원본은 레시피(recipes/gongmun)다.
@@ -24,10 +29,10 @@ import {
   templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
   mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, projectRefs, moreLead,
-  docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, outsideAuto,
+  docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, hasRows, outsideAuto, orderAuto, orderFromPurchase,
 } from './src/gongmun.js';
 import {
-  HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, BOXES, normalizeHist, listMine, listBoxes, readOutsideReport, kindOf, stateOf, outsideSummary, outsideHistory, viewUrl,
+  HIST_KEY, SPANS, SPAN_LABEL, spanFrom, OUTSIDE_FORM, RESEARCH_FORM, BOXES, normalizeHist, listMine, listBoxes, readOutsideReport, kindOf, stateOf, outsideSummary, outsideHistory, viewUrl,
 } from './src/gmlist.js';
 import { SEARCH_KEY, AGENT_KIND, DIRS, DIR_LABEL, DIR_BOXES, DIR_TITLE, CUSTOM, parseQuery, periodOf, filterRows, sameRead, normalizeSearch } from './src/gmsearch.js';
 import { showTab } from './src/gmwrite.js';
@@ -76,10 +81,11 @@ const CUT_KINDS = new Set(KIND_ORDER.filter((k) => KINDS[k].cut));
 /** 채팅 칸에 남겨 두는 말 수(내 말·답 합쳐서). */
 const CHAT_KEEP = 6;
 /**
- * 과제를 갈래 아래의 별칭 칩(gmProjBar)에서 먼저 고르는 갈래(2026-10-08 사용자 지정). 그 밖의 갈래는 작성 내용 탭 안에서 고르고, 과제를 고르지 않는 갈래
- * (외부활동 — 외부강의등 신고서, 2026-10-15)는 고르는 곳이 없다.
+ * 과제를 갈래 아래의 별칭 칩(gmProjBar)에서 먼저 고르는 갈래(2026-10-08 사용자 지정: "구매, 교육, 출장일때 어떤 과제인지 별칭으로 상단에서 우선 선택") — 과제를 고르는 갈래 모두
+ * (레시피 purpose.yaml 의 project 가 false 가 아닌 것, KINDS.project). 과제를 고르지 않는 갈래(외부활동 — 외부강의등 신고서, 2026-10-15)는 고르는 곳이 없다.
+ * 2026-10-17 까지는 ['purchase', 'edu', 'trip'] 을 손으로 적어 레시피에 목적을 더하면 빠뜨리기 쉬웠다(Codex 검토). 작성 내용 탭 안의 과제 목록(paintProjList)은 그 밖의 갈래 몫으로 남겨 둔다.
  */
-const PICK_FIRST = ['purchase', 'edu', 'trip'];
+const PICK_FIRST = KIND_ORDER.filter((k) => KINDS[k].project);
 
 const pad = (n) => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
@@ -110,9 +116,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     doc: $('gmDoc'), formName: $('gmFormName'), title: $('gmTitle'), body: $('gmBody'), edited: $('gmEdited'), regen: $('gmRegen'),
     // 공문 작성·공문 보기 단추 한 줄과 그 아래 상태 줄(쓰는 중·다 씀) — 2026-10-12 사용자 지정("작성 중인지 완료인지 알 수가 없음").
     write: $('gmWrite'), showDoc: $('gmShowDoc'), writeState: $('gmWriteState'), writeLog: $('gmWriteLog'), savePdf: $('gmSavePdf'), steps: $('gmSteps'),
+    // 구매의뢰 작성 — 같은 줄의 세 번째 단추(구매 갈래에서만 — 2026-10-17 사용자 지정: "우측 하단에 구매의뢰하기 버튼 … 구매할때 같이 작성").
+    order: $('gmOrder'),
     setBox: $('gmSetBox'), setState: $('gmSetState'), rank: $('gmRank'), rankWhy: $('gmRankWhy'), retention: $('gmRetention'), docNoOne: $('gmDocNoOne'),
     receiver: $('gmReceiver'), scope: $('gmScope'), emergency: $('gmEmergency'), approvingOpen: $('gmApprovingOpen'), drm: $('gmDrm'), tag: $('gmTag'), setReset: $('gmSetReset'),
-    // 문서설정의 결재선 줄 — 과제 책임자(합의자)·참조자를 보이기만 한다(적는 곳은 R&D 탭 — 과제 정보의 책임자, 참여연구자 및 행정지원 — 2026-10-16).
+    // 문서설정의 결재선 줄 — 과제 책임자(합의자)·참조자를 보이기만 한다(적는 곳은 R&D 탭 — 과제 정보의 책임자, 참여인력 — 2026-10-16).
     lineSet: $('gmLineSet'), lead: $('gmLineLead'), refs: $('gmLineRefs'), lineWhy: $('gmLineWhy'), lineGo: $('gmLineGo'),
     tplBox: $('gmTplBox'), tplState: $('gmTplState'), tplForm: $('gmTplForm'), tplFormId: $('gmTplFormId'),
     tplTitle: $('gmTplTitle'), tplBody: $('gmTplBody'), tplReset: $('gmTplReset'), vars: $('gmVars'),
@@ -120,7 +128,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     director: $('gmDirector'), chief: $('gmChief'), docNo: $('gmDocNo'), docNoHint: $('gmDocNoHint'),
     projList: $('gmProjList'), projAdd: $('gmProjAdd'), projCount: $('gmProjCount'),
     // 공문 이력 — 작업 카드 아래의 접힌 칸(eclass 기안함에서 읽은 내 공문, src/gmlist.js)과 작성 내용 탭의 사례비 누계 줄(외부활동).
-    feeSum: $('gmFeeSum'), histBox: $('gmHistBox'), histState: $('gmHistState'), histRange: $('gmHistRange'), histSpan: $('gmHistSpan'), histAll: $('gmHistAll'),
+    feeSum: $('gmFeeSum'), acctRow: $('gmAcctRow'), histBox: $('gmHistBox'), histState: $('gmHistState'), histRange: $('gmHistRange'), histSpan: $('gmHistSpan'), histAll: $('gmHistAll'),
     histRefresh: $('gmHistRefresh'), histNote: $('gmHistNote'), histList: $('gmHistList'),
     // 에이전트(공문 검색, src/gmsearch.js) — 갈래 줄의 에이전트 단추가 켜는 카드: 말 칸·찾기, 받은·보낸, 기간, 상태 줄, 찾은 공문 카드.
     search: $('gmSearch'), searchText: $('gmSearchText'), searchGo: $('gmSearchGo'), searchDir: $('gmSearchDir'), searchSpan: $('gmSearchSpan'),
@@ -131,7 +139,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const PICK_KEY = 'gongmun';
   const st = {
     // writing 은 뒤 탭에 쓰는 중, lastTab 은 연 공문 창의 탭, writeDone 은 끝난 작성의 결과({ ok, docId, bad(안 된 단계 이름) } — 쓰기 전·쓰는 중은 null).
-    kind: 'purchase', loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null,
+    kind: KIND_ORDER[0], loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null,
     preset: normalizePreset(null),
     // projects 는 저장된(이름이 있는) 과제, rows 는 공문 설정 칸에 펼쳐 둔 줄(아직 이름을 적지 않은 줄도 있다).
     projects: [], rows: [],
@@ -452,6 +460,20 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       const on = k === st.kind && !agentOn();
       return `<button type="button" class="gm-kind${on ? ' active' : ''}" data-kind="${k}" aria-pressed="${on}" title="${escapeHtml(KINDS[k].title)}">${escapeHtml(KINDS[k].label)}</button>`;
     }).join('')}${agent}</div>`;
+    paintOrderBtn();
+  }
+
+  /**
+   * 구매의뢰 작성 단추(gmOrder — 공문 작성·공문 보기 줄의 세 번째) — 구매 갈래에서만 보인다(2026-10-17 사용자 지정: "우측 하단에 구매의뢰하기 버튼을 넣던지, 구매할때
+   * 같이 작성할 수 있던지"). 레시피에 구매의뢰 갈래(KINDS.order)가 없으면 늘 숨는다. 이미 구매의뢰 초안이 있으면 덮는다고(되돌릴 수 없음) title 에 적는다. 갈래 줄과 함께 그린다.
+   */
+  function paintOrderBtn() {
+    const on = st.kind === 'purchase' && !!KINDS.order;
+    el.order.hidden = !on;
+    if (!on) return;
+    el.order.title = st.work.order
+      ? '이 구매 품의로 구매요청서(총무팀 수신) 초안을 만들어 구매의뢰 갈래로 갑니다 — 이미 있는 구매의뢰 초안을 덮습니다(되돌릴 수 없음)'
+      : '이 구매 품의로 구매요청서(총무팀 수신) 초안을 만들어 구매의뢰 갈래로 갑니다';
   }
 
   /** 갈래 줄 — 에이전트는 검색 카드를 켜고, 갈래는 에이전트를 끄고 그 갈래로 간다(같은 갈래라도 에이전트만 끈다). */
@@ -1050,7 +1072,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       return;
     }
     paintSource();
-    const items = st.kind === 'purchase' ? w.draft.items || [] : [];
+    // 품목 표 — 레시피 reads 에 items 가 있는 갈래(구매)의 초안에만 있다. 갈래 이름이 아니라 칸으로 본다(새 목적이 품목 표를 두면 그대로 보인다).
+    const items = Array.isArray(w.draft.items) ? w.draft.items : [];
     el.items.innerHTML = items.map((it) => {
       const meta = [it.spec, it.qty != null ? `${it.qty.toLocaleString('ko-KR')}${it.unit || ''}` : '', won(it.amount)].filter(Boolean).join(' · ');
       return `<li><span class="gm-item-name">${escapeHtml(it.name)}</span>${meta ? `<span class="gm-item-meta">${escapeHtml(meta)}</span>` : ''}</li>`;
@@ -1321,6 +1344,50 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintLive();
   }
 
+  /**
+   * 구매의뢰(구매요청서)의 회계 계정 줄(2026-10-17 사용자 지정: "계정과목코드 계정과목명, 예산부서코드 또는 I/O 입력 예산금액도 같이 조회") — 고른 과제의 회계 예산 스냅샷(R&D 탭 과제 정보 카드의
+   * 회계 예산 — e-accounting 부서 예산 요약, src/eacct.js)의 계정과목 칩. 지금 초안의 계정과목코드와 같은 칩이 켜진다. 누르면(onAcctRowClick) 예산 내역 다섯 칸이 그 줄로 채워진다 — 처음 값은
+   * orderAuto 가 과제의 계정에 맞는 줄로 채우고, 다른 계정(연구재료비 → 연구시설·장비비)으로 살 때 여기서 바꾼다. 과제에 회계 I/O 가 없으면 숨고, 스냅샷이 없으면 R&D 탭에서 조회하라고 적는다.
+   */
+  function paintAcctRow(w) {
+    const p = st.kind === 'order' && w ? projectOf(w) : null;
+    const show = !!p && !!p.io;
+    el.acctRow.classList.toggle('hidden', !show);
+    if (!show) {
+      el.acctRow.innerHTML = '';
+      return;
+    }
+    const a = p.acct && p.acct.io === p.io ? p.acct : null;
+    const rows = a?.rows || [];
+    const head = `<strong>회계 계정 줄 — I/O ${escapeHtml(p.io)}${a ? ` · ${escapeHtml(a.year)}년` : ''}</strong>`;
+    if (!rows.length) {
+      el.acctRow.innerHTML = `${head}<span class="gm-miss">회계 예산을 아직 받지 못했습니다 — R&D 탭의 과제 정보 카드에서 조회하세요</span>`;
+      return;
+    }
+    const cur = String(w.draft.subjectCode || '').trim();
+    el.acctRow.innerHTML = head + rows.map((r) => {
+      const on = !!cur && r.code === cur;
+      const short = String(r.name || '').split('_').pop() || r.code;
+      return `<button type="button" class="gm-acct-chip${on ? ' active' : ''}" data-acct="${escapeHtml(r.code)}" aria-pressed="${on}" title="${escapeHtml(`${r.code} ${r.name} · 예산 ${won(r.budget)} · 실적 ${won(r.actual)} · 가용 ${won(r.available)}`)}">${escapeHtml(short)} <b>${escapeHtml(won(r.budget))}</b></button>`;
+    }).join('');
+  }
+
+  /** 회계 계정 칩 — 예산 내역 다섯 칸(계정과목코드·계정과목명·I/O 코드·I/O 명·예산금액)을 그 줄로. 사람이 고른 것이라 touched 에 든다(문서를 다시 읽어도 둔다). */
+  function onAcctRowClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-acct]') : null;
+    const w = cur();
+    const p = w ? projectOf(w) : null;
+    const a = p?.acct && p.acct.io === p.io ? p.acct : null;
+    const r = btn && a ? (a.rows || []).find((x) => x.code === btn.dataset.acct) : null;
+    if (!w || !r) return;
+    const put = { subjectCode: r.code, subjectName: r.name, ioCode: a.io, ioName: a.ioName || '', budgetAmount: r.budget };
+    Object.assign(w.draft, put);
+    w.touched = [...new Set([...(w.touched || []), ...Object.keys(put)])];
+    for (const key of Object.keys(put)) syncField(key);
+    saveWork();
+    paintLive();
+  }
+
   /** 사유 칸 옆의 "과제 내용으로 쓰기". */
   function onFieldClick(e) {
     const btn = e.target instanceof Element ? e.target.closest('[data-act="reason"]') : null;
@@ -1328,13 +1395,23 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   }
 
   /**
-   * 외부활동(외부강의등 신고서)의 셈하는 칸 — 총 시간은 시작·종료 시간으로, 당해 연도 누적·당월 누적·직급·요청인의 대표자·담당자는 공문 이력의 지난 신고서로
-   * (src/gongmun.js 의 outsideAuto · src/gmlist.js 의 outsideHistory — 사용자가 고친 칸은 둔다). 이력을 아직 읽지 않았으면 총 시간만 센다. 바뀐 칸만 화면에 맞추고 남긴다.
+   * 셈하는 칸(레시피 purpose.yaml 의 from: auto — 사용자가 고친 칸은 둔다). 바뀐 칸만 화면에 맞추고 남긴다. 칸을 고칠 때마다·과제를 바꿀 때마다 다시 센다(paintLive).
+   *   외부활동(외부강의등 신고서) — 총 시간은 시작·종료 시간으로, 당해 연도 누적·당월 누적·직급·요청인의 대표자·담당자는 공문 이력의 지난 신고서로
+   *   (src/gongmun.js 의 outsideAuto · src/gmlist.js 의 outsideHistory). 이력을 아직 읽지 않았으면 총 시간만 센다.
+   *   구매의뢰(구매요청서) — 수요시기는 오늘+14일, 특기사항은 선행 품의 승인에 따른 구매 요청(없으면 해당 없음), 계정과목명은 고른 과제의 계정, 첨부자료 안내문구는 첨부 목록으로
+   *   (src/gongmun.js 의 orderAuto — 2026-10-17).
    */
   function autoFill(w) {
-    if (!w || !isOutside()) return;
-    const hist = st.hist.at ? outsideHistory(reportsOf(), { org: w.draft.org, from: w.draft.from, fee: moneyOf(w.draft.fee), today: today() }) : null;
-    const got = outsideAuto(w.draft, { touched: w.touched || [], hist });
+    if (!w) return;
+    let got;
+    if (st.kind === 'order') {
+      got = orderAuto(w.draft, { project: projectOf(w), today: today(), touched: w.touched || [] });
+    } else if (isOutside()) {
+      const hist = st.hist.at ? outsideHistory(reportsOf(), { org: w.draft.org, from: w.draft.from, fee: moneyOf(w.draft.fee), today: today() }) : null;
+      got = outsideAuto(w.draft, { touched: w.touched || [], hist });
+    } else {
+      return;
+    }
     if (!got.changed.length) return;
     w.draft = got.draft;
     for (const key of got.changed) syncField(key);
@@ -1346,6 +1423,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const w = cur();
     if (!w) return;
     autoFill(w);
+    paintAcctRow(w);
     const lim = overLimit(st.kind, w.draft);
     const blocked = lim.over || lim.unknown;
     el.limit.classList.toggle('hidden', !blocked);
@@ -1567,19 +1645,27 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         line('당해 연도 누적', rep.yearTotal != null ? won(rep.yearTotal) : ''), line('당월 누적', rep.monthCount != null ? `${rep.monthCount}회` : ''),
         line('교통·숙박·식비', rep.expenses ? won(rep.expenses) : ''), line('비고', rep.note)].filter(Boolean).join('')
       : [line('문서번호', r.id), line('부서', r.dept), line('완료일', r.done ? dotDate(r.done) : '')].filter(Boolean).join('');
+    // 구매 품의(연구업무품의서) 줄이면 우측 하단에 '구매의뢰' — 이 줄을 선행 품의로 구매요청서 초안을 만든다(orderFromRow — 2026-10-17 사용자 지정: "우측 하단에 구매의뢰하기 버튼").
+    const order = KINDS.order && kindOf(r) === 'purchase'
+      ? '<button type="button" class="ghost small" data-act="order" title="이 품의를 eclass 에서 읽어(품목·금액·구매처·사유·견적서 첨부) 구매요청서(총무팀 수신) 초안을 만듭니다 — 선행 품의 읽기 행위(gongmun.prior)">구매의뢰</button>'
+      : '';
     return `<li class="gm-hist-item open st-${state}" data-id="${escapeHtml(r.id)}">${head}<div class="gm-hist-more">${more}`
-      + '<div class="gm-actions"><button type="button" class="ghost small" data-act="open" title="전자결재 문서 보기 창을 새 탭에 엽니다">eclass 에서 열기</button></div></div></li>';
+      + `<div class="gm-actions"><button type="button" class="ghost small" data-act="open" title="전자결재 문서 보기 창을 새 탭에 엽니다">eclass 에서 열기</button>${order}</div></div></li>`;
   }
 
-  /** 카드를 누르면 펴고, 'eclass 에서 열기'는 문서 보기 창을 새 탭에 연다. */
+  /** 카드를 누르면 펴고, 'eclass 에서 열기'는 문서 보기 창을 새 탭에 연다. '구매의뢰'(구매 품의 줄)는 그 줄을 선행 품의로 구매의뢰 초안을 만든다. */
   function onHistClick(e) {
-    const btn = e.target instanceof Element ? e.target.closest('[data-act="open"], .gm-hist-head') : null;
+    const btn = e.target instanceof Element ? e.target.closest('[data-act="open"], [data-act="order"], .gm-hist-head') : null;
     const li = btn?.closest('[data-id]');
     const row = li && st.hist.rows.find((r) => r.id === li.dataset.id);
     if (!row) return;
     if (btn.dataset.act === 'open') {
       chrome.tabs.create({ url: viewUrl(row) });
       logEvent('gongmun', true, `공문 열기 · ${row.id} · ${row.title}`);
+      return;
+    }
+    if (btn.dataset.act === 'order') {
+      orderFromRow(row);
       return;
     }
     st.hist.open = st.hist.open === row.id ? '' : row.id;
@@ -1606,6 +1692,106 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   function toggleHistAll() {
     st.hist.all = !st.hist.all;
     paintHist();
+  }
+
+  /* ---------------------------------------------------------- 구매의뢰(구매요청서) — 구매 품의와 연동 */
+
+  /**
+   * 구매의뢰(구매요청서 — 총무팀 수신) 초안을 구매 품의에서 만든다(src/gongmun.js 의 orderFromPurchase — 2026-10-17 사용자 지정: "그 의뢰서는 구매공문과 연동되어야
+   * 하고, 우측 하단에 구매의뢰하기 버튼을 넣던지, 구매할때 같이 작성할 수 있던지"). 구매 초안의 품목·합계·구매처·사유가 옮겨 가고, 읽은 문서(files·parts·cut·source)와
+   * 과제도 함께 가 같은 견적서가 첨부된다. 이미 있던 구매의뢰 초안은 덮는다. touched 는 빈 목록 — 셈하는 칸(수요시기·특기사항·계정과목명·첨부자료 안내문구)을 orderAuto 가 새로 채우게.
+   * @param {object|null} from 구매 갈래의 작업(st.work.purchase 꼴). 없으면 빈 구매 초안으로(문서번호·제목만 선행 품의 칸에 — 읽은 문서 없음).
+   * @param {{doc?: object|null, project?: string}} [opts] doc 은 공문 이력의 구매 품의 줄(문서번호·제목 → 선행 품의 칸), project 는 from 이 없을 때 고를 과제
+   */
+  function seedOrder(from, { doc = null, project = '' } = {}) {
+    const base = from || { draft: blankDraft('purchase', { me: me() }), project };
+    st.work.order = {
+      draft: orderFromPurchase(base.draft, { me: me(), doc }), notes: [], touched: [], project: base.project || '', title: null, body: null,
+      files: base.files || [], text: base.text || '', parts: base.parts || [], cut: base.cut || null,
+      source: from ? { ...(base.source || {}) } : { label: '직접 입력', from: '', via: '', summary: '' },
+    };
+    delete st.blocked.order;
+    saveWork();
+  }
+
+  /** 구매의뢰 갈래로 간다 — 이미 그 갈래면(공문 이력 '전체'에서 누름) 새 초안으로 다시 그린다. 상태줄에 무엇으로 만들었는지 적는다. */
+  function showOrder(msg) {
+    if (st.kind === 'order') {
+      renderFields();
+      paintDraft({ fold: true });
+      paintIntake();
+      paintHist();
+    } else {
+      setKind('order');
+    }
+    setStatus(msg);
+  }
+
+  /** 공문 작성 줄의 '구매의뢰 작성'(연동 1 — 구매할 때 같이 작성) — 지금 구매 초안으로. */
+  function orderFromHere() {
+    const w = cur();
+    if (st.kind !== 'purchase' || !w || !KINDS.order) return;
+    seedOrder(w, { doc: null });
+    logEvent('gongmun', true, `구매의뢰 초안 · 구매 품의 초안에서 · ${w.draft.gist || '(품목 없음)'}`);
+    showOrder('구매의뢰서 초안을 구매 품의에서 만들었습니다 — 계정과목·I/O 코드·납품장소를 적고 공문 작성을 누르세요');
+  }
+
+  /**
+   * 공문 이력 카드의 '구매의뢰'(연동 2 — 우측 하단) — 그 줄(연구업무품의서 구매·구독 품의)을 선행 품의로 구매의뢰 초안을 만든다. 행위 gongmun.prior(actions/spec/gongmun/prior.yaml —
+   * 조회라 확인 없음)의 기록으로 가고, 실행기(actions/runners/gongmun.js → src/gmprior.js readPrior)가 eclass 에서 그 품의의 본문(품목·사양·수량·금액·구매처·구매계정·용도·사유)과
+   * 첨부(견적서 PDF)를 읽어 구매의뢰 초안·첨부·과제(Job Id·과제명·별명으로 고름)를 돌려준다(2026-10-17 사용자 지정: 문서번호·제목만 옮기던 것을 보고 "다른 것들이 들어가 있지를 않네?" →
+   * "이것도 명세서를 만든 다음에 러너로 실행하도록"). 첨부는 원본 첨부(파일 그대로 올림 — 읽기에는 보내지 않음)로 둔다. 못 읽으면(로그인·모양이 다름·네트워크) 문서번호·제목만
+   * 선행 품의 칸에 넣고 왜 못 읽었는지 적는다. 활동 로그 한 줄은 디스패처가 남긴다(outcome 이 품목·첨부·과제 수를 적는다).
+   */
+  async function orderFromRow(row) {
+    if (!KINDS.order || st.busy) return;
+    const id = 'gongmun.prior';
+    let record;
+    try {
+      ({ record } = actions.build(id, { input: { id: row.id, form: row.form || RESEARCH_FORM, title: row.title || '' }, preset: await presetFor(id) }));
+    } catch (err) {
+      setStatus(`선행 품의를 읽을 수 없습니다 — ${err instanceof ActionError ? err.problems.join(' · ') : err.message}`, 'error');
+      paintJumps(el.status, jumpsOf(err, err instanceof ActionError && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
+      return;
+    }
+    st.busy = true;
+    setStatus(`선행 품의 ${row.id} 를 eclass 에서 읽는 중…`);
+    const head = `선행 품의 읽기 · ${row.id} · ${row.title}`;
+    let res = null;
+    let why = '';
+    try {
+      res = await actions.run(record, {
+        projects: choices().map((p) => ({ name: p.name, job: p.job || '', alias: p.alias || '', code: p.code || '' })),
+        text: head,
+        outcome: async (r) => ({ text: `${head} · 품목 ${r.doc?.items ?? 0}건${r.files?.length ? ` · 첨부 ${r.files.length}개` : ''}${r.project ? ` · 과제 ${r.project}` : ''}${r.notes?.length ? ` · ${r.notes.join(' / ')}` : ''}` }),
+      });
+    } catch (err) {
+      why = err.message;
+    } finally {
+      st.busy = false;
+    }
+    if (!res) {
+      seedOrder(null, { doc: row, project: st.work.purchase?.project || '' });
+      showOrder(`선행 품의 ${row.id} 를 읽지 못해(${why}) 문서번호·제목만 넣었습니다 — 견적서를 넣고 품목·합계·계정과목·I/O 코드·납품장소를 적으세요`);
+      return;
+    }
+    // 첨부는 받은 파일 그대로(원본 첨부 — 묶은 PDF 에 들지 않고 파일째 올라간다, 읽기에는 보내지 않는다). 첨부 목록은 견적서로 시작하는 이름은 '견적서', 그 밖은 파일 이름으로.
+    const files = (res.files || []).map((f) => ({ name: f.name, type: f.type, size: f.size, dataUrl: `data:${f.type};base64,${toBase64(f.bytes)}`, original: true, attachOnly: true }));
+    const attach = [];
+    for (const f of files) {
+      const label = /^견적/i.test(f.name) ? '견적서' : originalLabel(f.name);
+      const g = attach.find((a) => a.label === label);
+      if (g) g.files.push(f.name);
+      else attach.push({ label, files: [f.name], original: true });
+    }
+    st.work.order = {
+      draft: { ...res.draft, attach: attach.length ? attach : res.draft.attach }, notes: [...(res.notes || [])], touched: [], project: res.project || st.work.purchase?.project || '',
+      title: null, body: null, files, text: res.doc?.text || '', parts: [], cut: null,
+      source: { label: '선행 품의', from: `${row.id} · ${row.title}${files.length ? ` · ${files.map((f) => f.name).join(', ')}` : ''}`, via: 'eclass', summary: res.doc?.summary || '' },
+    };
+    delete st.blocked.order;
+    saveWork();
+    showOrder(`구매의뢰서 초안을 선행 품의 ${row.id}(${row.title})의 본문${files.length ? '과 첨부' : ''}으로 만들었습니다 — 계정과목·I/O 코드·납품장소를 확인하고 공문 작성을 누르세요`);
   }
 
   /* ---------------------------------------------------------- 에이전트(공문 검색) */
@@ -1842,13 +2028,13 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const tpl = tplOf();
     const c = compose(st.kind, w.draft, ctxOf(w), tpl);
     el.formName.textContent = formLabel(tpl.form);
-    // 칸이 정해진 폼(외부강의등 신고서)은 본문이 없고 칸마다 넣는다 — 본문 칸은 넣을 칸의 미리보기라 고칠 수 없다(고치면 신고서에 들어가지 않으니).
+    // 칸이 정해진 폼(외부강의등 신고서)은 본문이 없고 칸마다 넣는다 — 본문 칸은 넣을 칸의 미리보기라 고칠 수 없다(고치면 양식에 들어가지 않으니). 말은 폼의 이름으로(신고서만이 아니다).
     const preview = fieldForm(tpl.form);
     el.body.readOnly = preview;
     const bodyLabel = el.doc.querySelector('label[for="gmBody"]');
     if (bodyLabel) {
-      bodyLabel.textContent = preview ? '신고서에 넣을 칸 (미리보기)' : '본문';
-      bodyLabel.title = preview ? '칸마다 신고서에 넣습니다 — 고치려면 작성 내용·읽은 내용 탭의 칸에서' : '';
+      bodyLabel.textContent = preview ? `${formLabel(tpl.form)}에 넣을 칸 (미리보기)` : '본문';
+      bodyLabel.title = preview ? '칸마다 양식에 넣습니다 — 고치려면 작성 내용·읽은 내용 탭의 칸에서' : '';
     }
     if (document.activeElement !== el.title) el.title.value = w.title ?? c.title;
     if (document.activeElement !== el.body) el.body.value = preview ? c.body : w.body ?? c.body;
@@ -1887,8 +2073,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   }
 
   /**
-   * 문서설정의 결재선 줄 — 이 공문에 설 과제 책임자(합의자)·참조자를 보이기만 한다. 적는 곳은 R&D 탭이다 — 책임자는 과제 정보, 참조자는 '참여연구자 및
-   * 행정지원'에서 참조로 고른 사람(그 과제의 공문마다 같은 사람 — 2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수
+   * 문서설정의 결재선 줄 — 이 공문에 설 과제 책임자(합의자)·참조자를 보이기만 한다. 적는 곳은 R&D 탭이다 — 책임자는 과제 정보, 참조자는 '참여인력'(2026-10-17 까지는
+   * '참여연구자 및 행정지원')에서 참조로 고른 사람(그 과제의 공문마다 같은 사람 — 2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수
    * 있도록", 참조는 "과제 마다 다름. 구매교육출장 이런거랑 달리")과 계획서 YAML 의 공문.참조자. 줄 끝 단추가 R&D 탭으로 간다.
    * 과제 책임자가 기안자 본인이면 합의는 넣지 않는다(approvalLine — 같은 날 "같으면 입력은 하지 않도록"). 과제를 고르지 않는 갈래(외부활동)에서는 숨는다.
    */
@@ -1907,7 +2093,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     out(el.lead, lead && (self ? `${lead} (본인 — 합의 없음)` : lead), p ? '없음 — 합의자가 빕니다' : '과제를 고르세요');
     out(el.refs, refs.join(', '), p ? '없음' : '과제를 고르세요');
     el.lineGo.hidden = !p?.rnd;
-    el.lineWhy.textContent = !p ? '' : p.rnd ? `${p.alias || p.name} 과제의 공문마다 같은 사람이 들어갑니다 — 책임자는 과제 정보, 참조자는 참여연구자 및 행정지원에서 고칩니다.`
+    el.lineWhy.textContent = !p ? '' : p.rnd ? `${p.alias || p.name} 과제의 공문마다 같은 사람이 들어갑니다 — 책임자는 과제 정보, 참조자는 참여인력에서 고칩니다.`
       : '공문 설정의 과제입니다 — 책임자는 공문 설정의 과제 줄에서 고치고, 참조자는 R&D 탭에 과제를 두어야 적을 수 있습니다.';
   }
 
@@ -1943,8 +2129,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     // 첨부는 본문의 ※ 첨부와 같은 문서들이다(교육 안내문·교육 내용 …) — 읽은 것이 없으면 갈래의 기본 문서.
     const groups = pdfGroups(w);
     const docs = groups.length ? groups.map((g) => g.label).join(' · ') : [...new Set((w.draft.attach || []).map((a) => a.label).filter(Boolean))].join(' · ') || k.doc;
-    // 칸이 정해진 폼(외부강의등 신고서)은 본문 대신 신고서 칸(요청인·주제·장소·일시·사례금·누적)을 넣는다.
-    const what = fieldForm(tpl.form) ? '신고서 칸(요청인·주제·장소·일시·사례금·누적)' : '본문';
+    // 칸이 정해진 폼(외부강의등 신고서)은 본문 대신 그 폼의 칸(요청인·주제·장소·일시·사례금·누적 …)을 넣는다 — 말은 폼의 이름으로.
+    const what = fieldForm(tpl.form) ? `${formLabel(tpl.form)} 칸${hasRows(tpl.form) ? '·표' : ''}` : '본문';
     const list = [
       known ? `<b>공문 작성</b> ${escapeHtml(formLabel(tpl.form))} — ${p ? `과제 ${escapeHtml(p.alias || p.name)} · ` : ''}제목 · ${what} · 문서설정 · 결재선${groups.length ? ' · 첨부를' : '을'} 창에 넣습니다`
         : `<b>새 공문 열기</b> ${escapeHtml(formLabel(tpl.form))} — 칸 지도가 없는 양식이라 창만 엽니다`,
@@ -1977,15 +2163,18 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   /** 작성 기록 한 줄 — 됐다 · 안 됐다 · 건너뜀(첨부할 파일이 없음) · 하는 중. */
   const stepLi = (x) => `<li class="${x.ok === true ? 'ok' : x.ok === false ? 'bad' : x.ok === 'skip' ? 'skip' : 'busy'}"><b>${escapeHtml(x.label)}</b>${x.detail ? ` ${escapeHtml(x.detail)}` : ''}</li>`;
 
-  /** 첨부할 PDF — 첨부 목록의 문서마다 하나(src/pdf.js 의 buildPdf). 공문 작성이 창의 파일첨부에 올리고, 첨부 PDF 저장이 내려받는다. */
-  async function attachPdfs(w) {
+  /**
+   * 첨부할 PDF — 첨부 목록의 문서마다 하나(src/pdf.js 의 buildPdf). 공문 작성이 창의 파일첨부에 올리고, 첨부 PDF 저장이 내려받는다.
+   * kind·title 은 부른 쪽이 그때 본 것(공문 작성은 누른 순간의 갈래·제목 — 묶는 동안 갈래를 바꿔도 따라가지 않는다). 안 주면 지금 화면의 것.
+   */
+  async function attachPdfs(w, { kind = st.kind, title = el.title.value } = {}) {
     const groups = pdfGroups(w);
     if (!groups.length) return [];
     const { buildPdf } = await import('./src/pdf.js');
     const out = [];
     for (const g of groups) {
-      const { bytes } = await buildPdf(g.files, { title: `${el.title.value} — ${g.label}` });
-      out.push({ label: g.label, name: attachName(st.kind, w.draft, today(), g.label), bytes });
+      const { bytes } = await buildPdf(g.files, { title: `${title} — ${g.label}` });
+      out.push({ label: g.label, name: attachName(kind, w.draft, today(), g.label), bytes });
     }
     return out;
   }
@@ -2037,7 +2226,20 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   async function writeDoc() {
     const w = cur();
     if (!w || st.writing) return undefined;
-    if (!String(el.title.value ?? '').trim()) return setStatus('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.', 'error');
+    // 누른 순간의 것을 잡아 둔다 — 첨부 PDF 를 묶는 동안(await) 갈래·과제·양식을 바꿔도 기록은 누를 때 보던 공문이다(2026-10-17 Codex 검토: 전에는 st.kind·el.title 을
+    // 나중에 읽어 구매 초안에 교육 행위 ID·양식이 섞일 수 있었다). 초안(w)은 그 갈래의 것이라 그대로다.
+    const kind = st.kind;
+    const title = String(el.title.value ?? '');
+    const body = String(el.body.value ?? '');
+    const form = tplOf().form;
+    const p = projectOf(w);
+    if (!title.trim()) return setStatus('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.', 'error');
+    // 비교작성 탭은 읽은 파일의 바이트를 들고 있지 않다(저장소에는 이름만 — 사이드패널이 든다). 읽은 문서가 있는 초안을 여기서 쓰면 첨부가 조용히 빠지므로 사이드패널로 보낸다.
+    if (st.compareTab) {
+      const have = new Set([...attachFiles(w).map((f) => f.name), ...originalFiles(w).map((f) => f.name)]);
+      const missing = (w.draft.attach || []).flatMap((a) => a.files || []).filter((n) => !have.has(n));
+      if (missing.length) return setStatus(`첨부할 문서 ${missing.length}개는 사이드패널에만 있습니다 — 사이드패널의 공문 작성을 누르면 첨부까지 넣습니다.`, 'error');
+    }
     st.writing = true;
     st.lastTab = null;
     st.writeDone = null;
@@ -2054,11 +2256,14 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     // 첨부 — 못 묶으면(그림이 깨짐 등) 첨부 없이 쓰고 그렇다고 말한다. 기록에는 파일 이름과 무엇의 문서인지(묶은 PDF 는 첨부 목록의 문서 이름)만 적는다.
     let files = [];
     let attach = [];
+    // 못 묶은 첨부는 끝까지 기억해 최종 상태 줄·활동 로그에도 적는다 — 본문의 ※ 첨부는 "견적서 1부" 인데 실제로는 안 올라간 것을 정상 완료처럼 보이지 않게(2026-10-17 Codex 검토).
+    let pdfFail = '';
     try {
-      const pdfs = await attachPdfs(w);
+      const pdfs = await attachPdfs(w, { kind, title });
       files = pdfs.map((p) => ({ name: p.name, type: 'application/pdf', base64: toBase64(p.bytes) }));
       attach = pdfs.map((p) => ({ name: p.name, kind: String(p.label || '').slice(0, 40) }));
     } catch (err) {
+      pdfFail = err.message;
       setStatus(`첨부 PDF 를 만들지 못해 첨부 없이 씁니다 — ${err.message}`, 'error');
     }
     // 원본 첨부(메일 첨부 등)는 묶은 PDF 뒤에 파일 그대로(기록에는 original) — 창의 파일첨부는 다섯 칸이라 넘치는 것은 빼고 그렇다고 말한다.
@@ -2066,16 +2271,16 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const over = Math.max(files.length + originals.length - ATTACH_SLOTS, 0);
     files = [...files, ...originals].slice(0, ATTACH_SLOTS);
     attach = [...attach, ...originals.map((f) => ({ name: f.name, kind: 'original' }))].slice(0, ATTACH_SLOTS);
-    const left = over ? ` · 첨부 칸(${ATTACH_SLOTS}개)이 모자라 ${over}개는 넣지 못했습니다 — 창의 파일첨부에서 바꿔 넣으세요` : '';
+    const left = (over ? ` · 첨부 칸(${ATTACH_SLOTS}개)이 모자라 ${over}개는 넣지 못했습니다 — 창의 파일첨부에서 바꿔 넣으세요` : '')
+      + (pdfFail ? ` · 첨부 PDF 를 만들지 못해 읽은 문서는 넣지 않았습니다(${pdfFail}) — 창의 파일첨부로 넣으세요` : '');
     // 기록 — 행위 gongmun.<갈래> 의 관문(실행 모드)을 지나 짓는다. 어긋나면(제목이 99자를 넘음·초안 칸이 틀림·공문 설정이 없음 …) 상태줄에 적고 멈춘다.
-    const id = `gongmun.${st.kind}`;
+    const id = `gongmun.${kind}`;
     // 합의자(과제 책임자)·참조자 — 문서설정의 두 칸이 보인 그대로(고른 과제에 과제마다 적은 것을 얹은 것). 과제를 고르지 않는 갈래(외부활동)에는 없는 칸이다.
-    const p = projectOf(w);
-    const line = usesProject() ? { lead: String(p?.lead || '').trim() || null, refs: p ? projectRefs(p, st.kind) : [] } : {};
+    const line = usesProject(kind) ? { lead: String(p?.lead || '').trim() || null, refs: p ? projectRefs(p, kind) : [] } : {};
     let record;
     try {
       ({ record } = actions.build(id, {
-        input: { title: el.title.value, body: el.body.value, draft: w.draft, form: tplOf().form, rank: w.rank || null, setting: w.setting || {}, ...line, attach },
+        input: { title, body, draft: w.draft, form, rank: w.rank || null, setting: w.setting || {}, ...line, attach },
         preset: await presetFor(id, { project: p }),
       }));
     } catch (err) {
@@ -2087,22 +2292,22 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       paintJumps(el.status, jumpsOf(err, err instanceof ActionError && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
       return undefined;
     }
-    const head = `공문 작성 · ${KINDS[st.kind].title} · ${record.input.title}`;
+    const head = `공문 작성 · ${KINDS[kind].title} · ${record.input.title}`;
     try {
       const res = await actions.run(record, {
         confirmed: record.hash, files, onStep: paintStep, onTab: (tabId) => { st.lastTab = tabId; paintWrite('새 공문 창을 여는 중…'); },
         text: head,
-        // 활동 로그의 최종 문구 — 문서 ID·첨부 수·안 된 단계까지(디스패처가 이 한 줄을 남긴다).
+        // 활동 로그의 최종 문구 — 문서 ID·첨부 수·못 묶은 첨부·안 된 단계까지(디스패처가 이 한 줄을 남긴다).
         outcome: async (r) => {
           const bad = r.steps.filter((x) => x.ok === false);
-          return { text: `${head}${r.docId ? ` · ${r.docId}` : ''}${files.length ? ` · 첨부 ${files.length}개` : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}` };
+          return { text: `${head}${r.docId ? ` · ${r.docId}` : ''}${files.length ? ` · 첨부 ${files.length}개` : ''}${pdfFail ? ' · 첨부 PDF 못 만듦' : ''}${bad.length ? ` · 안 된 것: ${bad.map((x) => x.label).join('·')}` : ''}` };
         },
       });
       const bad = res.steps.filter((x) => x.ok === false);
       st.lastTab = res.tabId;
       st.writeDone = { ok: !bad.length, docId: res.docId || '', bad: bad.map((x) => x.label) };
       setStatus((bad.length ? `뒤 탭에 공문을 썼습니다 — ${bad.map((x) => x.label).join('·')}은(는) 공문 보기로 열어 확인하세요.`
-        : `뒤 탭에 공문을 썼습니다${files.length ? '(첨부까지)' : ''} — 공문 보기로 열어 확인하고 임시저장 뒤 상신하세요.`) + left, bad.length || over ? 'error' : '');
+        : `뒤 탭에 공문을 썼습니다${files.length ? '(첨부까지)' : ''} — 공문 보기로 열어 확인하고 임시저장 뒤 상신하세요.`) + left, bad.length || over || pdfFail ? 'error' : '');
       // 쓴 공문은 창에서 임시저장·상신해야 기안함에 선다 — 읽어 둔 이력을 묵은 것으로 두어 다음에 펴면 다시 읽는다.
       if (st.hist.at) st.hist.at = 1;
     } catch (err) {
@@ -2465,6 +2670,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.regen.addEventListener('click', regen);
     el.write.addEventListener('click', writeDoc);
     el.showDoc.addEventListener('click', onShowDoc);
+    // 구매의뢰 작성 — 구매 갈래에서 지금 구매 초안으로 구매요청서 초안을 만들어 구매의뢰 갈래로(2026-10-17).
+    el.order.addEventListener('click', orderFromHere);
     for (const node of [el.rank, el.retention, el.docNoOne, el.receiver, el.scope, el.emergency, el.approvingOpen, el.drm, el.tag]) {
       node.addEventListener(node.tagName === 'SELECT' || node.type === 'checkbox' ? 'change' : 'input', onSetInput);
     }
@@ -2484,6 +2691,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.projAdd.addEventListener('click', addRow);
     // 공문 이력 — 누계 줄의 '이력', 접힌 칸 펴기(읽기), 기간(3개월·올해·1y·2y)·전체·새로고침, 카드 펴기·eclass 에서 열기.
     el.feeSum.addEventListener('click', onFeeSumClick);
+    el.acctRow.addEventListener('click', onAcctRowClick);
     el.histBox.addEventListener('toggle', onHistToggle);
     el.histSpan.addEventListener('click', onHistSpanClick);
     el.histAll.addEventListener('click', toggleHistAll);
@@ -2506,7 +2714,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       const view = saved?.[VIEW_KEY];
       // 비교작성 탭은 늘 두 칸(작성 내용·읽은 내용)으로 시작하고 연 갈래를 본다.
       if (!st.compareTab) st.view = { tab: TAB_LABEL[view?.tab] ? view.tab : 'draft', evidenceOpen: view?.evidenceOpen !== false, workspaceOpen: view?.workspaceOpen !== false };
-      st.kind = st.compareTab || (KINDS[saved?.[KIND_KEY]] ? saved[KIND_KEY] : 'purchase');
+      st.kind = st.compareTab || (KINDS[saved?.[KIND_KEY]] ? saved[KIND_KEY] : KIND_ORDER[0]);
       st.preset = normalizePreset(saved?.[PRESET_KEY]);
       st.projects = normalizeProjects(saved?.[PROJECTS_KEY]);
       st.rows = st.projects.map((p) => ({ ...p }));

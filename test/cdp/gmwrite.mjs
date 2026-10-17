@@ -1,10 +1,13 @@
 // 공문 작성기(src/gmwrite.js writeGongmun) 실측 — 새 공문 창(DocumentView)에 패널이 하는 그대로 넣어 본다.
 //
-//   node test/cdp/gmwrite.mjs --head <부서장> --project <과제명> [--new] [--kind purchase|edu|trip|outside] [--me <이름>] [--dept <부서>]
+//   node test/cdp/gmwrite.mjs --head <부서장> --project <과제명> [--new] [--kind purchase|edu|trip|order|outside] [--me <이름>] [--dept <부서>]
 //                             [--lead <과제책임자>] [--refs <참조자,참조자>] [--code <과제번호>] [--director <소장>] [--title <제목>] [--total <합계>]
 //                             [--attach <파일,파일>] [--live]
 //
 // --refs 는 그 과제의 이 갈래(--kind)의 참조자다 — 패널에서는 과제 YAML 의 공문.참조자에서 오고 공문 설정에는 없다(2026-10-15). 외부활동은 과제가 없어 참조도 없다.
+// --kind order 는 구매의뢰(구매요청서 KR_Purchase_Order — 총무팀 수신, 칸이 정해진 폼에 표 둘, 2026-10-17)다 — 과제를 고르는 갈래라 --project 가 필요하고, 시험 초안 ORDER_DRAFT
+// (품목 2줄·예산 내역 1줄·[시험] 글·수요시기 오늘+14일)를 넣는다. 표는 행추가 단추의 포스트백(__doPostBack)으로 행을 늘리므로 dry 라도 창의 행 수는 는다(저장은 안 된다).
+// 문서설정의 수신처는 레시피 receivers 의 총무팀 값('10820-,-(A13) General Affairs Team')이 들어가고, --live 가 아니면 확인하지 않아 발송경고 창도 뜨지 않는다.
 //
 // 미리: 디버그 포트(기본 9333, CDP_PORT)를 연 KRS 크롬이 eclass 에 로그인돼 있어야 한다. --new 면 새 공문 창을 직접 열고(GET) 끝나면 저장 없이 닫는다.
 // 없으면 열려 있는 새 공문 창(먼저 찾은 것)에 쓴다 — 하룻밤 둔 창은 결재선 화면이 비어 쓸 수 없다(2026-10-09 실측).
@@ -15,15 +18,17 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { targets, attach, newTab, closeTab } from './cdp.mjs';
 import { writeGongmun } from '../../src/gmwrite.js';
-import { writePlan } from '../../src/gongmun.js';
+import { writePlan, KINDS, KIND_ORDER, DEFAULT_TEMPLATES } from '../../src/gongmun.js';
 
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter((a) => a.startsWith('--') && (argv[argv.indexOf(a) + 1] ?? '--').startsWith('--')));
 const args = Object.fromEntries(argv.map((a, i, all) => (a.startsWith('--') && !flags.has(a) ? [a.slice(2), all[i + 1] ?? ''] : null)).filter(Boolean));
-// 외부활동(외부강의등 신고서 — 2026-10-15)은 과제를 고르지 않아 --project 가 없어도 된다. 신고서 칸은 [시험] 값으로 채우고, 다 넣은 뒤 칸을 다시 읽고
+const kind = args.kind || KIND_ORDER[0];
+// 과제를 고르지 않는 갈래(레시피 purpose.yaml 의 project: false — 외부활동, 2026-10-15)는 --project 가 없어도 된다. 기본 양식도 레시피의 것(DEFAULT_TEMPLATES)이다 —
+// 2026-10-17 까지는 outside 만 따로 적어 새 갈래를 --kind 로 주면 연구품의 폼으로 갔다(Codex 검토). 신고서 칸은 [시험] 값으로 채우고, 다 넣은 뒤 칸을 다시 읽고
 // 양식의 상신 전 검사(formSubmit(1, true, 0) — 포스트백 없이 칸만 보는 함수, 알림은 받아 적는다)를 돌려 무엇이 막히는지 보인다.
-if (!args.head || (!args.project && args.kind !== 'outside')) {
-  console.log('쓰는 법: node test/cdp/gmwrite.mjs --head <부서장> --project <과제명> [--new] [--kind purchase|edu|trip|outside] [--me <이름>] [--dept <부서>] [--lead <과제책임자>] [--code <과제번호>] [--director <소장>] [--title <제목>] [--total <합계>] [--attach <파일,파일>] [--live]');
+if (!args.head || !KINDS[kind] || (!args.project && KINDS[kind].project)) {
+  console.log(`쓰는 법: node test/cdp/gmwrite.mjs --head <부서장> --project <과제명> [--new] [--kind ${KIND_ORDER.join('|')}] [--me <이름>] [--dept <부서>] [--lead <과제책임자>] [--code <과제번호>] [--director <소장>] [--title <제목>] [--total <합계>] [--attach <파일,파일>] [--live]`);
   process.exit(2);
 }
 const dry = !flags.has('--live');
@@ -32,24 +37,42 @@ const files = (args.attach || '').split(',').map((s) => s.trim()).filter(Boolean
   name: basename(path), type: /\.pdf$/i.test(path) ? 'application/pdf' : /\.png$/i.test(path) ? 'image/png' : 'image/jpeg', base64: readFileSync(path).toString('base64'),
 }));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const kind = args.kind || 'purchase';
 const refs = (args.refs || '').split(/[,\s]+/).filter(Boolean);
 const project = args.project ? { name: args.project, code: args.code || '', lead: args.lead || '', alias: '', refs: refs.length ? { [kind]: refs } : {}, rnd: { year: 1 } } : null;
 const preset = { dept: args.dept || '', head: args.head, director: args.director || '' };
 const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const dayPlus14 = new Date(Date.now() + 9 * 3600e3 + 14 * 86400e3).toISOString().slice(0, 10);
 // 외부강의등 신고서의 시험 초안 — 칸마다 [시험] 이 보이게. 숫자만 받는 칸은 0·1.
 const OUTSIDE_DRAFT = {
   org: '[시험] 기관', representative: '[시험] 대표', contact: '[시험] 부서(담당)', contactTel: '0000000000', subject: '[시험] 공문 작성기 실측 — 저장하지 말고 닫아 주세요',
   place: '[시험] 장소', from: day, to: day, start: '14:00', end: '16:30', hours: 2, mins: 30, fee: 0, expenses: null, rank: '[시험]', monthCount: 1, yearTotal: 0,
   note: `[시험] 작성기 실측${dry ? '(dry)' : ''}`,
 };
+// 구매요청서(구매의뢰)의 시험 초안(2026-10-17) — 칸은 레시피 purposes/order/purpose.yaml 의 fields 와 reads(items·quoteDate·supply·vat) 안에서만(실행 모드 관문과 같은 범위).
+// 구매 물품 표는 items 줄마다 한 행(2줄), 예산 내역 표는 평평한 칸(subjectCode…budgetAmount)으로 한 행. 수요시기는 패널의 orderAuto 처럼 오늘+14일, 특기사항은 선행 품의가 없을 때의 글.
+// 구매대상구분·예산유형은 체크 칸(초안 값이 on 과 같은 것만 켜짐) — 소모품·국가수탁과제. 합계는 --total(기본 330,000원 = 공급가액 300,000 + 부가세 30,000).
+const ORDER_DRAFT = {
+  gist: '[시험] 구매 물품', vendor: '[시험] 구매처', total: Number(args.total || 330000), targetType: '소모품', budgetType: '국가수탁과제',
+  business: `[시험] 공문 작성기 실측${dry ? '(dry)' : ''}이 넣은 사업내용입니다. 저장하지 말고 닫아 주세요.`,
+  demandDate: dayPlus14, place: '[시험] 납품장소', feature: '해당 없음',
+  subjectCode: '000000', subjectName: '[시험] 계정과목', ioCode: '000000', ioName: '[시험] I/O', budgetAmount: 1000000,
+  sourceDoc: '', sourceTitle: '', attachNote: '1. 견적서 1부.',
+  items: [
+    { name: '[시험] 품목 1', spec: '[시험] 규격 1', qty: 1, unit: '개', unitPrice: 100000, amount: 100000 },
+    { name: '[시험] 품목 2', spec: '[시험] 규격 2', qty: 2, unit: '개', unitPrice: 100000, amount: 200000 },
+  ],
+  quoteDate: day, supply: 300000, vat: 30000,
+};
+// 시험 초안은 외부활동(신고서)·구매의뢰(구매요청서)와 그 밖(합계만)의 세 벌이다 — 새 칸이 정해진 폼을 실측하려면 그 폼의 시험 초안을 더한다.
+const DRAFTS = { outside: OUTSIDE_DRAFT, order: ORDER_DRAFT };
+const TITLES = { outside: '[시험] 외부강의등 신고서', order: '[시험] 구매 물품 구매 요청' };
 const plan = writePlan(kind, {
-  title: args.title || (kind === 'outside' ? '[시험] 외부강의등 신고서' : `[시험] ${args.project} 공문 작성 시험`),
+  title: args.title || TITLES[kind] || `[시험] ${args.project} 공문 작성 시험`,
   body: `1. 시험 — 이 글은 공문 작성기 실측${dry ? '(dry)' : ''}이 넣은 것입니다. 저장하지 말고 닫아 주세요.\n\n------------ 아   래 ------------\n\n가. 시험`,
-  draft: kind === 'outside' ? OUTSIDE_DRAFT : { total: Number(args.total || 300000) },
-  ...(kind === 'outside' ? { form: 'KR_Outside_Lecture_Report' } : {}),
+  draft: DRAFTS[kind] || { total: Number(args.total || 300000) },
+  form: DEFAULT_TEMPLATES[kind].form,
 }, { me: args.me || '', preset, project });
-console.log('계획', JSON.stringify({ form: plan.form, known: plan.known, job: plan.values.job, setting: plan.setting, line: plan.line, attach: files.map((f) => `${f.name} (${Math.round(f.base64.length * 3 / 4 / 1024)}KB)`), dry }));
+console.log('계획', JSON.stringify({ form: plan.form, known: plan.known, job: plan.values.job, rows: (plan.rows || []).map((r) => `${r.key} ${r.rows.length}행`), setting: plan.setting, line: plan.line, attach: files.map((f) => `${f.name} (${Math.round(f.base64.length * 3 / 4 / 1024)}KB)`), dry }));
 
 let opened = null;
 let t = null;
@@ -85,14 +108,28 @@ try {
   const res = await writeGongmun(plan, { api, dry, files, tabId: 1, onStep: (s) => console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s`.padStart(6), s.key.padEnd(8), s.ok, s.detail) });
   console.log('문서', res.docId);
   if (Object.keys(plan.values.draft).length) {
-    // 칸이 정해진 폼 — 넣은 칸을 다시 읽고(글 칸 value, 피커는 control 의 값·선택한 날짜) 양식의 상신 전 검사를 돌린다(포스트백 없음, 알림은 받아 적음).
+    // 칸이 정해진 폼 — 넣은 칸을 다시 읽고(글 칸 value, 체크 칸은 checked, 피커는 control 의 값·선택한 날짜) 양식의 상신 전 검사를 돌린다(포스트백 없음, 알림은 받아 적음).
     const back = await inFrame('frameDocument', (fields) => fields.map((f) => {
       const el = f.control ? document.getElementById(f.control) : document.querySelector(f.selector);
       const c = f.control && window.$find ? window.$find(f.control) : null;
       const d = c && c.get_selectedDate ? c.get_selectedDate() : null;
-      return [f.key, el ? el.value : '(칸 없음)', d ? `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : ''];
+      const v = !el ? '(칸 없음)' : el.type === 'checkbox' ? (el.checked ? '✓' : '') : el.value;
+      return [f.key, v, d ? `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` : ''];
     }), [Object.entries(plan.fields).filter(([, f]) => f.source === 'draft').map(([key, f]) => ({ key, selector: f.selector, control: f.control }))]);
-    console.log('다시 읽은 신고서 칸', JSON.stringify(back));
+    console.log(`다시 읽은 ${plan.form} 칸`, JSON.stringify(back));
+    if ((plan.rows || []).length) {
+      // 표(구매 물품·예산 내역) — 행 수(probe)와 행마다의 셀 값을 다시 읽는다. 행 번호는 두 자리(01 부터), 셀은 cell 틀의 {nn}·{cell} 자리.
+      const rowsBack = await inFrame('frameDocument', (specs) => specs.map((s) => {
+        const n = document.querySelectorAll(s.probe).length;
+        const rows = [];
+        for (let i = 1; i <= n; i += 1) {
+          const nn = String(i).padStart(2, '0');
+          rows.push(Object.fromEntries(s.cells.map((c) => { const el = document.querySelector(s.cell.replace('{nn}', nn).replace('{cell}', c)); return [c, el ? el.value : '(칸 없음)']; })));
+        }
+        return [s.key, n, rows];
+      }), [plan.rows.map((r) => ({ key: r.key, probe: r.probe, cell: r.cell, cells: [...new Set(r.rows.flatMap((row) => Object.keys(row)))] }))]);
+      console.log('다시 읽은 표(행 수·셀)', JSON.stringify(rowsBack), '— 새 창에는 처음부터 빈 행이 하나 있어 계획보다 한 행이 더 있을 수 있다');
+    }
     const check = await inFrame('frameDocument', () => {
       const said = [];
       const alert0 = window.alert;
@@ -104,7 +141,9 @@ try {
       window.alert = alert0;
       return { pass, said, regex };
     }, []);
-    console.log('양식의 상신 전 검사', JSON.stringify(check), '— 첨부가 없으면 "증빙자료를 첨부해 주세요" 에서 멈추는 것이 맞다');
+    console.log('양식의 상신 전 검사', JSON.stringify(check), kind === 'order'
+      ? '— 구매요청서는 구매대상구분·사업내용·예산유형·수요시기·납품장소·특기사항 여섯 칸을 본다(2026-10-17 실측) — 다 찼으면 지나는 것이 맞다'
+      : '— 첨부가 없으면 "증빙자료를 첨부해 주세요" 에서 멈추는 것이 맞다');
   }
   console.log('남은 숨은 틀', JSON.stringify(await inFrame('frameToolBar', () => [...document.querySelectorAll('iframe[data-krsws]')].map((f) => f.getAttribute('data-krsws')), [])));
   console.log('받아 적은 알림', JSON.stringify(await inFrame('frameToolBar', () => (window.__krsws || {}).said || [], [])));

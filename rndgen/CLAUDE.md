@@ -7,7 +7,7 @@
 ## 경계
 
 - **바깥에서 import 하는 것**: `../src/rnd.js`·`../src/rndyaml.js`(순수 — 장부 셈과 YAML 넣기의 정본, 여기서 고치지 않는다), `../src/llm.js`(`askClaude` — `llm.js` 만),
-  `../src/tasktune.js`(`llm.js` 만), `../src/officetext.js`(`source.js` 만), 쓸 때 `import()` 하는 `../doctext/browser.js`·`../vendor/pdf-lib.esm.min.js`(`source.js`)·`../vendor/yaml/index.js`(`yaml.js`).
+  `../src/tasktune.js`(`llm.js` 만), `../src/officetext.js`(`source.js` 만), `../src/zip.js`(`panel.js` 만 — 모든 차년도의 zip 저장, 순수), 쓸 때 `import()` 하는 `../doctext/browser.js`·`../vendor/pdf-lib.esm.min.js`(`source.js`)·`../vendor/yaml/index.js`(`yaml.js`).
   `rerp/*`·`mailtrack/*`·`sidepanel.js`·`rndpanel.js` 는 import 하지 않는다 — rndpanel 과는 **손잡이(rnd)** 로만 닿는다.
 - sidepanel.js 는 `rndgen/index.js` 의 `createRndGen` 하나만 import 한다. 무엇을 꽂을지(source·llm·yaml·store)는 `index.js` 에서만 정한다. `panel.js` 는 그것들을 import 하지 않고 주입받는다.
 - **패널과 닿는 곳은 README 의 "바깥과 닿는 곳" 표의 줄뿐이다**(sidepanel.html 세 곳·sidepanel.js 세 곳·rndpanel.js 의 손잡이·package.json 의 test·src/ai.js·src/tasktune.js·native/host.mjs·

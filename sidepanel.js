@@ -35,11 +35,13 @@ import { createRndPanel } from './rndpanel.js';
 import { createMailPanel } from './mailtrack/index.js';
 import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
+import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick } from './src/panelcap.js';
 import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
 import { tripRule, loadStages } from './src/settling.js';
 import { tripList } from './src/trip.js';
 import { RECIPE } from './src/gmrecipe.js';
+import { KINDS as GONGMUN_KINDS } from './src/gongmun.js';
 // 행위 층(actions/) — 예약·취소·수정·말로 찾기는 기록(record)을 지어 디스패처로 돈다. 실행기 어댑터는 actions/runners/booking.js.
 import { createDispatcher } from './actions/dispatch.js';
 import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
@@ -68,6 +70,7 @@ const el = {
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
   homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
   docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'), tabPicks: $('tabPicks'),
+  panelCap: $('panelCap'), panelCapture: $('panelCapture'),
   specDomains: $('specDomains'), specKinds: $('specKinds'), specFile: $('specFile'), specPath: $('specPath'), specOut: $('specOut'),
   settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), settingsTabs: $('settingsTabs'), settingsClose: $('settingsClose'), llmModel: $('llmModel'),
   connTeamsUrl: $('connTeamsUrl'), connTeamsState: $('connTeamsState'), connTeamsCheck: $('connTeamsCheck'),
@@ -2935,6 +2938,27 @@ function paintCirculate(st) {
 
 /* ------------------------------------------------------------- 초기화 */
 
+/* ------------------------------------------------------------ 패널 캡처(src/panelcap.js) */
+/** 씌워 둔 고르기 막 — 없으면 null. 머리의 캡처 단추를 다시 누르면 걷는다. */
+let panelPick = null;
+/** 머리의 캡처 단추를 설정대로 보이거나 숨긴다. 끄면 고르던 것도 끝낸다. */
+function paintCaptureButton(on) {
+  el.panelCap.hidden = !on;
+  if (!on) panelPick?.cancel();
+}
+/** 고르기 막을 씌운다(씌워져 있으면 걷는다). 복사한 것·못 한 것은 활동 로그에 한 줄. */
+function togglePanelPick() {
+  if (panelPick) return panelPick.cancel();
+  const head = `${el.appTitle.textContent} · v${chrome.runtime.getManifest?.()?.version ?? '?'} · ${stamp(Date.now())}`;
+  panelPick = startPanelPick({
+    head,
+    onCopy: ({ kind, count, ok, error }) => logEvent('capture', ok,
+      `패널 캡처 — ${kind === 'code' ? '코드' : '이미지'} ${count}곳 ${ok ? '복사' : `복사 실패: ${error?.message || ''}`}`, { mode: state.mode }),
+    onEnd: () => { panelPick = null; el.panelCap.setAttribute('aria-pressed', 'false'); },
+  });
+  el.panelCap.setAttribute('aria-pressed', 'true');
+}
+
 function initHourSelects() {
   for (let h = 0; h <= 24; h++) {
     const label = `${String(h).padStart(2, '0')}:00`;
@@ -2949,22 +2973,21 @@ function initHourSelects() {
  */
 async function initCompareTab() {
   document.body.classList.add('compare-tab');
-  document.title = `공문 비교작성 — ${KINDS_TITLE[gongmun.compareTab] || ''}`.replace(/ — $/, '');
+  // 갈래 이름은 레시피의 것(src/gongmun.js KINDS — 2026-10-17 까지는 네 갈래를 여기 다시 적어 새 목적이 빠졌다).
+  document.title = `공문 비교작성 — ${GONGMUN_KINDS[gongmun.compareTab]?.label || ''}`.replace(/ — $/, '');
   el.appTitle.textContent = '공문 비교작성';
   for (const sel of ['.head-tools', '.tabs', '.ask', '.controls', '.schedule', '.settings', '.footer-note']) document.querySelector(sel)?.setAttribute('hidden', '');
   checkCli();   // 에이전트 칸·연구 내용으로 쓰기는 여기서도 로컬 CLI(API 키)로 간다
   gongmun.wire();
   await gongmun.show();
 }
-const KINDS_TITLE = { purchase: '구매', edu: '교육', trip: '출장', outside: '외부활동' };
-
 async function init() {
   initHourSelects();
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
       'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
-      SPEC_HEIGHT_KEY]);
+      SPEC_HEIGHT_KEY, CAP_ENABLE_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
   if (saved.spanDays != null) el.spanDays.value = saved.spanDays;
@@ -2987,6 +3010,9 @@ async function init() {
   el.qualityYearKeep.checked = riskYearEnabled(saved[QYEAR_ENABLE_KEY]);
   el.homeUncfm.checked = unconfirmedEnabled(saved[UNCFM_ENABLE_KEY]);
   el.docCirculate.checked = circulateEnabled(saved[CIRC_ENABLE_KEY]);
+  // 머리의 패널 캡처 단추 — 설정이 끄면 숨는다(src/panelcap.js).
+  el.panelCapture.checked = captureEnabled(saved[CAP_ENABLE_KEY]);
+  paintCaptureButton(el.panelCapture.checked);
   // 보이는 탭. 끈 탭은 머리의 탭 줄에서 뗀다 — 어느 탭으로 열지는 아래(startMode)에서 이 값을 본다.
   state.tabsOff = hiddenTabs(saved[TABS_KEY]);
   paintTabs();
@@ -3108,6 +3134,14 @@ async function init() {
     const on = el.docCirculate.checked;
     chrome.storage.local.set({ [CIRC_ENABLE_KEY]: on });
     logEvent('setting', true, `DOC-Cruiser 미회람 문서 자동 열람 ${on ? '켬' : '끔'}`);
+  });
+  // 패널 캡처(src/panelcap.js) — 머리의 캡처 단추는 고르기 막을 씌우고(다시 누르면 걷고), 설정의 스위치는 단추를 보이거나 숨긴다.
+  el.panelCap.addEventListener('click', togglePanelPick);
+  el.panelCapture.addEventListener('change', () => {
+    const on = el.panelCapture.checked;
+    chrome.storage.local.set({ [CAP_ENABLE_KEY]: on });
+    paintCaptureButton(on);
+    logEvent('setting', true, `머리의 패널 캡처 단추 ${on ? '켬' : '끔'}`);
   });
   // 행위 명세 — 갈래 단추 → 종류 단추 → YAML 원본. 고른 단추를 다시 누르면 접는다. 원본 칸의 높이는 끌어 바꾼 대로 기억한다.
   paintSpecDomains();
@@ -3237,6 +3271,10 @@ async function init() {
     if (QYEAR_ENABLE_KEY in changes) el.qualityYearKeep.checked = riskYearEnabled(changes[QYEAR_ENABLE_KEY].newValue);
     if (UNCFM_ENABLE_KEY in changes) el.homeUncfm.checked = unconfirmedEnabled(changes[UNCFM_ENABLE_KEY].newValue);
     if (CIRC_ENABLE_KEY in changes) el.docCirculate.checked = circulateEnabled(changes[CIRC_ENABLE_KEY].newValue);
+    if (CAP_ENABLE_KEY in changes) {
+      el.panelCapture.checked = captureEnabled(changes[CAP_ENABLE_KEY].newValue);
+      paintCaptureButton(el.panelCapture.checked);
+    }
     // 다른 창의 패널에서 보이는 탭을 바꿨다 — 이 창의 탭 줄·체크박스도 따라간다. 보고 있는 탭은 숨겨도 떠날 때까지 남는다.
     if (TABS_KEY in changes) {
       state.tabsOff = hiddenTabs(changes[TABS_KEY].newValue);

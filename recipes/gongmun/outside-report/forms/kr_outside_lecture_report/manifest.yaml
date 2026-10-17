@@ -5,7 +5,8 @@
 working_unit_id: outside-report
 label: 외부강의등 신고서
 form_id: KR_Outside_Lecture_Report
-order: 2
+# 갈래 차례 — 구매요청서(purchase-order, order 2)가 2026-10-17 에 들어와 2 → 3: 구매 · 교육 · 출장 · 구매의뢰 · 외부활동.
+order: 3
 # 이 폼을 고를 수 있는 갈래 — 칸이 외부활동 초안의 칸이라 다른 갈래의 양식 칸에는 보이지 않는다.
 only: [outside]
 purposes: [outside]

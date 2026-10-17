@@ -121,7 +121,9 @@ export const ACTIONS = {
         "purchase",
         "edu",
         "trip",
-        "outside"
+        "order",
+        "outside",
+        "prior"
       ],
       "preset": {
         "me": {
@@ -132,6 +134,12 @@ export const ACTIONS = {
         "today": {
           "from": "today",
           "desc": "오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리)"
+        },
+        "setup": {
+          "from": "storage:gongmunPreset",
+          "type": "object",
+          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다",
+          "required": true
         }
       },
       "llm": {
@@ -2773,41 +2781,37 @@ export const ACTIONS = {
           "log": false
         },
         "kindTitle": {
-          "value": "구매품의",
-          "desc": "갈래 이름(레시피 purpose.yaml 의 title) — 활동 로그 한 줄에 쓴다"
+          "from": "recipe:purposes.purchase.title",
+          "desc": "갈래 이름(레시피 purpose.yaml 의 title — 구매품의) — 활동 로그 한 줄에 쓴다"
         }
       },
       "fields": {
         "form": {
-          "type": "enum",
+          "type": "string",
           "required": true,
           "label": "양식",
-          "desc": "eclass 전자결재 양식(src/gongmun.js formsFor('purchase') — 연구업무추진품의가 기본, 기안문은 본문만 있는 양식). 공문 탭의 양식 칸(템플릿)에서 고른다",
+          "desc": "eclass 전자결재 양식 ID(src/gongmun.js formsFor(종류) — 연구업무추진품의 KR_EA_Research_Task 가 기본, 기안문 KR_EA_Form2 는 본문만 있는 양식, 외부활동만 외부강의등 신고서). 목록에 없는 ID 를 직접 적으면 칸 지도가 없어 새 공문 창을 열기만 한다. 외부활동·구매의뢰는 종류 파일이 통째로 적는다(신고서·구매요청서가 기본)",
           "read": "품의 양식 — 연구업무추진품의(KR_EA_Research_Task)가 기본. 기안문이라고 했을 때만 KR_EA_Form2",
           "llm": true,
           "ui": true,
           "default": "KR_EA_Research_Task",
-          "values": [
-            "KR_EA_Research_Task",
-            "KR_EA_Form2"
-          ]
+          "max": 60
         },
         "title": {
           "type": "string",
           "required": true,
           "label": "제목",
-          "desc": "공문 제목(제목 틀을 채운 글 — 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)",
+          "desc": "공문 제목(레시피 body_spec.yaml 의 제목 틀 — \"{품목요지} 구매 품의\"·\"{과제별명} 수행을 위한 {교육구분} 품의\"·\"… 출장 품의\"·신고서는 \"외부강의등 신고서\" — 을 채운 글. 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)",
           "read": "제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것",
           "llm": true,
           "ui": true,
-          "example": "연구 데이터 저장용 34인치 모니터 외 1건 구매 품의",
           "max": 99
         },
         "body": {
           "type": "string",
           "required": true,
           "label": "본문",
-          "desc": "본문(본문 틀을 채운 글 — src/gongmun.js compose. 사람이 고쳤으면 그 글). 긴 줄표는 어댑터 쪽 writePlan 이 '-' 로 바꾼다(eclassText)",
+          "desc": "본문(레시피 body_spec.yaml 의 본문 틀을 채운 글 — src/gongmun.js compose. 사람이 고쳤으면 그 글). 긴 줄표는 어댑터 쪽 writePlan 이 '-' 로 바꾼다(eclassText). 칸이 정해진 폼(외부강의등 신고서·구매요청서 — 그 종류 파일이 when 으로 뺀다)에서는 넣을 칸의 미리보기다",
           "read": "본문 틀을 채운 글",
           "llm": false,
           "ui": true,
@@ -2988,7 +2992,7 @@ export const ACTIONS = {
         "rank": {
           "type": "enum",
           "label": "전결권자",
-          "desc": "이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(연구비집행 — 금액 구간). 고르면 그것이 이긴다(delegationOf 의 overridden)",
+          "desc": "이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(레시피 purpose.yaml 의 rule_key — 구매·구매의뢰·교육은 연구비집행 금액 구간, 출장은 국내·해외, 외부활동은 팀장). 고르면 그것이 이긴다(delegationOf 의 overridden)",
           "read": "사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)",
           "llm": true,
           "ui": true,
@@ -3010,7 +3014,7 @@ export const ACTIONS = {
         "refs": {
           "type": "tags",
           "label": "참조자",
-          "desc": "결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.구매. 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음",
+          "desc": "결재선의 참조자 — R&D 탭 참여인력에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.<갈래>(구매·교육·출장). 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음",
           "read": "참조자 이름들",
           "llm": false,
           "ui": true
@@ -3018,15 +3022,15 @@ export const ACTIONS = {
         "setting": {
           "type": "object",
           "label": "문서설정",
-          "desc": "이 공문에서 바꾼 문서설정만(없는 키는 레시피·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다",
+          "desc": "이 공문에서 바꾼 문서설정만(없는 키는 레시피 프로파일·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다",
           "read": "사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만",
           "llm": false,
           "ui": true,
           "fields": {
             "retention": {
               "type": "enum",
-              "desc": "보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention)",
-              "read": "보존년한을 말했으면 그 코드(10년이면 120)",
+              "desc": "보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention. 품의는 10년, 신고서·구매요청서는 3년이 기본)",
+              "read": "보존년한을 말했으면 그 코드(10년이면 120, 3년이면 36)",
               "values": [
                 "12",
                 "24",
@@ -3045,11 +3049,12 @@ export const ACTIONS = {
             },
             "receiver": {
               "type": "enum",
-              "desc": "수신처(settings.yaml options.receiver)",
-              "read": "수신처를 말했을 때만 — 내부결재 또는 KRE",
+              "desc": "수신처(settings.yaml options.receiver — 부서는 receivers 의 코드로 SetReceiverValue. 구매요청서는 프로파일이 총무팀)",
+              "read": "수신처를 말했을 때만 — 내부결재·KRE·총무팀",
               "values": [
                 "내부결재",
-                "KRE"
+                "KRE",
+                "총무팀"
               ]
             },
             "scope": {
@@ -3078,7 +3083,7 @@ export const ACTIONS = {
             },
             "tag": {
               "type": "string",
-              "desc": "검색 키워드(비면 고른 과제의 별명 — 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘\")",
+              "desc": "검색 키워드(비면 프로파일대로 — 구매·구매의뢰·교육은 고른 과제의 별명, 출장은 '출장', 외부활동은 '외부활동'. 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장\")",
               "read": "검색 키워드를 말했을 때만",
               "max": 60
             }
@@ -3087,7 +3092,7 @@ export const ACTIONS = {
         "attach": {
           "type": "list",
           "label": "첨부",
-          "desc": "첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 견적서를 오렸으면(cut) 오린 그림이 앞에 온다",
+          "desc": "첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것과 원본 첨부. 견적서를 오렸으면(cut) 오린 그림이 앞에 온다",
           "read": "첨부할 문서의 파일 이름 목록. 지어내지 않습니다",
           "llm": false,
           "ui": true,
@@ -3102,7 +3107,7 @@ export const ACTIONS = {
             },
             "kind": {
               "type": "string",
-              "desc": "무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·강의 내용 …, 원본 첨부면 original)",
+              "desc": "무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·교육 내용·행사 안내문·요청 공문 …, 원본 첨부면 original)",
               "read": "무엇의 문서인지. 모르면 null",
               "max": 40
             }
@@ -3160,7 +3165,7 @@ export const ACTIONS = {
         "setup": {
           "from": "storage:gongmunPreset",
           "type": "object",
-          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다)",
+          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다",
           "required": true
         },
         "project": {
@@ -3170,41 +3175,37 @@ export const ACTIONS = {
           "log": false
         },
         "kindTitle": {
-          "value": "교육품의",
-          "desc": "갈래 이름 — 활동 로그 한 줄에 쓴다"
+          "from": "recipe:purposes.edu.title",
+          "desc": "갈래 이름(레시피 purpose.yaml 의 title — 교육품의) — 활동 로그 한 줄에 쓴다"
         }
       },
       "fields": {
         "form": {
-          "type": "enum",
+          "type": "string",
           "required": true,
           "label": "양식",
-          "desc": "eclass 전자결재 양식(formsFor('edu') — 연구업무추진품의가 기본)",
+          "desc": "eclass 전자결재 양식 ID(src/gongmun.js formsFor(종류) — 연구업무추진품의 KR_EA_Research_Task 가 기본, 기안문 KR_EA_Form2 는 본문만 있는 양식, 외부활동만 외부강의등 신고서). 목록에 없는 ID 를 직접 적으면 칸 지도가 없어 새 공문 창을 열기만 한다. 외부활동·구매의뢰는 종류 파일이 통째로 적는다(신고서·구매요청서가 기본)",
           "read": "품의 양식 — 연구업무추진품의(KR_EA_Research_Task)가 기본. 기안문이라고 했을 때만 KR_EA_Form2",
           "llm": true,
           "ui": true,
           "default": "KR_EA_Research_Task",
-          "values": [
-            "KR_EA_Research_Task",
-            "KR_EA_Form2"
-          ]
+          "max": 60
         },
         "title": {
           "type": "string",
           "required": true,
           "label": "제목",
-          "desc": "공문 제목(제목 틀 \"[과제 별명] 수행을 위한 [교육|온라인교육] 품의\" 를 채운 글 — 사람이 고쳤으면 그 글)",
+          "desc": "공문 제목(레시피 body_spec.yaml 의 제목 틀 — \"{품목요지} 구매 품의\"·\"{과제별명} 수행을 위한 {교육구분} 품의\"·\"… 출장 품의\"·신고서는 \"외부강의등 신고서\" — 을 채운 글. 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)",
           "read": "제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것",
           "llm": true,
           "ui": true,
-          "example": "차단기 과제 수행을 위한 교육 품의",
           "max": 99
         },
         "body": {
           "type": "string",
           "required": true,
           "label": "본문",
-          "desc": "본문(본문 틀을 채운 글 — compose. 사람이 고쳤으면 그 글)",
+          "desc": "본문(레시피 body_spec.yaml 의 본문 틀을 채운 글 — src/gongmun.js compose. 사람이 고쳤으면 그 글). 긴 줄표는 어댑터 쪽 writePlan 이 '-' 로 바꾼다(eclassText). 칸이 정해진 폼(외부강의등 신고서·구매요청서 — 그 종류 파일이 when 으로 뺀다)에서는 넣을 칸의 미리보기다",
           "read": "본문 틀을 채운 글",
           "llm": false,
           "ui": true,
@@ -3376,7 +3377,7 @@ export const ACTIONS = {
         "rank": {
           "type": "enum",
           "label": "전결권자",
-          "desc": "이 공문에서 사람이 고른 전결권자 직책. 비면 규정대로(연구비집행 — 금액 구간)",
+          "desc": "이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(레시피 purpose.yaml 의 rule_key — 구매·구매의뢰·교육은 연구비집행 금액 구간, 출장은 국내·해외, 외부활동은 팀장). 고르면 그것이 이긴다(delegationOf 의 overridden)",
           "read": "사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)",
           "llm": true,
           "ui": true,
@@ -3389,7 +3390,7 @@ export const ACTIONS = {
         "lead": {
           "type": "string",
           "label": "과제 책임자",
-          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자 본인이면 합의를 넣지 않는다",
+          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자(preset.me) 본인이면 합의를 넣지 않는다",
           "read": "과제 책임자 이름",
           "llm": false,
           "ui": true,
@@ -3398,7 +3399,7 @@ export const ACTIONS = {
         "refs": {
           "type": "tags",
           "label": "참조자",
-          "desc": "결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.교육. 빈 목록이면 참조 없음",
+          "desc": "결재선의 참조자 — R&D 탭 참여인력에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.<갈래>(구매·교육·출장). 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음",
           "read": "참조자 이름들",
           "llm": false,
           "ui": true
@@ -3406,15 +3407,15 @@ export const ACTIONS = {
         "setting": {
           "type": "object",
           "label": "문서설정",
-          "desc": "이 공문에서 바꾼 문서설정만(settingPatch 의 키 — 없는 키는 레시피 프로파일 연구품의·공문 설정대로)",
+          "desc": "이 공문에서 바꾼 문서설정만(없는 키는 레시피 프로파일·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다",
           "read": "사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만",
           "llm": false,
           "ui": true,
           "fields": {
             "retention": {
               "type": "enum",
-              "desc": "보존년한 코드(settings.yaml options.retention)",
-              "read": "보존년한을 말했으면 그 코드(10년이면 120)",
+              "desc": "보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention. 품의는 10년, 신고서·구매요청서는 3년이 기본)",
+              "read": "보존년한을 말했으면 그 코드(10년이면 120, 3년이면 36)",
               "values": [
                 "12",
                 "24",
@@ -3427,22 +3428,23 @@ export const ACTIONS = {
             },
             "docNo": {
               "type": "string",
-              "desc": "문서번호 부서 코드(숫자만)",
+              "desc": "문서번호 부서 코드(Doc No. — ddlDocNo 의 값, 숫자만)",
               "read": "문서번호 부서를 코드로 말했을 때만",
               "max": 8
             },
             "receiver": {
               "type": "enum",
-              "desc": "수신처",
-              "read": "수신처를 말했을 때만 — 내부결재 또는 KRE",
+              "desc": "수신처(settings.yaml options.receiver — 부서는 receivers 의 코드로 SetReceiverValue. 구매요청서는 프로파일이 총무팀)",
+              "read": "수신처를 말했을 때만 — 내부결재·KRE·총무팀",
               "values": [
                 "내부결재",
-                "KRE"
+                "KRE",
+                "총무팀"
               ]
             },
             "scope": {
               "type": "enum",
-              "desc": "공개범위",
+              "desc": "공개범위(settings.yaml options.scope — 결재선 YNN·기안부서 NNY)",
               "read": "공개범위를 말했을 때만 — 결재선 또는 기안부서",
               "values": [
                 "결재선",
@@ -3466,7 +3468,7 @@ export const ACTIONS = {
             },
             "tag": {
               "type": "string",
-              "desc": "검색 키워드(비면 고른 과제의 별명)",
+              "desc": "검색 키워드(비면 프로파일대로 — 구매·구매의뢰·교육은 고른 과제의 별명, 출장은 '출장', 외부활동은 '외부활동'. 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장\")",
               "read": "검색 키워드를 말했을 때만",
               "max": 60
             }
@@ -3475,7 +3477,7 @@ export const ACTIONS = {
         "attach": {
           "type": "list",
           "label": "첨부",
-          "desc": "첨부 파일 이름(바이트는 ctx.files) — 교육 견적서 PDF·교육 내용 PDF(첨부 목록의 문서마다 하나)와 원본 첨부",
+          "desc": "첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것과 원본 첨부. 견적서를 오렸으면(cut) 오린 그림이 앞에 온다",
           "read": "첨부할 문서의 파일 이름 목록. 지어내지 않습니다",
           "llm": false,
           "ui": true,
@@ -3484,13 +3486,13 @@ export const ACTIONS = {
             "name": {
               "type": "string",
               "required": true,
-              "desc": "파일 이름",
+              "desc": "파일 이름(견적서_업체_날짜.pdf 처럼 attachName 이 지은 것이거나 원본 이름)",
               "read": "파일 이름",
               "max": 200
             },
             "kind": {
               "type": "string",
-              "desc": "무엇의 문서인지(교육 견적서·교육 내용 …, 원본 첨부면 original)",
+              "desc": "무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·교육 내용·행사 안내문·요청 공문 …, 원본 첨부면 original)",
               "read": "무엇의 문서인지. 모르면 null",
               "max": 40
             }
@@ -3548,7 +3550,7 @@ export const ACTIONS = {
         "setup": {
           "from": "storage:gongmunPreset",
           "type": "object",
-          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다)",
+          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다",
           "required": true
         },
         "project": {
@@ -3558,41 +3560,37 @@ export const ACTIONS = {
           "log": false
         },
         "kindTitle": {
-          "value": "출장품의",
-          "desc": "갈래 이름 — 활동 로그 한 줄에 쓴다"
+          "from": "recipe:purposes.trip.title",
+          "desc": "갈래 이름(레시피 purpose.yaml 의 title — 출장품의) — 활동 로그 한 줄에 쓴다"
         }
       },
       "fields": {
         "form": {
-          "type": "enum",
+          "type": "string",
           "required": true,
           "label": "양식",
-          "desc": "eclass 전자결재 양식(formsFor('trip') — 연구업무추진품의가 기본)",
+          "desc": "eclass 전자결재 양식 ID(src/gongmun.js formsFor(종류) — 연구업무추진품의 KR_EA_Research_Task 가 기본, 기안문 KR_EA_Form2 는 본문만 있는 양식, 외부활동만 외부강의등 신고서). 목록에 없는 ID 를 직접 적으면 칸 지도가 없어 새 공문 창을 열기만 한다. 외부활동·구매의뢰는 종류 파일이 통째로 적는다(신고서·구매요청서가 기본)",
           "read": "품의 양식 — 연구업무추진품의(KR_EA_Research_Task)가 기본. 기안문이라고 했을 때만 KR_EA_Form2",
           "llm": true,
           "ui": true,
           "default": "KR_EA_Research_Task",
-          "values": [
-            "KR_EA_Research_Task",
-            "KR_EA_Form2"
-          ]
+          "max": 60
         },
         "title": {
           "type": "string",
           "required": true,
           "label": "제목",
-          "desc": "공문 제목(제목 틀 \"[과제 별명] 수행을 위한 출장 품의\" 를 채운 글 — 사람이 고쳤으면 그 글)",
+          "desc": "공문 제목(레시피 body_spec.yaml 의 제목 틀 — \"{품목요지} 구매 품의\"·\"{과제별명} 수행을 위한 {교육구분} 품의\"·\"… 출장 품의\"·신고서는 \"외부강의등 신고서\" — 을 채운 글. 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)",
           "read": "제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것",
           "llm": true,
           "ui": true,
-          "example": "차단기 과제 수행을 위한 출장 품의",
           "max": 99
         },
         "body": {
           "type": "string",
           "required": true,
           "label": "본문",
-          "desc": "본문(본문 틀을 채운 글 — compose. 사람이 고쳤으면 그 글)",
+          "desc": "본문(레시피 body_spec.yaml 의 본문 틀을 채운 글 — src/gongmun.js compose. 사람이 고쳤으면 그 글). 긴 줄표는 어댑터 쪽 writePlan 이 '-' 로 바꾼다(eclassText). 칸이 정해진 폼(외부강의등 신고서·구매요청서 — 그 종류 파일이 when 으로 뺀다)에서는 넣을 칸의 미리보기다",
           "read": "본문 틀을 채운 글",
           "llm": false,
           "ui": true,
@@ -3718,7 +3716,7 @@ export const ACTIONS = {
         "rank": {
           "type": "enum",
           "label": "전결권자",
-          "desc": "이 공문에서 사람이 고른 전결권자 직책. 비면 규정대로(출장 — 국내 팀장·해외 본부장)",
+          "desc": "이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(레시피 purpose.yaml 의 rule_key — 구매·구매의뢰·교육은 연구비집행 금액 구간, 출장은 국내·해외, 외부활동은 팀장). 고르면 그것이 이긴다(delegationOf 의 overridden)",
           "read": "사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)",
           "llm": true,
           "ui": true,
@@ -3731,7 +3729,7 @@ export const ACTIONS = {
         "lead": {
           "type": "string",
           "label": "과제 책임자",
-          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자 본인이면 합의를 넣지 않는다",
+          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자(preset.me) 본인이면 합의를 넣지 않는다",
           "read": "과제 책임자 이름",
           "llm": false,
           "ui": true,
@@ -3740,7 +3738,7 @@ export const ACTIONS = {
         "refs": {
           "type": "tags",
           "label": "참조자",
-          "desc": "결재선의 참조자 — R&D 탭 참여연구자 및 행정지원에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.출장. 빈 목록이면 참조 없음",
+          "desc": "결재선의 참조자 — R&D 탭 참여인력에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.<갈래>(구매·교육·출장). 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음",
           "read": "참조자 이름들",
           "llm": false,
           "ui": true
@@ -3748,15 +3746,15 @@ export const ACTIONS = {
         "setting": {
           "type": "object",
           "label": "문서설정",
-          "desc": "이 공문에서 바꾼 문서설정만(settingPatch 의 키 — 없는 키는 레시피 프로파일 출장품의·공문 설정대로)",
+          "desc": "이 공문에서 바꾼 문서설정만(없는 키는 레시피 프로파일·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다",
           "read": "사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만",
           "llm": false,
           "ui": true,
           "fields": {
             "retention": {
               "type": "enum",
-              "desc": "보존년한 코드(settings.yaml options.retention)",
-              "read": "보존년한을 말했으면 그 코드(10년이면 120)",
+              "desc": "보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention. 품의는 10년, 신고서·구매요청서는 3년이 기본)",
+              "read": "보존년한을 말했으면 그 코드(10년이면 120, 3년이면 36)",
               "values": [
                 "12",
                 "24",
@@ -3769,22 +3767,23 @@ export const ACTIONS = {
             },
             "docNo": {
               "type": "string",
-              "desc": "문서번호 부서 코드(숫자만)",
+              "desc": "문서번호 부서 코드(Doc No. — ddlDocNo 의 값, 숫자만)",
               "read": "문서번호 부서를 코드로 말했을 때만",
               "max": 8
             },
             "receiver": {
               "type": "enum",
-              "desc": "수신처",
-              "read": "수신처를 말했을 때만 — 내부결재 또는 KRE",
+              "desc": "수신처(settings.yaml options.receiver — 부서는 receivers 의 코드로 SetReceiverValue. 구매요청서는 프로파일이 총무팀)",
+              "read": "수신처를 말했을 때만 — 내부결재·KRE·총무팀",
               "values": [
                 "내부결재",
-                "KRE"
+                "KRE",
+                "총무팀"
               ]
             },
             "scope": {
               "type": "enum",
-              "desc": "공개범위",
+              "desc": "공개범위(settings.yaml options.scope — 결재선 YNN·기안부서 NNY)",
               "read": "공개범위를 말했을 때만 — 결재선 또는 기안부서",
               "values": [
                 "결재선",
@@ -3808,7 +3807,7 @@ export const ACTIONS = {
             },
             "tag": {
               "type": "string",
-              "desc": "검색 키워드(프로파일이 '출장' 으로 둔다 — 2026-10-12 사용자 지정)",
+              "desc": "검색 키워드(비면 프로파일대로 — 구매·구매의뢰·교육은 고른 과제의 별명, 출장은 '출장', 외부활동은 '외부활동'. 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장\")",
               "read": "검색 키워드를 말했을 때만",
               "max": 60
             }
@@ -3817,7 +3816,7 @@ export const ACTIONS = {
         "attach": {
           "type": "list",
           "label": "첨부",
-          "desc": "첨부 파일 이름(바이트는 ctx.files) — 행사 안내문·견적서 PDF 와 원본 첨부",
+          "desc": "첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것과 원본 첨부. 견적서를 오렸으면(cut) 오린 그림이 앞에 온다",
           "read": "첨부할 문서의 파일 이름 목록. 지어내지 않습니다",
           "llm": false,
           "ui": true,
@@ -3826,13 +3825,13 @@ export const ACTIONS = {
             "name": {
               "type": "string",
               "required": true,
-              "desc": "파일 이름",
+              "desc": "파일 이름(견적서_업체_날짜.pdf 처럼 attachName 이 지은 것이거나 원본 이름)",
               "read": "파일 이름",
               "max": 200
             },
             "kind": {
               "type": "string",
-              "desc": "무엇의 문서인지(행사 안내문·견적서 …, 원본 첨부면 original)",
+              "desc": "무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·교육 내용·행사 안내문·요청 공문 …, 원본 첨부면 original)",
               "read": "무엇의 문서인지. 모르면 null",
               "max": 40
             }
@@ -3867,6 +3866,479 @@ export const ACTIONS = {
       "then": [],
       "next": "뒤 탭에 공문을 쓴다(과제·제목·차수·본문·문서설정·결재선·첨부). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다"
     },
+    "gongmun.order": {
+      "id": "gongmun.order",
+      "domain": "gongmun",
+      "kind": "order",
+      "title": "구매요청서 작성",
+      "status": "live",
+      "confirm": true,
+      "effect": "write",
+      "log": "gongmun",
+      "summary": "{preset.kindTitle} · {title}",
+      "preset": {
+        "me": {
+          "from": "me",
+          "desc": "기안자(내 이름 — 결재선의 기안, 과제책임자가 본인이면 합의를 뺀다)",
+          "required": true
+        },
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리)"
+        },
+        "setup": {
+          "from": "storage:gongmunPreset",
+          "type": "object",
+          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다",
+          "required": true
+        },
+        "project": {
+          "from": "ctx:project",
+          "type": "object",
+          "desc": "고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year — 공문 탭이 R&D 탭의 과제에서 고른 것. 사업내용(gongmunReason.order)과 계정과목명(orderAuto)이 여기서 나온다. 과제 내용 3000자가 들어 있어 로그에서 뺀다)",
+          "log": false
+        },
+        "kindTitle": {
+          "from": "recipe:purposes.order.title",
+          "desc": "갈래 이름(레시피 purpose.yaml 의 title — 구매요청서) — 활동 로그 한 줄에 쓴다"
+        }
+      },
+      "fields": {
+        "form": {
+          "type": "string",
+          "required": true,
+          "label": "양식",
+          "desc": "eclass 전자결재 양식 ID(formsFor('order') — 구매요청서 KR_Purchase_Order 가 기본(총무팀 수신, 칸이 정해진 폼). 연구업무추진품의 KR_EA_Research_Task·기안문 KR_EA_Form2 는 본문 틀로 쓸 때)",
+          "read": "양식 — 구매요청서(KR_Purchase_Order)가 기본",
+          "llm": true,
+          "ui": true,
+          "default": "KR_Purchase_Order",
+          "max": 60
+        },
+        "title": {
+          "type": "string",
+          "required": true,
+          "label": "제목",
+          "desc": "공문 제목(레시피 body_spec.yaml 의 제목 틀 — \"{품목요지} 구매 품의\"·\"{과제별명} 수행을 위한 {교육구분} 품의\"·\"… 출장 품의\"·신고서는 \"외부강의등 신고서\" — 을 채운 글. 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)",
+          "read": "제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것",
+          "llm": true,
+          "ui": true,
+          "max": 99
+        },
+        "body": {
+          "type": "string",
+          "required": true,
+          "label": "본문",
+          "desc": "본문 — 양식을 본문 편집기가 있는 것(연구업무추진품의·기안문)으로 바꿨을 때만. 구매요청서(KR_Purchase_Order)에서는 칸이 없어 기록에도 없다(공문 탭의 본문 칸은 미리보기)",
+          "read": "본문 틀을 채운 글",
+          "llm": false,
+          "ui": true,
+          "when": "form!=KR_Purchase_Order",
+          "max": 20000
+        },
+        "draft": {
+          "type": "object",
+          "label": "초안",
+          "desc": "초안 칸(레시피 purpose.yaml 의 fields·reads — 생성기가 펼친다). 읽은 문서(gongmun.order)와 과제 내용으로 쓴 사업내용(gongmunReason.order)이 채우고, 구매 품의에서 넘어오면(orderFromPurchase) 그 값이 먼저 들며, 수요시기·특기사항·계정과목명·첨부자료 안내문구와 예산 내역(회계 I/O·계정 줄 — 과제의 회계 스냅샷)은 비면 패널이 셈하고(orderAuto) 사람이 고친다",
+          "read": "읽은 문서와 과제 내용으로 채운 구매요청서의 칸",
+          "llm": true,
+          "ui": true,
+          "from": "recipe",
+          "fields": {
+            "gist": {
+              "type": "string",
+              "label": "품목 요지 (제목)",
+              "desc": "품목 요지 (제목)",
+              "read": "공문 제목에 들어갈 짧은 품목 이름. 대표 품목을 짧게 적고(모델 번호는 빼도 됩니다), 품목이 둘 이상이면 \"대표 품목 외 N건\" 으로 적습니다.",
+              "example": "34인치 모니터 외 1건",
+              "max": 200
+            },
+            "vendor": {
+              "type": "string",
+              "label": "구매처",
+              "desc": "구매처",
+              "read": "견적을 낸 업체·판매처 — 상호 그대로. 쇼핑몰 화면이면 판매자이고, 판매자가 없으면 쇼핑몰 이름입니다.",
+              "example": "(주)OO상사",
+              "max": 200
+            },
+            "total": {
+              "type": "number",
+              "label": "합계 (VAT 포함, 원)",
+              "desc": "합계 (VAT 포함, 원)",
+              "read": "부가세를 포함한 최종 합계(결제·청구할 금액). 할인이 있으면 할인을 뺀 금액입니다. 문서에 \"부가세 별도\" 이고 합계가 공급가액뿐이면 null 로 두고 supply 에 적습니다 — 셈해 넣지 않습니다.",
+              "example": 989000,
+              "min": 0
+            },
+            "targetType": {
+              "type": "enum",
+              "label": "구매대상구분",
+              "desc": "구매대상구분",
+              "read": "구매대상구분 — 품목으로 가립니다. PC·노트북·모니터·프린터와 그 주변기기는 PC류, 시험 장비·계측기·기기·비품(자산으로 등록할 것)은 자산, 용역·서비스·제작·수리·교정은 용역, 소프트웨어·구독·라이선스는 SW, 그 밖(부품·재료·케이블·사무용품)은 소모품입니다. 품목이 여럿이면 금액이 가장 큰 품목으로 가립니다. 문서에 구분이 적혀 있지 않아도 품목을 보고 적습니다.",
+              "example": "PC류",
+              "values": [
+                "PC류",
+                "자산",
+                "용역",
+                "SW",
+                "소모품"
+              ]
+            },
+            "budgetType": {
+              "type": "enum",
+              "label": "예산유형",
+              "desc": "예산유형",
+              "read": "예산유형 칸",
+              "values": [
+                "국가수탁과제",
+                "일반사업"
+              ]
+            },
+            "business": {
+              "type": "string",
+              "label": "사업내용 (목적 포함)",
+              "desc": "사업내용 (목적 포함)",
+              "read": "사업내용 (목적 포함) 칸",
+              "example": "MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발 과제에서 MVDC 차단기의 단락 시험과 데이터 분석을 수행하고 있음. 시험 데이터를 저장·분석할 PC 와 모니터가 필요함",
+              "max": 1000
+            },
+            "demandDate": {
+              "type": "date",
+              "label": "수요시기 (납품일)",
+              "desc": "수요시기 (납품일)",
+              "read": "수요시기 (납품일) 칸"
+            },
+            "place": {
+              "type": "string",
+              "label": "납품장소",
+              "desc": "납품장소",
+              "read": "납품장소 칸",
+              "max": 200
+            },
+            "feature": {
+              "type": "string",
+              "label": "특기사항",
+              "desc": "특기사항",
+              "read": "특기사항 칸",
+              "max": 1000
+            },
+            "subjectCode": {
+              "type": "string",
+              "label": "계정과목코드",
+              "desc": "계정과목코드",
+              "read": "계정과목코드 칸",
+              "max": 200
+            },
+            "subjectName": {
+              "type": "string",
+              "label": "계정과목명",
+              "desc": "계정과목명",
+              "read": "계정과목명 칸",
+              "max": 200
+            },
+            "ioCode": {
+              "type": "string",
+              "label": "I/O 코드 (예산부서 코드)",
+              "desc": "I/O 코드 (예산부서 코드)",
+              "read": "I/O 코드 (예산부서 코드) 칸",
+              "max": 200
+            },
+            "ioName": {
+              "type": "string",
+              "label": "I/O 명 (예산부서명)",
+              "desc": "I/O 명 (예산부서명)",
+              "read": "I/O 명 (예산부서명) 칸",
+              "max": 200
+            },
+            "budgetAmount": {
+              "type": "number",
+              "label": "예산금액 (비목의 당해 연도 배정액, 원)",
+              "desc": "예산금액 (비목의 당해 연도 배정액, 원)",
+              "read": "예산금액 (비목의 당해 연도 배정액, 원) 칸",
+              "min": 0
+            },
+            "sourceDoc": {
+              "type": "string",
+              "label": "선행 품의 문서번호",
+              "desc": "선행 품의 문서번호",
+              "read": "선행 품의 문서번호 칸",
+              "max": 200
+            },
+            "sourceTitle": {
+              "type": "string",
+              "label": "선행 품의 제목",
+              "desc": "선행 품의 제목",
+              "read": "선행 품의 제목 칸",
+              "max": 200
+            },
+            "attachNote": {
+              "type": "string",
+              "label": "첨부자료 안내문구",
+              "desc": "첨부자료 안내문구",
+              "read": "첨부자료 안내문구 칸",
+              "max": 1000
+            },
+            "items": {
+              "type": "list",
+              "desc": "품목. 문서의 품목 표를 적힌 차례대로 한 줄씩 옮깁니다. 배송비·설치비처럼 따로 적힌 줄도 품목으로 넣습니다.",
+              "read": "품목. 문서의 품목 표를 적힌 차례대로 한 줄씩 옮깁니다. 배송비·설치비처럼 따로 적힌 줄도 품목으로 넣습니다.",
+              "max": 30,
+              "item": {
+                "name": {
+                  "type": "string",
+                  "required": true,
+                  "desc": "품목명·모델명 — 문서에 적힌 그대로(요약하지 않습니다)",
+                  "read": "품목명·모델명 — 문서에 적힌 그대로(요약하지 않습니다)",
+                  "example": "LG 34WQ75C 34인치 모니터",
+                  "max": 200
+                },
+                "spec": {
+                  "type": "string",
+                  "desc": "규격·사양 — 문서에 적힌 핵심을 ' · ' 로 나열",
+                  "read": "규격·사양 — 문서에 적힌 핵심을 ' · ' 로 나열",
+                  "example": "WQHD · 커브드 · USB-C",
+                  "max": 300
+                },
+                "qty": {
+                  "type": "number",
+                  "desc": "수량",
+                  "read": "수량",
+                  "example": 1,
+                  "min": 0
+                },
+                "unit": {
+                  "type": "string",
+                  "desc": "단위(개·대·EA·식 등)",
+                  "read": "단위(개·대·EA·식 등)",
+                  "example": "대",
+                  "max": 10
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "desc": "단가",
+                  "read": "단가",
+                  "example": 890000,
+                  "min": 0
+                },
+                "amount": {
+                  "type": "number",
+                  "desc": "그 줄의 금액 — 문서에 적힌 그대로",
+                  "read": "그 줄의 금액 — 문서에 적힌 그대로",
+                  "example": 890000,
+                  "min": 0
+                }
+              }
+            },
+            "quoteDate": {
+              "type": "date",
+              "desc": "견적일·발행일·주문일. 쇼핑몰 화면이면 주문일이고, 주문 전 장바구니·상품 화면이면 null 입니다.",
+              "read": "견적일·발행일·주문일. 쇼핑몰 화면이면 주문일이고, 주문 전 장바구니·상품 화면이면 null 입니다.",
+              "example": "2026-10-01"
+            },
+            "supply": {
+              "type": "number",
+              "desc": "공급가액 합계(부가세를 뺀 금액) — 문서에 따로 적혀 있을 때만",
+              "read": "공급가액 합계(부가세를 뺀 금액) — 문서에 따로 적혀 있을 때만",
+              "example": 899091,
+              "min": 0
+            },
+            "vat": {
+              "type": "number",
+              "desc": "부가세 합계 — 문서에 따로 적혀 있을 때만",
+              "read": "부가세 합계 — 문서에 따로 적혀 있을 때만",
+              "example": 89909,
+              "min": 0
+            },
+            "currency": {
+              "type": "enum",
+              "label": "화폐",
+              "desc": "합계의 화폐 — 원화가 아니면 합계를 원화로 고쳐 적는다(src/gongmun.js fromRecord 의 알림)",
+              "read": "문서의 화폐(ISO 세 글자 코드). 원화 문서면 KRW",
+              "default": "KRW",
+              "values": [
+                "KRW",
+                "USD",
+                "EUR",
+                "JPY",
+                "CNY",
+                "GBP"
+              ]
+            },
+            "attach": {
+              "type": "list",
+              "label": "첨부",
+              "desc": "첨부 목록 — 문서 이름마다 그 문서로 묶는 파일 이름들(src/gongmun.js attachList — 레시피 attach_rules.yaml 의 parts)",
+              "read": "첨부 문서마다 이름과 그 문서로 묶는 파일 이름들",
+              "max": 20,
+              "item": {
+                "label": {
+                  "type": "string",
+                  "required": true,
+                  "desc": "첨부 목록의 문서 이름(견적서·교육 안내 …)",
+                  "read": "첨부 목록에 적는 문서 이름",
+                  "max": 100
+                },
+                "files": {
+                  "type": "tags",
+                  "desc": "그 문서로 묶는 파일 이름들(자유 글의 목록 — values 없음)",
+                  "read": "그 문서로 묶는 파일 이름들. 모르면 빈 목록"
+                }
+              }
+            }
+          }
+        },
+        "rank": {
+          "type": "enum",
+          "label": "전결권자",
+          "desc": "이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(레시피 purpose.yaml 의 rule_key — 구매·구매의뢰·교육은 연구비집행 금액 구간, 출장은 국내·해외, 외부활동은 팀장). 고르면 그것이 이긴다(delegationOf 의 overridden)",
+          "read": "사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)",
+          "llm": true,
+          "ui": true,
+          "values": [
+            "팀장",
+            "소장",
+            "본부장"
+          ]
+        },
+        "lead": {
+          "type": "string",
+          "label": "과제 책임자",
+          "desc": "합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자(preset.me) 본인이면 합의를 넣지 않는다",
+          "read": "과제 책임자 이름",
+          "llm": false,
+          "ui": true,
+          "max": 40
+        },
+        "refs": {
+          "type": "tags",
+          "label": "참조자",
+          "desc": "결재선의 참조자 — R&D 탭 참여인력에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.<갈래>(구매·교육·출장). 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음",
+          "read": "참조자 이름들",
+          "llm": false,
+          "ui": true
+        },
+        "setting": {
+          "type": "object",
+          "label": "문서설정",
+          "desc": "이 공문에서 바꾼 문서설정만(없는 키는 레시피 프로파일·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다",
+          "read": "사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만",
+          "llm": false,
+          "ui": true,
+          "fields": {
+            "retention": {
+              "type": "enum",
+              "desc": "보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention. 품의는 10년, 신고서·구매요청서는 3년이 기본)",
+              "read": "보존년한을 말했으면 그 코드(10년이면 120, 3년이면 36)",
+              "values": [
+                "12",
+                "24",
+                "36",
+                "60",
+                "120",
+                "240",
+                "1200"
+              ]
+            },
+            "docNo": {
+              "type": "string",
+              "desc": "문서번호 부서 코드(Doc No. — ddlDocNo 의 값, 숫자만)",
+              "read": "문서번호 부서를 코드로 말했을 때만",
+              "max": 8
+            },
+            "receiver": {
+              "type": "enum",
+              "desc": "수신처(settings.yaml options.receiver — 부서는 receivers 의 코드로 SetReceiverValue. 구매요청서는 프로파일이 총무팀)",
+              "read": "수신처를 말했을 때만 — 내부결재·KRE·총무팀",
+              "values": [
+                "내부결재",
+                "KRE",
+                "총무팀"
+              ]
+            },
+            "scope": {
+              "type": "enum",
+              "desc": "공개범위(settings.yaml options.scope — 결재선 YNN·기안부서 NNY)",
+              "read": "공개범위를 말했을 때만 — 결재선 또는 기안부서",
+              "values": [
+                "결재선",
+                "기안부서"
+              ]
+            },
+            "emergency": {
+              "type": "boolean",
+              "desc": "긴급",
+              "read": "긴급이라고 했을 때만 true"
+            },
+            "approvingOpen": {
+              "type": "boolean",
+              "desc": "진행공개",
+              "read": "진행공개라고 했을 때만 true"
+            },
+            "drm": {
+              "type": "boolean",
+              "desc": "DRM",
+              "read": "DRM 을 걸라고 했을 때만 true"
+            },
+            "tag": {
+              "type": "string",
+              "desc": "검색 키워드(비면 프로파일대로 — 구매·구매의뢰·교육은 고른 과제의 별명, 출장은 '출장', 외부활동은 '외부활동'. 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장\")",
+              "read": "검색 키워드를 말했을 때만",
+              "max": 60
+            }
+          }
+        },
+        "attach": {
+          "type": "list",
+          "label": "첨부",
+          "desc": "첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것과 원본 첨부. 견적서를 오렸으면(cut) 오린 그림이 앞에 온다",
+          "read": "첨부할 문서의 파일 이름 목록. 지어내지 않습니다",
+          "llm": false,
+          "ui": true,
+          "max": 5,
+          "item": {
+            "name": {
+              "type": "string",
+              "required": true,
+              "desc": "파일 이름(견적서_업체_날짜.pdf 처럼 attachName 이 지은 것이거나 원본 이름)",
+              "read": "파일 이름",
+              "max": 200
+            },
+            "kind": {
+              "type": "string",
+              "desc": "무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·교육 내용·행사 안내문·요청 공문 …, 원본 첨부면 original)",
+              "read": "무엇의 문서인지. 모르면 null",
+              "max": 40
+            }
+          }
+        }
+      },
+      "checks": [],
+      "rules": [],
+      "llm": {
+        "tasks": [
+          {
+            "task": "gongmun.order",
+            "fills": "draft"
+          },
+          {
+            "task": "gongmunReason.order",
+            "fills": "draft"
+          }
+        ]
+      },
+      "runner": "gongmun.write",
+      "uses": [
+        {
+          "module": "src/gongmun.js",
+          "export": "writePlan"
+        },
+        {
+          "module": "src/gmwrite.js",
+          "export": "writeGongmun"
+        }
+      ],
+      "then": [],
+      "next": "뒤 탭에 구매요청서를 쓴다(제목·표(구매 물품·예산 내역 — 행추가 포스트백 뒤 행 수를 폴링)·양식 칸·문서설정(수신 총무팀)·결재선·첨부 — 과제(Job Id)·차수·본문 칸이 없는 양식이라 제목과 칸·표만). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다 — 상신 전 검사(formSubmit)가 구매대상구분·사업내용·예산유형·수요시기·납품장소·특기사항이 비면 막는다"
+    },
     "gongmun.outside": {
       "id": "gongmun.outside",
       "domain": "gongmun",
@@ -3890,49 +4362,45 @@ export const ACTIONS = {
         "setup": {
           "from": "storage:gongmunPreset",
           "type": "object",
-          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다)",
+          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다",
           "required": true
         },
         "kindTitle": {
-          "value": "외부강의등 신고서",
-          "desc": "갈래 이름 — 활동 로그 한 줄에 쓴다"
+          "from": "recipe:purposes.outside.title",
+          "desc": "갈래 이름(레시피 purpose.yaml 의 title — 외부강의등 신고서) — 활동 로그 한 줄에 쓴다"
         }
       },
       "fields": {
         "form": {
-          "type": "enum",
+          "type": "string",
           "required": true,
           "label": "양식",
-          "desc": "eclass 전자결재 양식(formsFor('outside') — 외부강의등 신고서가 기본. 연구업무추진품의·기안문은 본문 틀로 쓸 때)",
+          "desc": "eclass 전자결재 양식 ID(formsFor('outside') — 외부강의등 신고서 KR_Outside_Lecture_Report 가 기본. 연구업무추진품의·기안문은 본문 틀로 쓸 때)",
           "read": "양식 — 외부강의등 신고서(KR_Outside_Lecture_Report)가 기본",
           "llm": true,
           "ui": true,
           "default": "KR_Outside_Lecture_Report",
-          "values": [
-            "KR_EA_Research_Task",
-            "KR_Outside_Lecture_Report",
-            "KR_EA_Form2"
-          ]
+          "max": 60
         },
         "title": {
           "type": "string",
           "required": true,
           "label": "제목",
-          "desc": "공문 제목(제목 틀을 채운 글 — 사람이 고쳤으면 그 글)",
+          "desc": "공문 제목(레시피 body_spec.yaml 의 제목 틀 — \"{품목요지} 구매 품의\"·\"{과제별명} 수행을 위한 {교육구분} 품의\"·\"… 출장 품의\"·신고서는 \"외부강의등 신고서\" — 을 채운 글. 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)",
           "read": "제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것",
           "llm": true,
           "ui": true,
-          "example": "외부강의등 신고서(부산대학교 MVDC 차단기 기술 특강)",
           "max": 99
         },
         "body": {
           "type": "string",
           "required": true,
           "label": "본문",
-          "desc": "본문(본문 틀을 채운 글 — 신고서 양식은 칸이 정해져 있어 본문은 비어 있을 수 있다. 양식을 바꿨으면 그 틀의 글)",
+          "desc": "본문 — 양식을 본문 편집기가 있는 것(연구업무추진품의·기안문)으로 바꿨을 때만. 신고서(KR_Outside_Lecture_Report)에서는 칸이 없어 기록에도 없다(공문 탭의 본문 칸은 미리보기)",
           "read": "본문 틀을 채운 글",
           "llm": false,
           "ui": true,
+          "when": "form!=KR_Outside_Lecture_Report",
           "max": 20000
         },
         "draft": {
@@ -4119,7 +4587,7 @@ export const ACTIONS = {
         "rank": {
           "type": "enum",
           "label": "전결권자",
-          "desc": "이 공문에서 사람이 고른 전결권자 직책. 비면 규정대로(외부활동 — 팀장)",
+          "desc": "이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(레시피 purpose.yaml 의 rule_key — 구매·구매의뢰·교육은 연구비집행 금액 구간, 출장은 국내·해외, 외부활동은 팀장). 고르면 그것이 이긴다(delegationOf 의 overridden)",
           "read": "사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)",
           "llm": true,
           "ui": true,
@@ -4132,15 +4600,15 @@ export const ACTIONS = {
         "setting": {
           "type": "object",
           "label": "문서설정",
-          "desc": "이 공문에서 바꾼 문서설정만(settingPatch 의 키 — 없는 키는 레시피 프로파일 외부활동(보존 3년·키워드 외부활동)·공문 설정대로)",
+          "desc": "이 공문에서 바꾼 문서설정만(없는 키는 레시피 프로파일·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다",
           "read": "사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만",
           "llm": false,
           "ui": true,
           "fields": {
             "retention": {
               "type": "enum",
-              "desc": "보존년한 코드(settings.yaml options.retention — 신고서는 3년이 기본)",
-              "read": "보존년한을 말했으면 그 코드(3년이면 36)",
+              "desc": "보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention. 품의는 10년, 신고서·구매요청서는 3년이 기본)",
+              "read": "보존년한을 말했으면 그 코드(10년이면 120, 3년이면 36)",
               "values": [
                 "12",
                 "24",
@@ -4153,22 +4621,23 @@ export const ACTIONS = {
             },
             "docNo": {
               "type": "string",
-              "desc": "문서번호 부서 코드(숫자만)",
+              "desc": "문서번호 부서 코드(Doc No. — ddlDocNo 의 값, 숫자만)",
               "read": "문서번호 부서를 코드로 말했을 때만",
               "max": 8
             },
             "receiver": {
               "type": "enum",
-              "desc": "수신처",
-              "read": "수신처를 말했을 때만 — 내부결재 또는 KRE",
+              "desc": "수신처(settings.yaml options.receiver — 부서는 receivers 의 코드로 SetReceiverValue. 구매요청서는 프로파일이 총무팀)",
+              "read": "수신처를 말했을 때만 — 내부결재·KRE·총무팀",
               "values": [
                 "내부결재",
-                "KRE"
+                "KRE",
+                "총무팀"
               ]
             },
             "scope": {
               "type": "enum",
-              "desc": "공개범위",
+              "desc": "공개범위(settings.yaml options.scope — 결재선 YNN·기안부서 NNY)",
               "read": "공개범위를 말했을 때만 — 결재선 또는 기안부서",
               "values": [
                 "결재선",
@@ -4192,7 +4661,7 @@ export const ACTIONS = {
             },
             "tag": {
               "type": "string",
-              "desc": "검색 키워드(프로파일이 '외부활동' 으로 둔다 — 2026-10-12 사용자 지정)",
+              "desc": "검색 키워드(비면 프로파일대로 — 구매·구매의뢰·교육은 고른 과제의 별명, 출장은 '출장', 외부활동은 '외부활동'. 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장\")",
               "read": "검색 키워드를 말했을 때만",
               "max": 60
             }
@@ -4201,7 +4670,7 @@ export const ACTIONS = {
         "attach": {
           "type": "list",
           "label": "첨부",
-          "desc": "첨부 파일 이름(바이트는 ctx.files) — 요청 공문 PDF 와 원본 첨부(요청 메일의 첨부 등)",
+          "desc": "첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것과 원본 첨부. 견적서를 오렸으면(cut) 오린 그림이 앞에 온다",
           "read": "첨부할 문서의 파일 이름 목록. 지어내지 않습니다",
           "llm": false,
           "ui": true,
@@ -4210,13 +4679,13 @@ export const ACTIONS = {
             "name": {
               "type": "string",
               "required": true,
-              "desc": "파일 이름",
+              "desc": "파일 이름(견적서_업체_날짜.pdf 처럼 attachName 이 지은 것이거나 원본 이름)",
               "read": "파일 이름",
               "max": 200
             },
             "kind": {
               "type": "string",
-              "desc": "무엇의 문서인지(요청 공문·행사 안내문 …, 원본 첨부면 original)",
+              "desc": "무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·교육 내용·행사 안내문·요청 공문 …, 원본 첨부면 original)",
               "read": "무엇의 문서인지. 모르면 null",
               "max": 40
             }
@@ -4246,6 +4715,91 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "뒤 탭에 신고서를 쓴다(제목·신고서 칸·문서설정·결재선·첨부 — 차수 칸이 없는 양식이라 제목만). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다"
+    },
+    "gongmun.prior": {
+      "id": "gongmun.prior",
+      "domain": "gongmun",
+      "kind": "prior",
+      "title": "선행 품의 읽기",
+      "hint": "구매의뢰 초안",
+      "status": "live",
+      "confirm": false,
+      "effect": "draft",
+      "log": "gongmun",
+      "summary": "선행 품의 {id} · {title}",
+      "preset": {
+        "me": {
+          "from": "me",
+          "desc": "기안자(내 이름 — 결재선의 기안, 과제책임자가 본인이면 합의를 뺀다)",
+          "required": true
+        },
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리)"
+        },
+        "setup": {
+          "from": "storage:gongmunPreset",
+          "type": "object",
+          "desc": "공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다",
+          "required": true
+        }
+      },
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true,
+          "label": "문서번호",
+          "desc": "선행 구매·구독 품의의 문서번호(공문 이력 줄의 id — HER-2026-000097 꼴). 본문 틀과 첨부 목록을 이 번호로 연다(src/gmlist.js bodyUrl · src/gmprior.js attachListUrl)",
+          "read": "선행 품의의 문서번호(HER-2026-000097 꼴)",
+          "llm": true,
+          "ui": true,
+          "example": "HER-2026-000097",
+          "max": 40
+        },
+        "form": {
+          "type": "string",
+          "label": "양식",
+          "desc": "그 문서의 eclass 양식 ID(공문 이력 줄의 form — 연구업무추진품의 KR_EA_Research_Task)",
+          "read": "양식 ID — 연구업무추진품의(KR_EA_Research_Task)가 보통",
+          "llm": true,
+          "ui": true,
+          "default": "KR_EA_Research_Task",
+          "max": 60
+        },
+        "title": {
+          "type": "string",
+          "label": "제목",
+          "desc": "그 문서의 제목(공문 이력 줄). 품목이 없을 때 품목 요지를 제목에서 뽑고(src/gmprior.js titleGist), 별명으로 과제를 고르며, 구매의뢰 초안의 선행 품의 제목 칸(sourceTitle)이 된다",
+          "read": "선행 품의의 제목",
+          "llm": true,
+          "ui": true,
+          "max": 200
+        }
+      },
+      "checks": [],
+      "rules": [],
+      "llm": false,
+      "runner": "gongmun.prior",
+      "uses": [
+        {
+          "module": "src/gmprior.js",
+          "export": "readPrior"
+        },
+        {
+          "module": "src/gmprior.js",
+          "export": "priorToPurchase"
+        },
+        {
+          "module": "src/gmprior.js",
+          "export": "priorProject"
+        },
+        {
+          "module": "src/gongmun.js",
+          "export": "orderFromPurchase"
+        }
+      ],
+      "then": [],
+      "next": "결과({ draft(구매의뢰 초안 — 품목·합계·구매처·사업내용·선행 품의 칸), purchase(구매 초안 꼴), project(고른 과제 이름), files(첨부 — 이름·형식·바이트), notes, doc })로 패널이 구매의뢰 갈래의 작업(st.work.order)을 세운다 → 사람이 계정과목·I/O·납품장소를 확인하고 공문 작성(gongmun.order)을 누른다"
     },
     "home.evidence": {
       "id": "home.evidence",
@@ -5030,6 +5584,16 @@ export const ACTIONS = {
           "example": "RND00202026",
           "max": 20
         },
+        "io": {
+          "type": "string",
+          "label": "회계 I/O",
+          "desc": "회계(e-accounting)의 과제 코드(I/O — 2145NR0124 꼴). 구매요청서 예산 내역의 I/O 코드이고 계정과목별 예산 조회의 열쇠. 비우면 과제 정보 카드가 회계의 과제 목록에서 과제명 유사도로 찾는다(src/eacct.js rankIo)",
+          "read": "회계 I/O 코드(네 자리 숫자 + 영문 둘 + 네 자리 — 2145NR0124 꼴). Job Id(RND…)·국가과제 번호(RS-…)는 아니다. 적혀 있지 않으면 null",
+          "llm": true,
+          "ui": true,
+          "example": "2145NR0124",
+          "max": 20
+        },
         "lead": {
           "type": "string",
           "label": "책임자",
@@ -5708,7 +6272,7 @@ export const ACTIONS = {
         "stageWanted": {
           "type": "integer",
           "label": "고른 차년도",
-          "desc": "화면에서 고른 차년도(비면 자동 — LLM 이 오늘이 든 차년도를 고른다. 빈 차년도 카드에서 열면 그 차년도)",
+          "desc": "화면에서 고른 차년도(비면 자동 — LLM 이 오늘이 든 차년도를 고른다. 빈 차년도 카드에서 열면 그 차년도. \"모든 차년도\" 면 차년도마다 한 번씩 물으며 그때마다 그 차년도)",
           "read": "사용자가 \"N차년도\" 를 집어 말했을 때만 그 번호. 아니면 null(오늘이 든 차년도)",
           "llm": false,
           "ui": true,

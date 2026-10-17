@@ -1,0 +1,13 @@
+# 구매요청서 — 구매 품의(연구업무추진품의)로 승인받은 물품을 총무팀이 사 주도록 의뢰하는 양식(FORMID KR_Purchase_Order, 수신 총무팀).
+# 2026-10-17 사용자 지정: "kr-weg-agent(krs-web-agents) 에 총무팀에 구매요청서 작성하는게 있거든 그거 참고해서 구매 시 총무팀에 구매의뢰 하는 공문기능을 추가해줘.
+# 그 의뢰서는 구매공문과 연동되어야 하고 … 아마 필요로 하는 정보가 좀 다른데 구매의뢰서는 작성할 수 있는 부분까지만 해줘봐."
+# 원본: krs-web-agents ea_approval/ea_recipes/purchase-order/forms/purchase_order(manifest·fieldmap·purposes/purchase_request).
+# 본문 편집기·과제(Job Id)·차수 칸이 없고 칸이 정해진 폼이라 칸마다 값을 넣고(fieldmap.yaml), 구매 물품·예산 내역은 행추가 포스트백으로 세우는 표(fieldmap.yaml 의 rows)다.
+working_unit_id: purchase-order
+label: 구매요청서
+form_id: KR_Purchase_Order
+# 갈래 차례 — 연구업무추진품의(구매·교육·출장) 다음, 외부강의등 신고서 앞: 구매 · 교육 · 출장 · 구매의뢰 · 외부활동.
+order: 2
+# 이 폼을 고를 수 있는 갈래 — 칸이 구매의뢰 초안의 칸이라 다른 갈래의 양식 칸에는 보이지 않는다.
+only: [order]
+purposes: [order]

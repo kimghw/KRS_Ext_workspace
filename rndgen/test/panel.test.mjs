@@ -4,6 +4,7 @@
 // 본다: wire 가 DOM 을 만들고 onView/onAdd 를 등록 · openAdd 가 setOverlay('add', fn) 를 부르고 대상 n 을 고름 · YAML 파일은 intake(source 'file') 로 바로 ·
 // 문서 → readDocument → askExtract → checkExtracted → finalizeExtracted → 미리보기(별칭·예산 표·경고) · Claude 없음 · 다시 뽑기(같은 재료·다른 stage) ·
 // 넣기(별칭 검사·intake source 'extract'·setAlias·closeAdd·pick) · 저장(download KR_….yaml) · 직접 적기 → addManually · 닫기 → setOverlay(null) ·
+// 모든 차년도(차년도마다 차례로 묻기 · 몇 번은 대상 과제의 연구기간과 답의 연차범위 · 실패한 차년도만 다시 · 한 번의 intake · 고친 칸 · zip 저장 · 과제가 다른 차년도) ·
 // 변경사항 카드 보임 조건 · 기준 줄 · YAML 고치기 흐름(bookToSnapshot 또는 store.get → askRevise → nextRev → finalizeRevised → 차이·변경이력) ·
 // 반영(intake source 'revise') · 활동 로그 한 줄씩 · aria-busy 와 지난 초 · 늦게 온 답 버림 · 끌어 놓기의 전파 · 글은 textContent 로만.
 import { test } from 'node:test';
@@ -12,6 +13,7 @@ import { JSDOM } from 'jsdom';
 
 import { createRndGenPanel } from '../panel.js';
 import { yearNo, yearsOf } from '../../src/rnd.js';
+import { readZip } from '../../src/zip.js';
 
 const TODAY = '2026-10-16';
 const NEED_AI = 'Claude 연결(로컬 CLI 또는 API 키)이 필요합니다 — 설정 → LLM';
@@ -192,6 +194,11 @@ function setup(over = {}) {
       rec('previewApply', bk, obj, opts);
       return { ok: true, error: '', result: null, projectId: 'p1', n: 2, changes: [{ date: TODAY, kind: '예산', item: '연구재료비', before: '12,000천원', after: '15,000천원', reason: '예산 조정' }], older: '', created: false };
     },
+    stageCount: (obj) => {
+      rec('stageCount', obj);
+      const r = obj?.meta?.연차범위;
+      return Array.isArray(r) ? r.length : 0;
+    },
     bookToSnapshot: async (bk, project, n, opts) => {
       rec('bookToSnapshot', bk, project, n, opts);
       const obj = { meta: { 과제명: project.name, rev: 'r0', 차년도: `${n}차년도` }, 예산: { 단위: '천원', 비목별: [{ 연차: `${n}차년도`, 직접비: { 연구재료비: 12000 } }] } };
@@ -297,9 +304,10 @@ test('openAdd — 대상(빈 차년도 카드)이면 setOverlay(add, fn) · 대�
   assert.equal(s.$('rdgTarget').textContent, 'SSCB · 3차년도');
   assert.ok(!s.$('rdgTarget').classList.contains('hidden'));
   const opts = [...s.$('rdgStage').options].map((o) => [o.value, o.textContent]);
-  assert.equal(opts.length, 1 + yearsOf(s.book.projects[0]).length);
+  assert.equal(opts.length, 2 + yearsOf(s.book.projects[0]).length);
   assert.deepEqual(opts[0], ['', '자동(오늘이 든 차년도)']);
-  assert.deepEqual(opts[4], ['4', '4차년도']);
+  assert.deepEqual(opts[1], ['all', '모든 차년도']);
+  assert.deepEqual(opts[5], ['4', '4차년도']);
   assert.equal(s.$('rdgStage').value, '3');
   assert.equal(s.$('rdgAlias').value, 'SSCB');
   assert.ok(s.$('rdgAlias').readOnly);
@@ -313,7 +321,7 @@ test('openAdd — 대상이 없으면 보고 있는 과제가 있어도 대상�
   assert.equal(s.panel.state().add.target, null);
   assert.ok(s.$('rdgTarget').classList.contains('hidden'));
   assert.equal(s.$('rdgStage').value, '');
-  assert.equal(s.$('rdgStage').options.length, 11);
+  assert.equal(s.$('rdgStage').options.length, 12, '자동 · 모든 차년도 · 1~10차년도');
   assert.equal(s.$('rdgAlias').value, '');
   assert.ok(!s.$('rdgAlias').readOnly);
   assert.ok(s.$('rdgPreview').classList.contains('hidden'));
@@ -648,6 +656,194 @@ test('문서 둘을 넣으면 첫 것만 뽑고 알린다 · YAML 과 문서를 
   assert.equal(s.named('pick').length, 0, '문서가 있으면 닫지 않는다');
   const warns = [...s.doc.querySelectorAll('.rdg-warns li')].map((li) => li.textContent);
   assert.ok(warns.includes('문서는 한 번에 하나씩 뽑습니다 — a.pdf 만 씁니다'), warns.join(' | '));
+});
+
+/* ---------------------------------------------------------- 모든 차년도 */
+
+const NEW_NAME = '시험용 신규 과제';
+/** 모든 차년도 흉내 답 — 물은 차년도의 스냅샷, 연차범위는 range 개(0 이면 없음). fail(stage) 가 참이면 던진다. */
+const allAnswer = ({ range = 3, name = () => NEW_NAME, fail = () => false } = {}) => async (mat, ctx) => {
+  if (fail(ctx.stage)) throw new Error(`답을 받지 못했습니다 — ${ctx.stage}차년도 시간 초과`);
+  const meta = { 과제명: name(ctx.stage), 연구개발과제번호: name(ctx.stage) === NEW_NAME ? 'RS-2026-00000009' : '', 차년도: `${ctx.stage}차년도` };
+  if (range) meta.연차범위 = Array.from({ length: range }, (_, i) => `${i + 1}차년도`);
+  return { data: { yaml: snapText(meta), alias: 'NEWP', stage: ctx.stage, warnings: ctx.stage === 2 ? '협약일을 못 찾음' : null }, via: 'cli', costUsd: 0.4213, note: '' };
+};
+/** 여러 스냅샷을 한 번에 넣는 intake 흉내 — 새 과제는 연구기간 2025-04-01 ~ 2027-12-31(1월 1일 끊기)라 2026-10-16 은 2차년도. */
+const intakeMany = (texts, meta, book) => ({
+  ok: true, error: '', lines: texts.map((t) => `연구개발계획서 스냅샷(${t.name})`),
+  results: texts.map((t) => {
+    const obj = parse(t.text).obj;
+    let p = book.projects.find((x) => x.name === obj.meta.과제명);
+    if (!p) { p = { id: 'p9', name: obj.meta.과제명, alias: '', code: obj.meta.연구개발과제번호 || '', start: '2025-04-01', end: '2027-12-31', calendar: true, years: {} }; book.projects.push(p); }
+    return { name: t.name, kind: 'snapshot', label: '연구개발계획서 스냅샷', summary: `${p.name} · ${obj.meta.차년도}`, projectId: p.id, n: yearNo(obj.meta.차년도), rev: 'r0', applied: true };
+  }),
+});
+const yearRows = (s) => [...s.doc.querySelectorAll('.rdg-years > li')].map((li) => [li.querySelector('strong').textContent, li.querySelector('.rdg-year-what').textContent, [...li.querySelectorAll('button')].map((b) => b.textContent)]);
+
+/** 모든 차년도를 고르고 문서 하나를 넣어 끝까지. */
+async function extractedAll(s, { target = {}, asks } = {}) {
+  s.panel.wire();
+  s.hooks.add(target);
+  s.$('rdgStage').value = 'all';
+  s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s.named('askExtract').length >= asks && !s.panel.state().add.busy && s.logs.length > 0, '모든 차년도 뽑기 끝');
+}
+
+test('모든 차년도 — 새 과제: 1차년도 답의 연차범위로 몇 번 물을지 정해 차례로 묻는다 · 차년도별 줄 · 공통·차년도 경고 · 로그 한 줄', async () => {
+  const s = setup({ extract: allAnswer({ range: 3 }) });
+  await extractedAll(s, { asks: 3 });
+  assert.equal(s.named('readDocument').length, 1, '문서는 한 번 읽는다');
+  assert.equal(s.named('loadSkillDocs').length, 1);
+  assert.deepEqual(s.named('askExtract').map((c) => c[2].stage), [1, 2, 3], '1차년도부터 차례로');
+  assert.ok(s.named('askExtract').every((c) => c[1] === s.named('askExtract')[0][1]), '같은 재료');
+  assert.deepEqual(s.named('checkExtracted').map((c) => c[2]), [{ stage: 1 }, { stage: 2 }, { stage: 3 }]);
+  assert.deepEqual(s.named('finalizeExtracted').map((c) => c[2].stage), [1, 2, 3]);
+  const all = s.panel.state().add.all;
+  assert.equal(all.total, 3);
+  assert.ok(all.counted);
+  assert.deepEqual(all.years.map((y) => [y.n, y.state]), [[1, 'ok'], [2, 'ok'], [3, 'ok']]);
+  assert.deepEqual(yearRows(s), [
+    ['1차년도', '합계 42,000천원 · 참여연구자 2명 · 경고 1', ['YAML', '다시 뽑기']],
+    ['2차년도', '합계 42,000천원 · 참여연구자 2명 · 경고 2', ['YAML', '다시 뽑기']],
+    ['3차년도', '합계 42,000천원 · 참여연구자 2명 · 경고 1', ['YAML', '다시 뽑기']],
+  ]);
+  const meta = Object.fromEntries([...s.doc.querySelectorAll('.rdg-meta > div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd')]));
+  assert.deepEqual(Object.keys(meta), ['과제명', '과제번호', '책임자', '연구기간', '차년도별', '넣을 곳', '경고']);
+  assert.equal(meta['과제명'].textContent, NEW_NAME);
+  assert.equal(meta['넣을 곳'].textContent, '새 과제');
+  assert.deepEqual([...meta['경고'].querySelectorAll('li')].map((li) => li.textContent), [
+    '12쪽 표가 그림입니다',
+    '1차년도: 예산.비목별 에 간접비 행이 없습니다',
+    '2차년도: 예산.비목별 에 간접비 행이 없습니다', '2차년도: 협약일을 못 찾음',
+    '3차년도: 예산.비목별 에 간접비 행이 없습니다',
+  ]);
+  // YAML 칸은 처음 온 1차년도 · 별칭은 답의 제안 · 단추
+  assert.match(s.$('rdgYaml').value, /^# \[1차년도 최초\]/);
+  assert.equal(s.doc.querySelector('.rdg-yaml-year').textContent, ' — 1차년도');
+  assert.ok(s.doc.querySelector('.rdg-years > li').classList.contains('at'));
+  assert.equal(s.$('rdgAlias').value, 'NEWP');
+  assert.ok(!s.$('rdgApply').disabled && !s.$('rdgSave').disabled && !s.$('rdgRetry').disabled);
+  assert.equal(s.$('rdgSave').textContent, 'YAML 묶음 저장(zip)');
+  assert.equal(s.msg(), `뽑았습니다 — ${NEW_NAME} 1차년도·2차년도·3차년도 · 로컬 CLI · $1.2639. 확인하고 넣기를 누르세요`);
+  assert.equal(s.logs.length, 1);
+  assert.deepEqual(s.logs[0], ['rnd', true, `R&D 사업계획서에서 모든 차년도 스냅샷 뽑음 — ${NEW_NAME} 1차년도·2차년도·3차년도 (로컬 CLI · $1.2639)`,
+    { file: '사업계획서.pdf', via: 'cli', costUsd: 0.4213 + 0.4213 + 0.4213, stages: [1, 2, 3] }]);
+  // 다른 차년도의 YAML 을 연다
+  s.doc.querySelector('[data-rdg-year-show="3"]').click();
+  assert.match(s.$('rdgYaml').value, /^# \[3차년도 최초\]/);
+  assert.ok(s.doc.querySelector('#rdgAdd details.rdg-yaml').open);
+  assert.equal(s.doc.querySelector('.rdg-yaml-year').textContent, ' — 3차년도');
+  assert.ok(s.doc.querySelectorAll('.rdg-years > li')[2].classList.contains('at'));
+});
+
+test('모든 차년도 — 대상 과제의 연구기간으로 시작하고 답의 연차범위가 이긴다 · 한 차년도가 실패해도 다음으로 · 그 줄의 다시 뽑기는 그 차년도만', async () => {
+  let failTwo = true;
+  const g = gate();
+  const answer = allAnswer({ range: 3, name: () => P1_NAME, fail: (n) => n === 2 && failTwo });
+  const s = setup({ extract: async (mat, ctx) => { await g.p; return answer(mat, ctx); } });
+  s.panel.wire();
+  s.hooks.add({ projectId: 'p1', n: 3 });
+  s.$('rdgStage').value = 'all';
+  s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s.named('askExtract').length === 1, '첫 묻기');
+  // 대상 과제(2025-04-01 ~ 2028-12-31, 1월 1일 끊기)는 4개 차년도 — 처음엔 1차년도를 묻고 나머지 셋이 기다린다
+  assert.deepEqual(s.panel.state().add.all.years.map((y) => [y.n, y.state]), [[1, 'asking'], [2, 'wait'], [3, 'wait'], [4, 'wait']]);
+  assert.ok(s.msg().includes('· 1차년도 (1/4)'), s.msg());
+  g.open();
+  await until(() => !s.panel.state().add.busy && s.logs.length === 1, '끝');
+  assert.deepEqual(s.named('askExtract').map((c) => c[2].stage), [1, 2, 3], '문서의 연차범위(3)가 이긴다');
+  assert.equal(s.named('askExtract')[0][2].project.alias, 'SSCB');
+  const all = s.panel.state().add.all;
+  assert.deepEqual(all.years.map((y) => [y.n, y.state]), [[1, 'ok'], [2, 'fail'], [3, 'ok']], '묻지 않은 4차년도 줄은 거둔다');
+  assert.equal(yearRows(s)[1][1], '뽑지 못함 — 답을 받지 못했습니다 — 2차년도 시간 초과');
+  assert.deepEqual(yearRows(s)[1][2], ['다시 뽑기'], '글이 없으면 YAML 단추는 없다');
+  assert.ok(s.doc.querySelectorAll('.rdg-years > li')[1].classList.contains('fail'));
+  assert.equal(s.$('rdgAlias').value, 'SSCB');
+  assert.ok(s.$('rdgAlias').readOnly);
+  assert.match(s.msg(), /^뽑았습니다 — 시험용 직류 차단기 개발 1차년도·3차년도 · 로컬 CLI · \$0\.8426 · 2차년도는 뽑지 못했습니다\(그 줄의 다시 뽑기\)/);
+  assert.match(s.logs[0][2], /^R&D 사업계획서에서 모든 차년도 스냅샷 뽑음 — 시험용 직류 차단기 개발 1차년도·3차년도 · 못 뽑음 2차년도 \(/);
+  // 2차년도만 다시
+  failTwo = false;
+  s.doc.querySelector('[data-rdg-year-redo="2"]').click();
+  await until(() => s.logs.length === 2 && !s.panel.state().add.busy, '다시 뽑기');
+  assert.deepEqual(s.named('askExtract').slice(3).map((c) => c[2].stage), [2]);
+  assert.equal(s.named('readDocument').length, 1, '문서를 다시 읽지 않는다');
+  assert.deepEqual(s.panel.state().add.all.years.map((y) => y.state), ['ok', 'ok', 'ok']);
+  assert.equal(s.logs[1][2], 'R&D 사업계획서에서 스냅샷 뽑음 — 시험용 직류 차단기 개발 2차년도 (로컬 CLI · $0.4213)');
+  assert.equal(s.$('rdgAlias').value, 'SSCB');
+});
+
+test('모든 차년도 넣기 — 고친 YAML 칸은 그 차년도의 글로 · zip 저장(N차년도/KR_….yaml) · 한 번의 intake → setAlias → 닫고 오늘이 든 차년도로', async () => {
+  const s = setup({ extract: allAnswer({ range: 3 }), intake: intakeMany });
+  await extractedAll(s, { asks: 3 });
+  // 2차년도를 열어 고친다
+  s.doc.querySelector('[data-rdg-year-show="2"]').click();
+  const edited = s.$('rdgYaml').value.replace('"연구재료비": 12000', '"연구재료비": 13000');
+  assert.notEqual(edited, s.$('rdgYaml').value);
+  s.$('rdgYaml').value = edited;
+  s.fire(s.$('rdgYaml'), 'input');
+  assert.ok(s.panel.state().add.all.years[1].edited);
+  assert.match(yearRows(s)[1][1], / · 원문을 고침 · /);
+  // zip 저장
+  s.click('rdgSave');
+  await until(() => s.named('flash').length === 1, 'flash');
+  const [, bytes, name, type] = s.named('download')[0];
+  assert.equal(name, 'KR_시험용_신규_과제_모든차년도.zip');
+  assert.equal(type, 'application/zip');
+  const files = readZip(bytes).map((e) => [e.name, new TextDecoder().decode(e.data)]);
+  assert.deepEqual(files.map((f) => f[0]), ['1차년도/KR_시험용_신규_과제.yaml', '2차년도/KR_시험용_신규_과제.yaml', '3차년도/KR_시험용_신규_과제.yaml']);
+  assert.equal(files[1][1], edited);
+  // 넣기
+  s.click('rdgApply');
+  await until(() => s.named('pick').length === 1, '넣기');
+  const intakes = s.named('intake');
+  assert.equal(intakes.length, 1, '한 번에 넣는다');
+  const [, texts, meta] = intakes[0];
+  assert.deepEqual(meta, { source: 'extract' });
+  assert.deepEqual(texts.map((t) => t.name), ['1차년도/KR_시험용_신규_과제.yaml', '2차년도/KR_시험용_신규_과제.yaml', '3차년도/KR_시험용_신규_과제.yaml']);
+  assert.equal(texts[1].text, edited.trim());
+  const order = s.calls.map((c) => c[0]).filter((n) => ['intake', 'setAlias', 'setOverlay', 'pick'].includes(n));
+  assert.deepEqual(order.slice(-4), ['intake', 'setAlias', 'setOverlay', 'pick']);
+  assert.deepEqual(s.named('setAlias')[0], ['setAlias', 'p9', 'NEWP']);
+  assert.deepEqual(s.named('pick')[0], ['pick', 'p9', 2], '2026-10-16 은 2차년도');
+  assert.ok(s.$('rdgAdd').classList.contains('hidden'));
+  assert.equal(s.panel.state().add.all, null);
+});
+
+test('모든 차년도 — 차년도 수를 모르면 1차년도만 뽑고 알린다 · 과제명이 다른 차년도는 넣지 않는다', async () => {
+  const s1 = setup({ extract: allAnswer({ range: 0 }) });
+  await extractedAll(s1, { asks: 1 });
+  await wait(20);
+  assert.equal(s1.named('askExtract').length, 1);
+  assert.ok(s1.panel.state().add.warnings.some((w) => w.startsWith('몇 차년도까지인지 읽지 못해 1차년도만 뽑았습니다')), s1.panel.state().add.warnings.join(' | '));
+
+  const s2 = setup({ extract: allAnswer({ range: 2, name: (n) => (n === 2 ? '다른 이름의 과제' : NEW_NAME) }), intake: intakeMany });
+  await extractedAll(s2, { asks: 2 });
+  assert.ok(s2.panel.state().add.warnings.some((w) => w.startsWith('2차년도의 과제명·과제번호가 1차년도와 달라 넣지 않습니다')), s2.panel.state().add.warnings.join(' | '));
+  s2.click('rdgApply');
+  await until(() => s2.msg().startsWith('2차년도: 과제명·과제번호가 1차년도와 다릅니다'), '넣기 거절');
+  assert.ok(s2.$('rdgAddMsg').classList.contains('error'));
+  assert.equal(s2.named('intake').length, 0);
+});
+
+test('모든 차년도 — 묻는 동안 닫으면 남은 차년도를 묻지 않고 늦게 온 답은 버린다', async () => {
+  const g = gate();
+  const answer = allAnswer({ range: 3 });
+  const s = setup({ extract: async (mat, ctx) => { await g.p; return answer(mat, ctx); } });
+  s.panel.wire();
+  s.hooks.add({});
+  s.$('rdgStage').value = 'all';
+  s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf')]);
+  await until(() => s.named('askExtract').length === 1, '묻는 중');
+  assert.ok(s.msg().startsWith('Claude 에게 차년도마다 차례로 묻는 중 — 차년도마다 몇 분 걸릴 수 있습니다 · 1차년도 (1/?)'), s.msg());
+  assert.deepEqual(yearRows(s), [['1차년도', '뽑는 중…', []]]);
+  s.click('rdgCancel');
+  g.open();
+  await wait(30);
+  assert.equal(s.named('askExtract').length, 1);
+  assert.equal(s.named('checkExtracted').length, 0);
+  assert.equal(s.logs.length, 0);
+  assert.ok(s.$('rdgAdd').classList.contains('hidden'));
 });
 
 /* ---------------------------------------------------------- 변경사항 카드 */

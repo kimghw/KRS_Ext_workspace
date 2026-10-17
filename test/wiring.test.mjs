@@ -128,7 +128,7 @@ console.log('회의실 모드로 시작');
   });
   t('일반 — 보이는 탭 · 내 이름 · 켜고 끄기 · 활동 로그 · 페이지 구조 캡처', () => {
     const g = doc.getElementById('setGeneral');
-    for (const id of ['tabPicks', 'myName', 'teamsButton', 'qualityYearKeep', 'homeUncfm', 'docCirculate', 'logBox', 'capture']) assert.ok(g.querySelector(`#${id}`), id);
+    for (const id of ['tabPicks', 'panelCapture', 'myName', 'teamsButton', 'qualityYearKeep', 'homeUncfm', 'docCirculate', 'logBox', 'capture']) assert.ok(g.querySelector(`#${id}`), id);
     const rows = [...g.children].filter((d) => d.matches('details.diag')).map((d) => d.querySelector('summary').textContent);
     assert.equal(rows.length, 2);
     assert.match(rows[0], /^활동 로그/);
@@ -439,6 +439,70 @@ console.log('설정(일반)의 Teams 버튼 체크박스');
   const { window } = await boot({ mode: 'room', teamsButton: false });
   t('꺼 둔 설정이면 꺼진 채로 뜬다', () =>
     assert.equal(window.document.getElementById('teamsButton').checked, false));
+}
+
+console.log('머리의 패널 캡처 단추와 설정(일반)의 스위치 — src/panelcap.js');
+{
+  const { wired, window, store, calls } = await boot({ mode: 'room' });
+  const doc = window.document;
+  const btn = doc.getElementById('panelCap');
+  const box = doc.getElementById('panelCapture');
+  t('머리 줄의 새로고침 왼쪽에 있고, 처음엔 보이며 눌리지 않은 모양', () => {
+    assert.ok(btn.closest('.head-tools'), '머리 줄이 아니다');
+    assert.equal(btn.nextElementSibling?.id, 'refresh');
+    assert.equal(btn.hidden, false);
+    assert.equal(btn.getAttribute('aria-pressed'), 'false');
+    assert.ok(wired.get('panelCap')?.has('click'));
+  });
+  t('스위치는 설정의 일반 갈래 · 화면 구성 안, 기본 켬, change 리스너', () => {
+    assert.equal(box.type, 'checkbox');
+    assert.equal(box.getAttribute('role'), 'switch');
+    assert.ok(box.closest('#setGeneral'));
+    assert.ok(box.closest('section')?.querySelector('#tabPicks'), '화면 구성 구역이 아니다');
+    assert.equal(box.checked, true);
+    assert.ok(wired.get('panelCapture')?.has('change'));
+    assert.match(box.closest('label').textContent, /패널 캡처/);
+  });
+  btn.click();
+  t('누르면 고르기 막이 body 끝에 붙고 단추는 눌린 모양', () => {
+    assert.ok(doc.body.lastElementChild?.classList.contains('pcap'));
+    assert.equal(btn.getAttribute('aria-pressed'), 'true');
+  });
+  doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  t('Esc 로 막이 걷히면 단추도 돌아온다', () => {
+    assert.equal(doc.querySelector('.pcap'), null);
+    assert.equal(btn.getAttribute('aria-pressed'), 'false');
+  });
+  btn.click();
+  box.checked = false;
+  box.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 40));
+  t('끄면 저장되고 단추가 숨으며 씌워 둔 막도 걷힌다 · 활동 기록', () => {
+    assert.equal(store.panelCapture, false);
+    assert.equal(btn.hidden, true);
+    assert.equal(doc.querySelector('.pcap'), null);
+    assert.equal(btn.getAttribute('aria-pressed'), 'false');
+    assert.ok((store.activityLog || []).some((e) => e.kind === 'setting' && /패널 캡처.*끔/.test(e.text)));
+  });
+  box.checked = true;
+  box.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 40));
+  t('다시 켜면 저장되고 단추가 돌아온다', () => {
+    assert.equal(store.panelCapture, true);
+    assert.equal(btn.hidden, false);
+  });
+  for (const fn of calls.storageListeners) fn({ panelCapture: { newValue: false } }, 'local');
+  t('다른 창의 패널에서 끄면 이 창의 스위치·단추도 따라간다', () => {
+    assert.equal(box.checked, false);
+    assert.equal(btn.hidden, true);
+  });
+}
+{
+  const { window } = await boot({ mode: 'room', panelCapture: false });
+  t('꺼 둔 설정이면 스위치는 꺼진 채, 단추는 숨은 채로 뜬다', () => {
+    assert.equal(window.document.getElementById('panelCapture').checked, false);
+    assert.equal(window.document.getElementById('panelCap').hidden, true);
+  });
 }
 
 console.log('설정(일반)의 Quality 연도 유지 체크박스');
@@ -1332,7 +1396,7 @@ console.log('공문 탭');
     assert.ok(wired.get('tabGongmun')?.has('click'));
     const want = [['gmKinds', 'click'], ['gmFile', 'change'], ['gmCapture', 'click'], ['gmManual', 'click'],
       ['gmReset', 'click'], ['gmCut', 'click'], ['gmAgentGo', 'click'], ['gmAgentInput', 'keydown'], ['gmMoreFields', 'input'], ['gmPick', 'click'], ['gmProjects', 'click'], ['gmFields', 'input'], ['gmTitle', 'input'], ['gmBody', 'input'], ['gmRegen', 'click'],
-      ['gmWrite', 'click'], ['gmRank', 'change'], ['gmRetention', 'change'], ['gmDocNoOne', 'input'], ['gmSetReset', 'click'], ['gmSavePdf', 'click'], ['gmTplForm', 'change'], ['gmTplTitle', 'input'],
+      ['gmWrite', 'click'], ['gmOrder', 'click'], ['gmRank', 'change'], ['gmRetention', 'change'], ['gmDocNoOne', 'input'], ['gmSetReset', 'click'], ['gmSavePdf', 'click'], ['gmTplForm', 'change'], ['gmTplTitle', 'input'],
       ['gmTplBody', 'input'], ['gmTplReset', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
       ['gmProjList', 'input'], ['gmEvidenceToggle', 'click'], ['gmWorkspaceToggle', 'click'], ['gmViewTabs', 'click'], ['gmViewTabs', 'keydown'], ['gmCompare', 'click'], ['gongmun', 'dragover'], ['gongmun', 'drop'],
       ['gmFeeSum', 'click'], ['gmHistBox', 'toggle'], ['gmHistSpan', 'click'], ['gmHistAll', 'click'], ['gmHistRefresh', 'click'], ['gmHistList', 'click'],
@@ -1355,9 +1419,11 @@ console.log('공문 탭');
     assert.ok(doc.getElementById('attend').classList.contains('hidden'));
     for (const sel of ['.controls', '.schedule', '.ask']) assert.ok(doc.querySelector(sel).hasAttribute('hidden'), sel);
   });
-  t('갈래는 구매·교육·출장·외부활동이고 맨 끝이 에이전트(공문 검색 — 단추 글자는 공문검색, 2026-10-16 사용자 지정), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
+  t('갈래는 구매·교육·출장·구매의뢰(2026-10-17)·외부활동이고 맨 끝이 에이전트(공문 검색 — 단추 글자는 공문검색, 2026-10-16 사용자 지정), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
     const kinds = [...doc.querySelectorAll('#gmKinds .gm-kind')].map((b) => b.dataset.kind);
-    assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'outside', 'agent']);
+    assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'order', 'outside', 'agent']);
+    assert.equal(doc.querySelector('#gmKinds [data-kind="order"]').textContent, '구매의뢰');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="order"]').title, '구매요청서');
     assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').textContent, '공문검색');
     assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').getAttribute('aria-pressed'), 'false');
     assert.ok(doc.getElementById('gmSearch').hidden, '검색 카드는 에이전트를 누르기 전에는 숨어 있다');
@@ -1897,11 +1963,11 @@ console.log('공문 탭');
     assert.equal(doc.getElementById('gmTitle').value, '외부강의등 신고서');
     const body = doc.getElementById('gmBody');
     assert.ok(body.readOnly);
-    assert.equal(doc.querySelector('label[for="gmBody"]').textContent, '신고서에 넣을 칸 (미리보기)');
+    assert.equal(doc.querySelector('label[for="gmBody"]').textContent, '외부강의등 신고서에 넣을 칸 (미리보기)', '말은 폼의 이름으로(칸이 정해진 폼이면 어느 것이든)');
     assert.match(body.value, /■ 요 청 인 : 부산대학교 {2}\(대표자 차정인\)\n {4}담당부서\(담당자\) : 조선해양공학과\(김철수\) {2}☎ 0515101234/);
     assert.match(body.value, /■ 일 {4}시 : 2026\. 11\. 5\. \(1일\) {2}14:00 ~ 17:00\n {4}총 시 간 : 3시간 30분/);
     assert.match(body.value, /※ 첨 부\n {4}1\. 요청 공문 1부\.  끝\.$/);
-    assert.match(doc.getElementById('gmSteps').textContent, /공문 작성 외부강의등 신고서 — 제목 · 신고서 칸\(요청인·주제·장소·일시·사례금·누적\) · 문서설정 · 결재선을 창에 넣습니다/);
+    assert.match(doc.getElementById('gmSteps').textContent, /공문 작성 외부강의등 신고서 — 제목 · 외부강의등 신고서 칸 · 문서설정 · 결재선을 창에 넣습니다/);
     assert.match(doc.getElementById('gmSetState').textContent, /^전결 팀장 · 보존 3년 · .* · 키워드 외부활동$/, '보존 3년(지난 신고서)·검색 키워드 외부활동');
   });
 
@@ -2064,6 +2130,15 @@ console.log('공문 탭 — 비교작성 탭(2026-10-09 사용자 지정: "비�
     doc.dispatchEvent(ev);
     assert.ok(!ev.defaultPrevented);
     assert.doesNotMatch(doc.getElementById('gmStatus').textContent, /읽는 중/);
+  });
+  t('읽은 문서가 있는 초안은 여기서 공문 작성을 하지 않는다 — 파일 바이트가 사이드패널에만 있어 첨부가 조용히 빠지므로 사이드패널로 보낸다(2026-10-17 Codex 검토)', () => {
+    // 사이드패널이 읽은 문서(첨부 목록의 파일 이름)를 저장소로 건넨다 — 오린 견적서(견적서.png)는 세션 저장소로 받았지만 교육내용.png 는 이 탭에 없다.
+    remote({ gongmunDraft: { newValue: panelDraft({ attach: [{ label: '교육 견적서', files: ['견적서.png'] }, { label: '교육 내용', files: ['교육내용.png'] }] }) } });
+    doc.getElementById('gmWrite').click();
+    assert.match(doc.getElementById('gmStatus').textContent, /첨부할 문서 1개는 사이드패널에만 있습니다 — 사이드패널의 공문 작성을 누르면 첨부까지 넣습니다/);
+    assert.ok(!doc.getElementById('gmWrite').disabled, '쓰기 시작하지 않는다');
+    assert.equal(doc.getElementById('gmWrite').textContent, '공문 작성');
+    assert.equal(calls.tabs.filter((t) => /RealEANET/i.test(t.url || '')).length, 0, '새 공문 창을 열지 않는다');
   });
   t('사이드패널에서 비우면 여기도 비고 어디서 넣는지 적힌다 — 다시 넣으면 따라 선다', () => {
     remote({ gongmunDraft: { newValue: { lastProject: '', by: 'panel' } } });
@@ -4781,6 +4856,166 @@ console.log('공문 탭 — 구매·교육·출장의 비용을 R&D 과제의 �
     assert.ok(budgetEl.classList.contains('hint') && !budgetEl.classList.contains('short'));
     assert.equal(budgetEl.textContent, 'R&D 예산 정보 없음 — R&D 탭에서 rERP 집행내역을 잇거나 예산 칸에 계획을 적으면 연구재료비 잔액과 견줍니다');
     assert.equal(budgetEl.title, '');
+  });
+  await settle(500);
+}
+
+console.log('공문 탭 — 구매의뢰(구매요청서) 연동: 구매 품의에서 같이 작성(구매의뢰 작성 단추) · 공문 이력 구매 품의 카드의 구매의뢰(2026-10-17 사용자 지정: "우측 하단에 구매의뢰하기 버튼 … 구매할때 같이 작성")');
+{
+  const { blankDraft } = await import('../src/gongmun.js');
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const Y = ymd(new Date()).slice(0, 4);
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+  const plus = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+  const PROJECT = 'MW급 10kV 반도체 차단기 개발';
+  const C = { id: `HER-${Y}-000128`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '차단기 과제 수행을 위한 시험 장비 구매 품의', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(10), done: daysAgo(9), status: '발송', flow: '7' };
+  const B = { id: `HER-${Y}-000266`, form: 'KR_Outside_Lecture_Report', formName: '외부강의등 신고서', title: '외부강의등 신고서', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(20), done: daysAgo(20), status: '발송', flow: '7' };
+  const items = [{ name: 'LG 34WR50QK 34인치 모니터', spec: '34인치 WQHD', qty: 1, unit: '대', unitPrice: 489000, amount: 489000 }];
+  const purchase = { ...blankDraft('purchase', { me: '김거화' }), gist: '34인치 모니터', vendor: '쿠팡', total: 489000, items, use: '연구 자료 검토용', reason: '과제 회의에서 회로도·시험 데이터를 함께 검토할 대화면이 필요함' };
+  // 선행 품의 읽기(행위 gongmun.prior — src/gmprior.js): C 는 본문 틀(이 확장의 구매 틀 — 품목 둘·합계 588,000·구매처 쿠팡, Job Id RND00202026)과 첨부 목록(견적서_2.pdf)·내려받기(PDF 바이트)가 있고,
+  // D 는 네트워크가 막힌 품의다(문서번호·제목만 넣는 길).
+  const { researchPage, attachPage } = await import('./fixtures/gmprior-fixture.mjs');
+  const D = { ...C, id: `HER-${Y}-000129`, title: '[SSCB] 수행을 위한 전류 프로브 구매 품의', date: daysAgo(5), done: daysAgo(4) };
+  const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+  const page = (html, type = 'text/html; charset=utf-8', more = {}) => ({ ok: true, status: 200, url: '', headers: { get: (h) => ({ 'content-type': type, ...more })[String(h).toLowerCase()] ?? null }, arrayBuffer: async () => new TextEncoder().encode(html).buffer });
+  const lists = [];
+  const fetched = [];
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (/DocList/.test(u)) lists.push(u);
+    fetched.push(u);
+    if (u.includes(`DOCID=${C.id}`) && /Forms\/Drafts\/KR_EA_Research_Task\.aspx/.test(u)) return page(researchPage({ title: C.title, job: 'RND00202026' }));
+    if (u.includes(`DOCID=${C.id}`) && /CommentAttachmentInfo\.aspx/.test(u)) return page(attachPage([{ id: '574551', name: '견적서_2.pdf', size: '60.68 KB' }]));
+    if (/AttachFileDown\.aspx\?AttID=574551&/.test(u)) return { ok: true, status: 200, url: u, headers: { get: (h) => ({ 'content-type': 'application/pdf', 'content-disposition': 'attachment;filename=%ea%b2%ac%ec%a0%81%ec%84%9c_2.pdf' })[String(h).toLowerCase()] ?? null }, arrayBuffer: async () => PDF.buffer };
+    throw new Error('offline');
+  };
+  const { window, store, calls } = await boot({
+    mode: 'gongmun', gongmunKind: 'purchase', myName: '김거화', gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
+    gongmunProjects: [{ name: PROJECT, alias: 'SSCB', code: 'RND-20-2026', job: 'RND00202026', lead: '박기도', account: '연구활동비' }],
+    // 읽어 둔 공문 이력(10분 안 — 목록을 다시 읽지 않는다): 구매 품의 두 줄과 외부강의등 신고서 한 줄(본문은 직급까지 읽어 둔 것).
+    gongmunHist: { at: Date.now(), from: '2000-01-01', to: `${Y}-12-31`, span: '3m', rows: [C, D, B], reports: { [B.id]: { rank: '책임연구원', contactTel: '', org: '더브릿지전략컨설팅', fee: 200000, yearTotal: 200000, from: daysAgo(20) } }, notes: [] },
+    gongmunDraft: { purchase: { draft: purchase, source: { label: '직접 입력' }, project: PROJECT, notes: [], touched: [] } },
+  }, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const field = (key) => doc.querySelector(`#gongmun [data-key="${key}"]`);
+  const type = (node, value) => { node.value = value; node.dispatchEvent(new window.Event('input', { bubbles: true })); };
+  const activeKind = () => doc.querySelector('#gmKinds .gm-kind.active').dataset.kind;
+  const order = () => doc.getElementById('gmOrder');
+  const status = () => doc.getElementById('gmStatus').textContent;
+  const card = (id) => doc.querySelector(`#gmHistList [data-id="${id}"]`);
+  const pickedProject = () => doc.querySelector('#gmPick .gm-pick[aria-checked="true"]')?.textContent;
+  await settle();
+  t('구매의뢰 작성 단추는 공문 작성·공문 보기 줄의 세 번째(ghost)이고 구매 갈래에서 보인다 — 아직 구매의뢰 초안이 없어 덮는다는 말은 없다', () => {
+    assert.deepEqual([...doc.querySelectorAll('#gongmun .gm-write-row > button')].map((b) => b.id), ['gmWrite', 'gmShowDoc', 'gmOrder']);
+    assert.equal(order().textContent, '구매의뢰 작성');
+    assert.ok(order().classList.contains('ghost'));
+    assert.ok(!order().hidden);
+    assert.match(order().title, /구매요청서\(총무팀 수신\)/);
+    assert.ok(!order().title.includes('덮습니다'));
+    assert.equal(lists.length, 0, '읽어 둔 이력이 10분 안이라 목록을 다시 읽지 않는다');
+  });
+  for (const k of ['edu', 'trip', 'order', 'outside']) {
+    doc.querySelector(`#gmKinds [data-kind="${k}"]`).click();
+    t(`${k} 갈래에서는 구매의뢰 작성 단추가 숨는다`, () => assert.ok(order().hidden));
+  }
+  doc.querySelector('#gmKinds [data-kind="purchase"]').click();
+  order().click();
+  await settle();
+  t('구매의뢰 작성을 누르면 구매의뢰 갈래로 가고 구매 초안의 품목 요지·구매처·합계·품목·사유(사업내용)·과제가 옮겨지며 선행 품의 칸은 빈 글이다', () => {
+    assert.equal(activeKind(), 'order');
+    assert.equal(status(), '구매의뢰서 초안을 구매 품의에서 만들었습니다 — 계정과목·I/O 코드·납품장소를 적고 공문 작성을 누르세요');
+    assert.equal(field('gist').value, '34인치 모니터');
+    assert.equal(field('vendor').value, '쿠팡');
+    assert.equal(field('total').value, '489,000');
+    assert.equal(field('sourceDoc').value, '');
+    assert.equal(field('sourceTitle').value, '');
+    assert.match(field('business').value, /대화면이 필요함/);
+    assert.deepEqual([...doc.querySelectorAll('#gmItems .gm-item-name')].map((n) => n.textContent), ['LG 34WR50QK 34인치 모니터']);
+    assert.equal(pickedProject(), 'SSCB', '과제도 함께 간다');
+    assert.ok(order().hidden, '구매의뢰 갈래에는 단추가 없다');
+    assert.ok(field('place'), '납품장소 칸이 펼쳐져 있다');
+  });
+  t('셈하는 칸(orderAuto) — 수요시기는 오늘+14일, 특기사항은 선행 품의가 없어 해당 없음, 계정과목명은 과제의 계정, 첨부자료 안내문구는 첨부 목록', () => {
+    assert.equal(field('demandDate').value, plus(14));
+    assert.equal(field('feature').value, '해당 없음');
+    assert.equal(field('subjectName').value, '연구활동비');
+    assert.match(field('attachNote').value, /견적서 1부/);
+  });
+  await settle(480);
+  t('구매의뢰 초안은 저장되고(touched 는 빈 목록, 과제는 구매 초안의 것) 구매 초안은 그대로 남는다', () => {
+    assert.equal(store.gongmunDraft.order.draft.gist, '34인치 모니터');
+    assert.deepEqual(store.gongmunDraft.order.touched, []);
+    assert.equal(store.gongmunDraft.order.project, PROJECT);
+    assert.equal(store.gongmunDraft.order.draft.sourceDoc, '');
+    assert.equal(store.gongmunDraft.purchase.draft.gist, '34인치 모니터');
+    assert.equal(store.gongmunKind, 'order');
+  });
+  doc.querySelector('#gmKinds [data-kind="purchase"]').click();
+  t('구매 갈래로 돌아오면 단추가 다시 보이고, 이미 있는 구매의뢰 초안을 덮는다고(되돌릴 수 없음) title 에 적는다', () => {
+    assert.ok(!order().hidden);
+    assert.match(order().title, /덮습니다\(되돌릴 수 없음\)/);
+  });
+  card(C.id).querySelector('.gm-hist-head').click();
+  t('공문 이력의 구매 품의 카드를 펴면 eclass 에서 열기 오른쪽에 구매의뢰 단추가 선다', () => {
+    assert.ok(card(C.id).classList.contains('open'));
+    assert.deepEqual([...card(C.id).querySelectorAll('.gm-actions button')].map((b) => [b.dataset.act, b.textContent]), [['open', 'eclass 에서 열기'], ['order', '구매의뢰']]);
+  });
+  doc.getElementById('gmHistAll').click();
+  card(B.id).querySelector('.gm-hist-head').click();
+  t('외부강의등 신고서 카드에는 구매의뢰 단추가 없다', () => {
+    assert.ok(card(B.id).classList.contains('open'));
+    assert.deepEqual([...card(B.id).querySelectorAll('.gm-actions button')].map((b) => b.dataset.act), ['open']);
+  });
+  doc.getElementById('gmHistAll').click();
+  card(C.id).querySelector('.gm-hist-head').click();
+  const logBefore = (store.activityLog || []).length;
+  card(C.id).querySelector('[data-act="order"]').click();
+  await settle(120);
+  t('구매의뢰를 누르면 행위 gongmun.prior 가 그 품의의 본문 틀·첨부 목록·첨부를 eclass 에서 읽어(2026-10-17 "이것도 명세서를 만든 다음에 러너로") 품목·합계·구매처·사업내용·계정과목명·선행 품의 칸을 채우고 Job Id 로 과제를 고른다', () => {
+    assert.equal(activeKind(), 'order');
+    assert.ok(fetched.some((u) => /Forms\/Drafts\/KR_EA_Research_Task\.aspx/.test(u) && u.includes(`DOCID=${C.id}`)), '본문 틀을 읽는다');
+    assert.ok(fetched.some((u) => /CommentAttachmentInfo\.aspx/.test(u) && u.includes(`DOCID=${C.id}`)), '첨부 목록을 읽는다');
+    assert.ok(fetched.some((u) => /AttachFileDown\.aspx\?AttID=574551&/.test(u) && /View=0/.test(u)), '첨부를 내려받는다');
+    assert.equal(field('sourceDoc').value, C.id);
+    assert.equal(field('sourceTitle').value, C.title);
+    assert.equal(field('gist').value, 'LG 34WR50QK 34인치 모니터 외 1건', '품목 요지는 본문의 품목에서');
+    assert.equal(field('vendor').value, '쿠팡');
+    assert.equal(field('total').value, '588,000', '합계는 본문의 구매금액');
+    assert.equal(field('business').value, '과제 회의에서 회로도·시험 데이터를 함께 검토할 대화면이 필요함 (용도: 연구 자료 검토용)');
+    assert.equal(field('subjectName').value, '연구활동비(연구실운용비)', '계정과목명은 그 품의의 구매계정');
+    assert.equal(field('feature').value, `연구업무추진품의 ${C.id}(${C.title}) 승인에 따른 구매 요청`);
+    assert.equal(field('attachNote').value, '1. 견적서 1부.');
+    assert.deepEqual([...doc.querySelectorAll('#gmItems .gm-item-name')].map((n) => n.textContent), ['LG 34WR50QK 34인치 모니터', '모니터암']);
+    assert.equal(pickedProject(), 'SSCB', 'Job Id 가 같은 과제');
+    assert.match(doc.getElementById('gmSource').textContent, /선행 품의 · HER-\d{4}-000128 · .* · 견적서_2\.pdf/);
+    assert.match(doc.getElementById('gmSource').textContent, /첨부 · 견적서/);
+    assert.equal(status(), `구매의뢰서 초안을 선행 품의 ${C.id}(${C.title})의 본문과 첨부으로 만들었습니다 — 계정과목·I/O 코드·납품장소를 확인하고 공문 작성을 누르세요`);
+  });
+  await settle(480);
+  t('그 초안도 저장된다 — 선행 품의 문서번호·과제와 함께(첨부 파일은 저장하지 않는다). 활동 로그는 디스패처의 한 줄(품목·첨부·과제 수)', () => {
+    const line = (store.activityLog || []).slice(logBefore).find((l) => /선행 품의 읽기/.test(l.text || ''));
+    assert.ok(line && line.ok, '활동 로그 한 줄(디스패처)');
+    assert.match(line.text, /선행 품의 읽기 · HER-\d{4}-000128 · .* · 품목 2건 · 첨부 1개 · 과제 MW급 10kV 반도체 차단기 개발/);
+    assert.equal(store.gongmunDraft.order.draft.sourceDoc, C.id);
+    assert.equal(store.gongmunDraft.order.draft.sourceTitle, C.title);
+    assert.equal(store.gongmunDraft.order.project, PROJECT);
+    assert.deepEqual(store.gongmunDraft.order.draft.attach, [{ label: '견적서', files: ['견적서_2.pdf'], original: true }]);
+    assert.ok(!('files' in store.gongmunDraft.order) || !store.gongmunDraft.order.files?.length);
+  });
+  doc.querySelector('#gmKinds [data-kind="purchase"]').click();
+  if (!card(D.id).classList.contains('open')) card(D.id).querySelector('.gm-hist-head').click();
+  card(D.id).querySelector('[data-act="order"]').click();
+  await settle(120);
+  t('읽지 못하는 품의(네트워크 막힘)는 문서번호·제목만 선행 품의 칸에 넣고 왜 못 읽었는지 적는다 — 과제는 구매 초안의 것', () => {
+    assert.equal(activeKind(), 'order');
+    assert.equal(field('sourceDoc').value, D.id);
+    assert.equal(field('sourceTitle').value, D.title);
+    assert.equal(field('gist').value, '');
+    assert.equal(field('feature').value, `연구업무추진품의 ${D.id}(${D.title}) 승인에 따른 구매 요청`);
+    assert.equal(pickedProject(), 'SSCB');
+    assert.match(status(), new RegExp(`^선행 품의 ${D.id} 를 읽지 못해\\(.+\\) 문서번호·제목만 넣었습니다`));
   });
   await settle(500);
 }

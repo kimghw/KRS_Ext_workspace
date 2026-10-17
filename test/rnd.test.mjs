@@ -182,8 +182,18 @@ t('normalizeProject — 날짜 칸이 비면 연구기간 글에서, 앞선 종�
   assert.equal(normalizeProject({ name: 'a', start: '2026-01-01', end: '2027-01-01', period: '2000.01.01 ~ 2001.01.01' }).start, '2026-01-01', '날짜 칸이 이긴다');
   assert.equal(normalizeProject({ name: 'a', start: '2027-01-01', end: '2026-01-01' }).end, '');
   assert.equal(normalizeProject({ name: 'a', end: '2026-01-01' }).end, '', '시작일 없이 종료일만은 버린다');
-  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', job: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
   assert.equal(normalizeProject({ name: 'a', job: ' RND00202026 ' }).job, 'RND00202026', 'Job Id(전자결재 과제 찾기 — 2026-10-16)는 과제번호와 따로');
+  // 회계 I/O(e-accounting 과제 코드 — 2026-10-17)와 그 과제의 회계 예산 스냅샷. 스냅샷은 I/O 가 있고 같은 과제의 것일 때만 붙는다.
+  const acct = { year: 2026, at: '2026-10-17T10:00:00.000Z', io: '2145NR0124', ioName: '대용량 모듈러', rows: [{ code: '603010311', name: '수탁과제(국가)_연구재료비', base: '31,376,000', budget: 31376000, available: 31376000 }] };
+  assert.equal(normalizeProject({ name: 'a', io: ' 2145nr0124 ' }).io, '2145NR0124', '회계 I/O 코드는 대문자');
+  assert.ok(!('acct' in normalizeProject({ name: 'a', io: '2145NR0124' })), '스냅샷이 없으면 칸도 없다');
+  assert.ok(!('acct' in normalizeProject({ name: 'a', acct })), 'I/O 가 없으면 스냅샷을 버린다');
+  assert.ok(!('acct' in normalizeProject({ name: 'a', io: '2176NR0126', acct })), '다른 과제의 스냅샷은 버린다');
+  const withAcct = normalizeProject({ name: 'a', io: '2145NR0124', acct });
+  assert.equal(withAcct.acct.year, '2026');
+  assert.deepEqual(withAcct.acct.rows, [{ code: '603010311', name: '수탁과제(국가)_연구재료비', base: 31376000, transfer: 0, budget: 31376000, actual: 0, pending: 0, available: 31376000 }]);
+  assert.match(summaryText(withAcct, 1, '2026-10-08'), /회계 I\/O: 2145NR0124 \(대용량 모듈러\)[\s\S]*■ 회계 예산 \(2026년 · I\/O 2145NR0124 대용량 모듈러 · 조회 2026-10-17 10:00\)\n- 603010311 수탁과제\(국가\)_연구재료비: 예산 31,376,000원 · 실적 0원 · 가용 31,376,000원/);
   assert.notEqual(normalizeProject(null).refs, normalizeProject(null).refs, '참조자 칸은 과제마다 새 객체');
   assert.notEqual(normalizeProject(null).support, normalizeProject(null).support, '행정지원도 과제마다 새 배열');
 });

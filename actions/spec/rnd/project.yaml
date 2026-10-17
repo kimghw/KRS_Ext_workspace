@@ -1,5 +1,9 @@
 # R&D 과제 더하기·고치기 — 과제 폼(rndpanel.js saveForm): 과제명·별칭(필수 — 칩과 머리에 과제명 대신 보인다, 과제끼리 겹치지 않는다)·과제번호·Job Id·책임자·연구기간·차년도 기준(calendar)·메모.
-# Job Id 는 폼의 찾기(rndpanel.js findJob — R&D PMS 과제 목록을 읽기만)가 책임자 먼저·과제명 유사도 0.5 이상으로 후보를 늘어놓고 가장 높은 것을 넣는다(src/jobid.js rankJobs, 2026-10-16).
+# Job Id 는 과제 정보 카드가 저절로 찾는다(rndpanel.js autoJob — Job Id 가 비면 R&D PMS 과제 목록을 읽기만): 책임자 먼저·과제명 유사도 0.5 이상으로 후보를 늘어놓고 가장 높은 것을 고른 채로 두며
+# '이 번호로 저장'을 누르면 남는다(src/jobid.js rankJobs, 2026-10-16). 폼의 Job Id 칸은 손으로 고치는 곳 — 비우고 저장하면 후보가 다시 보인다.
+# 회계 I/O(e-accounting 의 과제 코드 — 2145NR0124 꼴)도 같은 길이다(rndpanel.js autoIo — io 가 비면 회계의 내 부서 과제 목록을 읽기만, 과제명 유사도 0.5 이상·'이 코드로 저장', 2026-10-17 사용자 지정:
+# "계정과목코드 계정과목명, 예산부서코드 또는 I/O 입력 예산금액도 같이 조회"). io 가 서면 그 해의 계정과목별 예산(기초·전용·실적·가용)을 받아 과제의 회계 스냅샷(acct — src/eacct.js)으로 두고
+# 과제 정보 카드에 표로 보이며 구매요청서(gongmun.order)의 예산 내역을 채운다. 스냅샷은 이 명세의 칸이 아니다(조회한 것 — 사람이 적지 않는다).
 # 고치면 책임자·연구기간이 바뀐 것은 변경이력에 저절로 한 줄 남고(src/rnd.js projectChanges) 사유만 사람이 적는다. 열 개까지(MAX_PROJECTS). 어디에도 올리지 않는다 — 저장소(rndBook)뿐이다.
 id: rnd.project
 title: R&D 과제 더하기·고치기
@@ -13,6 +17,7 @@ fields:
   alias:    { type: string, required: true, max: 60, label: 별칭, desc: '별칭(칩·머리·교육/출장 품의 제목의 과제 별명 — 과제끼리 겹치지 않는다, aliasOwner)', read: '과제 별명(약칭). "별명"·"약칭" 으로 적혔거나 사용자가 정한 것', example: 차단기 과제 }
   code:     { type: string, max: 40, label: 과제번호, desc: 과제번호(rERP 잇기의 열쇠 — 국가과제 번호 RS-… 일 수 있다), read: 과제번호, example: RND-20-2026 }
   job:      { type: string, max: 20, label: Job Id, desc: '전자결재 공문의 과제 찾기 번호(R&D PMS 의 Project_ID — RND00202026 꼴). 비우면 공문 작성 때 책임자·과제명 유사도로 고른다(src/gmwrite.js)', read: '사내 과제 Job Id(RND00202026 · RND-20-2026 꼴). 국가과제 번호(RS-…)는 아니다. 적혀 있지 않으면 null', example: RND00202026 }
+  io:       { type: string, max: 20, label: 회계 I/O, desc: '회계(e-accounting)의 과제 코드(I/O — 2145NR0124 꼴). 구매요청서 예산 내역의 I/O 코드이고 계정과목별 예산 조회의 열쇠. 비우면 과제 정보 카드가 회계의 과제 목록에서 과제명 유사도로 찾는다(src/eacct.js rankIo)', read: '회계 I/O 코드(네 자리 숫자 + 영문 둘 + 네 자리 — 2145NR0124 꼴). Job Id(RND…)·국가과제 번호(RS-…)는 아니다. 적혀 있지 않으면 null', example: 2145NR0124 }
   lead:     { type: string, max: 40, label: 책임자, desc: 과제책임자(품의의 합의자), read: 과제책임자 이름 — 직급·존칭은 뗀다, example: 박기도 }
   start:    { type: date, label: 시작일, desc: 연구 시작일(차년도를 자르는 기준), read: 연구기간의 시작일(YYYY-MM-DD), example: 2026-04-01 }
   end:      { type: date, label: 종료일, desc: 연구 종료일(시작일보다 앞서면 버린다 — normalizeProject), read: 연구기간의 종료일(YYYY-MM-DD), example: 2029-12-31 }

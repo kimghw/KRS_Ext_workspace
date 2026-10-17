@@ -1,0 +1,16 @@
+# 구매요청서의 첨부 — 구매 품의와 같다(견적서가 품목·금액의 근거). 원본 attach_rules.yaml 은 500만원 이상이면 비교견적서(업체 2곳 이상)를 요구했다 —
+# 여기서는 need 로 막지 않고 합계가 500만원 이상이면 알리기만 한다(src/gongmun.js FILL.order). 첨부자료 안내문구 칸(attachNote)은 이 목록으로 채운다(orderAuto).
+doc: 견적서                              # 문서 없이 쓸 때의 첨부 한 줄
+ask: 견적서를 넣으세요                    # 문서 넣는 곳의 말
+more: 견적서 다음 쪽·거래명세서 더 넣기     # 이미 읽은 초안에 더 넣을 때의 말
+need: []                                 # 꼭 드는 문서 — 상신 검사에 첨부는 없다
+# 읽기(reading.yaml 의 parts.kind)가 가린 종류 → 첨부 목록의 이름 — 구매 품의와 같다
+parts:
+  quote: 견적서
+  statement: 거래명세서
+  order: 주문 내역
+  course: 강의 내용
+  content: 강의 내용
+  other: 참고 자료
+# 첨부 파일 이름(견적서_<이 칸의 값>_날짜.pdf)과 읽은 문서의 머리(견적서 · <이 칸의 값> · 견적일)에 붙일 초안 칸 — purpose.yaml 의 fields key
+who: vendor

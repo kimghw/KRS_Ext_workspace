@@ -1,0 +1,119 @@
+# 구매요청서의 칸 지도 — 새 공문 창(DocumentView)의 본문 틀(frameDocument, Forms/Drafts/KR_Purchase_Order.aspx)에 있는 칸과 표.
+# 실측: 2026-10-17 CDP 로 연 빈 구매요청서(HER-2026-000700 임시 문서, 읽기만 — 저장하지 않음) — 칸 id·필수 검사(formSubmit)·표의 행추가 포스트백.
+# 원본: krs-web-agents ea_approval/ea_recipes/purchase-order/forms/purchase_order/fieldmap.yaml(2026-06-08 실측 selector — 이번 실측과 같다).
+# kind 의 뜻은 research-form/forms/research_task/fieldmap.yaml 머리말(text·title)과 outside-report/…/fieldmap.yaml 머리말(date — Telerik RadDatePicker)과 같고, 이 폼에 하나가 더 있다:
+#   check — 체크박스. 초안 칸(from — 하나)의 값이 on 과 같으면 켠다(src/gmwrite.js pageForm 이 el.click() 으로 — 양식의 이벤트까지 난다). 같은 초안 칸을 보는 체크가
+#           여럿이면(구매대상구분 다섯·예산유형 둘) 그 가운데 값이 같은 하나만 켜진다. 값이 다르면 그 체크는 넣지 않는다(= 체크 안 함).
+# source: draft 는 구매의뢰 초안(purposes/order/purpose.yaml 의 fields)의 칸 값이다 — from·default·digits 의 뜻은 신고서의 칸 지도와 같다.
+# textarea(사업내용·특기사항·첨부자료 안내문구)도 text 다 — value 로 넣는다.
+# 상신 때 양식(formSubmit)이 보는 필수 칸: 구매대상구분(하나는 체크)·사업내용·예산유형(하나는 체크)·수요시기·납품장소·특기사항(비면 막힌다 — 초안이 "해당 없음" 으로 채운다, orderAuto).
+# Page_Validators 는 없다. 숨은 줄(display:none — 계정과목 Subject·예상기간 YeSangGiGan·구매가능 거래처 TradePlace)은 넣지 않고, 예산금액 합계(YeSanGmEk)도 건드리지 않는다.
+anchor: '#ctl00_ContentPlaceHolder_Content_SaUpNeYong'
+fields:
+  title:
+    kind: title
+    selector: '#ctl00_ApplineInfoInReportKRTA1_txtDocTitle'   # 연구폼과 같은 자리(maxlength 100, 99 로 자른다)
+    label: '#ctl00_ApplineInfoInReportKRTA1_lblDocTitle'
+    max: 99
+    source: title
+  # 구매대상구분(복수 체크 — GuMeDeSang_0..4 = PC류·자산·용역·SW·소모품). 초안의 구매대상구분(targetType, 하나 고름)과 같은 것 하나를 켠다.
+  targetPc:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_GuMeDeSang_0'
+    source: draft
+    from: targetType
+    on: PC류
+  targetAsset:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_GuMeDeSang_1'
+    source: draft
+    from: targetType
+    on: 자산
+  targetService:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_GuMeDeSang_2'
+    source: draft
+    from: targetType
+    on: 용역
+  targetSw:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_GuMeDeSang_3'
+    source: draft
+    from: targetType
+    on: SW
+  targetSupply:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_GuMeDeSang_4'
+    source: draft
+    from: targetType
+    on: 소모품
+  business:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_SaUpNeYong'   # 사업내용(목적포함) — 여러 줄
+    source: draft
+    from: business
+  # 예산유형(체크 — YesanType_0 일반사업 · YesanType_1 국가수탁과제). 초안의 예산유형(budgetType)과 같은 것 하나를 켠다.
+  budgetGeneral:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_YesanType_0'
+    source: draft
+    from: budgetType
+    on: 일반사업
+  budgetNational:
+    kind: check
+    selector: '#ctl00_ContentPlaceHolder_Content_YesanType_1'
+    source: draft
+    from: budgetType
+    on: 국가수탁과제
+  demandDate:
+    kind: date
+    control: ctl00_ContentPlaceHolder_Content_dtpEDate   # 수요시기(납품일) — 외부활동의 날짜 칸과 같은 길($find(control).set_selectedDate), dateInput 은 …dtpEDate_dateInput
+    source: draft
+    from: demandDate
+  place:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_NapumPlace'   # 납품장소
+    source: draft
+    from: place
+  feature:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_Feature'   # 특기사항(여러 줄) — 상신 검사가 비면 막는다
+    source: draft
+    from: feature
+  attachNote:
+    kind: text
+    selector: '#ctl00_ContentPlaceHolder_Content_TextBox1'   # 첨부자료 안내문구(맨 아래, 여러 줄) — 실제 첨부 파일과 따로 가는 목록 글
+    source: draft
+    from: attachNote
+
+# 표 — 행마다 셀이 있는 반복 줄. 작성기(src/gmwrite.js pageRows)가 행 수(probe 로 센다)가 모자라면 add(행추가 LinkButton — href 가 javascript:__doPostBack 이라 누르면
+# 포스트백이 돈다. 페이지에 RadAjaxManager1 이 있어 부분(AJAX)일 수도 전체일 수도 있다)를 누르고 행이 늘 때까지 400ms 폴링한다(원본 ea_core/formfill.py 와 같다 — 400ms×25).
+# 행이 다 서면 셀마다 글을 넣는다. 처음부터 빈 행 1개(ctl01)가 있고, 행 번호 nn 은 두 자리(01 부터)다. 글 칸보다 먼저 넣는다 — 포스트백이 틀을 다시 그릴 수 있다.
+#   from   행 단위 — 초안의 목록 칸(purpose.yaml reads 의 list) 이름. 그 목록의 줄마다 한 행이고, cells 의 from 은 줄(item)의 키다.
+#          없으면 초안의 평평한 칸으로 한 행 — cells 의 from 은 purpose.yaml fields 의 key 다.
+#   add    행추가 단추의 selector · probe  행을 세는 selector(행마다 하나 있는 셀) · cell  셀의 selector 틀({nn} 행 번호 · {cell} 셀 이름)
+#   cells  셀 이름(id 의 끝) → { from, digits }. digits 는 수를 쉼표 없는 자리수 글로 넣는다(Math.round).
+#   빈 셀은 넣지 않고, 셀이 모두 빈 줄은 행으로 세우지 않는다.
+rows:
+  items:            # 구매 물품 표 — 초안의 품목 목록(reads 의 items) 줄마다 한 행
+    from: items
+    add: '#ctl00_ContentPlaceHolder_Content_LinkButton1'
+    probe: "input[id^='ctl00_ContentPlaceHolder_Content_rptRequet_ctl'][id$='_txtItemName']"
+    cell: '#ctl00_ContentPlaceHolder_Content_rptRequet_ctl{nn}_{cell}'
+    cells:
+      txtItemName:   { from: name }                    # 품명
+      txtFuncAndReq: { from: spec }                    # 기능 및 요구사양
+      txtUnit:       { from: unit }                    # 단위
+      txtCnt:        { from: qty, digits: true }       # 수량
+      txtUnitCost:   { from: unitPrice, digits: true } # 예상단가
+      txtEstimate:   { from: amount, digits: true }    # 예상금액
+  budget:           # 예산 내역 표 — from 이 없으니 초안의 평평한 칸(계정과목·I/O·예산금액)으로 한 행
+    add: '#ctl00_ContentPlaceHolder_Content_LinkButton2'
+    probe: "input[id^='ctl00_ContentPlaceHolder_Content_rptRequetBudget_ctl'][id$='_txtSubjectCode']"
+    cell: '#ctl00_ContentPlaceHolder_Content_rptRequetBudget_ctl{nn}_{cell}'
+    cells:
+      txtSubjectCode:  { from: subjectCode }               # 계정과목코드
+      txtSubjectName:  { from: subjectName }               # 계정과목명
+      txtDeptOrIoCode: { from: ioCode }                    # 예산부서/I/O 코드
+      txtDeptOrIoName: { from: ioName }                    # 예산부서/I/O 명
+      txtBudgetCost:   { from: budgetAmount, digits: true } # 예산금액(비목의 당해 연도 배정액)

@@ -1,0 +1,64 @@
+# 구매의뢰(구매요청서 KR_Purchase_Order — 총무팀 수신) 작성 — 견적서·거래명세서·쇼핑몰 주문 화면을 읽어(gongmun.order) 초안을 만들고 과제 내용으로 사업내용을 쓴(gongmunReason.order) 뒤,
+# 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc). 2026-10-17 사용자 지정: "구매 시 총무팀에 구매의뢰 하는 공문기능을 추가해줘. 그 의뢰서는 구매공문과 연동되어야 하고,
+# 우측 하단에 구매의뢰하기 버튼을 넣던지, 구매할때 같이 작성할 수 있던지 해줘 … 구매의뢰서는 작성할 수 있는 부분까지만 해줘봐".
+# 구매 품의와의 연동은 따로 된 행위가 아니다 — 패널이 구매 초안(공문 작성 줄의 `구매의뢰 작성`)이나 공문 이력의 구매 줄(`구매의뢰`)에서 구매의뢰 초안을 만들어(src/gongmun.js orderFromPurchase —
+# 품목·합계·구매처·첨부는 그대로, 구매사유는 사업내용으로, 선행 품의 문서번호·제목) 이 갈래로 옮기고, 그 뒤는 이 기록 하나다. 기록에는 어디서 왔는지가 없다(draft.sourceDoc 이 선행 품의를 가리킬 뿐).
+# 칸이 정해진 폼이다 — 외부강의등 신고서처럼 본문 편집기·과제(Job Id)·차수 칸이 없고(2026-10-17 실측 HER-2026-000700 임시 문서), 초안 칸 하나가 양식 칸 하나(레시피 kr_purchase_order/fieldmap.yaml 의
+# source: draft — 구매대상구분·예산유형은 체크)이거나 표의 셀(rows — 구매 물품 items·예산 내역)이다. 공문 탭의 본문 칸은 넣을 칸의 미리보기다.
+# 과제를 고른다(purpose.yaml project: true — 양식에 과제 칸은 없지만 사업내용·계정과목명·결재선의 합의자가 과제에서 온다). 위임전결은 구매 품의와 같은 연구비집행(2천만원 이하 팀장·초과 소장)을
+# 준용한다(구매요청서만의 규정 행을 찾지 못했다 — purpose.yaml 머리말) — 어댑터 쪽 writePlan 이 draft.total 로 정한다. 한도는 없다(500만원 이상이면 비교견적서가 든다고 알리기만 — FILL.order).
+# 문서설정 프로파일은 구매요청(보존 3년 — 새 구매요청서 창의 기본값 · 수신 총무팀 — settings.yaml receivers 의 코드로 SetReceiverValue). 납품장소는 사람이 적는다("작성할 수 있는 부분까지만").
+# 수요시기·특기사항·계정과목명·첨부자료 안내문구가 비면 패널이 셈하고(orderAuto), 계정과목코드·계정과목명·I/O 코드·I/O 명·예산금액은 과제에 회계 I/O 와 회계 예산 스냅샷(R&D 탭의 회계 조회 —
+# e-accounting 부서 예산 요약, src/eacct.js, 2026-10-17)이 있으면 과제의 계정에 맞는 계정 줄로 채운다(빈 칸만 — 사람이 적은 값이 이긴다).
+# 어댑터(gongmun.write): writePlan('order', { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me, preset: setup, project, today } = rec.preset) → writeGongmun(plan, { files: ctx.files, … }).
+# 공통 칸과 공문 설정(setup)은 _domain.yaml 에 있다 — `{ from: domain }` 이 같은 자리에 가져온다. 양식(form)은 구매요청서가 기본이고 본문(body)은 그 양식에 없어 외부활동처럼 통째로 적는다.
+id: gongmun.order
+title: 구매요청서 작성
+summary: '{preset.kindTitle} · {title}'
+preset:
+  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year — 공문 탭이 R&D 탭의 과제에서 고른 것. 사업내용(gongmunReason.order)과 계정과목명(orderAuto)이 여기서 나온다. 과제 내용 3000자가 들어 있어 로그에서 뺀다), log: false }
+  kindTitle: { from: recipe:purposes.order.title, desc: 갈래 이름(레시피 purpose.yaml 의 title — 구매요청서) — 활동 로그 한 줄에 쓴다 }
+fields:
+  # 양식 — 공통 칸과 같은 꼴(글 — 목록에 없는 ID 는 창만 연다)인데 기본값이 구매요청서라 통째로 적는다. 구매요청서는 이 갈래에서만 고른다(레시피 manifest 의 only: [order] — 어댑터가 본다).
+  form:
+    type: string
+    required: true
+    max: 60
+    default: KR_Purchase_Order
+    label: 양식
+    desc: eclass 전자결재 양식 ID(formsFor('order') — 구매요청서 KR_Purchase_Order 가 기본(총무팀 수신, 칸이 정해진 폼). 연구업무추진품의 KR_EA_Research_Task·기안문 KR_EA_Form2 는 본문 틀로 쓸 때)
+    read: '양식 — 구매요청서(KR_Purchase_Order)가 기본'
+  title:   { from: domain }
+  # 본문 — 구매요청서는 본문 편집기가 없어 칸마다·표마다 넣는다(공문 탭의 본문 칸은 넣을 칸의 미리보기 — body_spec.yaml 의 틀). 양식을 연구업무추진품의·기안문으로 바꿨을 때만 본문이 있고 꼭 있어야 한다(when).
+  body:
+    type: string
+    required: true
+    max: 20000
+    label: 본문
+    desc: 본문 — 양식을 본문 편집기가 있는 것(연구업무추진품의·기안문)으로 바꿨을 때만. 구매요청서(KR_Purchase_Order)에서는 칸이 없어 기록에도 없다(공문 탭의 본문 칸은 미리보기)
+    read: 본문 틀을 채운 글
+    llm: false
+    when: form!=KR_Purchase_Order
+  # 초안 — 레시피 order/purpose.yaml 의 fields(gist·vendor·total·targetType·budgetType·business·demandDate·place·feature·subjectCode·subjectName·ioCode·ioName·budgetAmount·sourceDoc·sourceTitle·attachNote)와
+  # reads(items·quoteDate·supply·vat)를 생성기가 펼치고 currency·attach 를 더한다(§14.2). 읽는 법(read)·쓰는 법(write)·보기(example)는 레시피에 있다. 양식 칸에 넣는 값은 writePlan 의 draftValue
+  # (체크는 초안 값이 on 과 같을 때, 날짜는 그대로)와 rows(표 — items 는 줄마다 한 행, 예산 내역은 평평한 칸으로 한 행)가 고른다.
+  draft:
+    type: object
+    from: recipe
+    label: 초안
+    desc: 초안 칸(레시피 purpose.yaml 의 fields·reads — 생성기가 펼친다). 읽은 문서(gongmun.order)와 과제 내용으로 쓴 사업내용(gongmunReason.order)이 채우고, 구매 품의에서 넘어오면(orderFromPurchase) 그 값이 먼저 들며, 수요시기·특기사항·계정과목명·첨부자료 안내문구와 예산 내역(회계 I/O·계정 줄 — 과제의 회계 스냅샷)은 비면 패널이 셈하고(orderAuto) 사람이 고친다
+    read: 읽은 문서와 과제 내용으로 채운 구매요청서의 칸
+  rank:    { from: domain }
+  lead:    { from: domain }
+  refs:    { from: domain }
+  setting: { from: domain }
+  attach:  { from: domain }
+llm:
+  tasks:
+    - { task: gongmun.order, fills: draft }
+    - { task: gongmunReason.order, fills: draft }
+runner: gongmun.write
+uses:
+  - { module: src/gongmun.js, export: writePlan }
+  - { module: src/gmwrite.js, export: writeGongmun }
+next: 뒤 탭에 구매요청서를 쓴다(제목·표(구매 물품·예산 내역 — 행추가 포스트백 뒤 행 수를 폴링)·양식 칸·문서설정(수신 총무팀)·결재선·첨부 — 과제(Job Id)·차수·본문 칸이 없는 양식이라 제목과 칸·표만). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다 — 상신 전 검사(formSubmit)가 구매대상구분·사업내용·예산유형·수요시기·납품장소·특기사항이 비면 막는다

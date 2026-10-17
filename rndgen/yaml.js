@@ -95,6 +95,26 @@ export async function checkExtracted(text, { stage = null } = {}) {
   return { ok: !problems.length, obj, snap, problems, warnings };
 }
 
+/**
+ * 스냅샷이 말하는 과제의 차년도 수 — "모든 차년도" 뽑기가 몇 번 물을지(rndgen/panel.js). 이 차례로 처음 읽히는 것:
+ * meta.연차범위(목록 [1차년도, …] 또는 "1~4차년도" 꼴 글 — 가장 큰 차년도) → meta.연차별기간 의 키 → readSnapshot 의 연구기간(시작·종료가 다 있을 때 yearsOf).
+ * 못 읽으면 0. 스냅샷이 아니어도(meta 만 있어도) 읽는다.
+ * @returns {number}  0 또는 1~20
+ */
+export function stageCount(obj) {
+  const m = isObj(obj?.meta) ? obj.meta : null;
+  if (!m) return 0;
+  const top = (ns) => Math.max(0, ...ns.filter((n) => n >= 1 && n <= 20));
+  const range = m.연차범위;
+  const fromRange = Array.isArray(range) ? top(range.map(yearNo))
+    : range != null ? top((String(range).match(/(?<!\d)\d{1,2}(?!\d)/g) || []).map(Number)) : 0;
+  if (fromRange) return fromRange;
+  const fromRanges = isObj(m.연차별기간) ? top(Object.keys(m.연차별기간).map(yearNo)) : 0;
+  if (fromRanges) return fromRanges;
+  const p = readSnapshot(obj).project;
+  return p.start && p.end ? yearsOf(p).length : 0;
+}
+
 /* ------------------------------------------------------------ 마무리(판·머리 주석) */
 
 /** 머리 주석 줄 가리기 — `[태그]` 줄 · `변경분:` 줄 · 뽑기가 적은 줄. */

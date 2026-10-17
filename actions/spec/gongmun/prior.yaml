@@ -1,0 +1,42 @@
+# 선행 품의 읽기 — 공문 이력의 구매 품의 카드 우측 하단 '구매의뢰' 를 누르면 이 기록이 선다(gongmunpanel.js orderFromRow). 조회라 확인(confirm)이 없다 — 실행기(actions/runners/gongmun.js →
+# src/gmprior.js readPrior)가 eclass 에서 그 품의의 본문(품목·사양·수량·금액·구매처·구매계정·용도·사유 — 이 확장의 구매 틀과 원본 krs-web-agents 의 구매·구독 틀)과 첨부(견적서 PDF)를 읽어
+# 구매의뢰 초안(src/gongmun.js orderFromPurchase)·첨부·과제(Job Id·과제 개요의 과제명·제목의 별명으로 고름)를 돌려주고, 패널이 구매의뢰 갈래의 작업으로 세운다. 쓰는 것은 그 뒤의 gongmun.order 다.
+# 2026-10-17 사용자 지정: "그 의뢰서는 구매공문과 연동되어야" → (문서번호·제목만 옮기던 것을 보고) "다른 것들이 들어가 있지를 않네?" → "이것도 명세서를 만든 다음에 러너로 실행하도록".
+# 과제 후보(패널의 R&D 과제 목록 — 이름·Job Id·별명·번호)는 기록에 넣지 않고 실행 때 ctx.projects 로 준다(화면 형편이라 — 결과의 project 가 고른 과제 이름이다). 갈래 공통 사전설정(me·today·setup)은 저절로 붙는다.
+# 레시피의 목적이 아닌 종류라 llm 은 false 다(레시피가 작업을 만들지 않는다 — _domain.yaml 의 kinds 에서 목적들 뒤에 둔다).
+id: gongmun.prior
+title: 선행 품의 읽기
+hint: 구매의뢰 초안
+confirm: false
+effect: draft
+summary: '선행 품의 {id} · {title}'
+fields:
+  id:
+    type: string
+    required: true
+    max: 40
+    label: 문서번호
+    desc: 선행 구매·구독 품의의 문서번호(공문 이력 줄의 id — HER-2026-000097 꼴). 본문 틀과 첨부 목록을 이 번호로 연다(src/gmlist.js bodyUrl · src/gmprior.js attachListUrl)
+    read: 선행 품의의 문서번호(HER-2026-000097 꼴)
+    example: HER-2026-000097
+  form:
+    type: string
+    max: 60
+    default: KR_EA_Research_Task
+    label: 양식
+    desc: 그 문서의 eclass 양식 ID(공문 이력 줄의 form — 연구업무추진품의 KR_EA_Research_Task)
+    read: '양식 ID — 연구업무추진품의(KR_EA_Research_Task)가 보통'
+  title:
+    type: string
+    max: 200
+    label: 제목
+    desc: 그 문서의 제목(공문 이력 줄). 품목이 없을 때 품목 요지를 제목에서 뽑고(src/gmprior.js titleGist), 별명으로 과제를 고르며, 구매의뢰 초안의 선행 품의 제목 칸(sourceTitle)이 된다
+    read: 선행 품의의 제목
+llm: false
+runner: gongmun.prior
+uses:
+  - { module: src/gmprior.js, export: readPrior }
+  - { module: src/gmprior.js, export: priorToPurchase }
+  - { module: src/gmprior.js, export: priorProject }
+  - { module: src/gongmun.js, export: orderFromPurchase }
+next: 결과({ draft(구매의뢰 초안 — 품목·합계·구매처·사업내용·선행 품의 칸), purchase(구매 초안 꼴), project(고른 과제 이름), files(첨부 — 이름·형식·바이트), notes, doc })로 패널이 구매의뢰 갈래의 작업(st.work.order)을 세운다 → 사람이 계정과목·I/O·납품장소를 확인하고 공문 작성(gongmun.order)을 누른다

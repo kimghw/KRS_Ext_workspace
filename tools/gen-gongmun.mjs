@@ -30,8 +30,10 @@ import { checkSpec } from './gen-input.mjs';
 const ROOT = fileURLToPath(new URL('../recipes/gongmun/', import.meta.url));
 const TARGET = new URL('../src/gmrecipe.js', import.meta.url);
 
-/** 칸 지도의 칸 종류 — date·time 은 Telerik 날짜·시각 피커(외부강의등 신고서 fieldmap.yaml 머리말). */
-const FIELD_KINDS = new Set(['text', 'title', 'picker', 'dext5', 'date', 'time']);
+/** 칸 지도의 칸 종류 — date·time 은 Telerik 날짜·시각 피커(외부강의등 신고서 fieldmap.yaml 머리말), check 는 체크박스(구매요청서 fieldmap.yaml 머리말). */
+const FIELD_KINDS = new Set(['text', 'title', 'picker', 'dext5', 'date', 'time', 'check']);
+/** source: draft 가 되는 칸 종류 — 작성기(src/gmwrite.js pageForm)가 초안 값을 넣을 줄 아는 것. picker·dext5 는 안 된다. */
+const DRAFT_KINDS = ['text', 'date', 'time', 'check'];
 /** 칸 지도의 source — draft 는 초안 칸의 값(from)이다(칸이 정해진 폼 — 외부강의등 신고서). */
 const SOURCES = new Set(['title', 'recipient', 'reference', 'degree', 'job', 'jobText', 'body', 'draft']);
 /** 초안 칸(purpose.yaml fields)의 형 — time 은 24시간 HH:MM, number 는 쉼표 없는 수. 읽기만 하는 키(reads·reading.yaml)는 list(목록)도 쓴다. */
@@ -221,6 +223,14 @@ export function checkRecipe({ delegation, settings, reading, writing, setup, var
   const docNoOpts = settings.doc_no_options || {};
   for (const [code, name] of Object.entries(docNoOpts)) if (!/^\d{4}$/.test(String(code)) || !String(name ?? '').trim()) at('settings.yaml doc_no_options', `${code} 는 네 자리 숫자 코드와 이름이어야 합니다`);
   for (const [team, code] of Object.entries(settings.teams || {})) if (Object.keys(docNoOpts).length && !(String(code) in docNoOpts)) at('settings.yaml teams', `${team} 의 코드 ${code} 가 doc_no_options 에 없습니다`);
+  // 부서 수신처 — 수신처 고르기 창의 부서 코드·글(SetReceiverValue('<code>-,-<text>')). 이름은 options.receiver 에 있어야 프로파일이 고를 수 있다.
+  if ('receivers' in settings && !isObj(settings.receivers)) at('settings.yaml', 'receivers 는 수신처 이름: { code, text } 꼴이어야 합니다');
+  for (const [name, r] of Object.entries(isObj(settings.receivers) ? settings.receivers : {})) {
+    const rw = `settings.yaml receivers.${name}`;
+    if (!(opt.receiver || []).includes(name)) at(rw, 'options.receiver 에 없는 수신처입니다');
+    if (!isObj(r) || !/^\d+$/.test(String(r.code ?? ''))) at(rw, 'code 는 숫자 글이어야 합니다(수신처 창의 부서 값)');
+    if (!isObj(r) || !isStr(r.text)) at(rw, 'text(수신처 창의 부서 글)가 비어 있습니다');
+  }
 
   // 문서 읽기의 공통 지시문
   if (!isStr(reading.role)) at('reading.yaml', 'role 이 비어 있습니다');
@@ -276,27 +286,72 @@ export function checkRecipe({ delegation, settings, reading, writing, setup, var
       const fw = `${w}/fieldmap.yaml fields.${key}`;
       if (!FIELD_KINDS.has(fld?.kind)) at(fw, `모르는 kind ${fld?.kind}`);
       if (!SOURCES.has(fld?.source)) at(fw, `모르는 source ${fld?.source}`);
-      if (['text', 'title'].includes(fld?.kind) && !isStr(fld.selector)) at(fw, 'selector 가 없습니다');
+      if (['text', 'title', 'check'].includes(fld?.kind) && !isStr(fld.selector)) at(fw, 'selector 가 없습니다');
       if (fld?.kind === 'picker' && !(isStr(fld.hidden) && isStr(fld.callback) && isStr(fld.list))) at(fw, 'picker 는 hidden·callback·list 가 있어야 합니다');
       if (['dext5', 'date', 'time'].includes(fld?.kind) && !isStr(fld.control)) at(fw, `${fld.kind} 는 control 이 있어야 합니다`);
-      if (['date', 'time'].includes(fld?.kind) && fld.source !== 'draft') at(fw, `${fld.kind} 는 source: draft 칸이어야 합니다`);
+      if (['date', 'time', 'check'].includes(fld?.kind) && fld.source !== 'draft') at(fw, `${fld.kind} 는 source: draft 칸이어야 합니다`);
       if (fld?.source !== 'draft') {
         for (const k of ['from', 'default', 'digits', 'on']) if (k in fld) at(fw, `${k} 는 source: draft 칸에만 씁니다`);
         continue;
       }
       if (!draftKeys.length) at(fw, 'source: draft 는 목적이 있는 폼에서만 씁니다');
+      // 작성기(src/gmwrite.js pageForm)가 넣을 줄 아는 칸 종류만 — picker·dext5 를 적으면 생성은 지나고 작성 때 조용히 비거나 "칸이 없습니다" 가 된다(2026-10-17 Codex 검토).
+      if (!DRAFT_KINDS.includes(fld.kind)) at(fw, `source: draft 는 ${DRAFT_KINDS.join('·')} 칸에만 씁니다(작성기 pageForm 이 넣는 종류 — ${fld.kind} 는 안 됩니다)`);
       const from = 'from' in fld ? [].concat(fld.from) : [];
       if (!from.length && !isStr(fld.default)) at(fw, 'source: draft 칸은 from(초안 칸)이나 default 가 있어야 합니다');
       if ('default' in fld && typeof fld.default !== 'string') at(fw, "default 는 글이어야 합니다(수도 '0' 처럼)");
       if ('digits' in fld && typeof fld.digits !== 'boolean') at(fw, 'digits 는 true·false 여야 합니다');
+      // on — time 은 시각을 얹을 날짜 칸(초안 칸의 key), check 는 초안 칸의 값이 이것과 같으면 켜는 글(구매요청서 fieldmap.yaml 머리말).
       if (fld.kind === 'time' && !isStr(fld.on)) at(fw, 'time 은 on(시각을 얹을 날짜 칸)이 있어야 합니다');
-      else if ('on' in fld && fld.kind !== 'time') at(fw, 'on 은 time 칸에만 씁니다');
-      for (const k of [...from, ...(isStr(fld.on) ? [fld.on] : [])]) {
+      else if (fld.kind === 'check') {
+        if (from.length !== 1) at(fw, 'check 는 from(초안 칸)이 하나여야 합니다');
+        if (!isStr(fld.on)) at(fw, 'check 는 on(초안 칸의 값이 이것과 같으면 켠다)이 있어야 합니다');
+        for (const k of ['default', 'digits']) if (k in fld) at(fw, `${k} 는 check 에 쓰지 않습니다 — 값이 on 과 같을 때만 켜고 아니면 넣지 않습니다`);
+      } else if ('on' in fld && fld.kind !== 'time') at(fw, 'on 은 time·check 칸에만 씁니다');
+      for (const k of [...from, ...(fld.kind === 'time' && isStr(fld.on) ? [fld.on] : [])]) {
         if (!isStr(k)) at(fw, 'from 은 초안 칸의 key(목록이면 key 들)여야 합니다');
         else draftKeys.forEach((keys, i) => { if (!keys.has(k)) at(fw, `${k} 가 ${f.purposes[i].id}/purpose.yaml 의 fields 에 없습니다`); });
       }
+      // check 의 on 은 초안 칸이 고르는 칸(choice)이면 그 options 의 하나여야 한다 — 아니면 어떤 값에도 켜지지 않아 상신 검사(하나는 체크)에 막힌다.
+      if (fld.kind === 'check' && isStr(fld.on) && isStr(from[0])) {
+        f.purposes.forEach((p) => {
+          const df = list(p.purpose?.fields).find((x) => x?.key === from[0]);
+          if (df && typeOf(df) === 'choice' && !list(df.options).includes(fld.on)) at(fw, `on(${fld.on})이 ${p.id}/purpose.yaml 의 ${from[0]} 칸 options 에 없습니다`);
+        });
+      }
     }
     if (!Object.values(fm.fields || {}).some((x) => x?.source === 'title')) at(`${w}/fieldmap.yaml`, '제목(source: title) 칸이 없습니다');
+    // 표(rows) — 구매요청서의 구매 물품·예산 내역처럼 행추가 포스트백으로 행을 세우고 셀마다 넣는 반복 줄(구매요청서 fieldmap.yaml 머리말).
+    // 행 단위 from 이 있으면 이 폼의 모든 목적의 reads 에 있는 목록(list) 키이고 셀의 from 은 그 줄(item)의 키, 없으면 셀의 from 은 초안 칸(fields)의 key 다.
+    const rows = isObj(fm.rows) ? fm.rows : {};
+    if ('rows' in fm && !isObj(fm.rows)) at(`${w}/fieldmap.yaml`, 'rows 는 이름: { from, add, probe, cell, cells } 꼴이어야 합니다');
+    for (const [name, r] of Object.entries(rows)) {
+      const rw = `${w}/fieldmap.yaml rows.${name}`;
+      if (!isObj(r)) { at(rw, '{ from, add, probe, cell, cells } 꼴이어야 합니다'); continue; }
+      if (!draftKeys.length) at(rw, 'rows 는 목적이 있는 폼에서만 씁니다');
+      for (const k of ['add', 'probe', 'cell']) if (!isStr(r[k])) at(rw, `${k}(selector)가 없습니다`);
+      if (isStr(r.cell) && !(r.cell.includes('{nn}') && r.cell.includes('{cell}'))) at(rw, 'cell 에는 {nn}(행 번호)과 {cell}(셀 이름)이 들어야 합니다');
+      if (!isObj(r.cells) || !Object.keys(r.cells).length) at(rw, 'cells(셀 이름 → { from, digits })가 비어 있습니다');
+      if ('from' in r && !isStr(r.from)) at(rw, 'from 은 초안의 목록 칸(reads 의 list) 이름이어야 합니다');
+      const cellKeys = f.purposes.map((p, i) => {
+        if (!isStr(r.from)) return draftKeys[i];
+        const l = list(p.purpose?.reads).find((k) => k?.key === r.from && typeOf(k) === 'list');
+        if (!l) { at(rw, `from 의 ${r.from} 가 ${p.id}/purpose.yaml 의 reads 에 목록(list)으로 없습니다`); return null; }
+        return new Set(list(l.item).map((x) => x?.key));
+      });
+      for (const [cell, c] of Object.entries(isObj(r.cells) ? r.cells : {})) {
+        const cw = `${rw}.cells.${cell}`;
+        if (!isObj(c) || !isStr(c.from)) { at(cw, '{ from, digits } 꼴이어야 합니다'); continue; }
+        if ('digits' in c && typeof c.digits !== 'boolean') at(cw, 'digits 는 true·false 여야 합니다');
+        cellKeys.forEach((keys, i) => {
+          if (keys && !keys.has(c.from)) at(cw, `${c.from} 가 ${f.purposes[i].id}/purpose.yaml 의 ${isStr(r.from) ? `reads ${r.from} 의 item` : 'fields'} 에 없습니다`);
+        });
+      }
+    }
+    // 칸이 정해진 폼(초안의 칸을 넣는 source: draft 나 표(rows)가 있는 폼)은 그 초안이 있는 갈래에서만 고를 수 있어야 한다 — only 가 없으면 다른 갈래의 양식 칸에도 서고(src/gongmun.js formsFor),
+    // 그 갈래의 초안에는 이 칸들이 없어 빈 양식이 된다(2026-10-17 Codex 검토).
+    const fixed = Object.values(fm.fields || {}).some((x) => x?.source === 'draft') ? 'source: draft 칸이 있는 폼' : Object.keys(rows).length ? '표(rows)가 있는 폼' : '';
+    if (fixed && !Array.isArray(m.only)) at(`${w}/manifest.yaml`, `칸이 정해진 폼(${fixed})은 only(이 폼을 고를 수 있는 갈래)를 적어야 합니다`);
     for (const p of f.purposes) {
       const pw = `${w}/purposes/${p.id}`;
       const pu = p.purpose || {};
@@ -531,6 +586,9 @@ export function buildRecipe(raw) {
     const m = f.manifest;
     out.forms[m.form_id] = {
       id: m.form_id, label: m.label, unit: f.unit, slug: f.slug, ...(m.only ? { only: [...m.only] } : {}), anchor: f.fieldmap.anchor, fields: f.fieldmap.fields,
+      // 표(구매요청서의 구매 물품·예산 내역) — 칸 지도의 rows 그대로(이름 → { from?, add, probe, cell, cells }). 없으면 빈 것.
+      // src/gongmun.js writePlan 이 초안으로 plan.rows 를 만들고 src/gmwrite.js 가 행을 세워 넣는다.
+      rows: f.fieldmap.rows || {},
     };
     for (const id of m.purposes || []) {
       const p = f.purposes.find((x) => x.id === id);

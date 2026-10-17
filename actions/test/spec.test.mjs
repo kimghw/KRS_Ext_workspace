@@ -18,6 +18,7 @@ import { KINDS, SUBS, FLEX_TIMES, FLEX_DAYS, flexTimesFor, MAX_TRIP_DAYS, DEFAUL
 import { TRANSPORTS, DEFAULT_TRANSPORT, TRAIN_GRADES, DEFAULT_GRADE } from '../../src/travel.js';
 import { REASONS, RELATIONS, CASH_KINDS } from '../../src/welfare.js';
 import { RECIPE } from '../../src/gmrecipe.js';
+import { settingPatch } from '../../src/gongmun.js';
 import { KIND_LABEL } from '../../src/logbook.js';
 
 let pass = 0;
@@ -435,8 +436,10 @@ t('list 의 item from: task:<이름> 과 object from: recipe(fields ∪ reads �
       },
     },
   };
-  assert.deepEqual(checkActions(raw), []);
-  const { spec, errors } = buildActions(raw);
+  // recipe 모드의 kinds 는 레시피의 목적 차례와 같아야 한다 — 이 작은 명세는 purchase 하나라 레시피의 order 도 그만큼만 준다.
+  const one = { recipe: { ...RECIPE, order: ['purchase'] } };
+  assert.deepEqual(checkActions(raw, one), []);
+  const { spec, errors } = buildActions(raw, one);
   assert.deepEqual(errors, []);
   const entry = spec.actions['gongmun.purchase'];
   assert.deepEqual(entry.llm, { tasks: [{ task: 'gongmun.purchase', fills: 'draft' }, { task: 'gongmunReason.purchase', fills: 'draft' }] });
@@ -478,6 +481,95 @@ t('from 의 대상에 객체 칸이 있으면 못 펼친다 — omit 으로 뺀�
   assert.deepEqual(Object.keys(spec.actions['x.one'].fields.copy.fields), ['when', 'count']);
   raw.domains.x.kinds.one.fields.copy.omit = ['nope'];
   assert.match(checkActions(raw).join('\n'), /omit 의 nope 는 x\.two 에 없는 칸/);
+});
+
+console.log('공문 명세는 레시피(recipes/gongmun → src/gmrecipe.js)와 같은 값을 말한다 — 2026-10-17 Codex 검토: 손으로 베낀 값이 어긋나면 여기서 빨갛다');
+t('gongmun 갈래의 kinds 가운데 레시피의 목적은 레시피의 목적 차례(RECIPE.order)와 같고(목적이 아닌 선행 품의 읽기 prior 는 그 뒤, llm 없음 — 2026-10-17), 종류마다 그 종류의 읽기·사유 작업만 가리킨다', () => {
+  assert.deepEqual(ACTIONS.domains.gongmun.kinds, [...RECIPE.order, 'prior']);
+  assert.deepEqual([ACTIONS.actions['gongmun.prior'].llm, ACTIONS.actions['gongmun.prior'].runner, ACTIONS.actions['gongmun.prior'].confirm], [false, 'gongmun.prior', false]);
+  for (const k of RECIPE.order) {
+    const a = ACTIONS.actions[`gongmun.${k}`];
+    assert.ok(a, `gongmun.${k}`);
+    assert.deepEqual(a.llm.tasks.map((t) => t.task), [`gongmun.${k}`, ...(RECIPE.tasks[`gongmunReason.${k}`] ? [`gongmunReason.${k}`] : [])], `${k} 의 작업`);
+    assert.ok(a.llm.tasks.every((t) => t.fills === 'draft'));
+    assert.equal(a.runner, 'gongmun.write');
+    assert.equal(a.log, 'gongmun');
+    assert.ok(a.log in KIND_LABEL);
+  }
+});
+t('종류마다 양식 기본값·전결권자 직책·문서설정 선택지·갈래 이름·과제 칸은 레시피의 것이다', () => {
+  const setting = settingPatch({ retention: '36', docNo: '8100', receiver: 'KRE', scope: '기안부서', emergency: true, approvingOpen: true, drm: true, tag: 'x' });
+  for (const k of RECIPE.order) {
+    const a = ACTIONS.actions[`gongmun.${k}`];
+    const p = RECIPE.purposes[k];
+    assert.deepEqual([a.fields.form.type, a.fields.form.default], ['string', p.form], `${k} form — 닫힌 enum 이 아니다(양식 ID 직접 적기), 기본값은 레시피의 폼`);
+    assert.deepEqual(a.fields.rank.values, RECIPE.delegation.ranks, `${k} rank.values`);
+    const s = a.fields.setting.fields;
+    assert.deepEqual(Object.keys(s), Object.keys(setting), `${k} setting 의 키는 settingPatch 가 받는 키 전부`);
+    assert.deepEqual(s.retention.values, Object.keys(RECIPE.settings.options.retention), `${k} retention`);
+    assert.deepEqual(s.scope.values, Object.keys(RECIPE.settings.options.scope), `${k} scope`);
+    assert.deepEqual(s.receiver.values, RECIPE.settings.options.receiver, `${k} receiver`);
+    assert.equal(a.preset.kindTitle.from, `recipe:purposes.${k}.title`, `${k} kindTitle 은 레시피의 title 을 가리킨다`);
+    assert.deepEqual([a.preset.setup.from, a.preset.setup.type, a.preset.setup.required], ['storage:gongmunPreset', 'object', true], `${k} setup(갈래 공통)`);
+    const project = p.project !== false;
+    assert.equal('project' in a.preset, project, `${k} project 사전설정은 과제를 고르는 갈래에만`);
+    assert.equal('lead' in a.fields && 'refs' in a.fields, project, `${k} lead·refs 는 과제를 고르는 갈래에만`);
+    assert.deepEqual(Object.keys(a.fields.draft.fields), [...p.fields.map((f) => f.key), ...p.reads.map((x) => x.key), 'currency', 'attach'], `${k} draft`);
+    assert.ok(a.fields.title.required && a.fields.title.max === 99 && a.fields.body.max === 20000 && a.fields.attach.max === 5, `${k} title·body·attach 한도`);
+  }
+  // 공통 칸은 _domain.yaml 에서 온 것이라 글자까지 같다(종류가 통째로 적은 칸만 다르다 — 외부활동·구매의뢰의 form·body).
+  const [first, ...rest] = RECIPE.order;
+  for (const k of rest) for (const key of ['title', 'rank', 'setting', 'attach']) assert.deepEqual(ACTIONS.actions[`gongmun.${k}`].fields[key], ACTIONS.actions[`gongmun.${first}`].fields[key], `${k}.${key}`);
+  assert.equal(ACTIONS.actions['gongmun.outside'].fields.body.when, 'form!=KR_Outside_Lecture_Report', '신고서에는 본문 칸이 없다 — 편집기 양식으로 바꿨을 때만');
+  assert.equal(ACTIONS.actions['gongmun.order'].fields.body.when, 'form!=KR_Purchase_Order', '구매요청서(칸이 정해진 폼 — 표 두 개)에도 본문 칸이 없다 — 편집기 양식으로 바꿨을 때만(2026-10-17)');
+  assert.deepEqual(RECIPE.forms.KR_Purchase_Order.only, ['order'], '구매요청서는 구매의뢰에서만 고른다(어댑터 formProblem 이 본다)');
+});
+t('갈래 공통 칸(_domain.yaml fields)과 { from: domain } — 같은 자리에 그대로, 다른 키가 섞이거나 공통 칸이 없으면 틀린 것, recipe 모드의 kinds·작업 이름 검사', () => {
+  const recipe = { ...RECIPE, order: ['purchase'] };
+  const common = { note: { type: 'string', max: 10, desc: '메모', read: '메모 글', llm: false } };
+  const gm = (fields, mutate = () => {}) => {
+    const raw = {
+      errors: [],
+      domains: {
+        gongmun: {
+          domain: { domain: 'gongmun', title: '공문', log: 'gongmun', kinds: ['purchase'], fields: common, llm: { mode: 'recipe' } },
+          kinds: {
+            purchase: {
+              id: 'gongmun.purchase', title: '구매품의',
+              fields: { title: { type: 'string', required: true, desc: '제목', read: '제목' }, ...fields, draft: { type: 'object', from: 'recipe', desc: '초안', read: '초안', llm: false } },
+              llm: { tasks: [{ task: 'gongmun.purchase', fills: 'draft' }] }, runner: 'gongmun.write', uses: [{ module: 'src/gongmun.js', export: 'writePlan' }],
+            },
+          },
+        },
+      },
+    };
+    mutate(raw.domains.gongmun);
+    return raw;
+  };
+  const ok = gm({ note: { from: 'domain' } });
+  assert.deepEqual(checkActions(ok, { recipe }), []);
+  const { spec, errors } = buildActions(ok, { recipe });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(Object.keys(spec.actions['gongmun.purchase'].fields), ['title', 'note', 'draft'], '차례는 종류 파일의 자리');
+  assert.deepEqual(spec.actions['gongmun.purchase'].fields.note, { type: 'string', desc: '메모', read: '메모 글', llm: false, ui: true, max: 10 });
+  const errs = (raw) => checkActions(raw, { recipe }).join('\n');
+  assert.match(errs(gm({ note: { from: 'domain', max: 5 } })), /fields note: from: domain 칸에는 다른 키\(max\)를 두지 않습니다/);
+  assert.match(errs(gm({ other: { from: 'domain' } })), /fields other: from: domain 이 가리키는 공통 칸이 _domain\.yaml 의 fields 에 없습니다/);
+  assert.match(errs(gm({}, (d) => { d.domain.fields = { bad: { from: 'domain' } }; })), /_domain\.yaml fields bad: from: domain 은 종류 파일의 칸에만/);
+  assert.match(errs(gm({}, (d) => { d.domain.fields = { bad: { type: 'string', desc: '설명' } }; })), /_domain\.yaml fields bad: read/);
+  assert.match(errs(gm({}, (d) => { d.domain.fields = {}; })), /fields 는 이름: 칸 꼴이어야 합니다\(갈래 공통 칸/);
+  // 레시피의 목적이 아닌 종류(이 작은 레시피에는 edu 가 없다)는 llm 을 켤 수 없고 목적들 뒤에 서야 한다. 목적인 종류의 차례가 다르면 RECIPE.order 와 맞추라고 한다(2026-10-17 prior 로 검사를 나눴다).
+  assert.match(errs(gm({}, (d) => { d.domain.kinds = ['purchase', 'edu']; d.kinds.edu = { ...d.kinds.purchase, id: 'gongmun.edu', llm: { tasks: [{ task: 'gongmun.edu', fills: 'draft' }] } }; })),
+    /recipe 모드의 kinds 가운데 레시피의 목적\(purchase · edu\)은 레시피의 목적 차례\(RECIPE\.order — purchase\)와 같아야 합니다/);
+  const reader = { id: 'gongmun.prior', title: '읽기', llm: false, runner: 'gongmun.prior', uses: [{ module: 'src/gmprior.js', export: 'readPrior' }], fields: { id: { type: 'string', desc: '번호', read: '번호' } } };
+  assert.match(errs(gm({}, (d) => { d.domain.kinds = ['purchase', 'prior']; d.kinds.prior = { ...reader, llm: { tasks: [{ task: 'gongmun.purchase', fills: 'draft' }] } }; })),
+    /gongmun\/prior\.yaml: 레시피의 목적이 아닌 종류는 llm: false 여야 합니다/);
+  assert.match(errs(gm({}, (d) => { d.domain.kinds = ['prior', 'purchase']; d.kinds.prior = reader; })), /레시피의 목적이 아닌 종류\(prior\)는 kinds 에서 목적들 뒤에 둡니다/);
+  assert.equal(errs(gm({}, (d) => { d.domain.kinds = ['purchase', 'prior']; d.kinds.prior = reader; })), '', '목적 뒤의 읽기 종류는 된다');
+  assert.match(errs(gm({}, (d) => { d.domain.kinds = ['prior']; d.kinds.prior = { id: 'gongmun.prior', title: '읽기', llm: false, runner: 'gongmun.prior', fields: { id: { type: 'string', desc: '번호', read: '번호' } } }; delete d.kinds.purchase; })),
+    /recipe 모드의 kinds 가운데 레시피의 목적\(\)은 레시피의 목적 차례\(RECIPE\.order — purchase\)와 같아야 합니다/);
+  assert.match(errs(gm({}, (d) => { d.kinds.purchase.llm = { tasks: [{ task: 'gongmun.edu', fills: 'draft' }] }; })), /gongmun\.edu 는 이 종류\(purchase\)의 작업이 아닙니다/);
+  assert.equal(checkActions(gm({}, (d) => { delete d.domain.fields; }), { recipe }).join('\n'), '', '공통 칸이 없어도 된다');
 });
 
 console.log('보기 기록과 YAML 글');

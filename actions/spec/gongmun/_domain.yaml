@@ -1,18 +1,108 @@
-# 공문(전자결재 품의) 갈래 — 구매·교육·출장 품의(연구업무추진품의)와 외부강의등 신고서.
+# 공문(전자결재 품의) 갈래 — 구매·교육·출장 품의(연구업무추진품의)와 외부강의등 신고서, 구매요청서(구매의뢰 — 총무팀 수신, 칸이 정해진 폼에 표 두 개 — 2026-10-17 사용자 지정 "구매 시 총무팀에
+# 구매의뢰 하는 공문기능 … 그 의뢰서는 구매공문과 연동"; 연동은 행위가 아니라 패널이 구매 초안에서 구매의뢰 초안을 만드는 것 — src/gongmun.js orderFromPurchase).
 # 공문 작성은 새 공문 창을 뒤 탭으로 열어 과제·제목·차수·본문·문서설정·결재선·첨부를 넣는 것까지다(src/gmwrite.js writeGongmun — 2026-10-08 사용자 지정 "공문작성은
 # 백그라운드에서"). 임시저장·상신은 사람이 창에서 한다. 무엇을 넣을지는 src/gongmun.js writePlan 이 레시피(recipes/gongmun — src/gmrecipe.js RECIPE)로 정한다.
-# 공문 설정(부서·부서장·소장·본부장·문서번호 부서) 자체는 종류마다의 preset.setup(storage:gongmunPreset)이다 — 그것을 말로 채우던 채팅 칸은 2026-10-09 에 뺐다.
+# 공문 설정(부서·부서장·소장·본부장·문서번호 부서) 자체는 갈래 공통 사전설정 setup(storage:gongmunPreset)이다 — 그것을 말로 채우던 채팅 칸은 2026-10-09 에 뺐다.
 #
 # LLM 작업은 여기서 만들지 않는다(mode recipe — §3.4): 문서 읽기(gongmun.<종류>)·사유 쓰기(gongmunReason.<종류>)는 레시피 생성기
 # (tools/gen-gongmun.mjs)가 RECIPE.tasks 에 만든다(2026-10-09 사용자 지정: 키마다 어떻게 뽑을지의 프롬프트는 레시피에). 종류 파일의 llm.tasks 가 그 이름을 가리키고,
-# 초안 칸(draft)은 레시피의 fields·reads 를 생성기가 펼친다(§3.5·§14.2) — 같은 칸을 세 벌로 적지 않는다(§10). 나머지 칸(form·title·body·rank·setting·attach)의 read 는 여기 적는다.
+# 초안 칸(draft)은 레시피의 fields·reads 를 생성기가 펼친다(§3.5·§14.2) — 같은 칸을 세 벌로 적지 않는다(§10).
+#
+# 종류(kinds)는 레시피의 목적 차례(RECIPE.order — manifest 의 purposes)와 같아야 한다 — 생성기가 다르면 막는다(2026-10-17). 레시피에 목적을 더하면 여기 종류 파일도 더한다
+# (새 종류·양식 더하기의 차례는 recipes/gongmun/README.md).
+#
+# 갈래 공통 칸(fields) — 네 종류가 같은 글로 베껴 적던 칸(2026-10-17)을 여기 한 번 적고, 종류 파일은 `칸: { from: domain }` 으로 같은 자리에 가져온다(차례는 종류 파일의 자리).
+# 종류만 다른 칸(outside·order 의 form — 신고서·구매요청서가 기본, body — 그 양식에는 본문 칸이 없어 when)은 종류 파일에 통째로 적는다 — 그러면 여기 것은 쓰이지 않는다. 종류마다 다른 칸(초안 draft)은 종류 파일에만 있다.
 domain: gongmun
 title: 공문
 log: gongmun                   # 활동 로그 kind(src/logbook.js KIND_LABEL 의 gongmun) — gongmunpanel.js 가 지금 쓰는 것
-kinds: [purchase, edu, trip, outside]
+# 앞의 다섯은 레시피의 목적(RECIPE.order — 차례가 같아야 한다). prior(선행 품의 읽기 — 공문 이력 카드의 구매의뢰, 조회라 confirm 없음, 2026-10-17 "이것도 명세서를 만든 다음에 러너로")는 목적이 아니라
+# 레시피가 작업을 만들지 않는다(llm: false) — 목적들 뒤에 둔다.
+kinds: [purchase, edu, trip, order, outside, prior]
 preset:
   me:    { from: me, required: true, desc: '기안자(내 이름 — 결재선의 기안, 과제책임자가 본인이면 합의를 뺀다)' }
   today: { from: today, desc: 오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리) }
+  # 불투명 객체(§14.1 — 사전설정에는 fields 를 두지 않는다). 키는 src/gongmun.js normalizePreset 의 dept(기안 부서)·head(부서장 — 결재)·director(소장)·chief(본부장)·docNo(문서번호 부서 코드)다.
+  # 어댑터(actions/runners/gongmun.js)가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다. 실명은 여기(저장소)에만 둔다.
+  setup: { from: storage:gongmunPreset, type: object, required: true, desc: '공문 설정(부서·부서장·소장·본부장·문서번호 부서 — 실명은 여기에만 둔다). 어댑터가 writePlan 의 ctx.preset 으로 그대로 넘긴다 — 문서번호·결재선이 여기서 나온다' }
+fields:
+  # 양식 ID — 닫힌 enum 이 아니다(2026-10-17 Codex 검토): 공문 탭의 양식 칸은 목록(formsFor(종류) — 연구업무추진품의·기안문, 외부활동만 외부강의등 신고서, 구매의뢰만 구매요청서)에 없는 양식 ID 를 직접 적을 수 있고
+  # 그 양식은 칸 지도가 없어 창만 연다(README 양식). 꼴(영문·숫자·_)과 only(그 갈래에서만 고르는 폼)는 어댑터(actions/runners/gongmun.js)가 본다.
+  form:
+    type: string
+    required: true
+    max: 60
+    default: KR_EA_Research_Task
+    label: 양식
+    desc: eclass 전자결재 양식 ID(src/gongmun.js formsFor(종류) — 연구업무추진품의 KR_EA_Research_Task 가 기본, 기안문 KR_EA_Form2 는 본문만 있는 양식, 외부활동만 외부강의등 신고서). 목록에 없는 ID 를 직접 적으면 칸 지도가 없어 새 공문 창을 열기만 한다. 외부활동·구매의뢰는 종류 파일이 통째로 적는다(신고서·구매요청서가 기본)
+    read: '품의 양식 — 연구업무추진품의(KR_EA_Research_Task)가 기본. 기안문이라고 했을 때만 KR_EA_Form2'
+  title:
+    type: string
+    required: true
+    max: 99
+    label: 제목
+    desc: 공문 제목(레시피 body_spec.yaml 의 제목 틀 — "{품목요지} 구매 품의"·"{과제별명} 수행을 위한 {교육구분} 품의"·"… 출장 품의"·신고서는 "외부강의등 신고서" — 을 채운 글. 전자결재가 99자에서 자른다. 사람이 고쳤으면 그 글)
+    read: 제목 틀을 채운 제목. 사용자가 제목을 말했으면 그것
+  body:
+    type: string
+    required: true
+    max: 20000
+    label: 본문
+    desc: 본문(레시피 body_spec.yaml 의 본문 틀을 채운 글 — src/gongmun.js compose. 사람이 고쳤으면 그 글). 긴 줄표는 어댑터 쪽 writePlan 이 '-' 로 바꾼다(eclassText). 칸이 정해진 폼(외부강의등 신고서·구매요청서 — 그 종류 파일이 when 으로 뺀다)에서는 넣을 칸의 미리보기다
+    read: 본문 틀을 채운 글
+    llm: false
+  rank:
+    type: enum
+    values: [팀장, 소장, 본부장]
+    label: 전결권자
+    desc: 이 공문에서 사람이 고른 전결권자 직책(registries/delegation.yaml 의 ranks). 비면 규정대로(레시피 purpose.yaml 의 rule_key — 구매·구매의뢰·교육은 연구비집행 금액 구간, 출장은 국내·해외, 외부활동은 팀장). 고르면 그것이 이긴다(delegationOf 의 overridden)
+    read: '사용자가 전결권자(팀장·소장·본부장)를 말했을 때만. 그 밖에는 null(규정대로)'
+  # 결재선의 합의자·참조자 — 공문 작성 단추를 누를 때 문서설정의 결재선 줄에 보이던 사람(2026-10-16 사용자 지정: "구매공문에서는 참조할 사람이 있거든.. 과제 별로
+  # 동일한 사람이 들어 갈 수 있도록", "과제 책임자가 아니면.. 합의도 들어 가야 함 … 같으면 입력은 하지 않도록", "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람
+  # 넣을 수 있도록"). 적는 곳은 R&D 탭이다 — 책임자는 과제 정보, 참조자는 참여인력에서 공문 참조를 켠 사람(그 과제의 공문마다 같다 — src/rnd.js
+  # support)과 계획서 YAML 의 공문.참조자.<갈래>. 없으면(예전 기록) 고른 과제의 것. writePlan 이 approvalLine 에 넘긴다. 과제를 고르지 않는 외부활동에는 이 두 칸이 없다.
+  lead:
+    type: string
+    max: 40
+    label: 과제 책임자
+    desc: 합의자 — 고른 과제의 책임자(R&D 탭 과제 정보). 기안자(preset.me) 본인이면 합의를 넣지 않는다
+    read: 과제 책임자 이름
+    llm: false
+  refs:
+    type: tags
+    label: 참조자
+    desc: 결재선의 참조자 — R&D 탭 참여인력에서 공문 참조를 켠 사람과 계획서 YAML 의 공문.참조자.<갈래>(구매·교육·출장). 결재선에 이미 선 사람은 뺀다. 빈 목록이면 참조 없음
+    read: 참조자 이름들
+    llm: false
+  # 문서설정에서 이 공문만 바꾼 값 — src/gongmun.js settingPatch 가 받는 키 전부(§14.2). 레시피 defaults < 프로파일(purpose.yaml 의 document_setting — 연구품의 10년·기안 팀 채번·내부결재·키워드 {과제별명},
+  # 출장품의는 키워드 '출장', 외부활동은 보존 3년·키워드 '외부활동', 구매요청은 보존 3년·수신 총무팀) < 이것.
+  setting:
+    type: object
+    label: 문서설정
+    desc: 이 공문에서 바꾼 문서설정만(없는 키는 레시피 프로파일·공문 설정대로 — docSettingOf). 전자결재 툴바의 '문서설정' 창에 넣는 값이다
+    read: 사용자가 문서설정(보존년한·수신처·공개범위·긴급·검색 키워드 등)을 바꾸라고 했을 때만
+    llm: false
+    fields:
+      retention:     { type: enum, values: ['12', '24', '36', '60', '120', '240', '1200'], desc: '보존년한 코드(1년·2년·3년·5년·10년·20년·영구 — settings.yaml options.retention. 품의는 10년, 신고서·구매요청서는 3년이 기본)', read: '보존년한을 말했으면 그 코드(10년이면 120, 3년이면 36)' }
+      docNo:         { type: string, max: 8, desc: '문서번호 부서 코드(Doc No. — ddlDocNo 의 값, 숫자만)', read: '문서번호 부서를 코드로 말했을 때만' }
+      receiver:      { type: enum, values: [내부결재, KRE, 총무팀], desc: '수신처(settings.yaml options.receiver — 부서는 receivers 의 코드로 SetReceiverValue. 구매요청서는 프로파일이 총무팀)', read: '수신처를 말했을 때만 — 내부결재·KRE·총무팀' }
+      scope:         { type: enum, values: [결재선, 기안부서], desc: 공개범위(settings.yaml options.scope — 결재선 YNN·기안부서 NNY), read: '공개범위를 말했을 때만 — 결재선 또는 기안부서' }
+      emergency:     { type: boolean, desc: 긴급, read: '긴급이라고 했을 때만 true' }
+      approvingOpen: { type: boolean, desc: 진행공개, read: '진행공개라고 했을 때만 true' }
+      drm:           { type: boolean, desc: DRM, read: 'DRM 을 걸라고 했을 때만 true' }
+      tag:           { type: string, max: 60, desc: "검색 키워드(비면 프로파일대로 — 구매·구매의뢰·교육은 고른 과제의 별명, 출장은 '출장', 외부활동은 '외부활동'. 2026-10-12 사용자 지정 \"연구개발 별칭이 있다면 그걸 넣어줘, 외부활동이면 외부활동, 출장이면 출장\")", read: '검색 키워드를 말했을 때만' }
+  # 창의 파일첨부에 올리는 파일 이름 목록(다섯 칸 — src/gmwrite.js ATTACH_SLOTS). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것(attachPdfs — 견적서·교육 내용·행사 안내문·요청 공문 …)과
+  # 원본 첨부(메일 첨부·문서 파일 — originalFiles)다. 바이트(base64)는 ctx.files 로 간다(§5). 2026-10-08 사용자 지정: "공문에는 견적서 랑,, 강의 내용도 첨부파일로".
+  attach:
+    type: list
+    max: 5
+    label: 첨부
+    desc: 첨부 파일 이름(바이트는 ctx.files — 이름으로 잇는다). 읽은 문서를 첨부 목록의 문서마다 PDF 로 묶은 것과 원본 첨부. 견적서를 오렸으면(cut) 오린 그림이 앞에 온다
+    read: 첨부할 문서의 파일 이름 목록. 지어내지 않습니다
+    llm: false
+    item:
+      name: { type: string, required: true, max: 200, desc: 파일 이름(견적서_업체_날짜.pdf 처럼 attachName 이 지은 것이거나 원본 이름), read: 파일 이름 }
+      kind: { type: string, max: 40, desc: '무엇의 문서인지(첨부 목록의 문서 이름 — 견적서·거래명세서·교육 내용·행사 안내문·요청 공문 …, 원본 첨부면 original)', read: '무엇의 문서인지. 모르면 null' }
 llm:
   task: gongmun                # 이름의 앞머리만 — 작업은 레시피(RECIPE.tasks 의 gongmun.<종류>·gongmunReason.<종류>)가 만든다
   mode: recipe

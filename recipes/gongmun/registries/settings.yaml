@@ -9,7 +9,7 @@
 defaults:
   retention: '120'        # 보존년한 — options.retention 의 코드
   doc_no: team            # Doc No.(채번 부서) — team 이면 기안 팀 코드(공문 설정의 '문서번호 부서', 비면 teams 표에서 부서 이름으로)
-  receiver: 내부결재      # 수신처 — 내부결재 | KRE (부서 수신은 아직 넣지 않는다)
+  receiver: 내부결재      # 수신처 — options.receiver 의 하나. 내부결재 | KRE 는 이름 그대로 넣고, 부서(총무팀)는 아래 receivers 의 코드·글로 넣는다(2026-10-17)
   scope: 결재선           # 공개범위 — options.scope
   emergency: false        # 긴급
   approving_open: false   # 진행공개
@@ -20,6 +20,13 @@ profiles:
   연구품의: {}            # 연구업무추진품의(구매·교육) — 기본값 그대로(10년 · 기안 팀 채번 · 내부결재 · 검색 키워드는 과제 별명)
   출장품의: { tag: 출장 }       # 출장 — 검색 키워드 '출장'(2026-10-12 사용자 지정: "외부활동이면 외부활동, 출장이면 출장" — 별명이 있어도 출장)
   외부활동: { retention: '36', tag: 외부활동 }   # 외부강의등 신고서 — 보존 3년(양식 기본값이고 지난 신고서 HER-2026-000266 도 3년, 2026-10-15 실측) · 검색 키워드 '외부활동'
+  구매요청: { retention: '36', receiver: 총무팀 }   # 구매요청서(구매의뢰) — 보존 3년(새 구매요청서 창의 기본값, 2026-10-17 실측) · 수신 총무팀(2026-10-17 사용자 지정 "총무팀에 구매의뢰") · 검색 키워드는 과제 별명
+
+# 부서 수신처 — 수신처 고르기 창(SelectReceiver.aspx)의 부서 목록(rlbAllDepts, 69개) 값과 글(2026-10-17 실측). 문서설정 창의 SetReceiverValue('<code>-,-<text>') 에 그대로 간다
+# (src/gongmun.js docSettingOf 의 receiverValue → src/gmwrite.js setting:fill). 내부결재·KRE 는 값과 글이 이름 그대로라 여기 없다. 수신처가 있으면 확인 때 발송경고 창
+# ("…선택된 수신자 (총 N 팀)에게 즉시 발송됩니다")이 뜨고 작성기가 '예'(__Page_FormSubmitCallback(2))로 간다. 다른 부서를 더하려면 그 창에서 코드·글을 읽어 적고 options.receiver 에도 이름을 더한다.
+receivers:
+  총무팀: { code: '10820', text: '(A13) General Affairs Team' }
 
 # 한글 팀 이름 → Doc No. 코드(문서설정 창 ddlDocNo 의 값). 화면에는 '(8100)Hydrogen & Electric Propulsion Research Team' 처럼 영어로 보인다.
 # 결재선 창 조직도의 한글 팀 이름과 아래 doc_no_options 의 영문 이름을 맞춘 것이다(연구본부 다섯 팀, 2026-10-09). 여기 없는 팀은 패널의 공문 설정이
@@ -110,4 +117,4 @@ options:
   scope:
     결재선: YNN
     기안부서: NNY
-  receiver: [내부결재, KRE]
+  receiver: [내부결재, KRE, 총무팀]   # 부서 이름은 위 receivers 에 코드·글이 있어야 한다(생성기가 본다)

@@ -38,6 +38,12 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
                   ▼
                미리보기(summarizeSnapshot · 경고 · 별칭 · YAML 원문) ─ 넣기 ─▶ rnd.intake(source 'extract') → rnd.setAlias(새 과제면) → 닫고 rnd.pick
 
+   차년도 고르기의 '모든 차년도'(2026-10-16) ─▶ 같은 재료로 1차년도부터 위 묻기·검사·마무리를 차년도마다 한 번씩 차례로(한 번에 하나)
+                  몇 차년도까지 = 대상 과제의 연구기간(있으면) → 처음 읽힌 답의 yaml.stageCount(meta.연차범위 · 연차별기간 · 기간 — 문서가 이긴다) · 둘 다 모르면 1차년도만
+                  ▼  한 차년도가 실패해도 다음으로 — 그 줄의 다시 뽑기는 그 차년도만
+               차년도마다 한 줄(합계 · 참여연구자 · 경고 / 까닭 · YAML 칸에 열기 · 다시 뽑기) ─ 넣기 ─▶ rnd.intake 한 번(이름 'N차년도/KR_<과제>.yaml' — onIntake 가 차년도마다 짝지음)
+                  · 과제명·과제번호가 다른 차년도가 섞이면 넣지 않음 · 저장은 buildZip(src/zip.js) 의 N차년도/KR_<과제>.yaml 묶음
+
 변경 및 이력 관리 카드의 YAML 고치기(view.project && !editing && !overlay && !yearEmpty)
    기준 = store.get(과제, 차년도).text  또는  yaml.bookToSnapshot(장부 → 스냅샷 꼴, 손실 있음)
    변경 글 + 붙인 문서(source.readDocument — 글자만) ─▶ llm.askRevise → reviseInput → askClaude('rnd.revise', …)
@@ -54,10 +60,10 @@ rnd.intake 를 지나면(어느 길이든 — rndpanel 의 끌어 놓기·붙여
 | 파일 | 하는 일 |
 |---|---|
 | `index.js` | 조립. `createRndGen({ rnd, $, escapeHtml, logEvent, flash, ai, today, now?, readAsset?, download?, storage?, engines? })` → `{ wire, panel, store, saved }`. `wire()` 가 카드를 그리고 rnd 의 `onIntake`(원문 저장)·`onDelete`(지우기) 훅을 단다. `pairResults(results, texts)` — 정렬된 intake 결과와 넣은 글을 이름으로 짝짓기 |
-| `panel.js` · `panel.css` | 더하기 카드(`#rdgAdd` 안)와 YAML 고치기 몫(`#rdgRevise` 안 — 카드 틀은 바깥 `#rdChangeBox`). id 는 `rdg` 접두. 의존은 모두 주입. 바쁠 때 host 에 `aria-busy` 와 지난 초, 늦게 온 답은 버림 |
+| `panel.js` · `panel.css` | 더하기 카드(`#rdgAdd` 안)와 YAML 고치기 몫(`#rdgRevise` 안 — 카드 틀은 바깥 `#rdChangeBox`). id 는 `rdg` 접두. 의존은 모두 주입(모든 차년도 zip 의 `../src/zip.js buildZip` 만 바로 import). 바쁠 때 host 에 `aria-busy` 와 지난 초, 늦게 온 답은 버림 |
 | `source.js` | `LIMITS`·`KEYWORDS`·`docKind`·`unsupportedDocNote`·`scorePage`·`scorePages`·`pickPages`·`pickChunks`·`pagesText`·`toDataUrl`·`dataUrlBytes`·`readDocument`·`defaultEngines` |
 | `llm.js` | `SKILL_DOCS`·`INPUT_BUDGET`·`loadSkillDocs`·`resetSkillDocs`·`pageRanges`·`extractInput`·`reviseInput`·`askRndTask`(갈래 consumer)·`askExtract`·`askRevise` |
-| `yaml.js` | `parseYaml`·`checkExtracted`·`finalizeExtracted`·`finalizeRevised`·`nextRev`·`summarizeSnapshot`·`diffYaml`·`diffLines`·`previewApply`·`bookToSnapshot`·`fileName` |
+| `yaml.js` | `parseYaml`·`checkExtracted`·`finalizeExtracted`·`finalizeRevised`·`nextRev`·`stageCount`(모든 차년도의 차년도 수)·`summarizeSnapshot`·`diffYaml`·`diffLines`·`previewApply`·`bookToSnapshot`·`fileName` |
 | `store.js` | `YAML_KEY`(`rndYamlText`)·`HISTORY_MAX`(5)·`normalizeYamlStore`·`createYamlStore({ storage, now })` → `load`·`get`·`history`·`put`·`remove`·`all` |
 | `test/` | 아래 **검사** |
 
@@ -126,9 +132,9 @@ node --test "rndgen/test/*.test.mjs"
 |---|---|
 | `source.test.mjs` | 갈래 가리기·hwp 안내, 쪽 점수·고르기(앞 3쪽·예산·오름차순)·구역 고르기, 가짜 엔진으로 pdf(글자 층 있음/없음/자르기 실패)·office·text·yaml 거절·20MB 거절, pdf-lib 로 지은 PDF 자르기, `pdfAllText` |
 | `llm.test.mjs` | 입력 글 배치·자르기·울타리, 스킬 문서 외우기, `askRndTask` 의 던짐과 `ask` 끼우기 |
-| `yaml.test.mjs` | 검사·마무리(머리 주석을 `headerOf` 가 되읽음)·다음 판·구조 차이(열쇠로 짝짓기)·미리 넣기(장부 원본 불변)·장부로 기준 짓기·파일 이름 |
+| `yaml.test.mjs` | 검사·마무리(머리 주석을 `headerOf` 가 되읽음)·다음 판·차년도 수(연차범위 목록·글 · 연차별기간 · 기간)·구조 차이(열쇠로 짝짓기)·미리 넣기(장부 원본 불변)·장부로 기준 짓기·파일 이름 |
 | `store.test.mjs` | put·history 5개·같은 글·remove·normalize·쓰기 실패 되돌림(가짜 저장소) |
-| `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |
+| `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·모든 차년도(차례로 묻기·몇 번·그 차년도만 다시·한 번의 intake·고친 칸·zip·과제가 다른 차년도·닫으면 멈춤)·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |
 | `index.test.mjs` | import·만들기·wire 가 chrome·fetch 를 만지지 않음(손잡이에 새 키가 없어도), onIntake 로 원문 저장(짝짓기·오래된 판 빼기·지난 판), onDelete, 저장 실패 로그, 저장 뒤 기준 줄 |
 
 API 길의 스트리밍은 `test/llm.test.mjs`(덩어리 경계·CRLF·refusal·max_tokens·error 사건·끊긴 연결, 다른 작업은 본문에 `stream` 없음), 한도는 `test/host.test.mjs`,

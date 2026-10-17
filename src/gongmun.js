@@ -11,11 +11,15 @@
 // 출장은 행사·회의·학회 안내문·초청장(출장지·기간·목적)과 교통·숙박 견적서(예상경비)를 읽는다.
 // 외부활동은 외부강의등 신고서(KR_Outside_Lecture_Report — 본문 없이 칸이 정해진 폼)로 쓴다(2026-10-15 사용자 지정: "외부활동이 외부강의등 신고서인데
 // 이 양식대로 작성하도록") — 초안의 칸 하나가 신고서 칸 하나이고(writePlan 의 values.draft), 과제를 고르지 않는다.
+// 구매의뢰는 총무팀에 보내는 구매요청서(KR_Purchase_Order — 역시 칸이 정해진 폼, 표 두 개)다(2026-10-17 사용자 지정: "구매 시 총무팀에 구매의뢰 하는 공문기능을
+// 추가해줘. 그 의뢰서는 구매공문과 연동되어야 하고") — 구매 품의 초안에서 옮겨 만들고(orderFromPurchase), 비어 있는 칸은 orderAuto 가 채운다. 체크 칸(구매대상구분·
+// 예산유형)은 칸 지도의 kind check, 구매 물품·예산 내역 표는 칸 지도의 rows 로 넣는다(writePlan 의 rows).
 // 갈래마다 양식(eclass 양식·제목 틀·본문 틀)은 패널에서 보고 고친다(2026-10-07 사용자 지정 — "어떤 양식으로 할지는 거기서 보고 수정").
 
 import { ORIGIN } from './config.js';
 import { RECIPE } from './gmrecipe.js';
 import { currentYear, fileLog, noteLogs, logLines, periodText, yearLabel, supportRefs, MAX_PROJECTS as RND_MAX_PROJECTS } from './rnd.js';
+import { orderBudgetOf } from './eacct.js';
 
 /* ------------------------------------------------------------ 저장소 키 */
 
@@ -61,18 +65,20 @@ export const PURCHASE_LIMIT = KINDS.purchase.limit;
 
 /**
  * eclass 전자결재 양식 — 레시피의 forms/<폼>/manifest.yaml. 본문을 넣는 양식(연구업무추진품의·기안문)과, 칸이 정해진 폼 가운데 칸 지도를 둔 것
- * (외부강의등 신고서 — 외부활동만, only)이다. 구매요청서(KR_Purchase_Order)는 칸 지도가 없다. 목록에 없는 양식은 양식 ID 를 직접 적는다
+ * (외부강의등 신고서 — 외부활동만, 구매요청서 — 구매의뢰만, only)이다. 목록에 없는 양식은 양식 ID 를 직접 적는다
  * (그 양식은 칸 지도가 없어 새 공문 창을 열기만 한다).
  */
 export const FORMS = Object.values(RECIPE.forms).map((f) => ({ id: f.id, label: f.label, ...(f.only ? { only: [...f.only] } : {}) }));
 export const DEFAULT_FORM = RECIPE.purposes[KIND_ORDER[0]].form;
-/** 갈래의 양식 칸에서 고를 수 있는 양식 — only 가 있는 폼(외부강의등 신고서)은 그 갈래에서만. */
+/** 갈래의 양식 칸에서 고를 수 있는 양식 — only 가 있는 폼(외부강의등 신고서·구매요청서)은 그 갈래에서만. */
 export const formsFor = (kind) => FORMS.filter((f) => !f.only || f.only.includes(kind));
 /**
- * 칸이 정해진 폼인가 — 칸 지도가 있는데 본문(편집기) 칸이 없다(외부강의등 신고서). 그런 폼은 칸마다 넣으니 공문 탭의 본문은 미리보기일 뿐이다.
+ * 칸이 정해진 폼인가 — 칸 지도가 있는데 본문(편집기) 칸이 없다(외부강의등 신고서·구매요청서). 그런 폼은 칸마다 넣으니 공문 탭의 본문은 미리보기일 뿐이다.
  * 칸 지도가 없는 양식(양식 ID 를 직접 적은 것)은 아니다.
  */
 export const fieldForm = (formId) => !!RECIPE.forms[formId] && !RECIPE.forms[formId].fields.body;
+/** 표(행추가 포스트백으로 줄을 세우는 반복 줄 — 구매요청서의 구매 물품·예산 내역)가 있는 폼인가(칸 지도의 rows). 작성 차례의 말에 쓴다. */
+export const hasRows = (formId) => Object.keys(RECIPE.forms[formId]?.rows || {}).length > 0;
 
 /* ------------------------------------------------------------ 양식(틀) */
 
@@ -84,7 +90,7 @@ export const fieldForm = (formId) => !!RECIPE.forms[formId] && !RECIPE.forms[for
 //
 // 교육·출장의 제목은 "[과제 별명] 수행을 위한 [교육|온라인교육|출장] 품의" 다(2026-10-07 사용자 지정). 본문은 원본 연구공문처럼
 // '가. 과제 개요'(과제명·번호·연구기간·책임자 — 공문 설정의 과제 기본 내용)를 앞에 두고 '나.' 에 품의할 내용을 적는다.
-// 구매는 원본에서도 과제 개요를 빼는 lean 목적이라(body_spec.yaml 의 skip) 제목·본문을 그대로 둔다.
+// 구매도 '가. 과제 개요' 를 앞에 둔다(2026-10-16 사용자 지정 "구매양식에 과제 개요가 들어가 있질 않음" — 원본은 과제 개요를 빼는 lean 목적이었다). 제목은 "{품목요지} 구매 품의" 그대로.
 // 틀의 원본은 레시피의 purposes/<목적>/body_spec.yaml 이다 — 패널의 '양식' 칸에서 고친 것은 브라우저에 따로 남는다(templatePatch).
 export const DEFAULT_TEMPLATES = Object.fromEntries(KIND_ORDER.map((k) => {
   const p = RECIPE.purposes[k];
@@ -241,6 +247,7 @@ export function rndContent(project, today = '') {
  * 별칭·번호·책임자·연구기간·내용도 그 줄에서 채운다. rnd 는 화면이 보여 줄 근거의 형편(과제 id·올해 차년도·계획을 가져온 차년도·진행 기록 수)이다.
  * refs 는 그 과제의 공문 참조자({ 공문 종류: 이름[] } — 계획서 YAML 의 공문.참조자, src/rnd.js)이고, support 는 R&D 탭의 행정지원([{ name, role, ref }] —
  * 참조로 고른 사람은 그 과제의 모든 공문에 참조자로 선다, 2026-10-16)이다. 둘 다 공문 설정의 과제 줄에는 없다 — R&D 탭(과 YAML)에서만 적는다.
+ * io 는 회계(e-accounting)의 과제 코드(I/O), acct 는 그 과제의 회계 예산 스냅샷(계정과목별 — src/eacct.js, 2026-10-17) — 구매요청서 예산 내역(orderAuto)이 쓴다. R&D 탭에서만 온다.
  * @param {{projects?: object[]}} book src/rnd.js 의 normalizeBook 을 지난 장부
  * @param {object[]} [preset] 공문 공문 설정의 과제(gongmunProjects)
  * @param {object} [extra] R&D 과제마다 공문에만 쓰는 값(gongmunRndExtra)
@@ -258,6 +265,7 @@ export function rndProjects(book, preset = [], today = '', extra = {}) {
       account: own ? own.account : same?.account || '',
       refs: p.refs && typeof p.refs === 'object' ? p.refs : {},
       support: Array.isArray(p.support) ? p.support : [],
+      io: text(p.io, 20), acct: p.acct && typeof p.acct === 'object' ? p.acct : null,
       rnd: { id: p.id, year: got.year, plan: got.plan, logs: got.logs },
     };
   });
@@ -591,12 +599,90 @@ const FILL = {
     if (d.fee == null) notes.push('사례금이 문서에 없습니다 — 받는 금액을 적어 주세요(없으면 0)');
     Object.assign(d, outsideAuto(d).draft);
   },
+  // 구매요청서(구매의뢰) — 구매처럼 품목 표·견적일·합계·품목 요지를 옮긴다. 한도는 없지만 500만원 이상이면 비교견적서가 든다고 알린다(QI-01K 구매 규정 — 막지는 않는다).
+  order(d, r, notes) {
+    d.items = (r.items || []).map((it) => ({
+      name: it.name || '', spec: it.spec || '', qty: it.qty ?? null, unit: it.unit || '', unitPrice: it.unitPrice ?? null, amount: it.amount ?? null,
+    }));
+    d.quoteDate = r.quoteDate || '';
+    const { total, note } = totalOf(r);
+    d.total = total;
+    if (note) notes.push(note);
+    d.gist = String(d.gist ?? '').trim() || gistOf(d.items);
+    if (Number.isFinite(d.total) && d.total >= ORDER_COMPARE_QUOTE) notes.push('구매 총액 500만원 이상 — 비교견적서(업체 2곳 이상)도 첨부하세요');
+  },
 };
+
+/** 구매요청서에 비교견적서(업체 2곳 이상)가 드는 구매 총액(원) — 2026-10-17 계약. 막지 않고 알리기만 한다. */
+const ORDER_COMPARE_QUOTE = 5_000_000;
+
+/** 날짜(YYYY-MM-DD)에 며칠을 더한다 — 꼴이 틀리면 빈 글. */
+const plusDays = (ymd, n) => {
+  if (!ymdOf(ymd)) return '';
+  const d = new Date(`${ymd}T00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** 구매요청서의 특기사항 — 선행 품의(구매 품의 문서번호)가 있으면 그 승인에 따른 요청, 없으면 '해당 없음'(양식이 비면 막는다). */
+const featureOf = (doc, title) => (doc ? `연구업무추진품의 ${doc}${title ? `(${title})` : ''} 승인에 따른 구매 요청` : '해당 없음');
+/** orderAuto 가 쓴 특기사항인가 — 손대지 않았으면 선행 품의 칸을 고칠 때 따라간다(구매의 요약 줄이 품목 요지를 따라가듯). */
+const AUTO_FEATURE_RE = /^(해당 없음|연구업무추진품의 .* 승인에 따른 구매 요청)$/;
+
+/** 구매요청서의 첨부자료 안내문구 — 첨부 목록의 문서마다 "1. 견적서 1부." 한 줄씩, 목록이 비면 갈래의 기본 문서(견적서) 한 줄. */
+const attachNoteOf = (attach) => {
+  const labels = (attach || []).map((a) => String(a?.label ?? '').trim()).filter(Boolean);
+  return (labels.length ? labels : [KINDS.order?.doc || '견적서']).map((label, i) => `${i + 1}. ${label} 1부.`).join('\n');
+};
+
+/**
+ * 구매요청서(구매의뢰)의 셈하는 칸(레시피 order/purpose.yaml 의 from: auto·setup)을 채운다 — outsideAuto 와 같은 꼴, 사용자가 고친 칸(touched)은 둔다:
+ *   수요시기(demandDate) 비면 오늘+14일(원본 purchase_order fieldmap 의 derived.demand_date).
+ *   특기사항(feature) 비면 선행 품의(sourceDoc — 구매 품의에서 넘어온 문서번호)가 있으면 "연구업무추진품의 {번호}({제목}) 승인에 따른 구매 요청", 없으면 "해당 없음"
+ *     (상신 검사가 빈 특기사항을 막는다 — 2026-10-17 실측). 이 함수가 쓴 글이면 손대지 않은 한 선행 품의 칸을 고칠 때 따라간다.
+ *   계정과목명(subjectName) 비면 고른 과제의 계정.
+ *   I/O 코드·I/O 명·계정과목코드·계정과목명·예산금액 — 과제에 회계 I/O 와 회계 예산 스냅샷(R&D 탭의 회계 조회, src/eacct.js orderBudgetOf)이 있으면 빈 칸만 채운다(2026-10-17).
+ *   첨부자료 안내문구(attachNote) 비었거나 손대지 않았으면 첨부 목록으로 "1. 견적서 1부." 줄들.
+ * @param {{project?: object|null, today?: string, touched?: string[]}} [opts]
+ * @returns {{draft: object, changed: string[]}}
+ */
+export function orderAuto(draft = {}, { project = null, today = '', touched = [] } = {}) {
+  const out = { ...draft };
+  const changed = [];
+  const put = (key, value) => {
+    if (touched.includes(key) || sameValue(out[key], value)) return;
+    out[key] = value;
+    changed.push(key);
+  };
+  const empty = (key) => blank(out[key]);
+  const due = plusDays(today, 14);
+  if (empty('demandDate') && due) put('demandDate', due);
+  const feature = String(out.feature ?? '').trim();
+  if (!feature || (!touched.includes('feature') && AUTO_FEATURE_RE.test(feature))) {
+    put('feature', featureOf(String(out.sourceDoc ?? '').trim(), String(out.sourceTitle ?? '').trim()));
+  }
+  // 예산 내역 — 과제에 회계 I/O(R&D 탭의 회계 조회 — src/eacct.js, 2026-10-17)가 있으면 I/O 코드·I/O 명과, 과제의 계정에 맞는 계정 줄의 계정과목코드·계정과목명·예산금액(기초+전용).
+  // 빈 칸만 채운다(사람이 고친 값·다른 계정을 적은 값은 둔다). 계정 줄이 없으면 계정과목명은 전처럼 과제의 계정 이름.
+  const ea = orderBudgetOf(project);
+  if (ea) {
+    if (empty('ioCode')) put('ioCode', ea.ioCode);
+    if (empty('ioName') && ea.ioName) put('ioName', ea.ioName);
+    if (ea.subjectCode) {
+      if (empty('subjectCode')) put('subjectCode', ea.subjectCode);
+      if (empty('subjectName')) put('subjectName', ea.subjectName);
+      if (empty('budgetAmount') && ea.budgetAmount != null) put('budgetAmount', ea.budgetAmount);
+    }
+  }
+  const account = String(project?.account ?? '').trim();
+  if (empty('subjectName') && account) put('subjectName', account);
+  if (empty('attachNote') || !touched.includes('attachNote')) put('attachNote', attachNoteOf(out.attach));
+  return { draft: out, changed };
+}
 
 /**
  * 읽은 문서(레시피가 만든 읽기 작업 gongmun.<갈래>의 답)로 갈래의 초안을 만든다. 화면의 칸이 이것을 들고, 사용자가 고친다.
  * 칸마다 어디서 오는지는 레시피 purpose.yaml 의 from 이다 — 문서에서 읽는 칸은 읽기의 키가 칸의 key 와 같다.
- * @param {'purchase'|'edu'|'trip'|'outside'} kind
+ * @param {'purchase'|'edu'|'trip'|'order'|'outside'} kind
  * @param {object} rec 관문(src/input.js structure)을 지난 기록
  * @param {{me?: string, files?: string[], cut?: object|null}} [ctx] files 는 읽은 파일 이름 — 첨부 목록이 된다. cut 은 오린 견적서(attachWithCut)
  * @returns {{draft: object, notes: string[]}}
@@ -635,6 +721,33 @@ export function mergeDraft(prev, next, touched = []) {
 /** 빈 초안 — 문서를 넣지 않고 손으로 쓸 때. */
 export function blankDraft(kind, { me = '' } = {}) {
   return fromRecord(kind, {}, { me }).draft;
+}
+
+/** 구매 품의 초안에서 구매의뢰 초안으로 그대로 옮기는 칸 — 둘 다 같은 문서(견적서)를 읽어 같은 이름이다(reads 의 items·quoteDate·supply·vat 도). */
+const ORDER_CARRY = ['gist', 'vendor', 'total', 'items', 'quoteDate', 'supply', 'vat', 'currency', 'attach'];
+
+/**
+ * 구매 품의 초안으로 구매의뢰(구매요청서) 초안을 만든다(2026-10-17 사용자 지정: "그 의뢰서는 구매공문과 연동되어야 하고 … 구매할때 같이 작성할 수 있던지").
+ * 빈 구매의뢰 초안 위에 구매 초안의 품목 요지·구매처·합계·품목 표·견적일·공급가액·부가세·통화·첨부를 옮기고, 사업내용은 구매사유(용도가 있으면 " (용도: …)" 를 붙여),
+ * 선행 품의 문서번호·제목은 공문 이력의 줄(doc — 구매 품의에서 바로 만들면 없다)에서 온다. 나머지(납품장소·계정과목코드·I/O·예산금액)는 사람이 적고,
+ * 수요시기·특기사항·계정과목명·첨부자료 안내문구는 orderAuto 가 채운다.
+ * 실행 모드 관문을 지나야 하니 초안의 키는 레시피 order 의 fields ∪ reads ∪ { currency, attach } 밖으로 나가지 않는다.
+ * @param {object} purchaseDraft 구매 초안(fromRecord('purchase') 의 꼴 — 비어도 된다)
+ * @param {{me?: string, doc?: {id?: string, title?: string}|null}} [opts]
+ */
+export function orderFromPurchase(purchaseDraft, { me = '', doc = null } = {}) {
+  const p = purchaseDraft && typeof purchaseDraft === 'object' ? purchaseDraft : {};
+  const out = blankDraft('order', { me });
+  for (const key of ORDER_CARRY) {
+    if (!(key in p) || blank(p[key])) continue;
+    out[key] = Array.isArray(p[key]) ? p[key].map((x) => (x && typeof x === 'object' ? { ...x, ...(Array.isArray(x.files) ? { files: [...x.files] } : {}) } : x)) : p[key];
+  }
+  const reason = String(p.reason ?? '').trim();
+  const use = String(p.use ?? '').trim();
+  out.business = reason ? (use ? `${reason} (용도: ${use})` : reason) : '';
+  out.sourceDoc = String(doc?.id ?? '').trim();
+  out.sourceTitle = String(doc?.title ?? '').trim();
+  return out;
 }
 
 /** 초안의 합계(원) — 레시피 purpose.yaml 의 amount_field 칸. 구매는 total, 교육은 fee, 출장은 cost(예상경비), 외부활동은 없다. */
@@ -929,8 +1042,10 @@ export function docNoCandidates(dept = '', docNo = '') {
  * 검색 키워드(tag)는 레시피 글의 {과제별명} 자리를 고른 과제(ctx.project)의 별명으로 바꾼다 — 별명이 없거나 과제를 고르지 않았으면 빈 칸.
  * 출장·외부활동은 프로파일(출장품의·외부활동)이 '출장'·'외부활동' 으로 둔다(2026-10-12 사용자 지정: "연구개발 별칭이 있다면 그걸 넣어줘,
  * 외부활동이면 외부활동, 출장이면 출장"). 패널은 과제를 바꿀 때마다 다시 셈하고, 칸에서 고친 것(override.tag)만 이 공문에 남긴다.
+ * receiverValue 는 문서설정 창의 SetReceiverValue 에 그대로 가는 '<코드>-,-<글>' 이다 — 부서 수신(총무팀)은 레시피 settings.yaml 의 receivers 표(수신처 고르기 창의
+ * 부서 목록 값과 글, 2026-10-17 실측)에서, 내부결재·KRE 는 값과 글이 이름 그대로다.
  * @param {{project?:object|null}} [ctx] 고른 과제(alias 가 별명)
- * @returns {{profile:string, retention:string, retentionText:string, docNo:string, docNoFrom:string, receiver:string, scope:string, scopeCode:string,
+ * @returns {{profile:string, retention:string, retentionText:string, docNo:string, docNoFrom:string, receiver:string, receiverValue:string, scope:string, scopeCode:string,
  *   emergency:boolean, approvingOpen:boolean, drm:boolean, tag:string}}
  */
 export function docSettingOf(kind, preset = {}, override = {}, { project = null } = {}) {
@@ -949,6 +1064,8 @@ export function docSettingOf(kind, preset = {}, override = {}, { project = null 
   out.docNoFrom = o.docNo ? '이 공문' : pre.docNo ? '공문 설정' : team ? `부서(${team})` : '';
   out.retentionText = S.options.retention[out.retention] || out.retention;
   out.scopeCode = S.options.scope[out.scope] || '';
+  const dept = S.receivers?.[out.receiver];
+  out.receiverValue = dept ? `${dept.code}-,-${dept.text}` : `${out.receiver}-,-${out.receiver}`;
   return out;
 }
 
@@ -1162,9 +1279,14 @@ const draftFields = (fm) => Object.entries(fm?.fields || {}).filter(([, f]) => f
 /**
  * 칸 지도의 source: draft 칸 하나에 넣을 값(레시피 외부강의등 신고서 fieldmap.yaml 머리말) — from 의 초안 칸 가운데 앞에서부터 비지 않은 것,
  * 다 비면 default. date 는 YYYY-MM-DD, time 은 'YYYY-MM-DD HH:MM'(날짜는 on 칸 — 피커가 날짜와 시각을 같이 받는다), digits 는 숫자만이다.
+ * check(구매요청서의 구매대상구분·예산유형 — 체크박스 하나가 칸 하나)는 초안 칸의 값(글이나 목록)이 on 과 같으면 '1', 아니면 빈 글(체크 안 함).
  * 글은 전자결재가 받는 꼴로(eclassText — 긴 줄표). 넣을 것이 없으면 빈 글이다(작성기가 그 칸은 건드리지 않는다).
  */
 export function draftValue(f, draft = {}) {
+  if (f.kind === 'check') {
+    const picked = [].concat(f.from ?? []).flatMap((k) => [].concat(draft?.[k] ?? [])).map((v) => String(v ?? '').trim());
+    return picked.includes(String(f.on ?? '').trim()) ? '1' : '';
+  }
   const raw = [].concat(f.from ?? []).map((k) => draft?.[k]).find((v) => !blank(v));
   if (f.kind === 'date') return ymdOf(raw);
   if (f.kind === 'time') {
@@ -1177,8 +1299,35 @@ export function draftValue(f, draft = {}) {
   return String(v);
 }
 
+/** 표의 셀 값 — digits 면 수를 자리수 글로(쉼표 없음, Math.round), 글은 전자결재가 받는 꼴(eclassText)로 다듬는다. 비면 빈 글. */
+const cellValue = (spec, row) => {
+  const raw = row?.[spec.from];
+  if (blank(raw)) return '';
+  if (spec.digits) {
+    const n = moneyOf(raw);
+    return n == null ? String(raw).replace(/\D/g, '') : String(Math.round(n));
+  }
+  return typeof raw === 'number' ? String(raw) : eclassText(raw).trim();
+};
+
 /**
- * 새 공문 창에 쓸 것 — src/gmwrite.js 가 이것만 보고 쓴다. 폼의 칸 지도(레시피 fieldmap)·값·문서설정·결재선을 한데 묶는다.
+ * 폼의 표(레시피 fieldmap.yaml 의 rows — 구매요청서의 구매 물품·예산 내역)마다 넣을 행. 표의 from 이 있으면 초안의 그 목록(reads 의 items) 줄마다 한 행,
+ * 없으면 초안의 평평한 칸으로 한 행(예산 내역 — 계정과목·I/O·예산금액). 행은 { 셀 suffix: 글 } 이고 빈 셀은 빼며, 셀이 모두 빈 행은 뺀다.
+ * src/gmwrite.js 가 행 수만큼 행추가를 누르고 cell 의 {nn}(두 자리, 01 부터)·{cell} 자리를 채워 넣는다.
+ * @returns {{key: string, add: string, probe: string, cell: string, rows: object[]}[]}
+ */
+export function rowsPlan(fm, draft = {}) {
+  return Object.entries(fm?.rows || {}).map(([key, spec]) => {
+    const source = spec.from ? (Array.isArray(draft?.[spec.from]) ? draft[spec.from] : []) : [draft || {}];
+    const rows = source
+      .map((row) => Object.fromEntries(Object.entries(spec.cells || {}).map(([cell, c]) => [cell, cellValue(c, row)]).filter(([, v]) => v !== '')))
+      .filter((row) => Object.keys(row).length);
+    return { key, add: spec.add, probe: spec.probe, cell: spec.cell, rows };
+  });
+}
+
+/**
+ * 새 공문 창에 쓸 것 — src/gmwrite.js 가 이것만 보고 쓴다. 폼의 칸 지도(레시피 fieldmap)·값·문서설정·결재선, 표(rows — 구매요청서)를 한데 묶는다.
  * 레시피에 칸 지도가 없는 양식(양식 ID 를 직접 적은 것)은 fields 가 비어 있다 — 창을 열기만 한다.
  * @param {{title:string, body:string, draft:object, form?:string, setting?:object, rank?:string, lead?:string|null, refs?:string[]|null}} doc 화면의 제목·본문(직접 고친 것이면 그 글)과 초안,
  *   합의자(과제 책임자)·참조자 — 비면(null) 고른 과제의 것
@@ -1191,8 +1340,10 @@ export function writePlan(kind, { title = '', body = '', draft = {}, form = DEFA
   const line = approvalLine({ ...ctx, project, kind, draft, rank, lead, refs });
   const text = eclassText(body);
   return {
-    kind, form: fm ? fm.id : form, url: draftUrl(form), known: !!fm,
+    kind, form: fm ? fm.id : form, formLabel: fm?.label || '', url: draftUrl(form), known: !!fm,
     anchor: fm?.anchor || '', fields: fm?.fields || {},
+    // 표(구매요청서의 구매 물품·예산 내역) — 표가 없는 폼은 빈 목록.
+    rows: rowsPlan(fm, draft),
     values: {
       title: eclassText(title).replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX), body: text, html: bodyHtml(text),
       recipient: '', reference: '', degree: degreeOf(project),

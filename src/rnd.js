@@ -9,7 +9,7 @@
 //
 // 과제에는 **공문 참조자**(refs — 공문 종류마다 이름들)도 둔다. 연구개발계획서 YAML 의 `공문.참조자`(src/rndyaml.js)에서 오고, 공문 탭이 그 과제·그 공문
 // 종류의 사람을 결재선의 참조자로 넣는다(src/gongmun.js 의 projectRefs — 2026-10-15 사용자 지정: 참조자는 공문마다·과제마다 달라 전역 공문 설정에 둘 수 없다).
-// 과제의 **행정지원**(support — 행정 담당 등 이름·맡은 일·참조 여부)은 R&D 탭의 '참여연구자 및 행정지원' 칸에서 적는다. 참조로 고른 사람은 그 과제의
+// 과제의 **행정지원**(support — 행정 담당 등 이름·맡은 일·참조 여부)은 R&D 탭의 '참여인력' 칸(2026-10-17 까지는 '참여연구자 및 행정지원')에서 적는다. 참조로 고른 사람은 그 과제의
 // 공문(구매·교육·출장 가리지 않고)마다 결재선의 참조자가 된다(2026-10-16 사용자 지정: "참여연구자 및 행정 지원.. 으로 해서 행정지원 사람 넣을 수 있도록",
 // 담당 직원은 행정 담당으로 참조에 들고, 참조는 "과제 마다 다름. 구매교육출장 이런거랑 달리").
 //
@@ -18,6 +18,7 @@
 // JSON 으로 내보내고(exportJson) 들여올(importJson) 수 있다.
 
 import { normalizeErp, erpSummaryLines } from './rnderp.js';
+import { normalizeAcct, acctSummaryLines } from './eacct.js';
 
 export const BOOK_KEY = 'rndBook';
 export const MAX_PROJECTS = 10;
@@ -29,7 +30,9 @@ export const BUDGET_ITEMS = Object.freeze(['인건비', '연구시설·장비비
 export const CHANGE_KINDS = Object.freeze(['예산', '연구내용', '연구기간', '연구진', '기타']);
 /** calendar 는 차년도를 1월 1일에 끊는 과제(산업부 과제처럼 첫 해만 협약일~12.31, 그 뒤는 해마다) — 아니면 시작일부터 한 해씩. */
 // job 은 전자결재 과제 찾기의 Job Id(RND00202026 꼴 — 2026-10-16 사용자 지정으로 과제번호와 따로 둔다. 과제번호는 국가과제 번호일 수 있다 — rERP 잇기의 열쇠).
-export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', job: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+// io 는 회계(e-accounting)의 과제 코드(I/O — 2145NR0124 꼴, 2026-10-17 사용자 지정) — 구매요청서 예산 내역의 I/O 코드이고, 과제의 회계 예산 스냅샷(acct — src/eacct.js normalizeAcct:
+// 그 해의 계정과목(보조세목)별 기초·전용·실적·가용)은 io 가 있을 때만 붙는다(없으면 칸 자체가 없다 — rERP 의 years[n].erp 와 같다).
+export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
 
 const text = (v, max = 2000) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').slice(0, max).trim() : '');
 const pad = (n) => String(n).padStart(2, '0');
@@ -259,6 +262,9 @@ export function normalizeProject(raw) {
   p.alias = text(raw.alias, 60);
   p.code = text(raw.code, 40);
   p.job = text(raw.job, 20).replace(/\s+/g, '');
+  p.io = text(raw.io, 20).replace(/\s+/g, '').toUpperCase();
+  const acct = p.io ? normalizeAcct(raw.acct) : null;
+  if (acct && acct.io === p.io) p.acct = acct;
   p.lead = text(raw.lead, 40);
   const per = periodOf(raw.period);
   p.start = isYmd(raw.start) ? raw.start : per?.start || '';
@@ -406,7 +412,7 @@ export function mergeProjects(book, incoming) {
       continue;
     }
     let touched = false;
-    for (const k of ['alias', 'code', 'job', 'lead', 'start', 'end', 'calendar']) {
+    for (const k of ['alias', 'code', 'job', 'io', 'lead', 'start', 'end', 'calendar']) {
       if (!hit[k] && inc[k]) {
         hit[k] = inc[k];
         touched = true;
@@ -579,6 +585,7 @@ export function summaryText(project, n, today = todayStr()) {
   lines.push(`과제명: ${project.name}`);
   if (project.code) lines.push(`과제번호: ${project.code}`);
   if (project.job) lines.push(`Job Id: ${project.job}`);
+  if (project.io) lines.push(`회계 I/O: ${project.io}${project.acct?.ioName ? ` (${project.acct.ioName})` : ''}`);
   if (project.lead) lines.push(`과제책임자: ${project.lead}`);
   if (Object.keys(project.refs || {}).length) lines.push(`공문 참조자: ${refsText(project.refs)}`);
   if (normalizeSupport(project.support).length) lines.push(`행정지원: ${supportText(project.support)}`);
@@ -596,6 +603,8 @@ export function summaryText(project, n, today = todayStr()) {
   if (rows.length) lines.push(`- 합계: 계획 ${won(sum.plan)} · 집행 ${won(sum.used)} · 잔액 ${won(sum.left)}${sum.rate == null ? '' : ` · 집행률 ${sum.rate}%`}`);
   // rERP 로 이어진 차년도면 집행은 rERP 승인액이고, 집행비율(미청구·승인전 반영)·조회 시각도 같이 적는다(src/rnderp.js).
   lines.push(...erpSummaryLines(book.erp));
+  // 회계(e-accounting)의 계정과목별 예산 스냅샷이 있으면 그 줄도(src/eacct.js — 회계연도 기준이라 차년도와 상관없이 과제에 하나).
+  lines.push(...acctSummaryLines(project.acct));
 
   const roster = fileLog(book, 'roster');
   if (roster) {
