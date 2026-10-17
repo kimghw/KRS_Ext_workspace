@@ -1384,7 +1384,11 @@ await ta('회계 I/O 저절로 찾기 — 과제 정보 카드가 회계(e-accou
   assert.equal(acctFake.gets, gets + 1);
   assert.deepEqual(cells(), [['603010304', '연구활동비', '51,500,000', '29,066,990', '22,433,010'], ['603010311', '연구재료비', '30,376,000', '0', '31,376,000']], '계정명은 끝마디(전체는 툴팁)');
   assert.equal($('rdAcctTable').querySelector('tbody tr .rd-acct-name').title, '수탁과제(국가)_연구활동비');
-  assert.match($('rdAcctHead').textContent, /^회계 예산 2026년 · I\/O 2145NR0124 · 조회 \d\d:\d\d$/);
+  // 표는 과제 정보 카드가 아니라 예산 칸 안의 접힌 한 줄(rERP 집행내역과 같은 꼴 — 2026-10-17 사용자 지정). 접힌 줄에는 해·I/O·조회 시각, 펴면 머리 줄에 I/O 와 회계 과제명.
+  assert.ok($('rdAcctBox').closest('#rdBudgetBox'), '회계 예산은 예산 칸 안');
+  assert.ok(!$('rdAcctBox').open, '기본은 접힘');
+  assert.match($('rdAcctState').textContent, /^2026년 · I\/O 2145NR0124 · 조회 \d\d:\d\d$/);
+  assert.match($('rdAcctHead').textContent, new RegExp(`^2145NR0124 ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · 2026년 · 조회 \\d\\d:\\d\\d$`));
   assert.equal($('rdAcctMsg').textContent, '');
   assert.ok(metaText().includes(`회계 I/O 2145NR0124 ${name} · `), '표의 줄에는 회계의 과제명도');
   await wait(500);

@@ -388,17 +388,10 @@
           </div>
           <!-- 회계 I/O 저절로 찾기(2026-10-17 사용자 지정 — "계정과목코드 계정과목명, 예산부서코드 또는 I/O 입력 예산금액도 같이 조회 … e-accounting.krs.co.kr 에 조회할 수 있도록"). Job Id 와 같은 꼴 —
                회계 I/O(e-accounting 의 과제 코드, 2145NR0124 꼴)가 빈 과제를 고르면 회계의 내 부서 과제 목록(부서 예산 요약 화면이 받는 것 — 읽기만, src/eacct.js)에서 과제명 유사도 0.5 이상의 후보를 높은 차례로
-               보이고 '이 코드로 저장'을 누르면 과제에 남으며 바로 아래 회계 예산 표가 선다. e-accounting 로그인(eclass 와 따로)이 풀렸으면 로그인 링크. 안은 rndpanel.js 가 그린다(paintIo). -->
+               보이고 '이 코드로 저장'을 누르면 과제에 남으며 아래 예산 칸의 회계 예산 줄(rdAcctBox)이 선다. e-accounting 로그인(eclass 와 따로)이 풀렸으면 로그인 링크. 안은 rndpanel.js 가 그린다(paintIo). -->
           <div id="rdIoBox" class="rd-jobbox hidden">
             <div id="rdIoList" class="rd-job-list" role="group" aria-label="회계 I/O 후보"></div>
             <div class="rd-job-act"><p id="rdIoMsg" class="rd-job-msg" role="status"></p><a id="rdIoLogin" class="rd-ea-login hidden" href="https://e-accounting.krs.co.kr/App_Usr/UsrStart.aspx" target="_blank" rel="noopener">e-accounting 로그인</a><button type="button" id="rdIoRetry" class="ghost small hidden">다시 찾기</button><button type="button" id="rdIoSave" class="primary small hidden">이 코드로 저장</button></div>
-          </div>
-          <!-- 회계 예산 표(회계 I/O 가 있는 과제) — 그 해(회계연도)의 계정과목(보조세목)별 예산(기초+전용)·실적·가용(원)을 e-accounting 부서 예산 요약에서 받아 과제의 스냅샷(acct)으로 둔다(열 때 한 번·10분 신선도, ↻ 다시 조회).
-               구매요청서(공문 탭 구매의뢰)의 예산 내역(계정과목코드·계정과목명·I/O 코드·I/O 명·예산금액)이 이 표에서 채워진다(src/gongmun.js orderAuto). 안은 rndpanel.js 가 그린다(paintAcct). -->
-          <div id="rdAcctBox" class="rd-acctbox hidden">
-            <div class="rd-acct-head"><span id="rdAcctHead"></span><button type="button" id="rdAcctRefresh" class="rd-icon" title="회계(e-accounting)에서 지금 다시 받기 (열 때와 10분마다 저절로 받습니다)" aria-label="회계에서 다시 받기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button></div>
-            <table id="rdAcctTable" class="rd-acct hidden" aria-label="회계 예산 (계정과목별, 원)"></table>
-            <div class="rd-job-act"><p id="rdAcctMsg" class="rd-job-msg" role="status"></p><a id="rdAcctLogin" class="rd-ea-login hidden" href="https://e-accounting.krs.co.kr/App_Usr/UsrStart.aspx" target="_blank" rel="noopener">e-accounting 로그인</a></div>
           </div>
         </details>
         <!-- 별칭이 없는 과제(계획서 YAML 로 만든 과제 등) — 칩·머리에 긴 과제명 대신 보일 이름을 정한다. 과제끼리 겹치지 않는다. -->
@@ -487,6 +480,17 @@
               </div>
               <p id="rdErpMsg" class="rd-note-msg" role="status"></p>
               <div id="rdErpTable" class="rd-erp-table"></div>
+            </details>
+            <!-- 회계 예산(2026-10-17 사용자 지정 — "계정과목코드 및 계정명등 테이블은 예산 안에 rerp 집행내역 처럼 접어서 한줄로") — 회계 I/O 가 있는 과제에서 그 해(회계연도)의 계정과목(보조세목)별
+                 예산(기초+전용)·실적·가용(원)을 e-accounting 부서 예산 요약에서 받아 과제의 스냅샷(acct)으로 둔다(열 때 한 번·10분 신선도, ↻ 다시 조회). 차년도가 아니라 과제의 것(회계연도 기준)이라
+                 어느 차년도를 보든 같다. 회계 I/O 자체(찾기·저장·과제 정보 표의 줄)는 위 과제 정보 카드에 그대로(rdIoBox). rERP 집행내역과 같은 꼴 — 접힌 한 줄(제목 · 해·I/O·조회 시각 · 꺾쇠),
+                 펴면 머리 줄(I/O 와 회계 과제명 · ↻) · 표 · 형편. 구매요청서(공문 탭 구매의뢰)의 예산 내역(계정과목코드·계정과목명·I/O 코드·I/O 명·예산금액)이 이 표에서 채워진다(src/gongmun.js orderAuto).
+                 안은 rndpanel.js 가 그린다(paintAcct). -->
+            <details id="rdAcctBox" class="rd-acctbox hidden">
+              <summary><span class="rd-erp-title">회계 예산 <small>(원)</small></span><span id="rdAcctState" class="summary-detail"></span></summary>
+              <div class="rd-acct-head"><span id="rdAcctHead"></span><button type="button" id="rdAcctRefresh" class="rd-icon" title="회계(e-accounting)에서 지금 다시 받기 (열 때와 10분마다 저절로 받습니다)" aria-label="회계에서 다시 받기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button></div>
+              <table id="rdAcctTable" class="rd-acct hidden" aria-label="회계 예산 (계정과목별, 원)"></table>
+              <div class="rd-job-act"><p id="rdAcctMsg" class="rd-job-msg" role="status"></p><a id="rdAcctLogin" class="rd-ea-login hidden" href="https://e-accounting.krs.co.kr/App_Usr/UsrStart.aspx" target="_blank" rel="noopener">e-accounting 로그인</a></div>
             </details>
           </div>
         </details>

@@ -1705,13 +1705,16 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-job-msg:empty { display: none; }
 /* 회계 I/O 묶음(Job Id 묶음과 같은 꼴)의 e-accounting 로그인 링크 — 로그인이 풀렸을 때만. */
 .rnd .rd-ea-login { flex: none; color: var(--pick); font-size: 12px; text-decoration: underline; white-space: nowrap; }
-/* 회계 예산 표(과제 정보 카드 — 회계 I/O 가 있는 과제, rndpanel.js paintAcct) — 머리 줄(해 · I/O · 조회 시각 · ↻)과 계정과목별 예산·실적·가용(원). */
-.rnd .rd-acctbox { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
-.rnd .rd-acct-head { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }
-.rnd .rd-acct-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 회계 예산(회계 I/O 가 있는 과제, rndpanel.js paintAcct) — 예산 칸 안, rERP 집행내역과 같은 접힌 한 줄(2026-10-17 사용자 지정). 접기 꼴(.rd-acctbox 루트·summary·busy 회전)은 아래 .rd-erp 규칙에 함께 적었다.
+   펴면 머리 줄(I/O 와 회계 과제명 · 해 · 조회 시각 — 좁은 패널에서 잘리지 않게 줄바꿈 · 오른쪽 끝 ↻)과 계정과목별 표, 형편 줄. */
+.rnd .rd-acct-head { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 4px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.rnd .rd-acct-head > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rnd .rd-acct-head b { color: var(--fg); font-weight: 600; }
 .rnd .rd-acct-head .rd-icon { flex: none; width: 24px; min-height: 24px; color: var(--faint); }
 .rnd .rd-acct-head .rd-icon:hover { color: var(--pick); }
+.rnd .rd-acct-head .rd-icon[disabled] { opacity: .4; }
 .rnd .rd-acct-head .rd-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.rnd .rd-acctbox > .rd-job-act { margin-top: 6px; }
 .rnd .rd-acct { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.4; }
 .rnd .rd-acct th, .rnd .rd-acct td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 .rnd .rd-acct th { color: var(--muted); font-weight: 600; }
@@ -1817,10 +1820,11 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-inc label:has(input:disabled) { opacity: .5; }
 /* rERP 집행내역 — kr_ext_rerp 의 과제집행비율 표(rerp/plan.css 의 krext-*)를 예산 칸 아래에 그대로 둔다. 기본은 접힌 한 줄(제목 · 이은 과제와 조회 시각 · 꺾쇠, 2026-10-11 사용자 지정) —
    펴면 머리 줄(이은 과제 · ↻ · 잇기/끊기) · 고르기 · 표. */
-.rnd .rd-erp { margin-top: 10px; border-top: 1px solid var(--line); }
-.rnd .rd-erp > summary { min-height: 36px; gap: 6px; font-size: 12px; }
-.rnd .rd-erp > summary .summary-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.rnd .rd-erp > summary::after { flex: none; }
+/* 접힌 한 줄의 꼴은 rERP 집행내역(.rd-erp)과 회계 예산(.rd-acctbox — 2026-10-17)이 같다 — 제목 · 형편(summary-detail, 한 줄로 줄여) · 꺾쇠. */
+.rnd .rd-erp, .rnd .rd-acctbox { margin-top: 10px; border-top: 1px solid var(--line); }
+.rnd .rd-erp > summary, .rnd .rd-acctbox > summary { min-height: 36px; gap: 6px; font-size: 12px; }
+.rnd .rd-erp > summary .summary-detail, .rnd .rd-acctbox > summary .summary-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.rnd .rd-erp > summary::after, .rnd .rd-acctbox > summary::after { flex: none; }
 .rnd .rd-erp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-bottom: 4px; }
 .rnd .rd-erp-title { font-size: 12px; font-weight: 650; color: var(--fg); white-space: nowrap; }
 .rnd .rd-erp-title small { font-weight: 400; color: var(--muted); }
@@ -1830,7 +1834,7 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-erp-info b { color: var(--fg); font-weight: 600; }
 .rnd .rd-erp-tools { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 .rnd .rd-erp-tools .rd-icon[disabled] { opacity: .4; }
-.rnd .rd-erp.busy .rd-icon svg { animation: rd-spin 1s linear infinite; }
+.rnd .rd-erp.busy .rd-icon svg, .rnd .rd-acctbox.busy .rd-icon svg { animation: rd-spin 1s linear infinite; }
 @keyframes rd-spin { to { transform: rotate(360deg); } }
 .rnd .rd-erp-pick { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
 .rnd .rd-erp-pick select { flex: 1; min-width: 0; }

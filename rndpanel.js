@@ -73,9 +73,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     fStart: $('rdFStart'), fEnd: $('rdFEnd'), fCalendar: $('rdFCalendar'), fNote: $('rdFNote'), fNeed: $('rdFNeed'), fSave: $('rdFSave'), fCancel: $('rdFCancel'), fDel: $('rdFDel'),
     // Job Id(전자결재 과제 찾기 — 2026-10-16) — 폼의 글 칸과, 과제 정보 카드의 저절로 찾기 묶음(후보 줄 · 알림 줄 · 다시 찾기 · 이 번호로 저장).
     fJob: $('rdFJob'), jobBox: $('rdJobBox'), jobList: $('rdJobList'), jobMsg: $('rdJobMsg'), jobRetry: $('rdJobRetry'), jobSave: $('rdJobSave'),
-    // 회계 I/O(e-accounting 과제 코드 — 2026-10-17) — 폼의 글 칸과, 과제 정보 카드의 저절로 찾기 묶음(Job Id 와 같은 꼴 + 로그인 링크)과 회계 예산 표(머리 줄 · 다시 조회 · 표 · 알림 줄).
+    // 회계 I/O(e-accounting 과제 코드 — 2026-10-17) — 폼의 글 칸과, 과제 정보 카드의 저절로 찾기 묶음(Job Id 와 같은 꼴 + 로그인 링크)과, 예산 칸의 회계 예산(rERP 집행내역과 같은 접힌 한 줄 — 형편 줄 · 머리 줄 · 다시 조회 · 표 · 알림 줄, 2026-10-17 사용자 지정).
     fIo: $('rdFIo'), ioBox: $('rdIoBox'), ioList: $('rdIoList'), ioMsg: $('rdIoMsg'), ioRetry: $('rdIoRetry'), ioSave: $('rdIoSave'), ioLogin: $('rdIoLogin'),
-    acctBox: $('rdAcctBox'), acctHead: $('rdAcctHead'), acctRefresh: $('rdAcctRefresh'), acctTable: $('rdAcctTable'), acctMsg: $('rdAcctMsg'), acctLogin: $('rdAcctLogin'),
+    acctBox: $('rdAcctBox'), acctState: $('rdAcctState'), acctHead: $('rdAcctHead'), acctRefresh: $('rdAcctRefresh'), acctTable: $('rdAcctTable'), acctMsg: $('rdAcctMsg'), acctLogin: $('rdAcctLogin'),
     status: $('rdStatus'), body: $('rdBody'), yearEmpty: $('rdYearEmpty'),
     budgetState: $('rdBudgetState'), budget: $('rdBudget'), budgetSum: $('rdBudgetSum'), budgetCopy: $('rdBudgetCopy'),
     rosterState: $('rdRosterState'), roster: $('rdRoster'), rosterTools: $('rdRosterTools'), rosterSrc: $('rdRosterSrc'), rosterCopy: $('rdRosterCopy'),
@@ -575,7 +575,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /** 회계 계정명의 끝마디 — '수탁과제(국가)_연구재료비' → '연구재료비'(표가 좁다 — 전체 이름은 툴팁과 요약 복사에). */
   const acctShort = (name) => String(name || '').split('_').pop() || String(name || '');
 
-  /** 과제 정보 카드의 회계 예산 표 — 회계 I/O 가 있을 때. 머리 줄(해 · I/O · 조회 시각)과 계정 줄(계정과목코드 · 계정명 끝마디 · 예산(기초+전용) · 실적 · 가용 — 원), 형편 줄. */
+  /**
+   * 예산 칸의 회계 예산 — 회계 I/O 가 있을 때, rERP 집행내역과 같은 접힌 한 줄(2026-10-17 사용자 지정: "계정과목코드 및 계정명등 테이블은 예산 안에 rerp 집행내역 처럼 접어서 한줄로").
+   * 접힌 줄의 형편(acctState)은 해 · I/O · 조회 시각. 펴면 머리 줄(I/O 와 회계 과제명 · 해 · 조회 시각, ↻ — 부서는 툴팁)과 계정 줄(계정과목코드 · 계정명 끝마디 · 예산(기초+전용) · 실적 · 가용 — 원), 형편 줄.
+   * 차년도가 아니라 과제의 것(회계연도 기준)이라 어느 차년도를 보든 같다. 회계 I/O 찾기·저장은 과제 정보 카드(paintIo)에 그대로.
+   */
   function paintAcct(p) {
     const show = !!p && !!p.io;
     el.acctBox.classList.toggle('hidden', !show);
@@ -583,8 +587,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const a = p.acct && p.acct.io === p.io ? p.acct : null;
     const run = st.acctRun;
     const when = a?.at ? new Date(a.at) : null;
-    const stamp = when && !Number.isNaN(when.getTime()) ? `조회 ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
-    el.acctHead.textContent = a ? `회계 예산 ${a.year}년 · I/O ${a.io}${a.year !== fiscal() ? ' · 지난 해 스냅샷' : ''}${stamp ? ` · ${stamp}` : ''}` : `회계 예산 ${fiscal()}년 · I/O ${p.io}`;
+    const stamp = when && !Number.isNaN(when.getTime()) ? `조회 ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : run.busy ? '받는 중…' : '아직 못 받음';
+    const year = a ? a.year : fiscal();
+    const io = a ? a.io : p.io;
+    const old = a && a.year !== fiscal() ? ' · 지난 해 스냅샷' : '';
+    el.acctState.textContent = `${year}년 · I/O ${io} · ${stamp}${old}`;
+    el.acctHead.innerHTML = `<b>${escapeHtml(io)}</b>${a?.ioName ? ` ${escapeHtml(a.ioName)}` : ''} · ${year}년 · ${stamp}${old}`;
+    el.acctHead.title = a ? `${a.io}${a.ioName ? ` ${a.ioName}` : ''}${a.deptName ? ` · 부서 ${a.deptName}${a.dept ? `(${a.dept})` : ''}` : ''} · ${a.year}년 회계연도` : '';
+    el.acctBox.classList.toggle('busy', !!run.busy);
     el.acctRefresh.disabled = !!run.busy;
     const rows = a?.rows || [];
     el.acctTable.innerHTML = rows.length
