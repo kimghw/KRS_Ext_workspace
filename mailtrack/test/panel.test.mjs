@@ -591,8 +591,11 @@ t('목록을 누르면 상세 — 머리(제목·받는 사람·참조) · 상�
   card('A').click();
   assert.ok(hidden('mtListBox') && !hidden('mtDetail'));
   const cards = [...$('mtDetail').children].filter((n) => n.classList.contains('card'));
-  assert.ok(cards[0].contains($('mtHeader')) && cards[1] === $('mtSent') && cards[2].contains($('mtExpect')),
-    '보낸 메일 → 보낸 메일·첨부 → 수신처별 회신 차례(2026-10-16 사용자 지정)');
+  assert.deepEqual([...cards[0].querySelectorAll('#mtHeader, #mtSentAtts, #mtProgress')].map((n) => n.id), ['mtHeader', 'mtSentAtts', 'mtProgress'],
+    '첫 카드는 보낸 메일 머리 → 첨부 → 회신 현황(첨부는 회신 현황 위, 2026-10-17 사용자 지정)');
+  assert.ok(cards[0].contains($('mtSent')) && cards[1].contains($('mtExpect')), '보낸 메일 → 수신처별 회신 차례(2026-10-16 사용자 지정)');
+  assert.ok($('mtSent').querySelector('.mt-sent-top .mt-header-label .mt-dir-icon svg') && $('mtSent').querySelector('.mt-sent-top #mtSentBody'), '보낸 메일 머리 줄에 보낸 아이콘과 본문 보기');
+  assert.ok($('mtReplies').closest('.card').querySelector('.mt-h .mt-dir-icon.in svg'), '받은 회신 제목에 받은 아이콘');
   assert.equal($('mtHeader').querySelector('.mt-title').textContent, '견적 양식 회신 부탁');
   assert.match($('mtHeader').textContent, /김철수 <a@foo\.com>, c@bar\.com/);
   assert.match($('mtHeader').textContent, /참조박영희 <kim@krs\.co\.kr>/);

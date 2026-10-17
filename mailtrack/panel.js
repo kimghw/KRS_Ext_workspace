@@ -2,8 +2,9 @@
 // "받을 곳" 으로 세우고, 받은 메일에서 회신을 찾아 이어 N/M 으로 센다. 찾기·잇기·저장·병합은 sync(mailtrack/sync.js)가 하고 여기는 그것을 화면에 잇기만 한다.
 //
 //   머리(연결 칩 · 새로고침 · 등록 + · 마지막 갱신 · 진행 중/완료) → 등록 대화(보낸 메일 고르기) → 목록(메일마다 N/M 배지와 받을 곳 칩)
-//   → 상세(회신 현황 옆 추적 끝내기 · 보낸 메일·첨부 · 받을 곳 표 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
+//   → 상세(보낸 메일 머리·그 첨부·회신 현황이 한 카드, 추적 끝내기는 회신 현황 옆 · 받을 곳 표 · 회신(수락·거부) · 양식 병합 · 모두 zip · 등록 지우기) → 메일 설정(접힌 칸)
 //   보낸 메일 머리 바로 아래에 그 첨부, 그 다음에 수신처별 회신 — 2026-10-16 사용자 지정 "보낸메일, 보낸 메일 첨부가 있어야 하고 그 다음 수신처별 회신".
+//   첨부는 회신 현황(진행률) 위, 같은 카드 안에 두고 보낸 메일·받은 회신 머리에 보낸/받은 아이콘 — 2026-10-17 사용자 지정 "첨부파일은 회신 현황 위로 빼고 … 보낸/받은 아이콘을 붙여줘".
 //   MCP 주소·내 메일 주소·연결 확인은 connRoot(패널 설정의 연결 갈래 — 2026-10-16 사용자 지정 "연결에는 mcp 서버 내용")가 있으면 거기에 그린다(connTemplate).
 //   목록 줄마다 오른쪽 아래 "지우기"(두 번 눌러 확인) — 2026-10-15 사용자 지정 "종료 기능이 없네" · "등록한 메일을 취소하는 기능이 안보임": 접힌 칸에 숨기지 않는다.
 // 회신 확인(2026-10-15 사용자 지정 "받은거 accept 할지 거부할지"): 새로 이어진 회신은 "확인 필요" 로 서고 머리·목록에 그 수를 보인다. 수락하면 세고(받을 곳 완료),
@@ -405,8 +406,7 @@ export function createMailPanel({
     const web = safeUrl(it.webLink);
     // 보낸 날·받는 사람·참조·Outlook 링크는 접어 둔다(2026-10-16 사용자 지정 "이 부분은 접어줘") — 접힌 줄에 날짜와 사람 수만.
     const brief = `${fmtTime(it.sentAt)} · 받는 사람 ${(it.to || []).length}명${it.cc?.length ? ` · 참조 ${it.cc.length}명` : ''}`;
-    el.header.innerHTML = '<div class="mt-header-label">보낸 메일</div>'
-      + `<h3 class="mt-title">${esc(it.subject || '(제목 없음)')}</h3>`
+    el.header.innerHTML = `<h3 class="mt-title">${esc(it.subject || '(제목 없음)')}</h3>`
       + `<details class="mt-meta-fold"${st.metaOpen ? ' open' : ''}><summary>${esc(brief)}</summary>`
       + '<dl class="mt-meta">'
       + `<dt>보낸 날</dt><dd>${esc(fmtTime(it.sentAt))}</dd>`
@@ -1324,6 +1324,8 @@ function icon(name) {
     download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/>',
     file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6M8 13h8M8 17h5"/>',
     mail: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m3 7 9 6 9-6"/>',
+    sent: '<path d="m21 3-7 18-4-9-9-4Z"/><path d="M21 3 10 12"/>',
+    inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/>',
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.mail}</svg>`;
 }
@@ -1367,23 +1369,23 @@ const TEMPLATE = `
 <div id="mtDetail" class="mt-detail hidden">
   <button type="button" id="mtBack" class="small ghost mt-back">${icon('back')}메일 목록</button>
   <div class="mt-overview card">
-    <div id="mtHeader" class="mt-header"></div>
+    <section id="mtSent" class="mt-sent" aria-label="보낸 메일">
+      <div class="mt-sent-top"><span class="mt-header-label"><span class="mt-dir-icon" aria-hidden="true">${icon('sent')}</span>보낸 메일</span><button type="button" id="mtSentBody" class="small ghost mt-sent-body" aria-expanded="false" aria-controls="mtSentText">본문 보기</button></div>
+      <div id="mtHeader" class="mt-header"></div>
+      <ul id="mtSentAtts" class="mt-atts mt-atts-thin" aria-label="보낸 메일 첨부"></ul>
+      <pre id="mtSentText" class="mt-body hidden"></pre>
+    </section>
     <div class="mt-progress-area">
       <div class="mt-progress-head"><span class="mt-progress-label">회신 현황</span><div class="mt-progress-tools"><p id="mtStatus" class="mt-status"></p><button type="button" id="mtClose" class="small ghost mt-close hidden" title="추적을 끝낸 메일은 새로고침에서 회신을 찾지 않습니다(기록은 남고, 다시 추적으로 되돌립니다)">추적 끝내기</button></div></div>
       <progress id="mtProgress" class="mt-progress" value="0" max="1" aria-label="수신처 회신 진행률"></progress>
     </div>
   </div>
-  <section id="mtSent" class="mt-sec card" aria-label="보낸 메일">
-    <div class="mt-sec-head"><h3 class="mt-h">보낸 메일 · 첨부</h3><button type="button" id="mtSentBody" class="small ghost" aria-expanded="false" aria-controls="mtSentText">본문 보기</button></div>
-    <pre id="mtSentText" class="mt-body hidden"></pre>
-    <ul id="mtSentAtts" class="mt-atts mt-atts-thin"></ul>
-  </section>
   <section class="mt-sec card" aria-label="받을 곳">
     <div class="mt-sec-head"><h3 class="mt-h">수신처별 회신</h3><span class="mt-section-note">도메인·주소 기준</span></div>
     <table id="mtExpect" class="mt-expect" aria-label="수신처별 회신 상태"></table>
   </section>
   <section class="mt-sec card" aria-label="회신">
-    <div class="mt-sec-head"><h3 class="mt-h">받은 회신 <span id="mtReplyCount" class="count"></span></h3><span class="mt-section-note">최신순</span></div>
+    <div class="mt-sec-head"><h3 class="mt-h"><span class="mt-dir-icon in" aria-hidden="true">${icon('inbox')}</span>받은 회신 <span id="mtReplyCount" class="count"></span></h3><span class="mt-section-note">최신순</span></div>
     <div id="mtReplies" class="mt-replies"></div>
   </section>
   <section id="mtMerge" class="mt-sec mt-merge card hidden" aria-label="양식 병합">
