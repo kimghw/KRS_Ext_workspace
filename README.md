@@ -1859,6 +1859,7 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 
 | 파일 | 역할 |
 |---|---|
+| `spec/` | **사용자 요구사항**(2026-10-18) — 주제마다 한 파일(목록은 `spec/README.md`), 날짜·원문·결정만 적고 설계·구현은 적지 않는다(그건 이 README 와 `docs/`). 이 README 의 `(날짜 사용자 지정: "…")` 인용이 거기로 옮겨 적힌다 |
 | `manifest.json` | MV3 매니페스트 (사이드 패널, `eclass.krs.co.kr`·`hr.krs.co.kr` 호스트 권한, 홈·인명 검색·Quality 연도 유지 콘텐츠 스크립트, 웹페이지 캡처용 선택 권한 `<all_urls>` — 처음 누를 때 묻는다) |
 | `background.js` | 아이콘 클릭 시 사이드 패널 열기, 홈 카드의 부탁 처리 — "패널 열어 달라", "근태를 읽어 달라"(HR 작업 탭을 열어 읽고, 자기가 연 탭은 닫는다) · 사후정산 입력 화면의 부탁 처리 — "증빙 한 장을 읽어 달라"(`receiptRead`, 로컬 CLI → API 키) · 홈 카드의 출장 줄에 넣은 증빙 받기(`evidenceKeep` — 읽어서 보관함에 담는다, `src/intake.js`)와 보관함 줄여 적기(`evidenceMarks`) · 홈 카드가 그 증빙을 사후정산에 올릴 때 보관함에서 꺼내 주기(`evidenceGiven`·`evidenceFile`), 올린 뒤 표시 걷기(`evidenceDone`), 활동 기록 남기기(`tripLog`) |
 | `sidepanel.html/css/js` | 화면과 상호작용(격자 렌더, 드래그 선택, 예약 폼) |
