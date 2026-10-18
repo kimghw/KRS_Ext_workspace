@@ -38,6 +38,10 @@ KRS WORKSPACE 의 R&D 탭이 쓰려고 **그대로 옮겨 온 것**이다(2026-1
 | `planui.js` | `deepLink`·`projectLink` 를 같이 옮김(원본 190·217행). WORKSPACE 에는 `#krext=` 를 읽는 `rnd-hook.js` 가 없어 링크는 rERP 메인만 연다 | 표 안의 "자금현황에서 확인" 링크 |
 | `researchsync.js` | 머리에 `import KRX_RESEARCH from './research.js'; const g = { KRX_RESEARCH };` shim (원본은 전역 `g.KRX_RESEARCH`) | `serialize` 가 `sections`·`infoOf` 를 쓴다 |
 
+## 이 저장소에서 쓴 것 (kr_ext_rerp 에서 온 것이 아님 — origin.json·`check` 대상 아님)
+
+- [reference.md](reference.md) — rERP 화면 실측 참조(2026-10-18): 참여인력신청의 인건비지급계획 팝업이 지급금액에서 계상률을 어떻게 올림하는지, 자료생성이 무엇을 검사하고 어떤 월 행을 저장하는지, 참여율(공문·IRIS)과 월별 지급(rERP)의 역할, 우리 계산기·러너와 어긋나는 곳. rERP 화면을 새로 실측하면 여기에 덧붙인다.
+
 ## 상호운용 규약 — 바꾸지 않는다
 
 | 항목 | 값 |
