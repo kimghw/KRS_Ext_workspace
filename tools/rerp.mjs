@@ -34,6 +34,9 @@ export const MAP = [
   { from: 'lib/research.js', to: 'rerp/research.js', how: '그대로 (IIFE → export)' },
   { from: 'lib/research-sync.js', to: 'rerp/researchsync.js', how: '그대로 (IIFE → export, g.KRX_RESEARCH 는 shim)' },
   { from: 'tests/research.test.js', to: 'test/rerp-research.test.mjs', how: 'ESM 으로 (help-server/classify.js 검사는 뺌)' },
+  // 참여연구원 참여율·지급액(2026-10-18) — 계산은 kr_ext_rerp 의 사업비 변경 메뉴로 넘기고(사용자 지정), WORKSPACE 의 참여인력 칸은 rERP 에 등록된 값을 보이기만 한다(rndpanel.js · src/rnderp.js)
+  { from: 'lib/staff.js', to: 'rerp/staff.js', how: '그대로 (IIFE → export)' },
+  { from: 'tests/staff.test.js', to: 'test/rerp-staff.test.mjs', how: 'ESM 으로' },
 ];
 
 const sha1 = (file) => crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');

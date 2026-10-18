@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 
 import {
   ERP_TTL_MS, nameKey, d8, projectRecs, pickYearRec, candidates, linkOf, normalizeErp, isLive, isFresh, fetchSnapshot, monthsBetween, matchRows, applySnapshot, erpHead, erpSummaryLines,
-  normalizeSet, includeNames, isHidden, erpExtras, UNBILLED_ITEM,
+  normalizeSet, includeNames, isHidden, erpExtras, UNBILLED_ITEM, fetchParticipants, fetchOthers,
 } from '../src/rnderp.js';
+import { byName, sharesOfErp, peopleOfErp } from '../rerp/staff.js';
 import { normalizeYear, thousand, amountOfThousand, summaryText, normalizeProject } from '../src/rnd.js';
 
 let pass = 0;
@@ -211,6 +212,42 @@ t('칸 머리와 요약 줄', () => {
   // 요약 글에도 들어간다
   const p = normalizeProject({ id: 'p', name: '차단기 과제', start: '2026-04-01', end: '2027-03-31', years: { 1: { budget: [{ id: 'a', item: '인건비', plan: 1000, used: 500 }], erp } } });
   assert.match(summaryText(p, 1, '2026-10-11'), /- 합계: 계획 1,000원[^\n]*\n- rERP P1 차단기/);
+});
+
+console.log('참여인력 — rERP 지급계획·다른 과제 참여율(참여인력 칸이 보이기만 한다 — 행·사람 모양은 rerp/staff.js)');
+await ta('참여인력 행(rowsOfErp 모양) → 사람마다 월급여(시작월이 늦은 행의 지급한도액)·지급 합·신청 번호 — 개인정보 칸은 읽지 않는다', async () => {
+  const calls = [];
+  const erp = { async call(svc, input) { calls.push([svc, input]); return { INFO_REC: [
+    { EMP_NM: '문창재', ROLE_NM: '참여연구원', PAY_LIMT_AMT: '5823000', PAY_AMT: '1165000', PART_RT: '20.01', PLAN_YM_FROM: '202604', PLAN_YM_TO: '202611', NCNT: '8', REQ_CNT: '9', SEQ_NO: '2', PARTRATE_YN: 'N', PART_TRM_DT_DTL: '2026-04-01 ~ 2026-12-31', SSN: 'x', EMP_NO: '1' },
+    { EMP_NM: '문창재', ROLE_NM: '참여연구원', PAY_LIMT_AMT: '5823000', PAY_AMT: '1159000', PART_RT: '19.91', PLAN_YM_FROM: '202612', PLAN_YM_TO: '202612', NCNT: '1', REQ_CNT: '9', SEQ_NO: '2', PARTRATE_YN: 'N' },
+    { EMP_NM: '김거화', ROLE_NM: '과제책임자', PAY_LIMT_AMT: '8480000', PAY_AMT: '2328000', PART_RT: '27.46', PLAN_YM_FROM: '202604', PLAN_YM_TO: '202611', NCNT: '8', REQ_CNT: '9', SEQ_NO: '1', PARTRATE_YN: 'Y' },
+    { EMP_NM: '' },
+  ], HM_PER_REC: [{ EMP_NM: '문창재' }] }; } };
+  const rows = await fetchParticipants(erp, '2026-0063-01');
+  assert.deepEqual(calls, [['rtask_0008_t03_01_r001', { SEARCH_NM: '', SEARCH_GB: '1', PRJ_NO: '2026-0063-01' }]]);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0], { name: '문창재', role: '참여연구원', limit: 5823000, amt: 1165000, rate: 20.01, from: '2026-04', to: '2026-11', count: 8, req: '9', seq: '2', excluded: false, term: '2026-04-01 ~ 2026-12-31' });
+  assert.ok(!('SSN' in rows[0]) && !('empNo' in rows[0]) && !('EMP_NO' in rows[0]));
+  assert.equal(rows[2].excluded, true);
+  const by = byName(rows);
+  assert.deepEqual(Object.keys(by), ['문창재', '김거화']);
+  assert.deepEqual([by['문창재'].monthly, by['문창재'].total, by['문창재'].req, by['문창재'].seq, by['문창재'].from, by['문창재'].to, by['문창재'].ranges.length], [5823000, 1165000 * 8 + 1159000, '9', '2', '2026-04', '2026-12', 2]);
+  assert.deepEqual([by['김거화'].total, by['김거화'].role], [2328000 * 8, '과제책임자']);
+  const shares = sharesOfErp(rows, { prjNo: '2026-0063-01', now: 5 });
+  assert.deepEqual(shares.map((s) => [s.name, s.total, s.erp.monthly, s.erp.prjNo, s.erp.at, s.erp.req, s.erp.seq]), [['문창재', 10479000, 5823000, '2026-0063-01', 5, '9', '2'], ['김거화', 18624000, 8480000, '2026-0063-01', 5, '9', '1']]);
+  // 잇기(erp.staff)에 남는 사람 모양 — 지급기간을 달마다 펼친 월별 지급. normalizeErp 가 조회 시각과 함께 지키고, 사람이 없으면 없는 것.
+  const staff = peopleOfErp(rows, { prjNo: '2026-0063-01', now: 5 });
+  const kept = normalizeErp({ prjNo: '2026-0063-01', anl: 1, staff: { at: 7, ...staff } });
+  assert.deepEqual([kept.staff.at, kept.staff.basis, kept.staff.src, kept.staff.people.map((q) => [q.name, q.plan.length, q.erp.monthly])], [7, 'rerp', 'erp', [['문창재', 9, 5823000], ['김거화', 8, 8480000]]]);
+  assert.ok(!('staff' in normalizeErp({ prjNo: 'P', staff: { at: 7, people: [] } })));
+});
+await ta('다른 과제 월별 참여율(rtask_0013_12_r003 — 지급계획 팝업의 한도 검사 자료) — 달·계상률·지급금액만, 주민번호는 버린다', async () => {
+  const calls = [];
+  const erp = { async call(svc, input) { calls.push([svc, input]); return { STD_AMT: '5823000', REC: [{ PLAN_YM: '202604', ETC_PART_RT: '64.00', ETC_PAY_AMT: '0', SSN: '870302' }, { PLAN_YM: '202605', ETC_PART_RT: '36.81', ETC_PAY_AMT: '1444583' }, { PLAN_YM: '' }] }; } };
+  const r = await fetchOthers(erp, { prjNo: '2026-0063-01', req: '9', seq: '2' });
+  assert.deepEqual(calls, [['rtask_0013_12_r003', { PRJ_NO: '2026-0063-01', REQ_CNT: '9', SEQ_NO: '2' }]]);
+  assert.deepEqual(r, { std: 5823000, rows: [{ ym: '2026-04', rate: 64, amt: 0 }, { ym: '2026-05', rate: 36.81, amt: 1444583 }] });
+  assert.ok(!JSON.stringify(r).includes('870302'));
 });
 
 console.log(`\n${pass} passed`);

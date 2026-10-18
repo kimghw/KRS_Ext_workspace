@@ -23,6 +23,8 @@ KRS WORKSPACE 의 R&D 탭이 쓰려고 **그대로 옮겨 온 것**이다(2026-1
 | `research.js` | `lib/research.js` | 전부 (2026-10-14) | 연구개발계획서 기록: `KR_<과제>.yaml` 스냅샷 → 그 차년도 기록(`readSnapshot` — 개발목표·개발내용·성능목표·결과물·일정·연구활동비 세부사용계획·비목 예산·참여연구자, 원), 판 차례(`put`), 글·절(`textOf`·`sections`), `researchPlans` 저장 |
 | `researchsync.js` | `lib/research-sync.js` | 전부 (2026-10-14) | 연구내용 원노트 공유: 「[연구내용] 과제명」 페이지 블록 직렬화·해석(`serialize`·`parse`), 올리기(`publish` — R&D 탭의 연구내용 올리기), 받기(`pull` — rerp), 링크 글(`linkText`) |
 | `test/rerp-research.test.mjs` | `tests/research.test.js` | ESM 으로 | 위 둘의 검사 그대로(가짜 OneNote) — `help-server/classify.js` 검사는 뺌(이 저장소에 없음) |
+| `staff.js` | `lib/staff.js` | 전부 (2026-10-18) | 참여연구원 참여율·지급액(rerp 0.8.7 사업비 변경 메뉴의 머리): 달·돈 읽기, rERP 식(월급여 절삭 `monthlyOfSalary`·계상률 올림 `rerpRate`·균등 분할 `splitEven`), 사람 모양(`normalizeStaff`·`normalizePerson`)과 형편(`personStats` — 연간·월 최대 참여율), rERP 참여인력 행 → 사람(`rowsOfErp`·`byName`·`peopleOfErp`·`othersOfErp`), 적용월부터 바꾸기·초기화·100% 알림(`checks`·`mergeOthers`)·요약 줄·탭 표(`staffLines`·`staffTsv`), `staffPlans` 저장. **WORKSPACE 는 보이기만 한다**(2026-10-18 사용자 지정 — 계산·변경은 kr_ext_rerp 의 사업비 변경 메뉴) |
+| `test/rerp-staff.test.mjs` | `tests/staff.test.js` | ESM 으로 | 위 순수 함수의 검사(rERP 식·사람 모양·형편·rERP 행 → 사람·알림·글) — 원본 테스트가 서면 같이 맞춘다 |
 
 옮기지 않은 것: rerp 의 패널 틀·카드미청구 보기·참여율·급여·미승인·청구서 입력 도우미·청구 준비·RCMS·Help Chat·콘텐츠 스크립트·팝업·옵션 페이지.
 
@@ -72,4 +74,5 @@ npm test
 
 - `rndpanel.js` — 예산 칸 아래 **rERP 집행내역**(`planui.budgetTable` 그대로 · `plan.bind` 로 ＋/수정/삭제/월간/눈/저장/⬇⬆↗) · 원노트 칸의 **예상 비용** 체크(`plussync.createPlusSync`).
 - `src/rnderp.js` — 차년도 ↔ rERP 과제 잇기(어느 연차 행인가), 스냅샷(`erp.fetchBudget` + `fetchCards` + `withPending`)을 장부 줄에(집행 = 승인액), 비목 이름 맞추기.
+- `rndpanel.js` 의 **참여인력** 칸 · `src/rnderp.js` 의 `fetchParticipants`·`fetchOthers`(2026-10-18) — 이어진 rERP 과제의 참여인력(지급계획)을 `staff.js` 의 `rowsOfErp`·`peopleOfErp`·`othersOfErp` 로 사람 모양으로 받아 `years[n].erp.staff` 에 두고, `personStats`·`checks`(100% 초과)·`staffTsv`·`staffLines` 로 **보이기만** 한다. 참여율·지급액의 계획과 변경(월별 나누기·적용월부터·초기화·예산 상한)은 kr_ext_rerp 의 사업비 변경 메뉴 몫이다(2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고, 거기는 참여연구원 참여율/지급액 관리만 rerp 근거로 표시").
 - 설계 배경 `docs/erp-shared-design.md`(2026-10-10 설계안). 거기서는 공유 코드를 새 저장소 `kr_ext_shared` 에 두자고 했으나, 2026-10-11 사용자가 **이 저장소의 별도 폴더(rerp/)에 두고 출처를 적어 두는 것**으로 정했다.

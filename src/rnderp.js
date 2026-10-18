@@ -6,6 +6,10 @@
 //   snap = { at, std, budget(rerp/erp.js fetchBudget 결과 + withPending — bgtAmt·apprAmt·balAmt·reqAmt·rate·items[]·unbilled·pending·execAmt·balAfter·rateAll …), cards:{ from, to, count, amount }, error }
 //   budget 줄(r)에 erpKey '재원코드|비목명' — 맞춰진 rERP 비목. 있으면 집행 칸은 읽기 전용이고 used 는 rERP 승인액을 따른다. 예상 비용의 키(rerp/plan.js itemKey)와 같은 꼴이라 같은 원노트 페이지에서 만난다.
 // 살아 있는 조회는 오늘이 든 차년도만(isLive) — 지난 차년도는 마지막 스냅샷이 장부에 남는다(rERP 는 덮어쓰지만 장부는 해마다 남긴다). 다시 받는 주기는 10분(ERP_TTL_MS, rerp 의 refreshMinutes 와 같다).
+// 이어진 차년도의 **참여인력**(rERP 지급계획 — 사람마다 월급여·월별 지급)도 같은 잇기에 staff 로 남는다(2026-10-18): erp.staff = { at, basis:'rerp', src:'erp', people[] } — 모양은 rerp/staff.js(normalizeStaff).
+// 참여인력 칸은 이것을 보이기만 한다 — 참여율·지급액의 계획과 변경은 kr_ext_rerp 의 사업비 변경 메뉴(2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고, 거기는 참여연구원 참여율/지급액 관리만 rerp 근거로 표시").
+
+import { normalizeStaff, rowsOfErp, othersOfErp } from '../rerp/staff.js';
 
 /** 마지막 조회가 이만큼 지났으면 다시 받는다(rerp 설정 refreshMinutes 기본 10분과 같다). */
 export const ERP_TTL_MS = 10 * 60 * 1000;
@@ -114,9 +118,11 @@ export function normalizeErp(raw) {
     cards: raw.snap.cards && typeof raw.snap.cards === 'object' ? { from: text(raw.snap.cards.from, 10), to: text(raw.snap.cards.to, 10), count: num(raw.snap.cards.count), amount: num(raw.snap.cards.amount) } : { from: '', to: '', count: 0, amount: 0 },
     error: text(raw.snap.error, 400),
   } : null;
+  // 받아 둔 참여인력(rerp/staff.js 의 사람 모양 + 조회 시각) — 사람이 없으면 없는 것.
+  const staff = normalizeStaff(raw.staff);
   return {
     prjNo: text(raw.prjNo, 40), anl: num(raw.anl), prjNm: text(raw.prjNm), rspr: text(raw.rspr, 40), stDt: d8(raw.stDt) || text(raw.stDt, 10), endDt: d8(raw.endDt) || text(raw.endDt, 10),
-    auto: raw.auto !== false, linkedAt: num(raw.linkedAt), snap,
+    auto: raw.auto !== false, linkedAt: num(raw.linkedAt), snap, ...(staff ? { staff: { at: num(raw.staff.at), ...staff } } : {}),
   };
 }
 
@@ -150,6 +156,28 @@ export async function fetchSnapshot(erp, prjNo, { year, today, now = Date.now(),
     await erp.ssoLogin();
     return once();
   }
+}
+
+/* ------------------------------------------------------------ 참여인력(참여인력 칸 — rERP 에 등록된 지급계획을 보이기만, 2026-10-18) */
+
+/**
+ * 과제의 참여인력 — 과제정보 > 참여인력의 계상률기준내역(rtask_0008_t03_01_r001 의 INFO_REC, kr_ext_rerp fetchParticipants 와 같은 입력). 사람마다 지급기간(PLAN_YM_FROM~TO)마다 한 행:
+ * 지급한도액(PAY_LIMT_AMT = 월급여 · 원)·월 지급금액(PAY_AMT)·계상률(PART_RT)·달 수(NCNT)·신청 번호(REQ_CNT·SEQ_NO — 다른 과제 참여율 조회의 열쇠). 행의 모양은 rerp/staff.js rowsOfErp 하나로(주민번호·계좌·연락처 같은 개인정보 칸은 읽지 않는다).
+ * 사람 모양(지급기간을 달마다 펼친 월별 지급·월급여)은 rerp/staff.js peopleOfErp — 참여율·지급액의 계산·변경은 kr_ext_rerp 의 사업비 변경 메뉴 몫이다(2026-10-18 사용자 지정).
+ * @returns {Promise<{ name, role, limit, amt, rate, from, to, count, req, seq, excluded, term }[]>}
+ */
+export async function fetchParticipants(erp, prjNo) {
+  const data = await erp.call('rtask_0008_t03_01_r001', { SEARCH_NM: '', SEARCH_GB: '1', PRJ_NO: prjNo });
+  return rowsOfErp(data?.INFO_REC);
+}
+/**
+ * 그 참여자의 **다른 과제** 월별 계상률·지급금액 합 — 인건비지급계획 팝업의 한도 검사가 쓰는 조회(rtask_0013_12_r003 {PRJ_NO, REQ_CNT, SEQ_NO} — rerp/reference.md §4·§8).
+ * 응답의 주민번호 칸은 버리고 달·계상률·지급금액만 돌려준다(rerp/staff.js othersOfErp). 기준금액(STD_AMT)은 그 사람의 월급여(한도).
+ * @returns {Promise<{ std: number|null, rows: { ym, rate, amt }[] }>}
+ */
+export async function fetchOthers(erp, { prjNo, req, seq }) {
+  const data = await erp.call('rtask_0013_12_r003', { PRJ_NO: prjNo, REQ_CNT: req, SEQ_NO: seq });
+  return othersOfErp(data);
 }
 
 /** 두 날짜 사이의 달 수(내림). */

@@ -111,6 +111,22 @@
       "sha1": "bf8d34d56d70d0a82aea008cb17aee5035f2e58c",
       "bytes": 19578,
       "portedAt": "2026-10-14"
+    },
+    {
+      "from": "lib/staff.js",
+      "to": "rerp/staff.js",
+      "how": "그대로 (IIFE → export)",
+      "sha1": "72106454e53e90e15410491119208fa77abd537d",
+      "bytes": 31866,
+      "portedAt": "2026-10-18"
+    },
+    {
+      "from": "tests/staff.test.js",
+      "to": "test/rerp-staff.test.mjs",
+      "how": "ESM 으로",
+      "sha1": "a7b0232068728237f8800cb04e7c5ed58efdc8a5",
+      "bytes": 16151,
+      "portedAt": "2026-10-18"
     }
   ]
 }

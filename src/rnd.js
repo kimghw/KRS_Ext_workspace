@@ -17,8 +17,10 @@
 // 과제번호(없으면 과제명)가 같으면 같은 과제로 보고 빈 칸만 채운다(mergeProjects). 여기 담은 것은 이 브라우저에만 남으니
 // JSON 으로 내보내고(exportJson) 들여올(importJson) 수 있다.
 
-import { normalizeErp, erpSummaryLines } from './rnderp.js';
+import { normalizeErp, erpSummaryLines, clock as erpClock } from './rnderp.js';
 import { normalizeAcct, acctSummaryLines } from './eacct.js';
+// 참여연구자의 요약 줄은 kr_ext_rerp 에서 옮긴 rerp/staff.js(staffLines) — 이어진 rERP 과제의 참여인력(years[n].erp.staff)을 보이기만 한다(2026-10-18).
+import { staffLines } from '../rerp/staff.js';
 
 export const BOOK_KEY = 'rndBook';
 export const MAX_PROJECTS = 10;
@@ -607,7 +609,11 @@ export function summaryText(project, n, today = todayStr()) {
   lines.push(...acctSummaryLines(project.acct));
 
   const roster = fileLog(book, 'roster');
-  if (roster) {
+  // rERP 에 이어진 차년도면 rERP 참여인력의 지급계획(rerp/staff.js staffLines — 사람마다 월급여·참여기간·지급 합·연간/월 최대 참여율·월별)을, 아니면 계획서 글 그대로.
+  // 머리 줄은 rERP 과제번호·조회 시각 — 계산·변경은 kr_ext_rerp 의 사업비 변경 메뉴 몫이라 월급여 기준·예산 줄은 적지 않는다(2026-10-18).
+  const staff = book.erp?.staff || null;
+  if (staff) lines.push('', `■ 참여연구자 (${staff.people.length}명) — rERP ${book.erp.prjNo} 참여인력 · 조회 ${erpClock(staff.at)}`, ...staffLines(staff, 'rerp').slice(1));
+  else if (roster) {
     const people = parseRoster(roster.text);
     lines.push('', `■ 참여연구자${people ? ` (${people.length}명)` : ''}`, ...roster.text.split('\n').filter((s) => s.trim()).map((s) => `- ${s.trim()}`));
   }

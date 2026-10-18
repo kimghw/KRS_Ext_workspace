@@ -32,6 +32,10 @@ import { fetchIoList, fetchAcct, rankIo, ioLine, acctFresh, fiscalYearOf, EA_HOM
 import { siteFetch } from './src/net.js';
 import { ORIGIN } from './src/config.js';
 import { kindOf, applyYaml, KIND_ORDER, revOf, readSnapshot } from './src/rndyaml.js';
+// 참여인력 칸(2026-10-18 사용자 지정 — 참여연구원 계산은 kr_ext_rerp 의 사업비 변경 메뉴로 넘기고 여기서는 rERP 에 등록된 값을 보이기만): 이어진 rERP 과제의 참여인력·다른 과제 참여율 조회는 src/rnderp.js,
+// 사람 모양·형편(연간/월 최대 참여율)·100% 초과 알림·탭 표는 kr_ext_rerp 에서 옮긴 rerp/staff.js.
+import { ERP_TTL_MS, fetchParticipants, fetchOthers } from './src/rnderp.js';
+import { monthLabel, ymText, rateText, personStats, checks, mergeOthers, peopleOfErp, staffTsv } from './rerp/staff.js';
 import { MANIFEST_PATH, checkManifest, skillGuide, bundleSkills, zipName, kb } from './src/rndskills.js';
 import {
   NOTE_KEY, INFO_KEYS, normalizeNote, bookHash, syncInfo, blockHtml, findBlock, readBlock, openNote as defaultOpenNote,
@@ -81,6 +85,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     rosterState: $('rdRosterState'), roster: $('rdRoster'), rosterTools: $('rdRosterTools'), rosterSrc: $('rdRosterSrc'), rosterCopy: $('rdRosterCopy'),
     // 행정지원(과제마다 — 이름·맡은 일·공문 참조, 2026-10-16) — 참여인력 칸(2026-10-17 까지는 '참여연구자 및 행정지원') 안에 손으로 적는다.
     support: $('rdSupport'), supportAdd: $('rdSupportAdd'),
+    // 참여인력(rERP 근거 표시 — 2026-10-18): 머리 줄의 ↻(이어진 rERP 과제의 참여인력 다시 받기), 표 아래 받는 중·실패 줄.
+    staffRefresh: $('rdStaffRefresh'), staffMsg: $('rdStaffMsg'),
     planState: $('rdPlanState'), plan: $('rdPlan'), planTools: $('rdPlanTools'), planSrc: $('rdPlanSrc'), planCopy: $('rdPlanCopy'),
     logState: $('rdLogState'), logDate: $('rdLogDate'), logTitle: $('rdLogTitle'), logText: $('rdLogText'), logAdd: $('rdLogAdd'), logCancel: $('rdLogCancel'), logs: $('rdLogs'), logsCopy: $('rdLogsCopy'),
     changeState: $('rdChangeState'), chDate: $('rdChDate'), chKind: $('rdChKind'), chItem: $('rdChItem'), chBefore: $('rdChBefore'), chAfter: $('rdChAfter'),
@@ -115,6 +121,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     acctRun: { for: '', run: 0, busy: false, msg: '', bad: false, login: false },
     // 참여인력 칸 머리 줄의 앞쪽(계획서의 참여연구자 수 — "연구자 3명") — 뒤에 행정지원 수가 붙는다(paintSupportState). 인건비·참조자 이름은 적지 않는다(2026-10-17 사용자 지정: "연구자 n명, 행정 1명 이렇면 될듯").
     rosterText: '',
+    // 참여인력(rERP 근거 표시 — 2026-10-18): staffRun·staffBusy 는 도는 중인 rERP 참여인력 조회, staffTried 는 이 세션에서 저절로 받아 본 과제:차년도(한 번만 — ↻ 는 언제든), staffMsgFor 는 알림 줄이 어느 과제:차년도의 것인가.
+    staffTried: new Set(), staffRun: null, staffBusy: false, staffMsgFor: '',
     // 예산 정보가 없는 차년도를 보는 중이면 그 과제:차년도(emptyKey) — 들어올 때 R&D 설정을 저절로 폈으면(setAuto) 나갈 때 도로 접는다(2026-10-11 사용자 지정).
     emptyKey: '', setAuto: false,
     // 스킬 목록(rnd/skills.json)은 그 칸을 처음 펼 때 읽는다. 못 읽었으면 까닭을 둔다.
@@ -957,12 +965,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const src = `연구개발계획서${b.snapshot?.rev ? ` ${b.snapshot.rev}` : ''} 기준`;
     const none = (what) => `<p class="rd-hint">아직 없습니다 — 맨 아래 칸에 연구개발계획서 YAML(KR_&lt;과제&gt;.yaml)을 넣으면 이 차년도의 ${what} 섭니다.</p>`;
 
-    const roster = fileLog(b, 'roster');
-    const people = roster ? parseRoster(roster.text) : null;
-    el.roster.innerHTML = roster ? (people ? rosterHtml(people) : `<p class="rd-text">${escapeHtml(roster.text)}</p>`) : none('참여연구자가');
-    st.rosterText = !roster ? '계획서 없음' : people ? `연구자 ${people.length}명` : '있음';
-    el.rosterSrc.textContent = roster ? src : '';
-    el.rosterTools.classList.toggle('hidden', !roster);
+    // 참여연구자 — rERP 에 이어진 차년도면 rERP 참여인력(지급계획)의 표, 아니면 계획서 글의 표(paintStaff — 보이기만, 2026-10-18).
+    paintStaff();
     paintSupport();
 
     const plan = fileLog(b, 'plan');
@@ -1047,6 +1051,145 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     save();
     paintSupport();
     el.support.querySelector('tbody tr:last-child [data-k="name"]')?.focus();
+  }
+
+  /* ---------------------------------------------------------- 참여연구자(rERP 근거 표시 — 2026-10-18 사용자 지정) */
+
+  // 참여연구원의 참여율·지급액 계산(월별 나누기·적용월부터 변경·초기화·예산 상한)은 kr_ext_rerp 의 **사업비 변경** 메뉴로 넘겼다(2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고,
+  // 거기는 참여연구원 참여율/지급액 관리만 rerp 근거로 표시"). 여기서는 이 차년도에 이어진 rERP 과제(예산 칸의 rERP 집행내역)의 참여인력(지급계획)을 받아 **보이기만** 한다 —
+  // 표(성명·역할·월급여·참여·지급 합·참여율)·사람 아래 달마다의 지급·연간/월 최대 참여율·100% 초과 알림. 받은 것은 잇기의 staff(src/rnderp.js normalizeErp — rerp/staff.js 의 사람 모양)에 남고,
+  // 집행내역처럼 오늘이 든 차년도만 10분(ERP_TTL_MS)이 지나면 이 세션에서 한 번 저절로 다시 받는다(↻ 는 바로). 이어지지 않은 차년도는 계획서의 참여연구자 표(parseRoster)를 그대로 보인다.
+  const MENU_HINT = 'KR eClass + R&D ERP 현황 확장(kr_ext_rerp)의 <b>사업비 변경</b> 메뉴에서 합니다';
+  const staffKey = (p) => `${p.id}:${curYear(p)}`;
+  const staffOf = (p) => curBook(p).erp?.staff || null;
+  const staffFresh = (staff, now = Date.now()) => !!(staff?.at && now - staff.at < ERP_TTL_MS);
+  /** 알림 줄(받는 중·실패) — 보고 있는 과제:차년도의 것(staffMsgFor). 다른 과제·차년도로 가면 paintStaff 가 지운다. */
+  const setStaffMsg = (msg, error = false) => { st.staffMsgFor = cur() ? staffKey(cur()) : ''; el.staffMsg.textContent = msg; el.staffMsg.classList.toggle('error', !!error); el.staffMsg.classList.toggle('hidden', !msg); };
+
+  function paintStaff() {
+    const p = cur();
+    if (!p) return;
+    const b = curBook(p);
+    const e = b.erp || null;
+    const staff = e?.staff || null;
+    const roster = fileLog(b, 'roster');
+    const people = roster ? parseRoster(roster.text) : null;
+    const src = `연구개발계획서${b.snapshot?.rev ? ` ${b.snapshot.rev}` : ''} 기준`;
+    const rosterBody = roster ? (people ? rosterHtml(people) : `<p class="rd-text">${escapeHtml(roster.text)}</p>`)
+      : '<p class="rd-hint">아직 없습니다 — 맨 아래 칸에 연구개발계획서 YAML(KR_&lt;과제&gt;.yaml)을 넣으면 이 차년도의 참여연구자가 섭니다.</p>';
+    if (st.staffMsgFor !== staffKey(p)) setStaffMsg('');
+    el.rosterSrc.textContent = staff ? `rERP ${e.prjNo} · ${erpClock(staff.at)} 조회` : roster ? src : '';
+    el.staffRefresh.classList.toggle('hidden', !e || !st.set.erp);
+    el.staffRefresh.disabled = st.staffBusy;
+    el.staffRefresh.classList.toggle('busy', st.staffBusy);
+    el.rosterCopy.classList.toggle('hidden', !staff && !roster);
+    el.rosterTools.classList.toggle('hidden', !staff && !roster && !(e && st.set.erp));
+    let warns = [];
+    if (staff) {
+      // 100% 초과만 — 같은 사람의 어느 달 참여율 합(이 과제 + rERP 가 아는 다른 과제)이 100 을 넘으면 알림(막지 않는다). 월급여·예산 알림은 rerp 의 사업비 변경 메뉴 몫이라 적지 않는다.
+      warns = checks(staff, 'rerp', { others: mergeOthers({}, staff) }).filter((w) => w.kind === 'over');
+      el.roster.innerHTML = staffHtml(staff, warns);
+    } else if (e) {
+      el.roster.innerHTML = rosterBody + `<p class="rd-hint">${st.staffBusy ? `rERP ${escapeHtml(e.prjNo)} 참여인력을 받는 중…` : `rERP ${escapeHtml(e.prjNo)} 참여인력에 지급계획이 없습니다 — 참여율·지급액의 계획과 변경은 ${MENU_HINT}.`}</p>`;
+    } else {
+      el.roster.innerHTML = rosterBody + `<p class="rd-hint">rERP 에 이어지지 않은 차년도라 계획서의 참여연구자를 보이기만 합니다(예산 칸의 rERP 집행내역에서 이으면 rERP 참여인력의 지급계획이 보입니다). 참여율·지급액의 계획과 변경은 ${MENU_HINT}.</p>`;
+    }
+    st.rosterText = staff ? `연구자 ${staff.people.length}명${warns.length ? ` · 100% 초과 ${warns.length}` : ''}` : !roster ? '계획서 없음' : people ? `연구자 ${people.length}명` : '있음';
+    paintSupportState();
+    if (e) staffAuto(p);
+  }
+
+  /** 표(읽기만) — 성명 · 역할 · 월급여(천원) · 참여(달·개월) · 지급 합(천원) · 참여율(연간, 아래에 월 최대 — 같아도 늘) ; 사람 아래 달마다의 지급 줄(0원 달은 —) ; 표 아래 100% 초과 알림. */
+  function staffHtml(staff, warns) {
+    const rows = staff.people.map((q) => {
+      const s = personStats(q, 'rerp');
+      let prev = '';
+      const strip = s.planned ? `<tr class="rd-staff-months"><td colspan="6">${s.rates.map((r) => {
+        const lab = monthLabel(r.ym, prev);
+        prev = r.ym;
+        const cls = r.amt > 0 ? (s.maxRate != null && s.maxRate !== s.rate && r.ym === s.maxYm ? ' max' : '') : ' off';
+        const tip = r.amt > 0 ? `${r.ym} · ${thousand(r.amt)}천원${r.rate != null ? ` · ${rateText(r.rate)}` : ''}` : `${r.ym} · 지급 없음`;
+        return `<span class="rd-mo${cls}" title="${escapeHtml(tip)}">${escapeHtml(lab)} <b>${r.amt > 0 ? thousand(r.amt) : '—'}</b></span>`;
+      }).join('')}</td></tr>` : '';
+      return `<tr class="rd-staff-row">`
+        + `<td class="rd-td-name">${escapeHtml(q.name)}</td><td class="rd-td-role">${escapeHtml(q.role)}</td>`
+        + `<td class="rd-td-limit" title="rERP 참여인력의 지급한도액(월급여 · 천원)">${s.limit ? thousand(s.limit) : '—'}</td>`
+        + `<td class="rd-td-months">${s.from ? `${escapeHtml(ymText(s.from, s.to))} (${s.months}개월)` : '—'}</td>`
+        + `<td class="rd-td-total" title="월별 지급의 합(천원)">${thousand(s.total)}</td>`
+        // 연간(평균) = 지급 합 ÷ (월급여 × 참여개월), 그 아래 월 최대 — 같아도 늘 보인다(2026-10-18 "같아도 해줘"). 둘 다 rERP 가 보이는 올림(rerp/reference.md §3).
+        + `<td class="rd-td-rate" title="연간 참여율 = 지급 합 ÷ (월급여 × 참여개월), rERP 올림">${rateText(s.rate) || '—'}${s.maxRate != null ? `<span class="rd-td-max" title="월 최대 참여율 — ${escapeHtml(s.maxYm)}의 지급 ÷ 월급여. 100% 검사는 달마다 이 값으로">월 최대 ${rateText(s.maxRate)}</span>` : ''}</td></tr>`
+        + strip;
+    }).join('');
+    const warnHtml = warns.length ? `<ul class="rd-staff-warn">${warns.map((w) => `<li class="${w.level}">${escapeHtml(w.text)}</li>`).join('')}</ul>` : '';
+    return `<table class="rd-table rd-staff-table"><thead><tr><th>성명</th><th>역할</th><th title="천원">월급여</th><th>참여</th><th title="천원">지급 합</th><th>참여율</th></tr></thead><tbody>${rows}</tbody></table>${warnHtml}`;
+  }
+
+  /** 표를 그릴 때 — rERP 가 켜져 있고 오늘이 든 차년도면, 받은 것이 없거나 10분이 지났을 때 이 세션에서 한 번 저절로 받는다(↻ 는 언제든). */
+  function staffAuto(p) {
+    if (!st.set.erp || st.staffBusy || st.staffTried.has(staffKey(p))) return;
+    if (!isLive(yearOf(p), today()) || staffFresh(staffOf(p))) return;
+    refreshStaff({ reason: '열 때' });
+  }
+
+  /**
+   * 이어진 rERP 과제의 참여인력(지급계획)을 받아 잇기의 staff 로 둔다 — 참여인력 행(fetchParticipants)을 사람마다 하나로(rerp/staff.js peopleOfErp — 지급기간을 달마다 펼친 월별 지급·월급여 = 지급한도액),
+   * 사람마다 다른 과제 월별 참여율(fetchOthers — 지급계획 팝업의 한도 검사 자료)도 받아 100% 초과 알림의 재료로 둔다. 행이 없으면 staff 를 지운다.
+   * force 가 아니면 오늘이 든 차년도가 아니거나 10분 안이면 건너뛴다. 한 번에 하나만 돈다. 던지지 않는다 — 까닭은 칸에 보인다.
+   */
+  function refreshStaff({ force = false, reason = '' } = {}) {
+    const p = cur();
+    if (!p || !st.set.erp) return Promise.resolve(false);
+    const e = curBook(p).erp;
+    if (!e) return Promise.resolve(false);
+    if (!force && (!isLive(yearOf(p), today()) || staffFresh(e.staff))) return Promise.resolve(false);
+    if (st.staffRun) return st.staffRun;
+    const n = curYear(p);
+    st.staffTried.add(staffKey(p));
+    // 도는 중인 조회는 run 으로 들고 끝나면 비운다 — 안에서 비우면 await 없이 바로 끝난 경우 바깥 대입이 끝난 약속을 도로 남겨 다음 조회가 막힌다.
+    const run = (async () => {
+      st.staffBusy = true;
+      paintStaff();
+      setStaffMsg(`rERP ${e.prjNo} 참여인력을 받는 중…`);
+      let ok = false;
+      try {
+        const now = Date.now();
+        const rows = await withLogin(() => fetchParticipants(erp, e.prjNo));
+        const staff = peopleOfErp(rows, { prjNo: e.prjNo, now });
+        let othersN = 0;
+        for (const q of staff?.people || []) {
+          if (!q.erp?.req || !q.erp.seq) continue;
+          try {
+            q.erp.others = (await withLogin(() => fetchOthers(erp, q.erp))).rows;
+            othersN++;
+          } catch (err) {
+            logEvent('rnd', false, `R&D 참여인력 — ${q.name} 다른 과제 참여율 실패: ${String(err?.message || err)}`);
+          }
+        }
+        if (staff) e.staff = { at: now, ...staff }; else delete e.staff;
+        ok = true;
+        if (cur() === p && curYear(p) === n) setStaffMsg('');
+        logEvent('rnd', true, `R&D 참여인력 받음(${reason}): ${e.prjNo} · ${staff ? staff.people.length : 0}명 · 다른 과제 참여율 ${othersN}명`);
+      } catch (err) {
+        if (cur() === p && curYear(p) === n) setStaffMsg(erpMessage(err), true);
+        logEvent('rnd', false, `R&D 참여인력 실패(${reason}): ${String(err?.message || err)}`);
+      } finally {
+        st.staffBusy = false;
+        save();
+        if (cur() === p && curYear(p) === n) paintStaff();
+      }
+      return ok;
+    })();
+    st.staffRun = run;
+    run.finally(() => { if (st.staffRun === run) st.staffRun = null; });
+    return run;
+  }
+
+  /** 참여연구자 표 복사 — rERP 참여인력이 있으면 월급여·참여기간·지급 합·참여율·월별 지급까지 든 표(rerp/staff.js staffTsv), 아니면 계획서 글의 표. */
+  function copyRoster() {
+    const p = cur();
+    const staff = p ? staffOf(p) : null;
+    if (staff) copyWith(el.rosterCopy, staffTsv(staff, 'rerp'), '참여연구자 표');
+    else copyFile(el.rosterCopy, 'roster', '참여연구자 표');
   }
 
   /* ---------------------------------------------------------- 진행 기록(손으로 적는 연구내역) */
@@ -1746,6 +1889,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
         save();
         st.erpBusy = false;
         paintErp();
+        paintStaff();   // 이어졌으니 참여인력도(저절로 받는다)
         await refreshErp({ force: true, reason: '잇기' });
         return;
       }
@@ -1789,6 +1933,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     logEvent('rnd', true, `R&D rERP 잇기(고름): ${label(p)} ${yearLabel(y.n)} → ${rec.prjNo}${rec.anl ? ` ${rec.anl}연차` : ''}`);
     save();
     paintErp();
+    paintStaff();
     await refreshErp({ force: true, reason: '고름' });
   }
 
@@ -1805,6 +1950,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     logEvent('rnd', true, `R&D rERP 끊음: ${label(p)} ${yearLabel(curYear(p))} (${was})`);
     paintBudget();
     paintErp();
+    paintStaff();   // 받아 둔 참여인력도 잇기와 함께 사라진다 — 계획서의 표로
     save();
     setStatus('rERP 연결을 끊었습니다 — 집행은 다시 손으로 적습니다.');
   }
@@ -1902,6 +2048,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     if (cur()) {
       paintBudget();
       paintErp();
+      paintStaff();   // 참여인력의 ↻·저절로 받기도 이 설정을 따른다
     }
     paintSet();
     if (st.set.erp) erpAuto();
@@ -2323,7 +2470,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.changes.addEventListener('change', onReasonChange);
     el.copy.addEventListener('click', copySummary);
     el.budgetCopy.addEventListener('click', copyBudget);
-    el.rosterCopy.addEventListener('click', () => copyFile(el.rosterCopy, 'roster', '참여연구자 표'));
+    el.rosterCopy.addEventListener('click', copyRoster);
+    // 참여인력 — ↻ 는 이어진 rERP 과제의 참여인력(지급계획)을 바로 다시 받는다(보이기만 — 2026-10-18).
+    el.staffRefresh.addEventListener('click', () => refreshStaff({ force: true, reason: '↻' }));
     // 행정지원 — 사람 더하기, 줄의 이름·맡은 일(input)·공문 참조(change)·빼기(click).
     el.supportAdd.addEventListener('click', addSupport);
     el.support.addEventListener('input', onSupportInput);
@@ -2428,6 +2577,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   return {
     wire, show, hide, book: () => st.book, skills: loadManifest, note: () => st.note, noteSync, erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
+    staff: () => (cur() ? curBook(cur()).erp?.staff || null : null), refreshStaff, staffRun: () => st.staffRun,
     // rndgen/(과제 더하기·변경사항 카드)의 손잡이 — 2026-10-16. 훅은 하나씩(마지막 등록이 이긴다).
     current: () => { const p = cur(); return p ? { project: p, n: curYear(p) } : null; },
     view,

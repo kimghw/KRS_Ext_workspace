@@ -62,7 +62,16 @@ const fakeNote = {
 // rERP 흉내(rerp/erp.js 자리) — 과제 목록(recs)·비목별 잔액(items)·미청구 카드(cards)를 검사가 정한다. 처음엔 비어 있어 저절로 잇기가 "목록이 비어 있습니다" 로 끝난다.
 const erpFake = {
   recs: [], items: [], cards: [], loggedIn: true, calls: [],
+  // 참여인력(rtask_0008_t03_01_r001)·다른 과제 참여율(rtask_0013_12_r003) — 검사가 participants/others 를 정한다(과제번호마다). 없으면 빈 답.
+  participants: {}, others: {},
   settingsOf: (o) => ({ ...o }),
+  async call(svc, input) {
+    erpFake.calls.push(`${svc}:${input.PRJ_NO || ''}`);
+    if (!erpFake.loggedIn) throw Object.assign(new Error(`${svc}: 사용자 정보가 존재하지 않습니다`), { kind: 'login' });
+    if (svc === 'rtask_0008_t03_01_r001') return { INFO_REC: erpFake.participants[input.PRJ_NO] || [] };
+    if (svc === 'rtask_0013_12_r003') return { STD_AMT: '0', REC: erpFake.others[`${input.PRJ_NO}:${input.SEQ_NO}`] || [] };
+    throw Object.assign(new Error(`${svc}: 모르는 서비스`), { kind: 'service' });
+  },
   async fetchProjectRecs() { erpFake.calls.push('recs'); if (!erpFake.loggedIn) throw Object.assign(new Error('rcomm_0009_01_r001: 사용자 정보가 존재하지 않습니다'), { kind: 'login' }); return { recs: erpFake.recs, calls: [], capped: false, firstErr: null }; },
   async fetchBudget(prjNo) {
     erpFake.calls.push(`budget:${prjNo}`);
@@ -147,6 +156,10 @@ const sum = () => [...$('rdBudgetSum').children].map((s) => s.textContent);
 const logItems = () => [...$('rdLogs').querySelectorAll(':scope > li')].map((li) => [li.querySelector('.rd-date').textContent, li.querySelector('.rd-title').textContent, li.querySelector('.rd-text')?.textContent || '']);
 /** 계획서에서 온 줄의 꼴 — 참여연구자 표의 줄들, 계획의 절 제목들. */
 const rosterTable = (li) => [...li.querySelectorAll('.rd-table tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent));
+// 참여인력 칸의 rERP 참여인력 표(rerp/staff.js 의 사람 모양 — 보이기만, 2026-10-18)의 사람 줄 — 성명 · 역할 · 월급여 · 참여 · 지급 합 · 참여율(연간 — 그 아래 월 최대는 따로 본다).
+const staffRows = () => [...$('rdRoster').querySelectorAll('.rd-staff-row')].map((tr) => [...tr.children].map((td) => (td.classList.contains('rd-td-rate') ? td.firstChild.textContent : td.textContent).trim()));
+const staffMonths = (name) => { const tr = [...$('rdRoster').querySelectorAll('.rd-staff-row')].find((x) => x.children[0].textContent === name); return [...tr.nextElementSibling.querySelectorAll('.rd-mo')].map((b) => `${b.querySelector('b').textContent}${b.classList.contains('off') ? '(없음)' : b.classList.contains('max') ? '(최대)' : ''}`); };
+const staffWarns = () => [...$('rdRoster').querySelectorAll('.rd-staff-warn li')].map((li) => [li.className, li.textContent]);
 const sectionHeads = (li) => [...li.querySelectorAll('.rd-sec h4')].map((h) => h.textContent);
 const chItems = () => [...$('rdChanges').querySelectorAll('li')].map((li) => [
   li.querySelector('.rd-date').textContent, li.querySelector('.rd-kind').textContent, li.querySelector('.rd-title').textContent,
@@ -634,6 +647,8 @@ await ta('스냅샷을 탭 어디에나 끌어다 놓으면 과제가 생기고(
   assert.ok(!hidden('rdRosterTools') && !hidden('rdPlanTools'));
   assert.deepEqual([...roster.querySelectorAll('.rd-table th')].map((th) => th.textContent), ['성명', '직위', '계상률', '참여', '계상인건비']);
   assert.deepEqual(rosterTable(roster), [['이몽룡', '수석', '15%', '9개월', '11,250,000원'], ['홍길동', '수석', '20%', '9개월', '15,000,000원'], ['성춘향', '책임', '10%', '9개월', '3,750,000원']]);
+  assert.ok(hidden('rdStaffRefresh'), 'rERP 에 이어지지 않은 차년도라 참여인력 ↻ 는 없다(2026-10-18 — 계산은 kr_ext_rerp 의 사업비 변경 메뉴)');
+  assert.match(roster.querySelector('.rd-hint').textContent, /^rERP 에 이어지지 않은 차년도라 계획서의 참여연구자를 보이기만 합니다.*사업비 변경 메뉴에서 합니다\.$/);
   assert.deepEqual(sectionHeads(plan), ['개발목표', '개발내용', '성능목표', '주요결과물', '수행일정9개월']);
   assert.deepEqual([...plan.querySelectorAll('.rd-sec:first-child ol > li')].map((n) => n.textContent), ['규정 공백 분석 및 평가 기준 도출', '용어 분류 체계 설계']);
   assert.deepEqual([...plan.querySelectorAll('.rd-sec:nth-child(2) > ul > li > ul > li')].map((n) => n.textContent), ['선급규정 및 국제표준 비교', '시험기준 도출', '핵심 개념 추출']);
@@ -1632,6 +1647,122 @@ t('더하기·변경사항 카드가 놓인 파일의 전파를 멈춰도 YAML �
   panel.onDelete(null);
 });
 
+console.log('참여인력 — rERP 근거 표시(2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고, 거기는 참여연구원 참여율/지급액 관리만 rerp 근거로 표시")');
+const P7_FULL = [
+  { EMP_NM: '홍길동', ROLE_NM: '과제책임자', PAY_LIMT_AMT: '8480000', PAY_AMT: '2328000', PART_RT: '27.46', PLAN_YM_FROM: '202604', PLAN_YM_TO: '202611', NCNT: '8', REQ_CNT: '3', SEQ_NO: '1', PARTRATE_YN: 'N', SSN: 'secret' },
+  { EMP_NM: '홍길동', ROLE_NM: '과제책임자', PAY_LIMT_AMT: '8480000', PAY_AMT: '0', PART_RT: '0', PLAN_YM_FROM: '202612', PLAN_YM_TO: '202612', NCNT: '1', REQ_CNT: '3', SEQ_NO: '1', PARTRATE_YN: 'Y' },
+  { EMP_NM: '성춘향', ROLE_NM: '참여연구원', PAY_LIMT_AMT: '5823000', PAY_AMT: '1165000', PART_RT: '20.01', PLAN_YM_FROM: '202604', PLAN_YM_TO: '202611', NCNT: '8', REQ_CNT: '3', SEQ_NO: '2', PARTRATE_YN: 'N' },
+  { EMP_NM: '성춘향', ROLE_NM: '참여연구원', PAY_LIMT_AMT: '5823000', PAY_AMT: '1159000', PART_RT: '19.91', PLAN_YM_FROM: '202612', PLAN_YM_TO: '202612', NCNT: '1', REQ_CNT: '3', SEQ_NO: '2', PARTRATE_YN: 'N' },
+];
+await ta('이어지지 않은 차년도 — 계획서의 참여연구자 표 그대로, ↻ 없음, 안내 한 줄(사업비 변경 메뉴). refreshStaff 는 아무것도 안 한다', async () => {
+  [...$('rdProjects').querySelectorAll('[data-proj]')].find((b) => b.textContent === 'TEST').click();
+  $('rdYears').querySelector('[data-year="1"]').click();
+  await wait(50);
+  assert.equal(panel.erp(), null, 'rERP 검사에서 끊어 둔 그대로');
+  assert.deepEqual([...$('rdRoster').querySelectorAll('.rd-table th')].map((th) => th.textContent), ['성명', '직위', '계상률', '참여', '계상인건비']);
+  assert.equal(rosterTable($('rdRoster')).length, 2);
+  assert.deepEqual([$('rdRosterState').textContent, $('rdRosterSrc').textContent], ['연구자 2명', '연구개발계획서 r2 기준']);
+  assert.ok(hidden('rdStaffRefresh') && !hidden('rdRosterCopy') && hidden('rdStaffMsg'));
+  assert.match($('rdRoster').querySelector('.rd-hint').textContent, /^rERP 에 이어지지 않은 차년도라 계획서의 참여연구자를 보이기만 합니다.*사업비 변경 메뉴에서 합니다\.$/);
+  assert.equal($('rdRoster').querySelector('.rd-hint b').textContent, '사업비 변경');
+  assert.equal(panel.staff(), null);
+  const n = erpFake.calls.length;
+  assert.equal(await panel.refreshStaff({ force: true, reason: '검사' }), false);
+  assert.equal(erpFake.calls.length, n);
+});
+await ta('이어진 차년도 — rERP 참여인력(지급기간을 달마다 펼친 월별 지급·지급한도액)을 받아 읽기만 하는 표로: 성명·역할·월급여·참여·지급 합·참여율(아래 월 최대), 달마다의 지급 줄, 100% 초과 알림', async () => {
+  const p = panel.book().projects.find((x) => x.alias === 'TEST');
+  // 1차년도를 rERP 과제 P7 에 이은 것처럼(잇기 자체는 rERP 집행내역 검사) — 참여인력·다른 과제 참여율은 흉내 rERP 가 답한다. 주민번호 칸은 버려야 한다.
+  p.years[1].erp = { prjNo: 'P7', anl: 1, prjNm: 'TEST', rspr: '', stDt: '', endDt: '', auto: false, linkedAt: 1, snap: null };
+  erpFake.participants.P7 = P7_FULL;
+  erpFake.others['P7:2'] = [{ PLAN_YM: '202604', ETC_PART_RT: '95.00', ETC_PAY_AMT: '0', SSN: 'secret' }, { PLAN_YM: '202605', ETC_PART_RT: '10.00', ETC_PAY_AMT: '0' }];
+  const n = erpFake.calls.length;
+  const run = panel.refreshStaff({ force: true, reason: '검사' });
+  assert.ok(panel.staffRun() === run && $('rdStaffRefresh').disabled, '도는 동안 ↻ 는 잠긴다');
+  assert.equal($('rdStaffMsg').textContent, 'rERP P7 참여인력을 받는 중…');
+  assert.equal(await run, true);
+  assert.deepEqual(erpFake.calls.slice(n), ['rtask_0008_t03_01_r001:P7', 'rtask_0013_12_r003:P7', 'rtask_0013_12_r003:P7'], '참여인력 한 번, 다른 과제 참여율은 사람마다');
+  assert.deepEqual([...$('rdRoster').querySelectorAll('.rd-table th')].map((th) => th.textContent), ['성명', '역할', '월급여', '참여', '지급 합', '참여율']);
+  assert.deepEqual(staffRows(), [['홍길동', '과제책임자', '8,480', '4~11월 (8개월)', '18,624', '27.46%'], ['성춘향', '참여연구원', '5,823', '4~12월 (9개월)', '10,479', '20.00%']]);
+  assert.deepEqual([...$('rdRoster').querySelectorAll('.rd-td-max')].map((e) => e.textContent), ['월 최대 27.46%', '월 최대 20.01%'], '연간 아래에 월 최대가 늘 선다(같아도)');
+  assert.deepEqual(staffMonths('성춘향'), ['1,165(최대)', ...Array(7).fill('1,165'), '1,159'], '지급기간을 달마다 — 월 최대인 달은 표시(연간과 다를 때)');
+  assert.deepEqual(staffMonths('홍길동'), [...Array(8).fill('2,328'), '—(없음)'], '0원 달은 — 로 남는다');
+  assert.deepEqual(staffWarns(), [['warn', '성춘향 — 4월 참여율 합 115.01% (이 과제 20.01% · rERP 다른 과제 95.00%)']], '100% 초과만 알린다(막지 않는다)');
+  assert.equal($('rdRosterState').textContent, '연구자 2명 · 100% 초과 1');
+  assert.match($('rdRosterSrc').textContent, /^rERP P7 · \d\d\.\d\d \d\d:\d\d 조회$/);
+  assert.ok(!hidden('rdStaffRefresh') && !$('rdStaffRefresh').disabled && hidden('rdStaffMsg') && !hidden('rdRosterCopy'));
+  assert.equal($('rdRoster').querySelector('input, button, select'), null, '읽기만 — 적는 칸·단추가 없다');
+  assert.ok(!$('rdRoster').querySelector('.rd-hint'), '안내는 없다');
+  const staff = panel.staff();
+  assert.deepEqual([staff.basis, staff.src, staff.people.length, staff.people[1].erp.others.length, typeof staff.at], ['rerp', 'erp', 2, 2, 'number']);
+  assert.ok(!JSON.stringify(panel.book()).includes('secret'), '주민번호 같은 것은 장부에 남지 않는다');
+  const saved = () => store.rndBook?.projects.find((x) => x.alias === 'TEST')?.years[1]?.erp?.staff;
+  await until(() => saved());
+  assert.equal(saved().people.length, 2, '잇기와 함께 저장소에 남는다');
+  assert.ok(logs.some((l) => l.kind === 'rnd' && l.ok && /R&D 참여인력 받음\(검사\): P7 · 2명 · 다른 과제 참여율 2명/.test(l.text)));
+});
+await ta('복사 — 표 복사는 월급여·참여기간·지급 합·참여율·월 최대·월별 지급까지(rerp/staff.js staffTsv), 요약 복사에는 rERP 과제번호·조회 시각 머리 줄과 사람마다 한 줄', async () => {
+  const n = copied.length;
+  $('rdRosterCopy').click();
+  await until(() => copied.length === n + 1);
+  assert.equal(copied[n], ['성명\t직위\t월급여(천원)\t참여기간\t개월\t계상인건비(천원)\t참여율\t월 최대\t월별 지급(천원)', '홍길동\t과제책임자\t8,480\t4~11월\t8\t18,624\t27.46%\t27.46%\t4~11월 2,328 · 12월 제외', '성춘향\t참여연구원\t5,823\t4~12월\t9\t10,479\t20.00%\t20.01%\t4~11월 1,165 · 12월 1,159'].join('\n'));
+  $('rdCopy').click();
+  await until(() => copied.length === n + 2);
+  assert.match(copied[n + 1], /\n■ 참여연구자 \(2명\) — rERP P7 참여인력 · 조회 \d\d\.\d\d \d\d:\d\d\n- 홍길동 — 과제책임자 · 월급여 8,480천원\(rERP\) · 4~11월 \(8개월\) · 계상인건비 18,624천원 · 참여율 27\.46% \(월 최대 27\.46%\) · 월별 4~11월 2,328 · 12월 제외\n- 성춘향 — 참여연구원 · 월급여 5,823천원\(rERP\)/);
+  assert.doesNotMatch(copied[n + 1], /월급여 기준|홍길동 — 수석 · 27\.45%/, '월급여 기준·예산 줄은 없고 계획서 글도 아니다');
+});
+await ta('↻ — 다시 받는다(로그인이 풀렸으면 SSO 한 번). 지급계획이 없으면 받아 둔 것을 지우고 계획서 표와 안내로, 다시 생기면 돌아온다. eClass 도 풀렸으면 까닭을 말하고 받아 둔 것은 그대로', async () => {
+  const n = erpFake.calls.length;
+  erpFake.loggedIn = false;
+  erpFake.participants.P7 = [];
+  $('rdStaffRefresh').click();
+  await until(() => !panel.staffRun());
+  assert.deepEqual(erpFake.calls.slice(n), ['rtask_0008_t03_01_r001:P7', 'sso', 'rtask_0008_t03_01_r001:P7']);
+  assert.equal(panel.staff(), null);
+  assert.deepEqual([...$('rdRoster').querySelectorAll('.rd-table th')].map((th) => th.textContent), ['성명', '직위', '계상률', '참여', '계상인건비'], '계획서 표로');
+  assert.match($('rdRoster').querySelector('.rd-hint').textContent, /^rERP P7 참여인력에 지급계획이 없습니다 — 참여율·지급액의 계획과 변경은 .*사업비 변경 메뉴에서 합니다\.$/);
+  assert.deepEqual([$('rdRosterState').textContent, $('rdRosterSrc').textContent], ['연구자 2명', '연구개발계획서 r2 기준']);
+  assert.ok(!hidden('rdStaffRefresh') && hidden('rdStaffMsg'), '이어져 있으니 ↻ 는 남는다');
+  const saved = () => store.rndBook?.projects.find((x) => x.alias === 'TEST')?.years[1]?.erp;
+  await until(() => saved() && !saved().staff);
+  assert.deepEqual([saved().prjNo, saved().staff], ['P7', undefined], '저장소에서도 지워진다');
+  erpFake.participants.P7 = P7_FULL.slice(0, 1);
+  $('rdStaffRefresh').click();
+  await until(() => !panel.staffRun());
+  assert.deepEqual(staffRows(), [['홍길동', '과제책임자', '8,480', '4~11월 (8개월)', '18,624', '27.46%']]);
+  assert.equal($('rdRosterState').textContent, '연구자 1명');
+  erpFake.loggedIn = false;
+  erpFake.eclassDown = true;
+  $('rdStaffRefresh').click();
+  await until(() => !panel.staffRun());
+  assert.equal($('rdStaffMsg').textContent, '로그인이 필요합니다. eclass 에 로그인한 뒤 ↻ 를 누르세요.');
+  assert.ok($('rdStaffMsg').classList.contains('error') && !hidden('rdStaffMsg'));
+  assert.equal(staffRows().length, 1, '받아 둔 것은 그대로 보인다');
+  assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /R&D 참여인력 실패\(↻\)/.test(l.text)));
+  erpFake.loggedIn = true;
+  erpFake.eclassDown = false;
+  erpFake.participants.P7 = P7_FULL;
+});
+await ta('저절로 받기 — 막 받았으면 건너뛰고(10분), 오래됐으면 이 세션에서 한 번. 다른 과제로 가면 알림 줄은 걷히고 이어지지 않은 과제는 계획서 표·안내뿐', async () => {
+  const n = erpFake.calls.length;
+  assert.equal(await panel.refreshStaff({ reason: '열 때' }), false, '막 받았으면 건너뛴다');
+  assert.equal(erpFake.calls.length, n);
+  panel.staff().at = Date.now() - 11 * 60 * 1000;
+  assert.equal(await panel.refreshStaff({ reason: '열 때' }), true);
+  assert.deepEqual(erpFake.calls.slice(n), ['rtask_0008_t03_01_r001:P7', 'rtask_0013_12_r003:P7', 'rtask_0013_12_r003:P7']);
+  assert.ok(hidden('rdStaffMsg'), '받으면 알림 줄은 걷힌다');
+  assert.equal(staffRows().length, 2);
+  [...$('rdProjects').querySelectorAll('[data-proj]')].find((b) => b.textContent === '차단기 과제').click();
+  await wait(20);
+  assert.ok(hidden('rdStaffRefresh') && hidden('rdStaffMsg') && hidden('rdRosterTools'));
+  assert.equal($('rdRosterState').textContent, '계획서 없음');
+  assert.match($('rdRoster').textContent, /맨 아래 칸에 연구개발계획서 YAML[\s\S]*rERP 에 이어지지 않은 차년도/);
+  [...$('rdProjects').querySelectorAll('[data-proj]')].find((b) => b.textContent === 'TEST').click();
+  await wait(20);
+  assert.equal(staffRows().length, 2);
+  assert.equal($('rdRosterState').textContent, '연구자 2명 · 100% 초과 1');
+});
+
 console.log('다시 열기');
 await ta('저장된 것으로 다시 선다 — 공문 탭에서 다시 가져오지 않는다', async () => {
   await wait(500);
@@ -1646,8 +1777,8 @@ await ta('저장된 것으로 다시 선다 — 공문 탭에서 다시 가져�
   assert.deepEqual(chips().map((c) => c[0]), ['차단기 과제', '파일 과제', '수소전기추진 연구', 'TEST']);
   assert.equal(chips().at(-1)[1], true);
   assert.equal(logItems().length, 1);
-  assert.equal(rosterTable($('rdRoster')).length, 2);
-  assert.equal(chItems().length, 11);
+  assert.equal(staffRows().length, 2, '참여인력 검사에서 이은 rERP 과제(P7)의 참여인력도 잇기와 함께 남는다');
+  assert.equal(chItems().length, 11, '참여인력 칸은 보이기만 하니 변경이력이 늘지 않는다');
   assert.equal(rows().find((r) => r[0] === '인건비')[1], '30,000');
   assert.equal(panel.book().projects.length, 4);
   assert.equal(panel.book().projects[3].years[1].snapshot.rev, 'r2');

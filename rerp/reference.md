@@ -117,3 +117,19 @@ NTNPS EM_INSU HL_INSU LONG_RCPR_INSU INCM_TAX IHBT_TAX REAL_PAY_AMT SELF_CHRG_TO
 - 매뉴얼 `E:\dev\krs-web-agents\references\rerp\manual\01_과제관리\1.5_참여인력_지급계획.md`(rERP 과제담당자 매뉴얼 2025 발췌).
 - 되읽기(읽기만): Playwright 로 CDP 9333 에 붙어 메인셸 → `openTab` → 과제선택 → 로스터에서 사람 클릭 → `rtask_0126_01.act` 프레임에서
   `window.sheetPlan.getDataRows().map(r => window.sheetPlan.getRowObject(r))`. 저장·자료생성·수정 단추는 누르지 않는다. 팝업 JS 는 로그인된 페이지에서 `fetch(url, {credentials:'include'})` 뒤 `TextDecoder('euc-kr')` 로 읽는다.
+
+## 8. 월급여와 다른 과제 참여율을 읽는 조회 (2026-10-18 실측 — 참여인력 칸의 인건비가 쓴다)
+
+WORKSPACE 의 R&D 탭 참여인력 칸(`src/rndstaff.js`·`src/rnderp.js` fetchParticipants·fetchOthers)이 **실제 연봉(월급여)** 과 **100% 알림**의 재료로 읽는 두 조회. 둘 다 읽기(`_r00n`)이고 로그인된 rERP 탭에서 `_JSON_` 이중 인코딩 POST 로 확인했다.
+
+| 조회 | 입력 | 돌려주는 것 | 쓰는 곳 |
+|---|---|---|---|
+| `rtask_0008_t03_01_r001` (과제정보 > 참여인력 — kr_ext_rerp `fetchParticipants` 와 같은 입력) | `{ SEARCH_NM:'', SEARCH_GB:'1', PRJ_NO }` | `INFO_REC[]`(계상률기준내역 — 사람마다 **지급기간(PLAN_YM_FROM~TO)마다 한 행**): `EMP_NM`·`ROLE_NM`·**`PAY_LIMT_AMT`(지급한도액 = 월급여 · 원)**·`PAY_AMT`(월 지급)·`PART_RT`(§3 의 올림 표시값)·`NCNT`(달 수)·`TOT_PAY_AMT`·`PART_TRM_DT`(지급기간 "2026-04 ~ 2026-11")·`PART_TRM_DT_DTL`(참여기간)·`PARTRATE_YN`(계상률 체크제외)·`PART_RT_CNTRL_YN`·**`REQ_CNT`·`SEQ_NO`**(참여인력 신청 번호와 그 안의 사람 번호 — 아래 r003 의 열쇠)·`EMP_NO`·`SSN` 등. `HM_PER_REC[]` 는 인력기준(계상률 없음) | 사람마다 **월급여** = 시작월이 늦은 행의 `PAY_LIMT_AMT`, 지급 합 = Σ `PAY_AMT` × `NCNT`(이전 차년도 비율로 초기화할 때) |
+| `rtask_0013_12_r003` (지급계획 팝업 `uf_checkPlanLimit` 의 자료 — §4 ④) | `{ PRJ_NO, REQ_CNT, SEQ_NO }` | `STD_AMT`(그 사람의 기준금액) · `REC[]` 달마다 `PLAN_YM`(YYYYMM)·**`ETC_PART_RT`**(그 과제를 뺀 **다른 과제 계상률 합**)·`ETC_PAY_AMT`(다른 과제 지급 합)·`USEFAC_SEQ_NO`·`SSN`. 그 사람의 지급계획이 있는 달 전부(과거 해 포함) | 달마다 이 과제 참여율 + `ETC_PART_RT` > 100 이면 알림. 같은 달에 이 값이 있으면 장부의 다른 과제 값은 쓰지 않는다(두 번 세지 않게) |
+| `rtask_0060_01_r002` (기준급여관리) | `{ EMP_NO }` | `APLY_YN`·`STD_AMT` — 팝업이 한도의 자동값으로 먼저 보는 것. **이 기관에서는 비어 있다**(`COMMON_HEAD` 만) | 안 쓴다 — 월급여는 위 참여인력 행의 지급한도액 |
+| `rcomm_0105_01_r001` (신분구분별 기준금액) | `{ PRJ_NO, DIV_GRP_CD, DIV_ITEM_CD }` | 교수·학생 신분의 기준금액 — 직원은 해당 없음 | 안 쓴다 |
+
+실측 예(2026-0063-01, 2026-10-18): `INFO_REC` 는 문창재·김거화 각 2행(2026-04~11 · 2026-12), 지급한도액 5,823,000 / 8,480,000 — §4 의 저장 행과 같다. 문창재의 r003(`REQ_CNT 9, SEQ_NO 2`)은 2025-01 부터 달마다 `ETC_PART_RT` 55.00 · 64.00 · 36.81 … 으로 다른 과제 참여율 합이 온다.
+
+두 조회의 응답에는 주민번호(`SSN`)·사번이 든다 — WORKSPACE 는 **이름·지급한도액·지급·달·계상률·신청 번호만** 남기고 나머지는 버린다(`fetchParticipants`·`fetchOthers`, 검사 `test/rnderp.test.mjs`).
+계상률이 지급금액에서 나오는 것(§3)이라, 참여인력 칸에서 사람이 참여율을 적으면 round천원(월급여 × %)의 **월 지급금액**으로 바꿔 두고 참여율은 그 금액에서 되셈한다(2026-10-18 사용자 지정: "참여율은 사실 100% 찼는지를 확인하는 거고 지급 금액이 제일 중요함").
