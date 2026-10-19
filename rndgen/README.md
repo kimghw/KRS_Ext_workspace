@@ -22,7 +22,7 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 ## 흐름
 
 ```
-＋ · 과제 더하기 · 빈 차년도 카드의 단추 ── rndpanel.js(onAdd 훅) ──▶ panel.js openAdd(대상 {} 또는 { projectId, n })
+＋ · 과제 더하기 · 빈 차년도 카드의 단추 · 머리 줄의 차년도 아이콘(2026-10-19) ── rndpanel.js(onAdd 훅) ──▶ panel.js openAdd(대상 {} · { projectId, n } · { projectId } — 아이콘이면 아직 없는 첫 차년도를 골라 둠 firstMissing)
    덮개: rnd.setOverlay('add', close) — 머리·몸통·빈 차년도 카드가 숨고 과제 칩은 꺼지고 ＋ 가 켜진다. 과제 칩을 누르면 close → 카드가 닫히고 그 과제로.
    │
    ├─ YAML 파일 ─────────────────────────────▶ rnd.intake(texts, { source: 'file' }) ─▶ (들어가면) 카드 닫고 rnd.pick(과제, 차년도)
@@ -39,6 +39,9 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
                미리보기(summarizeSnapshot · 경고 · 별칭 · YAML 원문) ─ 넣기 ─▶ rnd.intake(source 'extract') → rnd.setAlias(새 과제면) → 닫고 rnd.pick
 
    차년도 고르기의 '모든 차년도'(2026-10-16) ─▶ 같은 재료로 1차년도부터 위 묻기·검사·마무리를 차년도마다 한 번씩 차례로(한 번에 하나)
+   '없는 차년도만'(2026-10-19 사용자 "E(있는거 빼고 아직 없는거)") ─▶ 같은 길인데 예산 정보가 있는 차년도(대상 과제 → 재료 글의 과제번호·과제명으로 짚은 장부 과제 guessProject → 처음 답의 과제)는 skip 줄로 건너뛰고,
+      연구기간 안이 다 있으면 그 다음 차년도를 물어 답의 연차범위까지(문서가 거기까지가 아니면 그 답은 버림 — beyond). 차년도 칸은 과제가 있으면 적어도 1~5(STAGE_MIN) — 연구기간 밖을 넣으면 src/rndyaml.js 가 종료일을 늘린다
+   차년도 고르기는 드롭다운이 아니라 단추 줄(paintStage · setStage — 자동 · 1…N · 모두 · 없는 것만, 고른 값은 #rdgStage 의 data-value; 2026-10-19 사용자 "버튼으로 선택할 수 있게") — 과제가 있으면 예산 정보가 없는 차년도는 점선(off), 툴팁에 이미 있음/아직 없음
                   몇 차년도까지 = 대상 과제의 연구기간(있으면) → 처음 읽힌 답의 yaml.stageCount(meta.연차범위 · 연차별기간 · 기간 — 문서가 이긴다) · 둘 다 모르면 1차년도만
                   ▼  한 차년도가 실패해도 다음으로 — 그 줄의 다시 뽑기는 그 차년도만
                차년도마다 한 줄(합계 · 참여연구자 · 경고 / 까닭 · YAML 칸에 열기 · 다시 뽑기) ─ 넣기 ─▶ rnd.intake 한 번(이름 'N차년도/KR_<과제>.yaml' — onIntake 가 차년도마다 짝지음)
@@ -134,7 +137,7 @@ node --test "rndgen/test/*.test.mjs"
 | `llm.test.mjs` | 입력 글 배치·자르기·울타리, 스킬 문서 외우기, `askRndTask` 의 던짐과 `ask` 끼우기 |
 | `yaml.test.mjs` | 검사·마무리(머리 주석을 `headerOf` 가 되읽음)·다음 판·차년도 수(연차범위 목록·글 · 연차별기간 · 기간)·구조 차이(열쇠로 짝짓기)·미리 넣기(장부 원본 불변)·장부로 기준 짓기·파일 이름 |
 | `store.test.mjs` | put·history 5개·같은 글·remove·normalize·쓰기 실패 되돌림(가짜 저장소) |
-| `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·모든 차년도(차례로 묻기·몇 번·그 차년도만 다시·한 번의 intake·고친 칸·zip·과제가 다른 차년도·닫으면 멈춤)·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |
+| `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·모든 차년도(차례로 묻기·몇 번·그 차년도만 다시·한 번의 intake·고친 칸·zip·과제가 다른 차년도·닫으면 멈춤)·없는 차년도만(있는 차년도는 건너뜀 줄·대상 없으면 재료 글의 과제번호로 짚기·연구기간 밖을 물어 연차범위까지·문서 범위 밖 답은 버림)·차년도 단추 줄(누른 것만 켜짐·점선·머리 줄 아이콘이면 없는 첫 차년도·바쁠 때 잠김)·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |
 | `index.test.mjs` | import·만들기·wire 가 chrome·fetch 를 만지지 않음(손잡이에 새 키가 없어도), onIntake 로 원문 저장(짝짓기·오래된 판 빼기·지난 판), onDelete, 저장 실패 로그, 저장 뒤 기준 줄 |
 
 API 길의 스트리밍은 `test/llm.test.mjs`(덩어리 경계·CRLF·refusal·max_tokens·error 사건·끊긴 연결, 다른 작업은 본문에 `stream` 없음), 한도는 `test/host.test.mjs`,

@@ -37,13 +37,14 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
   /* 가짜 SharePoint: 메모리 폴더·파일 + REST 끝점. o = { folders:[경로], files:{ 경로:{ 이름: 내용 } }, loggedIn, drive(404 면 v2.0 drive 없음), deny403, failPut, failCheckIn(한 번 500), shareDest, raceCreate,
    *   checkedOutBy:{ 이름: 사용자 Id }, drafts:{ 이름: 초안 }(내가 잡은 체크아웃에 올라가 있던 글), requireCheckout("체크아웃 필수" 문서함 — Files/add 가 파일을 내 체크아웃·판 0 으로 둠),
    *   people:{ 검색어: [피커 항목] }(clientPeoplePickerSearchUser), shareFailEmails:[이메일](그 사람이 든 ShareObject 는 StatusCode 1), shareHttp(ShareObject 가 늘 이 HTTP 상태), noShareLink(ShareLink 400), noOrgLink(CreateOrganizationSharingLink 400),
-   *   noMoveTo(MoveTo 404 → MoveToUsingPath 로), shared:[{ value:[항목] } …](sharedWithMe 쪽들 — $skiptoken 으로 다음 쪽), noShared(sharedWithMe 404) }
+   *   noMoveTo(MoveTo 404 → MoveToUsingPath 로), shared:[{ value:[항목] } …](sharedWithMe 쪽들 — $skiptoken 으로 다음 쪽), noShared(sharedWithMe 404),
+   *   perms:{ 폴더 경로: [{ id, type(1 사용자 · 8 그룹), title, email, login, roles:[{ id, name, kind, hidden }] }] }(권한 — permissions · unshare; ShareObject 가 성공하면 그 폴더에 사람을 더함), search:{ 질문: [{ title, email, login }] }(search REST People 줄), searchVerbose(verbose 모양으로 답함) }
    * 파일 = { text(체크인된 글), draft(체크아웃 중 PUT 한 글 — 주인에게만 $value 로 보임), version(0 = 체크인된 판 없음 — UndoCheckOut 이 파일을 지움), checkedOutBy }
    * 다이제스트: contextinfo 마다 새 값을 내고(st.validDigests), F.expire() 뒤 옛 값으로 쓰면 403 + "security validation" 본문(실 SharePoint 의 -2130575251). st.calls = [메서드, 짧은 경로(폴더/파일은 디코딩한 서버 상대 경로)]
-   * st.pickerBodies · st.shareBodies · st.linkBodies = [{ headers, body }](받은 요청 그대로 — 호출 모양 검사용), st.shares = [{ url, roleValue, emails }](성공한 공유) */
+   * st.pickerBodies · st.shareBodies · st.linkBodies = [{ headers, body }](받은 요청 그대로 — 호출 모양 검사용), st.shares = [{ url, roleValue, emails }](성공한 공유), st.unshares = [[폴더, principalId, roleId]](거둔 역할), st.searchUrls(사람 찾기 요청 주소) */
   function fakeSp(o) {
     o = o || {};
-    const st = { folders: {}, calls: [], digestIssued: 0, validDigests: new Set(), cookie: COOKIE, loggedIn: o.loggedIn !== false, pickerBodies: [], shareBodies: [], linkBodies: [], shares: [] };
+    const st = { folders: {}, calls: [], digestIssued: 0, validDigests: new Set(), cookie: COOKIE, loggedIn: o.loggedIn !== false, pickerBodies: [], shareBodies: [], linkBodies: [], shares: [], unshares: [], searchUrls: [], perms: JSON.parse(JSON.stringify(o.perms || {})), nextPrincipal: 5000 };
     const LIST_ID = 'aaaabbbb-0000-0000-0000-000000000001', ITEM_ID = 42;
     let seq = 0;
     const mkFile = (text) => ({ text, draft: null, version: 1, checkedOutBy: null, uniqueId: `${String(++seq).padStart(8, '0')}-0000-0000-0000-00000000ABCD`, modified: '2026-10-18T01:02:03Z' });
@@ -91,6 +92,14 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
         return json({ FormDigestValue: d, FormDigestTimeoutSeconds: o.digestSec || 1800 });
       }
       if (rest.startsWith('web/currentuser')) { st.calls.push([m, 'currentuser']); return json({ Id: ME }); }
+      if (rest.startsWith('search/query?')) {   // 사람 찾기(findPeople) — People 결과 원본, querytext 리터럴로 질문
+        const qm = /querytext='([^']*)'/.exec(rest); const q = qm ? dec(qm[1]) : '';
+        st.calls.push([m, `search(${q})`]); st.searchUrls.push(u);
+        if (o.deny403) return json({}, 403);
+        const rows = ((o.search || {})[q] || []).map((x) => ({ Cells: [{ Key: 'PreferredName', Value: x.title }, { Key: 'WorkEmail', Value: x.email || null }, { Key: 'AccountName', Value: x.login || (x.email ? `i:0#.f|membership|${x.email}` : '') }, { Key: 'Rank', Value: '1' }] }));
+        if (o.searchVerbose) return json({ d: { query: { PrimaryQueryResult: { RelevantResults: { Table: { Rows: { results: rows.map((r) => ({ Cells: { results: r.Cells } })) } } } } } } });
+        return json({ PrimaryQueryResult: { RelevantResults: { Table: { Rows: rows } } } });
+      }
       const digestOk = st.validDigests.has(H['X-RequestDigest']);
       // 다이제스트가 없거나 틀리면 403. 우리가 냈던 값(만료)이면 실 SharePoint 처럼 "security validation" 본문
       const deny = () => (H['X-RequestDigest'] && String(H['X-RequestDigest']).startsWith(DIGEST) && !digestOk
@@ -120,6 +129,13 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
         const wrap = (r) => (verbose ? json({ d: { ShareObject: r } }) : json(r));
         if (bad.length) return wrap({ StatusCode: 1, ErrorMessage: `초대할 수 없는 사용자: ${bad.join(', ')}`, InvitedUsers: null, UniquelyPermissionedUsers: { results: [] } });
         st.shares.push({ url: b.url, roleValue: b.roleValue, emails });
+        // 폴더의 권한에도 남긴다(permissions 가 보게) — 같은 사람이면 역할을 더함
+        const fp = decodeURIComponent(new URL(b.url).pathname);
+        if (st.folders[fp]) {
+          const role = b.roleValue === 'role:1073741826' ? { id: 1073741826, name: '읽기', kind: 2 } : { id: 1073741827, name: '참가', kind: 3 };
+          const list = st.perms[fp] = st.perms[fp] || [];
+          for (const e of entries) { const email = e.EntityData && e.EntityData.Email; let who = list.find((y) => y.email === email); if (!who) { who = { id: ++st.nextPrincipal, type: 1, title: e.DisplayText, email, roles: [] }; list.push(who); } if (!who.roles.some((r) => r.id === role.id)) who.roles.push(Object.assign({}, role)); }
+        }
         return wrap({ StatusCode: 0, ErrorMessage: null, InvitedUsers: null, UniquelyPermissionedUsers: { results: emails.map((Email) => ({ Email, DisplayName: '', User: 'i:0#.f|membership|KEY-SECRET-x' })) } });
       }
       if (rest === 'SP.Web.CreateOrganizationSharingLink') {
@@ -147,8 +163,27 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
         if (tail.startsWith('?$select=Exists')) return json({ Exists: !!f, Name: p.slice(p.lastIndexOf('/') + 1) });   // 없는 폴더에도 200 + Exists:false (실측 2026-10-18)
         if (tail.startsWith('/Files?')) { if (!f) return json({}, 404); return json({ value: Object.entries(f.files).filter(([, x]) => x.version > 0 || x.checkedOutBy === ME).map(([Name, x]) => ({ Name, Length: String(x.text.length), TimeLastModified: x.modified, UIVersionLabel: `${x.version}.0`, UniqueId: x.uniqueId })) }); }
         if (tail.startsWith('/Folders?')) { if (!f) return json({}, 404); return json({ value: children(p).map((k) => ({ Name: k.slice(p.length + 1), ServerRelativeUrl: k, ItemCount: Object.keys(st.folders[k].files).length + children(k).length, TimeLastModified: '2026-10-18T03:04:05Z' })) }); }
+        if (tail.startsWith('/ListItemAllFields?') && /RoleAssignments/.test(tail)) {   // 권한(permissions) — RoleAssignments(Member · RoleDefinitionBindings) 펼침
+          if (!f) return json({ 'odata.error': { message: { value: 'File Not Found.' } } }, 404);
+          if (o.deny403) return json({}, 403);
+          const list = st.perms[p] || [];
+          return json({ Id: ITEM_ID, HasUniqueRoleAssignments: list.length > 0, RoleAssignments: list.map((y) => ({ PrincipalId: y.id, Member: { Id: y.id, Title: y.title, Email: y.email || '', LoginName: y.login || (y.email ? `i:0#.f|membership|${y.email}` : y.title), PrincipalType: y.type || 1 }, RoleDefinitionBindings: y.roles.map((r) => ({ Id: r.id, Name: r.name || '', RoleTypeKind: r.kind, Hidden: !!r.hidden })) })) });
+        }
         if (tail.startsWith('/ListItemAllFields?')) { if (!f) return json({ 'odata.error': { message: { value: 'File Not Found.' } } }, 404); return json({ Id: ITEM_ID, ParentList: { Id: LIST_ID } }); }
         let x;
+        if ((x = /^\/ListItemAllFields\/RoleAssignments\/GetByPrincipalId\((\d+)\)\/RoleDefinitionBindings\?/.exec(tail))) {   // unshare 1단계 — 그 사람의 역할
+          const who = (st.perms[p] || []).find((y) => y.id === Number(x[1]));
+          if (!f || !who) return json({ 'odata.error': { message: { value: 'Item does not exist' } } }, 404);
+          return json({ value: who.roles.map((r) => ({ Id: r.id, RoleTypeKind: r.kind, Hidden: !!r.hidden })) });
+        }
+        if ((x = /^\/ListItemAllFields\/RoleAssignments\/RemoveRoleAssignment\(principalid=(\d+),roledefid=(\d+)\)$/.exec(tail))) {   // unshare 2단계 — 역할 하나 거두기(다이제스트)
+          if (m !== 'POST' || !digestOk) return deny();
+          const list = st.perms[p] || []; const who = list.find((y) => y.id === Number(x[1]));
+          if (!f || !who || !who.roles.some((r) => r.id === Number(x[2]))) return json({ 'odata.error': { message: { value: 'Item does not exist' } } }, 404);
+          who.roles = who.roles.filter((r) => r.id !== Number(x[2])); if (!who.roles.length) list.splice(list.indexOf(who), 1);
+          st.unshares.push([p, Number(x[1]), Number(x[2])]);
+          return json({}, 200);
+        }
         if ((x = new RegExp(`^/MoveTo\\(newUrl='${LIT}'\\)$`).exec(tail))) { if (m !== 'POST' || !digestOk) return deny(); if (!f) return json({}, 404); if (o.noMoveTo) return json({ 'odata.error': { message: { value: 'MoveTo 없음' } } }, 404); moveFolder(p, dec(x[1])); return json({}, 200); }
         if ((x = new RegExp(`^/MoveToUsingPath\\(DecodedUrl='${LIT}'\\)$`).exec(tail))) { if (m !== 'POST' || !digestOk) return deny(); if (!f) return json({}, 404); moveFolder(p, dec(x[1])); return json({}, 200); }
         if ((x = new RegExp(`^/Folders/add\\('${LIT}'\\)$`).exec(tail))) { if (m !== 'POST' || !digestOk) return deny(); if (!f) return json({}, 404); const name = dec(x[1]); addFolder(`${p}/${name}`); return json({ Name: name, Exists: true }); }
@@ -245,7 +280,28 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     '박보람': [person('박보람', 'park1@krs.co.kr'), person('박보람', 'park2@krs.co.kr')],              // 동명이인 → ambiguous
     '이영': [person('이영희', 'lee1@krs.co.kr')],                                                       // 1명이지만 이름이 다름(접두 일치 — 디렉터리에 없는 이름) → ambiguous
     '홍길동': [person('홍 길동', 'hong@krs.co.kr')],                                                    // 공백만 다름 → 같은 이름으로 봄
-    '없는사람': []
+    '없는사람': [],
+    'moon@krs.co.kr': [person('MOON Changjae', 'moon@krs.co.kr')],                                      // 이메일로 물음(2026-10-19) — 표시 이름이 영문이라도 이메일이 같은 1명
+    'kim@krs.co.kr': [person('김철수', 'kim1@krs.co.kr')]                                               // 이메일로 물었는데 이메일이 다른 1명 → ambiguous
+  };
+  /* 권한(permissions · unshare)의 가짜 폴더 — 실측(2026-10-19) 모양: 제한된 액세스 시스템 그룹 · 사람(참가 3 / 읽기 2 / 모든 권한 5 / 편집 6) · 제한된 액세스만 있는 사람 · 조직 내 링크 그룹 · 나(ME) */
+  const PERM_FOLDER = `${BASE}/과제A`;
+  const PERMS = { [PERM_FOLDER]: [
+    { id: 14, type: 8, title: 'Limited Access System Group For List 3051a4ff', roles: [{ id: 1073741825, name: '제한된 액세스', kind: 1, hidden: true }] },
+    { id: 1909, type: 1, title: 'MOON Changjae', email: 'moon@krs.co.kr', roles: [{ id: 1073741827, name: '참가', kind: 3 }] },
+    { id: 1944, type: 1, title: 'LEE Jaehoon', email: 'jhlee81@krs.co.kr', roles: [{ id: 1073741826, name: '읽기', kind: 2 }, { id: 1073741825, name: '제한된 액세스', kind: 1, hidden: true }] },
+    { id: 2040, type: 1, title: 'ROH Gilltae', email: '', login: 'i:0#.f|membership|gtroh@krs.co.kr', roles: [{ id: 1073741829, name: '모든 권한', kind: 5 }, { id: 1073741827, name: '참가', kind: 3 }] },
+    { id: 2411, type: 1, title: 'YOON Sewoong', email: 'swyoon@krs.co.kr', roles: [{ id: 1073741825, name: '제한된 액세스', kind: 1, hidden: true }] },
+    { id: 3478, type: 8, title: 'SharingLinks.70ebcbd6-e7ab-4052-b4c3-7bd3ed3f1648.OrganizationEdit.a30f6b6c', roles: [{ id: 1073741827, name: '참가', kind: 3 }] },
+    { id: ME, type: 1, title: 'KIM Geohwa', email: 'kimghw@krs.co.kr', roles: [{ id: 1073741830, name: '편집', kind: 6 }] },
+  ] };
+  const SEARCH = {
+    '문창재': [{ title: 'MOON Changjae', email: 'cjmoon@krs.co.kr', login: 'i:0#.f|membership|cjmoon@krs.co.kr' }],
+    '김철수': [{ title: 'KIM Chulsoo', email: 'kim1@krs.co.kr' }, { title: 'KIM Chulsoo (해양)', email: 'kim2@krs.co.kr' }],
+    'kim2@krs.co.kr': [{ title: 'KIM Chulsoo', email: 'kim1@krs.co.kr' }, { title: 'KIM Chulsoo (해양)', email: 'kim2@krs.co.kr' }],
+    'LEE Jaehoon': [{ title: 'LEE Jaehoon', email: 'jhlee81@krs.co.kr' }, { title: 'LEE Jaehoon2', email: 'jhlee2@krs.co.kr' }],
+    '없는사람': [],
+    '메일없음': [{ title: 'NO Mail', email: '' }],
   };
 
   await (async () => {
@@ -1136,6 +1192,96 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     assert.ok(F.st.calls.every((c) => !c.join(' ').includes('SECRET')) && F2.st.calls.every((c) => !c.join(' ').includes('SECRET')), '기록에도 없음');
   });
 
+  await test('permissions: ListItemAllFields(RoleAssignments 펼침 — 확장 출처 GET, 다이제스트 없음) + currentuser → 사람(PrincipalType 1)만 people(PrincipalId · 표시 이름 · 이메일(없으면 LoginName 의 것) · 가장 센 역할: 참가 3 → edit · 읽기 2 → read · 모든 권한 5 → owner · 편집 6 → edit), 제한된 액세스(Hidden·kind 1)만 있는 사람·시스템 그룹은 빼고, SharingLinks 그룹은 links, 나(currentuser) 표시, 상속이면 unique:false · 없는 폴더 nofolder · 403 → auth · 로그인 화면 → auth', async () => {
+    const cfg = SP.childCfg(SP.parseFolder(`${ORIGIN}${BASE}`), '과제A');
+    const F = fakeSp({ folders: [PERM_FOLDER], perms: PERMS });
+    const r = await SP.permissions(cfg, { fetch: F.fetch });
+    assert.deepStrictEqual(calls(F).map((c) => c.replace(/\?.*$/, '')), [`GET folder(${PERM_FOLDER})/ListItemAllFields`, 'GET currentuser']);
+    assert.ok(F.st.calls[0][1].includes('$expand=RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings') && F.st.calls[0][1].includes('RoleAssignments/RoleDefinitionBindings/RoleTypeKind'));
+    assert.strictEqual(r.unique, true);
+    assert.deepStrictEqual(r.me, { id: ME, name: '', email: '' });
+    assert.deepStrictEqual(r.people.map((p) => [p.id, p.name, p.email, p.login, p.role, p.roles.map((x) => x.id), p.me]), [
+      [1909, 'MOON Changjae', 'moon@krs.co.kr', 'i:0#.f|membership|moon@krs.co.kr', 'edit', [1073741827], false],
+      [1944, 'LEE Jaehoon', 'jhlee81@krs.co.kr', 'i:0#.f|membership|jhlee81@krs.co.kr', 'read', [1073741826], false],
+      [2040, 'ROH Gilltae', 'gtroh@krs.co.kr', 'i:0#.f|membership|gtroh@krs.co.kr', 'owner', [1073741829, 1073741827], false],
+      [ME, 'KIM Geohwa', 'kimghw@krs.co.kr', 'i:0#.f|membership|kimghw@krs.co.kr', 'edit', [1073741830], true],
+    ], '제한된 액세스만 있는 YOON 과 시스템 그룹은 없고, 숨은 역할은 roles 에서도 빠진다');
+    assert.deepStrictEqual(r.people[0].roles, [{ id: 1073741827, name: '참가', kind: 3 }]);
+    assert.deepStrictEqual(r.links, [{ id: 3478, name: 'SharingLinks.70ebcbd6-e7ab-4052-b4c3-7bd3ed3f1648.OrganizationEdit.a30f6b6c', role: 'edit' }]);
+    assert.ok(!JSON.stringify(r).includes('SECRET'));
+    const G = fakeSp({ folders: [PERM_FOLDER] });
+    const r2 = await SP.permissions(cfg, { fetch: G.fetch });
+    assert.deepStrictEqual([r2.unique, r2.people, r2.links, r2.me.id], [false, [], [], ME], '상속(아무에게도 따로 주지 않음)');
+    await rejects(SP.permissions(cfg, { fetch: fakeSp().fetch }), 'nofolder', /공유 폴더가 없습니다/);
+    await rejects(SP.permissions(cfg, { fetch: fakeSp({ folders: [PERM_FOLDER], deny403: true }).fetch }), 'auth', /로그인/);
+    await rejects(SP.permissions(cfg, { fetch: fakeSp({ loggedIn: false }).fetch }), 'auth', /로그인 화면/);
+    await rejects(SP.permissions(JSON.parse(JSON.stringify(cfg)), { fetch: fakeSp().fetch }), 'nofolder');   // 캐시 cfg 도 받음
+    assert.deepStrictEqual([SP.roleOf([{ kind: 2 }, { kind: 3 }]), SP.roleOf([{ kind: 0 }]), SP.roleOf([{ kind: 5 }, { kind: 2 }]), SP.roleOf([]), SP.roleOf(null)], ['edit', 'other', 'owner', '', '']);
+  });
+
+  await test('findPeople: 사이트 search REST(People 결과 원본 sourceid · querytext 리터럴(한글은 퍼센트 인코딩) · 확장 출처 GET) → 1명이면 그 사람(한글 질문 → 영문 PreferredName 이라도), 여럿이면 PreferredName/이메일이 꼭 같은 1명 아니면 ambiguous(후보 "이름 <이메일>"), 없으면 notFound, 이메일 없는 줄은 안 셈, 중복·빈 이름은 한 번·건너뜀, 빈 목록은 호출 없음 · verbose 응답 · 403 → auth', async () => {
+    const cfg = SP.parseFolder(`${ORIGIN}${BASE}`);
+    const F = fakeSp({ search: SEARCH });
+    const r = await SP.findPeople(cfg, ['문창재', ' 김철수 ', 'kim2@krs.co.kr', 'LEE Jaehoon', '없는사람', '메일없음', '문창재', '', null], { fetch: F.fetch });
+    assert.deepStrictEqual(r, {
+      found: [{ name: '문창재', title: 'MOON Changjae', email: 'cjmoon@krs.co.kr', login: 'i:0#.f|membership|cjmoon@krs.co.kr' }, { name: 'kim2@krs.co.kr', title: 'KIM Chulsoo (해양)', email: 'kim2@krs.co.kr', login: 'i:0#.f|membership|kim2@krs.co.kr' }, { name: 'LEE Jaehoon', title: 'LEE Jaehoon', email: 'jhlee81@krs.co.kr', login: 'i:0#.f|membership|jhlee81@krs.co.kr' }],
+      ambiguous: [{ name: '김철수', candidates: ['KIM Chulsoo <kim1@krs.co.kr>', 'KIM Chulsoo (해양) <kim2@krs.co.kr>'] }],
+      notFound: ['없는사람', '메일없음'],
+    });
+    assert.deepStrictEqual(calls(F), ['GET search(문창재)', 'GET search(김철수)', 'GET search(kim2@krs.co.kr)', 'GET search(LEE Jaehoon)', 'GET search(없는사람)', 'GET search(메일없음)']);
+    assert.strictEqual(F.st.searchUrls[0], `${ORIGIN}/personal/kimghw_krs_co_kr/_api/search/query?querytext='${encodeURIComponent('문창재')}'&sourceid='b09a7990-05ea-4af9-81ef-edfab16c4e31'&selectproperties='PreferredName,WorkEmail,AccountName'&rowlimit=10`);
+    assert.strictEqual(SP.PEOPLE_SOURCE, 'b09a7990-05ea-4af9-81ef-edfab16c4e31');
+    const from = F.st.calls.length;
+    assert.deepStrictEqual(await SP.findPeople(cfg, [], { fetch: F.fetch }), { found: [], ambiguous: [], notFound: [] });
+    assert.deepStrictEqual(await SP.findPeople(cfg, [' ', null], { fetch: F.fetch }), { found: [], ambiguous: [], notFound: [] });
+    assert.strictEqual(F.st.calls.length, from);
+    const V = fakeSp({ search: SEARCH, searchVerbose: true });
+    assert.deepStrictEqual((await SP.findPeople(cfg, '문창재', { fetch: V.fetch })).found.map((x) => x.email), ['cjmoon@krs.co.kr'], 'verbose(d.query … results) 도 읽는다 · 문자열 하나도 받는다');
+    await rejects(SP.findPeople(cfg, ['문창재'], { fetch: fakeSp({ search: SEARCH, deny403: true }).fetch }), 'auth', /로그인/);
+    await rejects(SP.findPeople(cfg, ['문창재'], { fetch: fakeSp({ loggedIn: false }).fetch }), 'auth', /로그인 화면/);
+  });
+
+  await test('writer.unshare: 사람(PrincipalId)마다 GetByPrincipalId(id)/RoleDefinitionBindings 로 역할을 읽어 Hidden·제한된 액세스가 아닌 역할마다 RemoveRoleAssignment(principalid,roledefid)(다이제스트) → { removed:[{ id, roles }], missing }, 없는 사람은 missing, 겹침·0·글자는 거름, 빈 목록은 호출 없음, 다이제스트 만료는 다시 받아 한 번 더, 거둔 뒤 permissions 에서 사라짐 · 이메일로 sharePeople(피커가 이메일로 찾은 1명 — 표시 이름은 영문, 이메일이 다르면 ambiguous)한 사람이 permissions 에 보임 · 사이트 밖 badurl', async () => {
+    const base = SP.parseFolder(`${ORIGIN}${BASE}`);
+    const cfg = SP.childCfg(base, '과제A');
+    const F = fakeSp({ folders: [PERM_FOLDER], perms: PERMS, people: PEOPLE });
+    const w = await SP.openWriter(base, { chrome: fakeChrome(F.fetch) });
+    const from = F.st.calls.length;
+    const r = await w.unshare(PERM_FOLDER, [1944, 2040, 999, 1944, 0, 'x']);
+    assert.deepStrictEqual(r, { removed: [{ id: 1944, roles: [1073741826] }, { id: 2040, roles: [1073741829, 1073741827] }], missing: [999] });
+    const item = `folder(${PERM_FOLDER})/ListItemAllFields/RoleAssignments`;
+    assert.deepStrictEqual(calls(F, from).map((c) => c.replace(/\?.*$/, '')), [
+      `GET ${item}/GetByPrincipalId(1944)/RoleDefinitionBindings`, `POST ${item}/RemoveRoleAssignment(principalid=1944,roledefid=1073741826)`,
+      `GET ${item}/GetByPrincipalId(2040)/RoleDefinitionBindings`, `POST ${item}/RemoveRoleAssignment(principalid=2040,roledefid=1073741829)`, `POST ${item}/RemoveRoleAssignment(principalid=2040,roledefid=1073741827)`,
+      `GET ${item}/GetByPrincipalId(999)/RoleDefinitionBindings`,
+    ], '제한된 액세스(숨은 역할)는 거두지 않는다');
+    assert.deepStrictEqual(F.st.unshares, [[PERM_FOLDER, 1944, 1073741826], [PERM_FOLDER, 2040, 1073741829], [PERM_FOLDER, 2040, 1073741827]]);
+    const perms = await SP.permissions(cfg, { fetch: F.fetch });
+    assert.deepStrictEqual(perms.people.map((p) => [p.id, p.role]), [[1909, 'edit'], [ME, 'edit']], '거둔 사람은 없고(LEE 는 제한된 액세스만 남음) 나머지는 그대로');
+    const from2 = F.st.calls.length;
+    assert.deepStrictEqual(await w.unshare(PERM_FOLDER, []), { removed: [], missing: [] });
+    assert.deepStrictEqual(await w.unshare(PERM_FOLDER, [0, 'x', null]), { removed: [], missing: [] });
+    assert.strictEqual(F.st.calls.length, from2);
+    // 다이제스트 만료 → 다시 받아 한 번 더(이미 거둔 역할은 다시 읽히지 않는다) · cfg 인수 · 숫자 하나
+    F.expire();
+    const from3 = F.st.calls.length;
+    assert.deepStrictEqual(await w.unshare(cfg, 1909), { removed: [{ id: 1909, roles: [1073741827] }], missing: [] });
+    assert.ok(calls(F, from3).includes('POST contextinfo') && F.st.unshares.length === 4);
+    // 이메일로 공유 → 피커 질문이 이메일, 이메일이 같은 1명(표시 이름은 영문) → permissions 에 읽기로 보임. 이메일이 다른 1명이면 ambiguous
+    const s = await w.sharePeople(PERM_FOLDER, ['moon@krs.co.kr'], { role: 'read' });
+    assert.deepStrictEqual(s, { shared: [{ name: 'MOON Changjae', email: 'moon@krs.co.kr' }], ambiguous: [], notFound: [], failed: [] });
+    assert.strictEqual(F.st.pickerBodies.slice(-1)[0].body.queryParams.QueryString, 'moon@krs.co.kr');
+    assert.strictEqual(F.st.shareBodies.slice(-1)[0].body.roleValue, 'role:1073741826');
+    const after = await SP.permissions(cfg, { fetch: F.fetch });
+    assert.deepStrictEqual(after.people.filter((p) => p.email === 'moon@krs.co.kr').map((p) => [p.name, p.role]), [['MOON Changjae', 'read']]);
+    assert.deepStrictEqual(await w.sharePeople(PERM_FOLDER, ['kim@krs.co.kr']), { shared: [], ambiguous: [{ name: 'kim@krs.co.kr', candidates: ['김철수'] }], notFound: [], failed: [] });
+    await rejects(w.unshare('/personal/moon_krs_co_kr/Documents/업무/shared/과제A', [1]), 'badurl', /밖/);
+    // 역할 읽기 403 → auth(상태 그대로 던짐)
+    const D = fakeSp({ folders: [PERM_FOLDER], perms: PERMS, deny403: true });
+    await rejects(SP.openWriter(base, { chrome: fakeChrome(D.fetch) }), 'auth');
+    await w.close();
+  });
+
   await test('describe: kind 있는 오류 · kind 없는 Error(error) · 문자열', () => {
     assert.deepStrictEqual(SP.describe(Object.assign(new Error('x'), { kind: 'auth' })), { kind: 'auth', message: 'x' });
     assert.deepStrictEqual(SP.describe(new Error('y')), { kind: 'error', message: 'y' });
@@ -1145,10 +1291,10 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
 
   await test('페이지 함수는 바깥 변수를 쓰지 않는다(직렬화 주입) — 모듈 안 이름이 소스에 없고 쿠키로 요청한다', () => {
     const names = Object.keys(SP._page);
-    assert.deepStrictEqual(names.sort(), ['spBegin', 'spCommit', 'spCreate', 'spDigest', 'spEnsureFolder', 'spOrgLink', 'spRecycle', 'spRelease', 'spRename', 'spSharePeople']);
+    assert.deepStrictEqual(names.sort(), ['spBegin', 'spCommit', 'spCreate', 'spDigest', 'spEnsureFolder', 'spOrgLink', 'spRecycle', 'spRelease', 'spRename', 'spSharePeople', 'spUnshare']);
     for (const fn of Object.values(SP._page)) {
       const src = fn.toString();
-      assert.ok(!/mkErr|encLit|encPath|AUTH_MSG|ACCEPT_JSON|errOfResult|errOfStatus|kindOfStatus|DEFAULT_COMMENT|checkName|metaOf|redirectedOut|ROLE_EDIT|ROLE_READ|SHARED_MAX_PAGES|\bbadurl\b|\bfolderOf\b|\bfileOf\b|\bsharedItemOf\b|\blistChildren\b|\bspGet\b|\bapi\.|\bg\./.test(src), `${fn.name}: 바깥 이름 참조`);
+      assert.ok(!/mkErr|encLit|encPath|AUTH_MSG|ACCEPT_JSON|errOfResult|errOfStatus|kindOfStatus|DEFAULT_COMMENT|checkName|metaOf|redirectedOut|ROLE_EDIT|ROLE_READ|ROLE_RANK|roleOfKind|PEOPLE_SOURCE|SHARED_MAX_PAGES|\bbadurl\b|\bfolderOf\b|\bfileOf\b|\bsharedItemOf\b|\blistChildren\b|\bspGet\b|\bapi\.|\bg\./.test(src), `${fn.name}: 바깥 이름 참조`);
       assert.ok(/credentials: 'include'/.test(src), `${fn.name}: 쿠키로 요청`);
       assert.ok(/^async function sp[A-Z]/.test(src), `${fn.name}: 이름 있는 async 함수(executeScript func)`);
     }

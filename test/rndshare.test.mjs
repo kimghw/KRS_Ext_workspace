@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { normalizeProject, MAX_PROJECTS, blankYear } from '../src/rnd.js';
 import {
   SHARE_KEY, DEFAULT_BASE, WS_EXTRA, normalizeShare, erpNoOf, shareKeyOf, projectOf, localProjectOf, localPlanOf, researchOf, cleanRec, yearOf, budgetHash,
-  applyYear, applyProject, matchProject,
+  applyYear, applyProject, matchProject, PEOPLE_KEY, normalizePeople, permRows,
 } from '../src/rndshare.js';
 
 let pass = 0;
@@ -32,10 +32,12 @@ t('저장해 두는 형편 — 꺼짐이 기본, 모르는 것은 버린다', ()
   assert.equal(SHARE_KEY, 'rndShare');
   assert.equal(DEFAULT_BASE, '업무/shared');
   assert.deepEqual(WS_EXTRA, ['wsId', 'code', 'calendar']);
-  assert.deepEqual(normalizeShare(null), { on: false, folder: '', folderCache: {}, at: 0, memo: {}, del: {}, last: '', error: '', shareWith: 'participants' });
+  assert.deepEqual(normalizeShare(null), { on: false, folder: '', folderCache: {}, at: 0, memo: {}, del: {}, last: '', error: '', shareWith: 'participants', peer: {}, effective: '' });
   assert.equal(normalizeShare({ shareWith: 'none' }).shareWith, 'none', '자동 공유 끄기만 남고 그 밖은 기본 participants');
   assert.deepEqual(normalizeShare({ on: 'yes', folder: ' https://x.sharepoint.com/personal/me/Documents/업무/shared ', memo: [1], del: 'x', at: '5', extra: 1, last: 'ok', folderCache: { folderPath: '/p' } }),
-    { on: false, folder: 'https://x.sharepoint.com/personal/me/Documents/업무/shared', folderCache: { folderPath: '/p' }, at: 0, memo: {}, del: {}, last: 'ok', error: '', shareWith: 'participants' });
+    { on: false, folder: 'https://x.sharepoint.com/personal/me/Documents/업무/shared', folderCache: { folderPath: '/p' }, at: 0, memo: {}, del: {}, last: 'ok', error: '', shareWith: 'participants', peer: {}, effective: '' });
+  assert.deepEqual(normalizeShare({ peer: { folder: 'https://x', at: 5 }, effective: 'https://x\nhttps://h' }).peer, { folder: 'https://x', at: 5 }, 'rERP 확장의 설정 기억(peer)과 밑폴더 열쇠(effective)는 그대로 둔다');
+  assert.equal(normalizeShare({ peer: 'x', effective: 7 }).effective, '');
   assert.equal(normalizeShare({ on: true, at: 9, memo: { P1: { at: 1 } } }).memo.P1.at, 1);
 });
 
@@ -312,5 +314,38 @@ if (D && typeof D.mergeYear === 'function') {
     assert.ok(!JSON.stringify(m.doc).includes('진행 기록') && !JSON.stringify(m.doc).includes('"used"'));
   });
 }
+
+console.log('참여인력 공유 권한(2026-10-19 "체크하면 반영") — 이름 → 이메일 캐시와 권한 표의 줄');
+t('normalizePeople — 이름 → 이메일(소문자)·표시 이름·로그인·시각만, 이메일 없는 것·빈 이름·모르는 칸은 버린다', () => {
+  assert.equal(PEOPLE_KEY, 'rndSharePeople');
+  assert.deepEqual(normalizePeople(null), {});
+  assert.deepEqual(normalizePeople([1]), {});
+  assert.deepEqual(normalizePeople({ '문창재': { email: ' CJMoon@krs.co.kr ', title: 'MOON Changjae', login: 'i:0#.f|membership|cjmoon@krs.co.kr', at: 5, x: 1 }, '없음': { title: 'x' }, ' ': { email: 'a@b' }, '김거화': { email: 'nomail' }, '홍길동': 'hong@krs.co.kr' }),
+    { '문창재': { email: 'cjmoon@krs.co.kr', title: 'MOON Changjae', login: 'i:0#.f|membership|cjmoon@krs.co.kr', at: 5 } });
+  assert.deepEqual(normalizePeople({ '박기도': { email: 'park@krs.co.kr' } }), { '박기도': { email: 'park@krs.co.kr', title: '', login: '', at: 0 } });
+});
+t('permRows — 이름은 이메일로 폴더 권한과 맞추고(표시 이름은 영문), 못 찾은 이름은 lookup/ambiguous/notFound, 나는 빼고(이름·폴더의 me·이메일), 폴더에만 있는 사람은 뒤에 extra, 중복·빈 이름은 한 번', () => {
+  const perms = { me: { id: 3, email: 'kimghw@krs.co.kr', name: 'KIM Geohwa' }, people: [
+    { id: 1909, name: 'MOON Changjae', email: 'CJMoon@krs.co.kr', role: 'edit', me: false },
+    { id: 1944, name: 'LEE Jaehoon', email: 'jhlee81@krs.co.kr', role: 'read', me: false },
+    { id: 3, name: 'KIM Geohwa', email: 'kimghw@krs.co.kr', role: 'edit', me: true },
+    { id: 2040, name: 'ROH Gilltae', email: 'gtroh@krs.co.kr', role: 'owner', me: false },
+    { id: 9, name: '김 거화', email: 'me2@krs.co.kr', role: 'edit', me: false },
+  ], links: [{ id: 3478, name: 'SharingLinks.x.OrganizationEdit.y', role: 'edit' }] };
+  const people = { '문창재': { email: 'cjmoon@krs.co.kr', title: 'MOON Changjae' }, '이영희': { ambiguous: ['LEE A <a@krs.co.kr>', 'LEE B <b@krs.co.kr>'] }, '없는사람': { notFound: true }, '박기도': { email: 'park@krs.co.kr', title: 'PARK Kido' } };
+  const rows = permRows(['문창재', '김거화', ' 이영희 ', '없는사람', '새사람', '문창재', '', null, '박기도'], perms, people, { me: '김거화' });
+  assert.deepEqual(rows.map((r) => [r.name, r.email, r.title, r.id, r.role, r.state, r.extra]), [
+    ['문창재', 'cjmoon@krs.co.kr', 'MOON Changjae', 1909, 'edit', '', false],
+    ['이영희', '', '', 0, '', 'ambiguous', false],
+    ['없는사람', '', '', 0, '', 'notFound', false],
+    ['새사람', '', '', 0, '', 'lookup', false],
+    ['박기도', 'park@krs.co.kr', 'PARK Kido', 0, '', '', false],
+    ['LEE Jaehoon', 'jhlee81@krs.co.kr', 'LEE Jaehoon', 1944, 'read', '', true],
+    ['ROH Gilltae', 'gtroh@krs.co.kr', 'ROH Gilltae', 2040, 'owner', '', true],
+  ], '김거화(나)는 이름으로도 폴더의 me 로도 공백만 다른 이름으로도 오지 않는다');
+  assert.deepEqual(rows[1].candidates, ['LEE A <a@krs.co.kr>', 'LEE B <b@krs.co.kr>']);
+  assert.deepEqual(permRows(['a'], null, null), [{ name: 'a', email: '', title: '', id: 0, role: '', state: 'lookup', candidates: [], extra: false }]);
+  assert.deepEqual(permRows([], perms, {}, { me: '김거화' }).map((r) => r.name), ['MOON Changjae', 'LEE Jaehoon', 'ROH Gilltae'], '이름이 없으면 폴더의 사람만 extra 로');
+});
 
 console.log(`\n${pass} passed`);

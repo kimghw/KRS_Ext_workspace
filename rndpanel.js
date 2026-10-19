@@ -32,7 +32,7 @@ import RS from './rerp/research.js';
 // 장부 ↔ 연차 파일 변환(2026-10-18): 공유 설정(rndShare)·연차 파일 project 칸·받은 것을 장부에 들이기·차년도 변환·과제 맞추기.
 import {
   SHARE_KEY, normalizeShare, shareKeyOf, projectOf as shareProjectOf, localProjectOf, localPlanOf, yearOf as shareYearOf, researchOf as shareResearchOf, budgetHash as shareBudgetHashOf,
-  applyProject as shareApplyProject, applyYear as shareApplyYear, matchProject as shareMatchProject,
+  applyProject as shareApplyProject, applyYear as shareApplyYear, matchProject as shareMatchProject, PEOPLE_KEY, normalizePeople, permRows,
 } from './src/rndshare.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
 import { JOB_LIST_PATH, JOB_QUERY, parseJobRows, rankJobs, jobLine } from './src/jobid.js';
@@ -74,7 +74,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   const el = {
     root: $('rnd'), projects: $('rdProjects'), empty: $('rdEmpty'), emptyImport: $('rdEmptyImport'), emptyAdd: $('rdEmptyAdd'),
     intake: $('rdIntake'), yaml: $('rdYaml'),
-    head: $('rdHead'), info: $('rdInfo'), name: $('rdName'), edit: $('rdEdit'), meta: $('rdMeta'), years: $('rdYears'), yearNote: $('rdYearNote'),
+    head: $('rdHead'), info: $('rdInfo'), name: $('rdName'), edit: $('rdEdit'), headYear: $('rdHeadYear'), headLink: $('rdHeadLink'), headSet: $('rdHeadSet'), meta: $('rdMeta'), years: $('rdYears'), yearNote: $('rdYearNote'),
     aliasAsk: $('rdAliasAsk'), aliasIn: $('rdAliasIn'), aliasSet: $('rdAliasSet'),
     form: $('rdForm'), formTitle: $('rdFormTitle'), fName: $('rdFName'), fAlias: $('rdFAlias'), fCode: $('rdFCode'), fLead: $('rdFLead'),
     fStart: $('rdFStart'), fEnd: $('rdFEnd'), fCalendar: $('rdFCalendar'), fNote: $('rdFNote'), fNeed: $('rdFNeed'), fSave: $('rdFSave'), fCancel: $('rdFCancel'), fDel: $('rdFDel'),
@@ -89,7 +89,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // 행정지원(과제마다 — 이름·맡은 일·공문 참조, 2026-10-16) — 참여인력 칸(2026-10-17 까지는 '참여연구자 및 행정지원') 안에 손으로 적는다.
     support: $('rdSupport'), supportAdd: $('rdSupportAdd'),
     // 참여인력(rERP 근거 표시 — 2026-10-18): 머리 줄의 ↻(이어진 rERP 과제의 참여인력 다시 받기), 표 아래 받는 중·실패 줄.
-    staffRefresh: $('rdStaffRefresh'), staffMsg: $('rdStaffMsg'),
+    staffRefresh: $('rdStaffRefresh'), staffMonths: $('rdStaffMonths'), staffMsg: $('rdStaffMsg'),
+    // 공유 권한(2026-10-19 "체크하면 반영"): 머리 줄의 공유 아이콘(staffShare — 누르면 펴고 접음), 표 위의 칸(perm — 폴더 이름 · ↻ · 사람마다 읽기/편집 체크 · 알림 줄).
+    staffShare: $('rdStaffShare'), perm: $('rdStaffPerm'), permFolder: $('rdStaffPermFolder'), permRefresh: $('rdStaffPermRefresh'), permBody: $('rdStaffPermBody'), permMsg: $('rdStaffPermMsg'),
     planState: $('rdPlanState'), plan: $('rdPlan'), planTools: $('rdPlanTools'), planSrc: $('rdPlanSrc'), planCopy: $('rdPlanCopy'),
     logState: $('rdLogState'), logDate: $('rdLogDate'), logTitle: $('rdLogTitle'), logText: $('rdLogText'), logAdd: $('rdLogAdd'), logCancel: $('rdLogCancel'), logs: $('rdLogs'), logsCopy: $('rdLogsCopy'),
     changeState: $('rdChangeState'), chDate: $('rdChDate'), chKind: $('rdChKind'), chItem: $('rdChItem'), chBefore: $('rdChBefore'), chAfter: $('rdChAfter'),
@@ -123,6 +125,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     rosterText: '',
     // 참여인력(rERP 근거 표시 — 2026-10-18): staffRun·staffBusy 는 도는 중인 rERP 참여인력 조회, staffTried 는 이 세션에서 저절로 받아 본 과제:차년도(한 번만 — ↻ 는 언제든), staffMsgFor 는 알림 줄이 어느 과제:차년도의 것인가.
     staffTried: new Set(), staffRun: null, staffBusy: false, staffMsgFor: '',
+    // 공유 권한(2026-10-19): open 은 펴 둔 과제:차년도(staffKey — 다른 데로 가면 접힘), busy 는 권한 읽기·사람 찾기 중, cfg·folder·owner 는 그 과제 폴더(shareIndex 의 항목 — owner 면 남의 폴더), perms 는 읽은 권한(rerp/spstore.js permissions),
+    // lookup 은 이 세션의 사람 찾기 결과(이름 → { ambiguous } | { notFound } | { error }), row 는 반영 중인 사람 이름, run 은 도는 중인 반영. permPeople 은 이름 → 이메일 캐시(rndSharePeople — src/rndshare.js normalizePeople).
+    perm: { open: '', busy: false, cfg: null, folder: '', owner: '', perms: null, lookup: {}, row: '', run: null }, permPeople: normalizePeople(null),
     // 예산 정보가 없는 차년도를 보는 중이면 그 과제:차년도(emptyKey) — 들어올 때 R&D 설정을 저절로 폈으면(setAuto) 나갈 때 도로 접는다(2026-10-11 사용자 지정).
     emptyKey: '', setAuto: false,
     // 스킬 목록(rnd/skills.json)은 그 칸을 처음 펼 때 읽는다. 못 읽었으면 까닭을 둔다.
@@ -645,7 +650,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     }
   }
 
-  /** ＋ · 과제 더하기 · 빈 차년도 카드의 단추 — rndgen 이 있으면 더하기 카드(target: {} 또는 { projectId, n }), 없으면 새 과제 폼. */
+  /** ＋ · 과제 더하기 · 빈 차년도 카드의 단추 · 머리 줄의 차년도 아이콘 — rndgen 이 있으면 더하기 카드(target: {} · { projectId, n } · { projectId } — 차년도는 카드의 단추 줄에서), 없으면 새 과제 폼. */
   function openAdd(target = {}) {
     if (addHook) addHook(target);
     else openForm('new');
@@ -1067,7 +1072,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   // 참여연구원의 참여율·지급액 계산(월별 나누기·적용월부터 변경·초기화·예산 상한)은 kr_ext_rerp 의 **사업비 변경** 메뉴로 넘겼다(2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고,
   // 거기는 참여연구원 참여율/지급액 관리만 rerp 근거로 표시"). 여기서는 이 차년도에 이어진 rERP 과제(예산 칸의 rERP 집행내역)의 참여인력(지급계획)을 받아 **보이기만** 한다 —
-  // 표(성명·역할·월급여·참여·지급 합·참여율)·사람 아래 달마다의 지급·연간/월 최대 참여율·100% 초과 알림. 받은 것은 잇기의 staff(src/rnderp.js normalizeErp — rerp/staff.js 의 사람 모양)에 남고,
+  // 표(성명·역할·월급여·참여·지급 합·참여율)·사람 아래 달마다의 지급(머리 줄의 M 으로 펴고 접음 — 기본 접힘, 2026-10-19)·연간/월 최대 참여율·100% 초과 알림. 받은 것은 잇기의 staff(src/rnderp.js normalizeErp — rerp/staff.js 의 사람 모양)에 남고,
   // 집행내역처럼 오늘이 든 차년도만 10분(ERP_TTL_MS)이 지나면 이 세션에서 한 번 저절로 다시 받는다(↻ 는 바로). 이어지지 않은 차년도는 계획서의 참여연구자 표(parseRoster)를 그대로 보인다.
   const MENU_HINT = 'KR eClass + R&D ERP 현황 확장(kr_ext_rerp)의 <b>사업비 변경</b> 메뉴에서 합니다';
   const staffKey = (p) => `${p.id}:${curYear(p)}`;
@@ -1094,6 +1099,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.staffRefresh.classList.toggle('busy', st.staffBusy);
     el.rosterCopy.classList.toggle('hidden', !staff && !roster);
     el.rosterTools.classList.toggle('hidden', !staff && !roster && !(e && st.set.erp));
+    // 공유 권한 칸 — 다른 과제·차년도로 가면 펴 둔 것을 접는다(폴더·사람이 다르다). 아이콘은 늘(꺼져 있으면 누르면 공유 카드로).
+    if (st.perm.open && st.perm.open !== staffKey(p)) closePerm();
+    paintPerm();
     let warns = [];
     if (staff) {
       // 100% 초과만 — 같은 사람의 어느 달 참여율 합(이 과제 + rERP 가 아는 다른 과제)이 100 을 넘으면 알림(막지 않는다). 월급여·예산 알림은 rerp 의 사업비 변경 메뉴 몫이라 적지 않는다.
@@ -1104,12 +1112,29 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     } else {
       el.roster.innerHTML = rosterBody + `<p class="rd-hint">rERP 에 이어지지 않은 차년도라 계획서의 참여연구자를 보이기만 합니다(예산 칸의 rERP 집행내역에서 이으면 rERP 참여인력의 지급계획이 보입니다). 참여율·지급액의 계획과 변경은 ${MENU_HINT}.</p>`;
     }
+    // M — 달마다의 지급 줄이 있는 표(rERP 참여인력)에서만 서고, 접힘·펼침은 설정(months)을 따른다.
+    el.staffMonths.classList.toggle('hidden', !el.roster.querySelector('.rd-staff-months'));
+    paintMonths();
     st.rosterText = staff ? `연구자 ${staff.people.length}명${warns.length ? ` · 100% 초과 ${warns.length}` : ''}` : !roster ? '계획서 없음' : people ? `연구자 ${people.length}명` : '있음';
     paintSupportState();
     if (e) staffAuto(p);
   }
 
-  /** 표(읽기만) — 성명 · 역할 · 월급여(천원) · 참여(달·개월) · 지급 합(천원) · 참여율(연간, 아래에 월 최대 — 같아도 늘) ; 사람 아래 달마다의 지급 줄(0원 달은 —) ; 표 아래 100% 초과 알림. */
+  /** 달마다의 지급 줄 펴기/접기 — 머리 줄의 M(2026-10-19 사용자 지정 "상단에 M 을 누르면 월별로 보였다가 접어졌다가"). 줄은 표에 그대로 두고 #rdRoster 의 rd-months 로 보이고 숨긴다(복사·검사는 그대로). 기본 접힘, 누른 상태는 rndSettings.months 에 남는다. */
+  function paintMonths() {
+    const on = !!st.set.months;
+    el.roster.classList.toggle('rd-months', on);
+    el.staffMonths.classList.toggle('on', on);
+    el.staffMonths.setAttribute('aria-pressed', on ? 'true' : 'false');
+    el.staffMonths.setAttribute('aria-label', on ? '달마다의 지급 접기' : '달마다의 지급 보이기');
+  }
+  function onMonthsToggle() {
+    st.set.months = !st.set.months;
+    saveSet();
+    paintMonths();
+  }
+
+  /** 표(읽기만) — 성명 · 역할 · 월급여(천원) · 참여(달·개월) · 지급 합(천원) · 참여율(연간, 아래에 월 최대 — 같아도 늘) ; 사람 아래 달마다의 지급 줄(0원 달은 —, M 으로 펴고 접음) ; 표 아래 100% 초과 알림. */
   function staffHtml(staff, warns) {
     const rows = staff.people.map((q) => {
       const s = personStats(q, 'rerp');
@@ -1200,6 +1225,184 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const staff = p ? staffOf(p) : null;
     if (staff) copyWith(el.rosterCopy, staffTsv(staff, 'rerp'), '참여연구자 표');
     else copyFile(el.rosterCopy, 'roster', '참여연구자 표');
+  }
+
+  /* ---------------------------------------------------------- 공유 권한(2026-10-19 사용자 지정: "여기에 저 sharepoint 링크 읽기, 쓰기 권한 설정 … 아이콘에 공유아이콘 추가 … 그거 누르고.. 체크하면 반영") */
+
+  // 참여인력 머리 줄의 공유 아이콘을 누르면 표 위에 이 과제의 SharePoint 과제 폴더(공유 카드가 맞춘 shareIndex 의 폴더)에 대한 **사람마다의 읽기·편집 체크**가 펴진다. 권한은 rerp/spstore.js permissions(확장 출처 GET)로 읽고,
+  // 사람은 **이메일**로 맞춘다 — 사이트 사용자 정보의 표시 이름은 영문("MOON Changjae", 실측 2026-10-19)이라 한글 이름으로는 못 맞춘다. 참여인력의 한글 이름은 findPeople(사이트 search REST, GET)이 이메일로 풀어 rndSharePeople 에 기억한다(한 번 찾으면 다시 묻지 않는다 — ↻ 는 못 찾은 이름을 다시).
+  // 체크하면 바로 반영(applyPerm): 지금 역할이 있으면 writer.unshare(그 사람의 역할 전부) → 줄 것이 있으면 writer.sharePeople([이메일], { role }) — 둘 중 하나만 켜진다(바꾸면 거둔 뒤 다시 줌, 빼면 거둠). 한 번에 한 사람, 끝나면 권한을 다시 읽어 실제 상태를 보인다.
+  // 공유가 꺼져 있으면 공유 카드로 안내, 과제 폴더가 아직 없으면 지금 맞추기 안내. 남의 폴더(책임자의 것 — shareIndex 의 owner)는 읽기만. 대상 이름은 이 차년도의 참여연구자(rERP 참여인력, 없으면 계획서)와 과제의 행정지원(나는 뺀다 — src/rndshare.js permRows).
+  const PERM_ROLE_TEXT = { edit: '편집', read: '읽기', owner: '소유자', other: '그 밖', '': '없음' };
+  const savePeople = () => chrome.storage.local.set({ [PEOPLE_KEY]: st.permPeople });
+  const permErrText = (err) => { const d = SPX.describe(err); return d.kind === 'auth' ? 'OneDrive 에 로그인하세요 — 공유 카드의 폴더 열기로 로그인한 뒤 ↻' : d.message; };
+  const setPermMsg = (msg, error = false) => { el.permMsg.textContent = msg; el.permMsg.classList.toggle('error', !!error); el.permMsg.classList.toggle('hidden', !msg); };
+  /** 권한 표에 올릴 이름 — 이 차년도의 참여연구자(rERP 참여인력, 없으면 계획서의 참여연구자)와 과제의 행정지원. 나는 permRows 가 뺀다. */
+  function permNames(p) {
+    const out = [];
+    const add = (v) => { const s = String(v || '').trim(); if (s && !out.includes(s)) out.push(s); };
+    const staff = staffOf(p);
+    if (staff) for (const q of staff.people || []) add(q?.name);
+    else for (const x of parseRoster(fileLog(curBook(p), 'roster')?.text) || []) add(x?.name);
+    for (const s of p.support || []) add(s?.name);
+    return out;
+  }
+  /** 이름 → 사람 — 저장해 둔 캐시(permPeople) 위에 이 세션의 찾기 결과(lookup — 겹침·못 찾음)를 덮는다. */
+  function permPeopleNow() {
+    const people = { ...st.permPeople };
+    for (const [n, v] of Object.entries(st.perm.lookup)) if (!people[n]) people[n] = v;
+    return people;
+  }
+  const permRowsNow = (p) => permRows(permNames(p), st.perm.perms, permPeopleNow(), { me: myName() });
+  function closePerm() {
+    Object.assign(st.perm, { open: '', busy: false, cfg: null, folder: '', owner: '', perms: null, row: '' });
+    setPermMsg('');
+    paintPerm();
+  }
+  /** 공유 아이콘 — 펴 있으면 접고, 아니면 이 과제:차년도로 펴서 권한을 읽는다. 공유가 꺼져 있으면 안내하고 공유 카드로. */
+  function togglePerm() {
+    const p = cur();
+    if (!p) return Promise.resolve(false);
+    if (st.perm.open === staffKey(p)) { closePerm(); return Promise.resolve(false); }
+    Object.assign(st.perm, { open: staffKey(p), cfg: null, folder: '', owner: '', perms: null, row: '' });
+    setPermMsg('');
+    if (!st.share.on) { paintPerm(); setPermMsg('공유 (SharePoint)가 꺼져 있습니다 — R&D 설정의 공유 카드에서 켜고 맞춘 뒤 다시 누르세요.', true); goSettings({ share: true }); return Promise.resolve(false); }
+    return loadPerm();
+  }
+  /** 과제 폴더(shareIndex)를 찾아 권한을 읽고, 아직 이메일을 모르는 이름은 찾는다(findPeople — 찾은 것은 rndSharePeople 에 남긴다). 한 번에 하나만. 던지지 않는다 — 까닭은 알림 줄에. */
+  async function loadPerm() {
+    const p = cur();
+    if (!p || st.perm.busy) return false;
+    const key = staffKey(p);
+    st.perm.busy = true;
+    paintPerm();
+    let ok = false;
+    try {
+      const prjNo = keyOfProject(p);
+      const index = shareObj((await chrome.storage.local.get('shareIndex'))?.shareIndex);
+      const ent = shareObj(index[prjNo]);
+      if (!ent.folder) { Object.assign(st.perm, { cfg: null, perms: null, folder: '', owner: '' }); setPermMsg('과제 폴더가 아직 없습니다 — 공유 카드의 지금 맞추기로 폴더를 만든 뒤 ↻ 를 누르세요.', true); return false; }
+      const now = shareCfgNow();
+      const cfg = await share.shareProjectCfg(prjNo, { folder: now.folder, driveHost: now.driveHost }, index);
+      if (!cfg) { Object.assign(st.perm, { cfg: null, perms: null, folder: '', owner: '' }); setPermMsg('과제 폴더를 찾지 못했습니다 — 공유 카드의 지금 맞추기 뒤 ↻ 를 누르세요.', true); return false; }
+      Object.assign(st.perm, { cfg, folder: String(ent.folder), owner: String(ent.owner || '') });
+      st.perm.perms = await SPX.permissions(cfg, spIo());
+      // 이메일을 모르는 이름만 찾는다 — 캐시에 있거나 이 세션에서 못 찾은(겹침·없음) 이름은 다시 묻지 않는다(↻ 는 다시).
+      const need = permNames(p).filter((n) => !sameName(n, myName()) && !st.permPeople[n] && !st.perm.lookup[n]);
+      if (need.length) {
+        const r = await SPX.findPeople(cfg, need, spIo());
+        const at = Date.now();
+        for (const f of r.found) st.permPeople[f.name] = { email: String(f.email).toLowerCase(), title: f.title, login: f.login, at };
+        for (const a of r.ambiguous) st.perm.lookup[a.name] = { ambiguous: a.candidates };
+        for (const n of r.notFound) st.perm.lookup[n] = { notFound: true };
+        if (r.found.length) { st.permPeople = normalizePeople(st.permPeople); savePeople(); }
+      }
+      ok = true;
+    } catch (err) {
+      setPermMsg(permErrText(err), true);
+      logEvent('rnd', false, `R&D 공유 권한 읽기 실패: ${String(err?.message || err)}`);
+    } finally {
+      st.perm.busy = false;
+      if (st.perm.open === key) paintPerm();
+    }
+    return ok;
+  }
+  /** ↻ — 이 과제 이름들의 찾기 결과(겹침·못 찾음·실패)를 지우고 권한·사람을 다시 읽는다. */
+  function refreshPerm() {
+    const p = cur();
+    if (!p) return Promise.resolve(false);
+    for (const n of permNames(p)) delete st.perm.lookup[n];
+    for (const v of Object.values(st.perm.lookup)) if (v && typeof v === 'object') delete v.error;
+    setPermMsg('');
+    return loadPerm();
+  }
+  /** 칸 그리기 — 펴 둔 과제:차년도가 보고 있는 것일 때만 보인다. 머리 줄은 폴더 이름(남의 폴더·조직 내 링크·읽는 중), 몸통은 사람마다의 줄(permHtml). */
+  function paintPerm() {
+    const p = cur();
+    const open = !!p && st.perm.open === staffKey(p);
+    el.perm.classList.toggle('hidden', !open);
+    el.staffShare.classList.toggle('on', open);
+    el.staffShare.setAttribute('aria-pressed', open ? 'true' : 'false');
+    if (!open) { el.permBody.innerHTML = ''; el.permFolder.textContent = ''; return; }
+    const q = st.perm;
+    el.perm.classList.toggle('busy', q.busy || !!q.row);
+    el.permRefresh.disabled = q.busy || !!q.row || !st.share.on;
+    const links = q.perms?.links || [];
+    el.permFolder.textContent = q.folder
+      ? `${q.folder} 폴더${q.owner ? ` · 책임자(${q.owner})의 폴더 — 권한은 책임자가` : ''}${links.length ? ` · 조직 내 링크 ${links.map((l) => PERM_ROLE_TEXT[l.role] || l.role).join('·')}` : ''}${q.busy ? ' · 읽는 중…' : ''}`
+      : q.busy ? '권한을 읽는 중…' : '';
+    if (!q.perms) { el.permBody.innerHTML = ''; return; }
+    const rows = permRowsNow(p);
+    el.permBody.innerHTML = rows.length ? permHtml(rows) : '<p class="rd-hint">권한을 줄 사람이 없습니다 — 참여인력·행정지원에 나 말고는 없습니다.</p>';
+  }
+  /** 사람마다 한 줄 — 성명(아래에 표시 이름 <이메일>) · 읽기 ☐ · 편집 ☐ · 상태. 이메일을 모르거나(찾는 중·겹침·없음) 소유자·다른 권한·남의 폴더·반영 중이면 체크를 잠근다. 폴더에만 있는 사람은 extra(거둘 수 있게). */
+  function permHtml(rows) {
+    const lock = st.perm.busy || !!st.perm.row || !!st.perm.owner;
+    const tr = rows.map((r) => {
+      const busy = st.perm.row === r.name;
+      const can = !lock && !!r.email && r.role !== 'owner' && r.role !== 'other';
+      const lk = st.perm.lookup[r.name] || {};
+      const state = busy ? '반영 중…' : lk.error ? lk.error : r.state === 'ambiguous' ? `이름 겹침 — ${r.candidates.join(' · ')}` : r.state === 'notFound' ? '사람을 찾지 못했습니다 — OneDrive 에서 직접 공유하세요' : r.state === 'lookup' ? '찾는 중…' : r.role === 'owner' ? '소유자' : r.role === 'other' ? '다른 권한 — OneDrive 에서' : '';
+      const sub = r.email ? `${r.title && !sameName(r.title, r.name) ? `${r.title} ` : ''}<${r.email}>` : '';
+      return `<tr class="rd-perm-row${r.extra ? ' extra' : ''}" data-perm="${escapeHtml(r.name)}">`
+        + `<td class="rd-td-name">${escapeHtml(r.name)}${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</td>`
+        + `<td><input type="checkbox" data-role="read"${r.role === 'read' ? ' checked' : ''}${can ? '' : ' disabled'} aria-label="${escapeHtml(r.name)} 읽기"></td>`
+        + `<td><input type="checkbox" data-role="edit"${r.role === 'edit' ? ' checked' : ''}${can ? '' : ' disabled'} aria-label="${escapeHtml(r.name)} 편집"></td>`
+        + `<td class="rd-td-state${lk.error && !busy ? ' error' : ''}">${escapeHtml(state)}</td></tr>`;
+    }).join('');
+    return `<table class="rd-table rd-perm-table"><thead><tr><th>성명</th><th>읽기</th><th>편집</th><th>상태</th></tr></thead><tbody>${tr}</tbody></table>`;
+  }
+  /** 체크 — 읽기를 켜면 'read', 편집을 켜면 'edit', 끄면 'none'. */
+  function onPermChange(e) {
+    const box = e.target;
+    if (!box || box.tagName !== 'INPUT' || box.type !== 'checkbox') return;
+    const tr = box.closest('tr[data-perm]');
+    if (!tr) return;
+    const role = box.dataset.role === 'edit' ? 'edit' : 'read';
+    applyPerm(tr.dataset.perm, box.checked ? role : 'none');
+  }
+  /**
+   * 한 사람의 권한을 target('read' | 'edit' | 'none')으로 — 지금 역할이 있으면 거두고(writer.unshare — 그 사람의 역할 전부), target 이 있으면 준다(writer.sharePeople 에 이메일, 피커가 이메일로 찾음).
+   * 끝나면 권한을 다시 읽어 실제 상태를 보인다. 한 번에 한 사람(반영 중엔 체크가 잠긴다). 던지지 않는다 — 실패는 그 줄의 상태와 활동 로그에.
+   */
+  function applyPerm(name, target) {
+    const p = cur();
+    const q = st.perm;
+    if (!p || q.busy || q.row || !q.cfg || !q.perms || q.owner) return Promise.resolve(false);
+    const row = permRowsNow(p).find((r) => r.name === name);
+    if (!row || !row.email || row.role === 'owner' || row.role === 'other') { paintPerm(); return Promise.resolve(false); }
+    const was = row.role === 'edit' || row.role === 'read' ? row.role : '';
+    const want = target === 'edit' || target === 'read' ? target : '';
+    if (want === was) { paintPerm(); return Promise.resolve(false); }
+    const key = staffKey(p), folder = q.folder, cfg = q.cfg;
+    q.row = name;
+    if (q.lookup[name]) delete q.lookup[name].error;
+    paintPerm();
+    const run = (async () => {
+      let w = null, ok = false;
+      try {
+        w = await SPX.openWriter(cfg, spIo());
+        if (was && row.id) await w.unshare(cfg.folderPath, [row.id]);
+        if (want) {
+          const r = await w.sharePeople(cfg.folderPath, [row.email], { role: want });
+          if (!r.shared.length) throw new Error(r.error || (r.notFound.length ? `${row.email} 을 SharePoint 에서 찾지 못했습니다` : r.ambiguous.length ? `${row.email} 과 다른 사람이 찾혔습니다` : '공유하지 못했습니다'));
+        }
+        ok = true;
+        logEvent('rnd', true, `R&D 공유 권한: ${folder} · ${name} → ${PERM_ROLE_TEXT[want]}`);
+      } catch (err) {
+        q.lookup[name] = { ...(q.lookup[name] || {}), error: permErrText(err) };
+        logEvent('rnd', false, `R&D 공유 권한 실패: ${folder} · ${name} → ${PERM_ROLE_TEXT[want]}: ${String(err?.message || err)}`);
+      } finally {
+        try { await w?.close(); } catch { /* 이미 닫힘 */ }
+      }
+      try { q.perms = await SPX.permissions(cfg, spIo()); } catch (err) { setPermMsg(permErrText(err), true); }
+      q.row = '';
+      if (q.open === key) paintPerm();
+      return ok;
+    })();
+    q.run = run;
+    run.finally(() => { if (q.run === run) q.run = null; });
+    return run;
   }
 
   /* ---------------------------------------------------------- 진행 기록(손으로 적는 연구내역) */
@@ -1321,11 +1524,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const p = cur();
     if (!p) return;
     const b = curBook(p);
+    // 펴 둔 사유는 다시 그려도 펴진 채로 — 다른 줄을 고치거나 사유를 적어도 보던 것이 접히지 않게.
+    const opened = new Set([...el.changes.querySelectorAll('li > details.rd-reason[open]')].map((d) => d.parentElement.dataset.ch));
     el.changes.innerHTML = newestFirst(b.changes).map((c) => {
       const diff = c.before || c.after ? `<p class="rd-diff"><s>${escapeHtml(c.before || '(없음)')}</s><span class="rd-arrow" aria-hidden="true">→</span><b>${escapeHtml(c.after || '(없음)')}</b></p>` : '';
-      // 사유가 비었으면 그 자리에서 적는 칸 — 저절로 남은 줄은 왜 바꿨는지를 사람이 적어야 이력이 된다.
+      // 주요 변경(날짜·구분·항목·전 → 후)만 펴 두고 사유는 접힌 한 줄 — 접히면 "사유" 뒤에 한 줄로 잘라 보이고 눌러 편다(2026-10-19 사용자 지정 "주요 변경사항만 보이게 하고 세부적인 것은 접어줘").
+      // 사유가 비었으면 그 자리에서 적는 칸 — 저절로 남은 줄은 왜 바꿨는지를 사람이 적어야 이력이 된다. 적는 칸은 접지 않는다(접힌 칸 뒤에 행위를 두지 않는다).
       const reason = c.reason
-        ? `<p class="rd-reason">${escapeHtml(c.reason)}</p>`
+        ? `<details class="rd-reason"${opened.has(c.id) ? ' open' : ''}><summary><span class="rd-reason-lab">사유</span><span class="rd-reason-peek">${escapeHtml(c.reason)}</span></summary><p class="rd-reason-text">${escapeHtml(c.reason)}</p></details>`
         : `<input type="text" class="rd-reason-in" data-reason="${c.id}" placeholder="${c.auto ? '사유 — 저절로 남은 줄입니다. 왜 바꿨는지 적어 두세요' : '사유'}" aria-label="사유" autocomplete="off" />`;
       return `<li data-ch="${c.id}" class="${c.auto ? 'auto' : ''}${c.id === st.chEdit ? ' editing' : ''}">`
         + `<div class="rd-row-head"><span class="rd-date">${escapeHtml(dot(c.date) || '날짜 없음')}</span><span class="rd-kind">${escapeHtml(c.kind)}</span><strong class="rd-title">${escapeHtml(c.item)}</strong>`
@@ -1766,11 +1972,75 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   const SHARE_PULL_ONLY = Object.freeze({ plan: true });
   /** 내 OneDrive 를 찾는 호스트(설정 folder 가 비었을 때) — rerp 의 기본값과 같다. 로그인이 필요할 때 "폴더 열기"가 여기로 간다. */
   const SHARE_DRIVE_HOST = String(SHARE_DEFAULTS?.driveHost || 'https://krclass-my.sharepoint.com').replace(/\/+$/, '');
+  // rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 따른다(2026-10-19 사용자 지정: "SharePoint workspace 경로 연결 — 이 링크 공통으로 맞춰봐" — 두 확장이 한 설정). 압축해제 확장은 ID 가 PC 마다 달라
+  //   chrome.management.getAll() 에서 **이름**으로 찾고(켜진 것 먼저, 여럿이면 먼저 답하는 것) { type: 'shareFolder' } 를 물으면 rerp background.js 의 onMessageExternal 이
+  //   { ok, enabled, folder(설정 칸 원문 — 비면 ''), driveHost, url?, path?, mine?, at?, version } 로 답한다(읽기만 — 네트워크 없음, 다른 type 은 무응답). 공유 폴더 칸이 비어 있을 때만 그 folder·driveHost 를 쓰고,
+  //   칸에 값이 있으면 그것이 이긴다(다르면 카드 결과 줄에 알림). rERP 확장이 없거나 답이 없으면(PEER_WAIT_MS) 지금처럼 기본값(내 OneDrive 문서/업무/shared). 검사에서는 chrome.management 가 없어 늘 기본값.
+  const RERP_NAME = 'KR eClass + R&D ERP 현황';   // kr_ext_rerp manifest.json 의 name
+  const PEER_WAIT_MS = 1500;
+  let peerId = '';   // 찾아 둔 rERP 확장의 ID(이 세션) — 답이 없으면 다시 찾는다
+  async function askPeer() {
+    const c = globalThis.chrome;
+    if (typeof c?.management?.getAll !== 'function' || typeof c?.runtime?.sendMessage !== 'function') return null;
+    const within = (p) => new Promise((res) => { const t = setTimeout(() => res(undefined), PEER_WAIT_MS); Promise.resolve(p).then((v) => { clearTimeout(t); res(v); }, () => { clearTimeout(t); res(undefined); }); });
+    const ask = async (id) => { try { const r = await within(c.runtime.sendMessage(id, { type: 'shareFolder' })); return r && typeof r === 'object' && r.ok === true ? { ...r, id } : null; } catch { return null; } };
+    if (peerId) { const r = await ask(peerId); if (r) return r; peerId = ''; }
+    let list;
+    try { list = await within(c.management.getAll()); } catch { list = null; }
+    const cands = (Array.isArray(list) ? list : []).filter((x) => x && x.type === 'extension' && x.name === RERP_NAME && x.id && x.id !== c.runtime.id)
+      .sort((a, b) => Number(!!b.enabled) - Number(!!a.enabled));
+    for (const x of cands) { const r = await ask(x.id); if (r) { peerId = x.id; return r; } }
+    return null;
+  }
+  /** 지금 쓸 밑폴더(네트워크 없음 — 마지막으로 물어 둔 rERP 확장의 답 st.share.peer 로): 칸의 값이 있으면 그것(driveHost 는 기본), 비면 rERP 확장의 설정(peer.at 이 있을 때 — following), 그것도 없으면 기본. */
+  function shareCfgNow() {
+    const own = String(st.share.folder || '');
+    const peer = shareObj(st.share.peer);
+    const following = !own && Number(peer.at) > 0;
+    const folder = own || (following ? String(peer.folder || '') : '');
+    const driveHost = following && peer.driveHost ? String(peer.driveHost) : SHARE_DRIVE_HOST;
+    return { folder, driveHost, following, peer };
+  }
+  /** 밑폴더의 열쇠(rndShare.effective) — 기본(비움·기본 호스트)은 '' 라 이 칸이 생기기 전의 저장값('')과 같다(처음 맞춤에 캐시를 괜히 버리지 않게). */
+  const shareEffKey = (folder, driveHost) => (folder || driveHost !== SHARE_DRIVE_HOST ? `${folder}\n${driveHost}` : '');
+  /**
+   * 맞추기 전에 rERP 확장에 공유 폴더 설정을 묻고(askPeer) 지금 쓸 밑폴더를 정한다. 쓸 자리가 지난번(rndShare.effective)과 다르면 — 다른 자리의 다른 파일이라 — 공유 폴더 칸을 바꿨을 때처럼
+   * 과제 → 폴더 캐시(shareIndex)·밑폴더 캐시(shareFolder)·지문(memo)을 버린다(shareReset). rERP 확장이 안 닿으면 기억(peer)을 지워 기본값으로(화면의 "따름" 문구도 거둠).
+   */
+  async function shareEffective() {
+    const r = await askPeer();
+    st.share.peer = r
+      ? { id: String(r.id || ''), folder: String(r.folder || '').trim().slice(0, 2000), driveHost: String(r.driveHost || '').trim().replace(/\/+$/, '') || SHARE_DRIVE_HOST, enabled: r.enabled === true, path: String(r.path || '').slice(0, 2000), url: String(r.url || '').slice(0, 2000), version: String(r.version || '').slice(0, 20), at: Date.now() }
+      : {};
+    const now = shareCfgNow();
+    const key = shareEffKey(now.folder, now.driveHost);
+    if (key !== String(st.share.effective || '')) {
+      st.share.effective = key;
+      await shareReset();
+      if (now.following) logEvent('rnd', true, `R&D 공유 폴더(rERP 확장의 설정을 따름): ${now.folder || '(비움 — 내 OneDrive 문서/업무/shared)'}`);
+    }
+    saveShare();
+    return now;
+  }
+  /**
+   * 밑폴더가 바뀌었다 — 지난 지문(memo)은 다른 파일의 것이라 버리고, 과제 → 폴더 캐시(shareIndex)와 밑폴더 캐시(shareFolder)도 지운다. 마지막 결과(shareState — 과제별 폴더 주소)도 옛 자리 것이라 화면에서 비운다(저장소의 것은 다음 맞춤이 갈아 쓴다).
+   * shareIndex 를 두면 prjdocsync 가 옛 밑폴더의 과제 폴더를 "색인에 있는 동료 폴더(base 밖)" 로 믿어 이미 맞춘 과제는 계속 옛 자리에 쓰고 새 주소는 새 과제에만 쓰였다(2026-10-19 검토 — 사용자 "workspace 에도 경로주면 알아서 동기화").
+   */
+  async function shareReset() {
+    Object.assign(st.share, { error: '', at: 0, memo: {} });
+    st.shareKind = '';
+    st.shareNote = null;
+    st.shareState = null;
+    try { await chrome.storage.local.remove(['shareIndex', 'shareFolder']); } catch { /* 캐시가 없거나 못 지웠다 — 다음 맞춤이 다시 훑는다 */ }
+  }
   const share = createShareSync({
-    settings: () => ({
-      enabled: !!st.share.on, folder: String(st.share.folder || ''), driveHost: SHARE_DRIVE_HOST, discover: true, shareWith: st.share.shareWith === 'none' ? 'none' : 'participants',   // 카드의 체크(rndShare.shareWith) — 2026-10-19
-      planSync: true, researchSync: true, staffSync: false, changesSync: true, want: { ...SHARE_WANT }, pullOnly: { ...SHARE_PULL_ONLY },
-    }),
+    settings: async () => {
+      const now = await shareEffective();   // 칸이 비면 rERP 확장의 설정(2026-10-19)
+      return {
+        enabled: !!st.share.on, folder: now.folder, driveHost: now.driveHost, discover: true, shareWith: st.share.shareWith === 'none' ? 'none' : 'participants',   // 카드의 체크(rndShare.shareWith) — 2026-10-19
+        planSync: true, researchSync: true, staffSync: false, changesSync: true, want: { ...SHARE_WANT }, pullOnly: { ...SHARE_PULL_ONLY },
+      };
+    },
     want: () => ({ ...SHARE_WANT }), pullOnly: { ...SHARE_PULL_ONLY },
     context: () => shareContext(), loadLocal: () => shareLoadLocal(), saveLocal: (part, prj, data) => shareSaveLocal(part, prj, data), participants: (prjNo) => shareParticipants(prjNo),
     copyText, chrome: globalThis.chrome, fetch: spFetch, store,
@@ -2309,7 +2579,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       const e = index[oldKey];
       if (!e || !e.folder) return false;   // 옛 열쇠로 맞춘 폴더가 없다 — 다음 맞춤이 새 열쇠로 만든다
       if (index[newKey]?.folder) { logEvent('rnd', true, `R&D 공유: ${label(p)} 의 rERP 과제 ${newKey} 폴더(${index[newKey].folder})가 이미 있어 옛 폴더 ${e.folder} 는 두고 그것을 씁니다`); return false; }
-      const cfg = await share.shareProjectCfg(oldKey, { folder: String(st.share.folder || ''), driveHost: SHARE_DRIVE_HOST }, index);
+      const now = shareCfgNow();   // 칸의 값, 비면 rERP 확장의 설정(마지막으로 물어 둔 것)
+      const cfg = await share.shareProjectCfg(oldKey, { folder: now.folder, driveHost: now.driveHost }, index);
       if (!cfg) return false;
       const names = ((await SPX.listFiles(cfg, spIo())) || []).map((f) => String(f?.name || '')).filter((nm) => KRX_PRJDOC.isYearName(nm) || KRX_PRJDOC.isPlanName(nm));
       const erp = erpOfProject(p);
@@ -2396,7 +2667,15 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const count = s && Number.isFinite(Number(s.count)) ? Number(s.count) : null;
     el.shareState.textContent = !q.on ? '꺼짐' : st.shareBusy ? '맞추는 중…' : q.error ? (auth ? 'OneDrive 에 로그인하세요' : '못 맞춤') : q.at ? `맞춤 ${when(q.at)}${count != null ? ` · 과제 ${count}개` : ''}` : '켜짐';
     const note = st.shareNote;
-    el.shareMsg.textContent = q.on ? String(note?.text || q.error || q.last || '') : '';
+    // rERP 확장의 설정을 따르는 중이면 칸의 빈 자리에 그 값을 보인다(2026-10-19). 결과 줄 끝에 맞춘 밑폴더 경로(rerp 옵션의 "지금 쓰는 밑폴더" 와 견주게)와, 칸에 값이 있는데 rERP 확장의 것과 다르면 알림.
+    const now = shareCfgNow();
+    el.shareFolder.placeholder = now.following ? `rERP 확장의 설정을 따름 — ${now.folder || '내 OneDrive 의 문서/업무/shared'}` : '비우면 내 OneDrive 의 문서/업무/shared';
+    const basePath = String(s?.base?.path || '');
+    const peerPath = String(now.peer.path || '');
+    const norm = (v) => String(v).replace(/\/+$/, '').toLowerCase();
+    const differs = !!q.folder && Number(now.peer.at) > 0 && (peerPath && basePath ? norm(peerPath) !== norm(basePath) : String(now.peer.folder || '') !== String(q.folder));
+    const tail = `${basePath ? ` · 밑폴더 ${basePath}` : ''}${differs ? ` · rERP 확장의 공유 폴더(${now.peer.folder || '내 OneDrive 문서/업무/shared'})와 다릅니다 — 같은 폴더를 쓰려면 칸을 비우세요` : ''}`;
+    el.shareMsg.textContent = q.on ? String(note?.text || q.error || (q.last ? `${q.last}${tail}` : '')) : '';
     el.shareMsg.classList.toggle('error', !!(q.on && (note ? note.error : q.error)));
     // 폴더 열기(단추 — 누르면 새 탭) — 보고 있는 과제의 폴더(알면), 아니면 밑폴더(viewUrl), 아니면 OneDrive(로그인하러)
     const p = cur();
@@ -2404,6 +2683,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.shareOpen.dataset.url = pg?.folderUrl || s?.base?.viewUrl || `${SHARE_DRIVE_HOST}/`;
     el.shareOpen.textContent = auth ? 'OneDrive 열기' : pg?.folderUrl ? `폴더 열기 — ${pg.folder || label(p)}` : '공유 폴더 열기';
     el.shareOpen.disabled = !q.on && !auth;
+    // 머리 줄의 링크 아이콘(2026-10-19) — 공유 카드의 [링크 복사]와 같은 길. 꺼져 있으면 누를 때 R&D 설정의 공유 카드로 간다.
+    el.headLink.disabled = st.shareBusy;
+    el.headLink.title = !q.on ? 'SharePoint 링크 복사 — 공유 (SharePoint)가 꺼져 있습니다. 누르면 R&D 설정의 공유 카드로'
+      : `SharePoint 링크 복사 — ${pg?.folder && !pg.owner ? `과제 폴더 ${pg.folder}` : '공유 폴더'}의 조직 내 편집 링크`;
     st.pl.data.settings.planSync = !!q.on;
     st.pl.data.myNames = [myName()].filter(Boolean);
   }
@@ -2431,21 +2714,17 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   }
 
   /**
-   * 공유 폴더 칸을 고치면 — 다른 폴더면 지난 지문(memo)은 다른 파일의 것이라 버리고, 과제 → 폴더 캐시(shareIndex)와 밑폴더 캐시(shareFolder)도 지운 뒤 켜져 있으면 바로 맞춘다.
-   * shareIndex 를 두면 prjdocsync 가 옛 밑폴더의 과제 폴더를 "색인에 있는 동료 폴더(base 밖)" 로 믿어 이미 맞춘 과제는 계속 옛 자리에 쓰고 새 주소는 새 과제에만 쓰였다(2026-10-19 검토 — 사용자 "workspace 에도 경로주면 알아서 동기화").
-   * 마지막 결과(shareState — 과제별 폴더 주소)도 옛 자리 것이라 화면에서 비운다(저장소의 것은 다음 맞춤이 갈아 쓴다).
+   * 공유 폴더 칸을 고치면 — 쓸 자리가 달라졌으면(shareEffective: 칸의 값, 비면 rERP 확장의 설정) 지난 지문(memo)·과제 → 폴더 캐시(shareIndex)·밑폴더 캐시(shareFolder)를 버린 뒤(shareReset) 켜져 있으면 바로 맞춘다.
+   * 같은 자리면(rERP 확장이 따르던 값을 그대로 적은 때 등) 캐시를 둔다.
    */
   async function onShareFolder() {
     const v = el.shareFolder.value.trim().slice(0, 2000);
     if (v === String(st.share.folder || '')) return;
-    Object.assign(st.share, { folder: v, error: '', at: 0, memo: {} });
-    st.shareKind = '';
+    st.share.folder = v;
     st.shareNote = null;
-    st.shareState = null;
-    try { await chrome.storage.local.remove(['shareIndex', 'shareFolder']); } catch { /* 캐시가 없거나 못 지웠다 — 다음 맞춤이 다시 훑는다 */ }
-    saveShare();
+    logEvent('rnd', true, `R&D 공유 폴더: ${v || '(비움 — rERP 확장의 설정, 없으면 내 OneDrive 문서/업무/shared)'}`);
+    await shareEffective();
     paintShare();
-    logEvent('rnd', true, `R&D 공유 폴더: ${v || '(비움 — 내 OneDrive 문서/업무/shared)'}`);
     if (st.share.on) await runShare('폴더');
   }
 
@@ -2514,33 +2793,65 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     return !!r.ok;
   }
 
-  /** [링크 복사] — 보고 있는 과제의 폴더(알고 내 것이면), 아니면 밑폴더의 조직 내 편집 링크를 만들어 복사한다(sharesync shareOrgLink). 동료는 그 주소를 공유 폴더 칸(rerp 는 설정 › 공유 (Plus))에 붙여 넣는다. */
-  async function copyShareLink() {
-    if (!st.share.on || st.shareBusy) return;
+  /**
+   * [링크 복사] — 보고 있는 과제의 폴더(알고 내 것이면), 아니면 밑폴더의 조직 내 편집 링크를 만들어 복사한다(sharesync shareOrgLink). 동료는 그 주소를 공유 폴더 칸(rerp 는 설정 › 공유 (Plus))에 붙여 넣는다.
+   * 머리 줄의 링크 아이콘(from = el.headLink — 2026-10-19 사용자 지정 "shared point 링크 복사할 수 있게")도 같은 길이다 — 글 대신 잠깐 체크/× 로 알리고, 공유가 꺼져 있으면 R&D 설정의 공유 카드로 간다.
+   */
+  async function copyShareLink(from = el.shareLink) {
+    const icon = from === el.headLink;
+    if (!st.share.on) { if (icon) { headMark(from, false); goSettings({ share: true }); } return; }
+    if (st.shareBusy) return;
+    const tell = (ok, text) => (icon ? headMark(from, ok) : flash(from, text));
     const p = cur();
     const key = p ? keyOfProject(p) : '';
     const pg = key && st.shareState?.pages ? st.shareState.pages[key] : null;
     const prjNo = pg?.folder && !pg.owner ? key : '';
     el.shareLink.disabled = true;
+    el.headLink.disabled = true;
     try {
       const r = await share.send({ type: 'shareOrgLink', prjNo });
       if (r?.ok && r.url) {
         const ok = !!r.copied || await copyText(r.url);
-        flash(el.shareLink, ok ? '복사함' : '못 복사함');
+        tell(ok, ok ? '복사함' : '못 복사함');
         st.shareNote = { text: `${prjNo ? `과제 폴더 ${pg.folder}` : '공유 폴더'}의 조직 내 편집 링크를 ${ok ? '복사했습니다' : '만들었습니다(복사는 다시 눌러)'} — 동료는 공유 폴더 칸(rerp 는 설정 › 공유 (Plus))에 붙여 넣습니다`, error: false };
         logEvent('rnd', true, `R&D 공유 링크 복사: ${prjNo ? pg.folder : '밑폴더'}`);
       } else {
-        flash(el.shareLink, '못 만듦');
+        tell(false, '못 만듦');
         st.shareNote = { text: `링크를 만들지 못했습니다 — ${r?.error || r?.message || '응답 없음'}`, error: true };
         logEvent('rnd', false, `R&D 공유 링크 실패: ${r?.error || r?.message || '응답 없음'}`);
       }
     } catch (err) {
-      flash(el.shareLink, '못 만듦');
+      tell(false, '못 만듦');
       st.shareNote = { text: `링크를 만들지 못했습니다 — ${String(err?.message || err)}`, error: true };
     } finally {
       el.shareLink.disabled = !st.share.on;
       paintShare();
     }
+  }
+
+  const headTimers = new WeakMap();
+  /** 머리 줄 아이콘을 잠깐 체크(못 했으면 ×)로 바꿨다가 제 그림으로 되돌린다 — 복사 아이콘(iconFlash)과 같은 꼴. */
+  function headMark(btn, ok) {
+    if (!btn.dataset.icon) btn.dataset.icon = btn.innerHTML;
+    clearTimeout(headTimers.get(btn));
+    btn.classList.toggle('done', ok);
+    btn.classList.toggle('fail', !ok);
+    btn.innerHTML = ok ? DONE_ICON : FAIL_ICON;
+    headTimers.set(btn, setTimeout(() => {
+      btn.classList.remove('done', 'fail');
+      btn.innerHTML = btn.dataset.icon;
+    }, ok ? 1500 : 3000));
+  }
+
+  /**
+   * 머리 줄의 톱니 아이콘(2026-10-19 사용자 지정 "설정 아이콘 추가 해서 R&D 설정 으로 바로 가게") — 탭 맨 아래 R&D 설정 카드를 펴고 거기로 내린다.
+   * 손으로 편 것으로 쳐서(setAuto 아님) 다른 차년도·과제로 가도 접지 않는다. share 면 그 안의 공유 (SharePoint) 카드까지 펴고 그리로.
+   */
+  function goSettings({ share: toShare = false } = {}) {
+    el.setBox.open = true;
+    st.setAuto = false;
+    if (toShare) el.shareBox.open = true;
+    (toShare ? el.shareBox : el.setBox).scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }
 
   /* ---------------------------------------------------------- 연구내용 기록(rerp/research.js) — YAML 을 넣을 때 rerp 와 같은 기록(researchPlans — 과제명#차년도)으로도 남긴다 */
@@ -2596,6 +2907,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.emptyImport.addEventListener('click', () => importGongmun());
     // 연필 아이콘은 과제 정보의 summary 안에 있다 — 누름이 접기/펴기로 번지지 않게 막는다.
     el.edit.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const p = cur(); if (p) openForm(p.id); });
+    // 차년도 아이콘(2026-10-19 사용자 지정 "다른 차년도 추가하거나 수정 그리고 차년도 선택하는거") — 이 과제만 대상으로 더하기 카드를 연다(차년도는 그 카드의 단추 줄에서 고른다).
+    el.headYear.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const p = cur(); if (p) openAdd({ projectId: p.id }); });
+    // 머리 줄의 링크·톱니 아이콘(2026-10-19) — summary 안의 단추라 접기/펴기로 번지지 않게 막는다.
+    el.headLink.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); copyShareLink(el.headLink); });
+    el.headSet.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); goSettings(); });
     el.aliasSet.addEventListener('click', setAlias);
     el.aliasIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setAlias(); } });
     el.years.addEventListener('click', (e) => {
@@ -2644,6 +2960,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.rosterCopy.addEventListener('click', copyRoster);
     // 참여인력 — ↻ 는 이어진 rERP 과제의 참여인력(지급계획)을 바로 다시 받는다(보이기만 — 2026-10-18).
     el.staffRefresh.addEventListener('click', () => refreshStaff({ force: true, reason: '↻' }));
+    // 공유 권한(2026-10-19) — 공유 아이콘은 펴고 접기, ↻ 는 권한·사람 다시 읽기, 체크하면 바로 반영.
+    el.staffShare.addEventListener('click', () => { togglePerm(); });
+    el.permRefresh.addEventListener('click', () => { refreshPerm(); });
+    el.permBody.addEventListener('change', onPermChange);
+    el.staffMonths.addEventListener('click', onMonthsToggle);   // M — 달마다의 지급 줄 펴기/접기(2026-10-19)
     // 행정지원 — 사람 더하기, 줄의 이름·맡은 일(input)·공문 참조(change)·빼기(click).
     el.supportAdd.addEventListener('click', addSupport);
     el.support.addEventListener('input', onSupportInput);
@@ -2681,7 +3002,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.shareFolder.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onShareFolder(); } });
     el.shareSync.addEventListener('click', () => runShare('지금 맞추기'));
     el.shareOpen.addEventListener('click', openShareFolder);
-    el.shareLink.addEventListener('click', copyShareLink);
+    el.shareLink.addEventListener('click', () => copyShareLink());
     el.erpRefresh.addEventListener('click', () => refreshErp({ force: true, reason: '↻' }));
     el.erpLink.addEventListener('click', () => linkErp({ manual: true }));
     el.erpUnlink.addEventListener('click', unlinkErp);
@@ -2695,9 +3016,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   async function show() {
     el.root.classList.remove('hidden');
     if (!st.loaded) {
-      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, SHARE_KEY, SET_KEY, PLAN.SKEY]);
+      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, SHARE_KEY, SET_KEY, PLAN.SKEY, PEOPLE_KEY]);
       st.book = normalizeBook(saved?.[BOOK_KEY]);
       st.share = normalizeShare(saved?.[SHARE_KEY]);
+      st.permPeople = normalizePeople(saved?.[PEOPLE_KEY]);   // 공유 권한의 이름 → 이메일 캐시(2026-10-19)
+      // 밑폴더 열쇠(effective)가 생기기 전의 저장값 — 그때 쓰던 자리(칸의 값·기본 호스트)로 채워 처음 맞춤에 캐시를 괜히 버리지 않게(2026-10-19)
+      if (saved?.[SHARE_KEY] && typeof saved[SHARE_KEY] === 'object' && !('effective' in saved[SHARE_KEY])) st.share.effective = shareEffKey(st.share.folder, SHARE_DRIVE_HOST);
       st.set = normalizeSet(saved?.[SET_KEY]);
       // 마지막 공유 결과(sharesync 가 rerp 와 같은 planSyncState 에 남긴 것) — 과제별 폴더 주소·과제 수, 실패면 종류('auth' 는 로그인 안내).
       const last = saved?.[PLAN.SKEY];
@@ -2748,6 +3072,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   return {
     wire, show, hide, book: () => st.book, skills: loadManifest, share: () => st.share, shareSync: (reason) => runShare(reason || '지금 맞추기'), erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
     staff: () => (cur() ? curBook(cur()).erp?.staff || null : null), refreshStaff, staffRun: () => st.staffRun,
+    // 공유 권한(2026-10-19) — 검사가 형편·반영 약속을 본다.
+    perm: () => st.perm, permPeople: () => st.permPeople, togglePerm, applyPerm,
     // rndgen/(과제 더하기·변경사항 카드)의 손잡이 — 2026-10-16. 훅은 하나씩(마지막 등록이 이긴다).
     current: () => { const p = cur(); return p ? { project: p, n: curYear(p) } : null; },
     view,

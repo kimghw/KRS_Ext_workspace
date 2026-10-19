@@ -139,6 +139,14 @@ export function yearsOf(project) {
   return out;
 }
 
+/** n차년도의 끝날(과제의 차년도 규칙대로 — 지금 종료일과 무관): calendar 면 그 해 12월 31일, 아니면 시작일부터 n해째의 전날. 시작일이 없으면 ''. 연구기간 밖의 차년도를 넣을 때 종료일을 여기까지 늘린다(2026-10-19). */
+export function yearEndFor(project, n) {
+  const start = isYmd(project?.start) ? project.start : '';
+  const k = Number(n);
+  if (!start || !Number.isInteger(k) || k < 1 || k > MAX_YEARS) return '';
+  return project?.calendar ? `${Number(start.slice(0, 4)) + k - 1}-12-31` : addDays(addYears(start, k), -1);
+}
+
 /** "1차년도" · "3차년도" · 3 → 3. 못 읽으면 0. */
 export const yearNo = (v) => {
   const m = String(v ?? '').match(/(\d{1,2})\s*차/);

@@ -11,6 +11,9 @@
  *   writer.orgLink(folderPath, { edit }) 조직 내 링크(ListItemAllFields → Lists(guid)/GetItemById/ShareLink linkKind 3 편집·2 보기 → 안 되면 SP.Web.CreateOrganizationSharingLink) · writer.rename(folderPath, newName) 폴더 이름 바꾸기(MoveTo → 안 되면 MoveToUsingPath).
  *   공유·링크·이름 바꾸기도 다이제스트가 필요해 writer(작업 창)의 페이지 함수(spSharePeople · spOrgLink · spRename)로 돈다. 피커의 Key(로그인 이름)는 페이지 함수 안에만 두고 결과에는 이름·이메일만 싣는다.
  *   공유·링크 호출은 아직 실측 전(2026-10-18 저녁) — 응답 모양이 다르면 kind 'http' 에 본문 요지(200자)를 담아 사용자에게 보인다.
+ *   permissions(cfg, io) 폴더 권한 읽기(ListItemAllFields 의 RoleAssignments 펼침 — 사람은 PrincipalId·표시 이름·이메일·가장 센 역할, 조직 내 링크 그룹은 links, 나 표시) · findPeople(cfg, names, io) 이름 → 사람(사이트 search REST 의 People 원본 — 한글 이름도 찾힘) ·
+ *   writer.unshare(folderPath, ids) 사람(PrincipalId)의 권한 거두기(RoleAssignments/GetByPrincipalId → 역할마다 RemoveRoleAssignment) — 2026-10-19 KRS WORKSPACE 참여인력 칸의 읽기·편집 체크("체크하면 반영")가 쓴다.
+ *   실측(2026-10-19, 내 OneDrive 과제 폴더 — 권한·사람 찾기 GET 만): 사이트 사용자 정보의 Title 은 영문("MOON Changjae")이라 한글 이름과 맞춰지지 않는다 — 권한은 **이메일**로 맞추고, 주기는 sharePeople 에 이메일을 넘겨(피커가 이메일로 찾음) ShareObject, 바꾸기는 거둔 뒤 다시 주기.
  * kr_ext_aip 확장(E:\dev\kr_ext_aip\extension\lib\sharepoint.js · lib/scan/worker.js · lib/core/sharepointurl.js)이 SharePoint 시트를 다루는 방식을 이 저장소 꼴(IIFE · self.KRX_SP · ESM 아님)로 옮긴 것 —
  *   MCP 서버·Graph·Entra 로그인·원노트는 쓰지 않는다. 백그라운드 전용(chrome.windows · tabs · scripting) · Node 테스트 겸용(가짜 fetch · 가짜 chrome 주입).
  *   무엇을 파일에 쓰는지는 모른다 — 문서 모양·병합은 lib/prjdoc.js, 동기화 차례는 lib/prjdoc-sync.js.
@@ -51,7 +54,8 @@ const ACCEPT_JSON = 'application/json;odata=nometadata';
 const ROLE_EDIT = 'role:1073741827';   // SP.Web.ShareObject roleValue — 편집(Contribute 역할 정의 id)
 const ROLE_READ = 'role:1073741826';   // 읽기
 const SHARED_MAX_PAGES = 20;           // sharedWithMe 가 따라가는 @odata.nextLink 쪽수 상한(한 쪽 최대 500개)
-const api = { DEFAULT_DRIVE_HOST, DEFAULT_FOLDER_NAME, TAB_TIMEOUT_MS, DIGEST_TTL_SEC, WORKER_PAGE, DEFAULT_COMMENT, AUTH_MSG, URL_HINT, SHARE_HINT, ROLE_EDIT, ROLE_READ, SHARED_MAX_PAGES };
+const PEOPLE_SOURCE = 'b09a7990-05ea-4af9-81ef-edfab16c4e31';   // search REST 의 People 결과 원본(Local People Results) — findPeople
+const api = { DEFAULT_DRIVE_HOST, DEFAULT_FOLDER_NAME, TAB_TIMEOUT_MS, DIGEST_TTL_SEC, WORKER_PAGE, DEFAULT_COMMENT, AUTH_MSG, URL_HINT, SHARE_HINT, ROLE_EDIT, ROLE_READ, SHARED_MAX_PAGES, PEOPLE_SOURCE };
 
 const mkErr = (kind, message, extra) => { const e = new Error(message || kind); e.kind = kind; if (extra) Object.assign(e, extra); return e; };
 const badurl = (message) => { throw mkErr('badurl', message); };
@@ -288,6 +292,76 @@ api.sharedWithMe = async function (opts, o) {
   return out;
 };
 
+/* 폴더의 권한(확장 출처 GET — 다이제스트 없음): ListItemAllFields 의 RoleAssignments(Member · RoleDefinitionBindings 펼침)와 HasUniqueRoleAssignments, currentuser(나). 2026-10-19 참여인력 칸의 읽기·편집 체크가 쓴다.
+ *   실측(2026-10-19, 내 OneDrive 과제 폴더): 사람(PrincipalType 1)은 Title 이 사이트 사용자 정보의 표시 이름(영문 "MOON Changjae")이고 Email · LoginName(i:0#.f|membership|<이메일>), 역할은 참가(Id 1073741827 · RoleTypeKind 3) — 한글 이름과는 맞춰지지 않으니 **이메일**로 맞춘다(findPeople).
+ *   "제한된 액세스"(RoleTypeKind 1 · Hidden)만 있는 항목과 시스템 그룹(Limited Access System Group …)은 빼고, 조직 내 링크의 그룹(SharingLinks.<guid>.OrganizationEdit.<guid>)은 links 에. 밑폴더처럼 상속이면 unique:false 에 아무도 없다.
+ *   → { unique(상속 끊김), me:{ id, name, email } | null, people:[{ id(PrincipalId — unshare 에 쓴다), name(표시 이름), email(없으면 LoginName 의 것), login, role, roles:[{ id, name, kind }], me }], links:[{ id, name, role }] }.
+ *   role 은 역할들 가운데 가장 센 것(roleOf) — Administrator 5 · WebDesigner 4 → 'owner', Contributor 3 · Editor 6 → 'edit', Reader 2 · RestrictedReader 8 · RestrictedGuest 9 → 'read', 그 밖(None 0 — 사용자 정의) → 'other'. 폴더가 없으면 nofolder, 401/403·로그인 화면 → auth */
+const roleOfKind = (k) => (k === 5 || k === 4 ? 'owner' : k === 3 || k === 6 ? 'edit' : k === 2 || k === 8 || k === 9 ? 'read' : 'other');
+const ROLE_RANK = { owner: 3, edit: 2, read: 1, other: 0 };
+api.roleOf = (roles) => { let best = ''; for (const r of Array.isArray(roles) ? roles : []) { const k = roleOfKind(Number(r && r.kind)); if (!best || ROLE_RANK[k] > ROLE_RANK[best]) best = k; } return best; };
+api.permissions = async function (cfg, opts) {
+  cfg = api.revive(cfg);
+  const fetchFn = (opts && opts.fetch) || g.fetch;
+  const sel = ['Id', 'HasUniqueRoleAssignments', 'RoleAssignments/PrincipalId', 'RoleAssignments/Member/Id', 'RoleAssignments/Member/Title', 'RoleAssignments/Member/Email', 'RoleAssignments/Member/LoginName', 'RoleAssignments/Member/PrincipalType',
+    'RoleAssignments/RoleDefinitionBindings/Id', 'RoleAssignments/RoleDefinitionBindings/Name', 'RoleAssignments/RoleDefinitionBindings/RoleTypeKind', 'RoleAssignments/RoleDefinitionBindings/Hidden'];
+  const what = `권한 ${cfg.folderPath}`;
+  const r = await spGet(fetchFn, cfg.origin, `${cfg.folderApi}/ListItemAllFields?$select=${sel.join(',')}&$expand=RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings`, what);
+  if (r.status === 404) throw mkErr('nofolder', `공유 폴더가 없습니다: ${cfg.folderPath}`, { path: cfg.folderPath });
+  if (!r.ok) throw errOfStatus(r.status, what);
+  const j = await r.json().catch(() => null);
+  if (!j || typeof j !== 'object') throw mkErr('http', `권한 응답이 JSON 이 아닙니다: ${cfg.folderPath}`, { status: r.status });
+  let me = null;
+  try {
+    const mr = await spGet(fetchFn, cfg.origin, `${cfg.api}/currentuser?$select=Id,Title,Email`, '내 사용자');
+    const mj = mr.ok ? await mr.json().catch(() => null) : null;
+    if (mj && mj.Id != null) me = { id: Number(mj.Id), name: String(mj.Title || ''), email: String(mj.Email || '') };
+  } catch (e) { me = null; }   // 나를 못 알아내도 권한 목록은 보인다
+  const emailOfLogin = (s) => { const m = /\|([^|@\s]+@[^|\s]+)$/.exec(String(s || '')); return m ? m[1] : ''; };
+  const people = [], links = [];
+  for (const ra of Array.isArray(j.RoleAssignments) ? j.RoleAssignments : []) {
+    const mb = (ra && ra.Member) || {};
+    const id = Number(ra && ra.PrincipalId != null ? ra.PrincipalId : mb.Id);
+    const roles = (Array.isArray(ra && ra.RoleDefinitionBindings) ? ra.RoleDefinitionBindings : []).filter((b) => b && !b.Hidden && Number(b.RoleTypeKind) !== 1).map((b) => ({ id: Number(b.Id), name: String(b.Name || ''), kind: Number(b.RoleTypeKind) || 0 }));
+    if (!(id > 0) || !roles.length) continue;
+    const title = String(mb.Title || ''), role = api.roleOf(roles);
+    if (Number(mb.PrincipalType) === 1) people.push({ id, name: title, email: String(mb.Email || '') || emailOfLogin(mb.LoginName), login: String(mb.LoginName || ''), role, roles, me: !!(me && me.id === id) });
+    else if (/^SharingLinks\./i.test(title)) links.push({ id, name: title, role });
+  }
+  return { unique: j.HasUniqueRoleAssignments === true, me, people, links };
+};
+/* 이름(또는 이메일)으로 사람 찾기 — 사이트 search REST 의 People 결과 원본(확장 출처 GET, 다이제스트 없음): <apiRoot>/search/query?querytext='…'&sourceid='<PEOPLE_SOURCE>'&selectproperties='PreferredName,WorkEmail,AccountName'.
+ *   실측(2026-10-19): 한글 이름 '문창재' → PreferredName 'MOON Changjae' · WorkEmail · AccountName(i:0#.f|membership|<이메일>) 1줄 — 표시 이름이 영문이라 피커(sharePeople 의 이름 맞추기)로는 못 찾는 사람도 여기서는 찾힌다.
+ *   1명이면 그 사람(표시 이름이 질문과 달라도), 여럿이면 PreferredName·이메일이 질문과 꼭 같은(공백·대소문자 무시) 1명, 아니면 ambiguous(후보 "이름 <이메일>"), 없으면 notFound. 이메일이 없는 줄은 세지 않는다.
+ *   → { found:[{ name(질문), title, email, login }], ambiguous:[{ name, candidates:[…] }], notFound:[name] }. 401/403·로그인 화면 → auth. 응답은 nometadata(PrimaryQueryResult.RelevantResults.Table.Rows[].Cells[])·verbose(d.query … .results) 둘 다 읽는다 */
+api.findPeople = async function (cfg, names, opts) {
+  cfg = api.revive(cfg);
+  const fetchFn = (opts && opts.fetch) || g.fetch;
+  const list = Array.from(new Set((Array.isArray(names) ? names : names == null ? [] : [names]).map((x) => String(x == null ? '' : x).trim()).filter(Boolean)));
+  const found = [], ambiguous = [], notFound = [];
+  const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  const arr = (v) => (Array.isArray(v) ? v : v && Array.isArray(v.results) ? v.results : []);
+  for (const name of list) {
+    const what = `사람 찾기 ${name}`;
+    const r = await spGet(fetchFn, cfg.origin, `${cfg.apiRoot}/search/query?querytext='${encLit(name)}'&sourceid='${PEOPLE_SOURCE}'&selectproperties='PreferredName,WorkEmail,AccountName'&rowlimit=10`, what);
+    if (!r.ok) throw errOfStatus(r.status, what);
+    const j = (await r.json().catch(() => null)) || {};
+    const q = (j.d && j.d.query) || j;
+    const table = q.PrimaryQueryResult && q.PrimaryQueryResult.RelevantResults && q.PrimaryQueryResult.RelevantResults.Table;
+    const rows = arr(table && table.Rows).map((row) => {
+      const o = {};
+      for (const c of arr(row && row.Cells)) if (c && c.Key) o[c.Key] = c.Value == null ? '' : String(c.Value);
+      return { title: o.PreferredName || '', email: o.WorkEmail || '', login: o.AccountName || '' };
+    }).filter((x) => x.email);
+    const exact = rows.filter((x) => norm(x.title) === norm(name) || norm(x.email) === norm(name));
+    const hit = rows.length === 1 ? rows[0] : exact.length === 1 ? exact[0] : null;
+    if (hit) found.push({ name, title: hit.title, email: hit.email, login: hit.login });
+    else if (rows.length) ambiguous.push({ name, candidates: rows.map((x) => `${x.title} <${x.email}>`) });
+    else notFound.push(name);
+  }
+  return { found, ambiguous, notFound };
+};
+
 /* 파일 하나 → { text, meta:{ version, modified, length, uniqueId, checkedOut, checkedOutByMe } } | null(없음).
  *   checkedOut = CheckOutType ≠ 2. 체크아웃돼 있으면 CheckedOutByUser 와 currentuser 의 Id 를 견줘 checkedOutByMe — 내가 잡고 있으면 $value 는 (남에게는 안 보이는) 내 초안이라,
  *   부르는 쪽(prjdoc-sync)이 내용이 같아도 writer.modify 로 이어받아 체크인해야 한다(지난 쓰기가 끊긴 자리). 누가 잡았는지 못 알아내면 내 것으로 치고(modify 가 locked 로 가른다) */
@@ -395,8 +469,11 @@ async function spSharePeople(a) {
       let list = [];
       try { list = typeof packed === 'string' ? JSON.parse(packed) : packed; } catch (e) { list = []; }
       list = (Array.isArray(list) ? list : []).filter((x) => x && x.Key && (!x.EntityType || x.EntityType === 'User'));
+      // 질문이 이메일이면(2026-10-19 — 사이트 사용자 정보의 표시 이름이 영문이라 한글 이름으로는 못 맞추는 사람을 findPeople 의 이메일로 공유) EntityData.Email 또는 Key 의 끝(|<이메일>)이 꼭 같은 1명, 아니면 표시 이름이 꼭 같은(공백 무시) 1명
+      const isMail = /^[^\s@]+@[^\s@]+$/.test(name);
       const same = (s) => String(s || '').replace(/\s+/g, '') === name.replace(/\s+/g, '');
-      const exact = list.filter((x) => same(x.DisplayText));
+      const byMail = (x) => String((x.EntityData && x.EntityData.Email) || '').toLowerCase() === name.toLowerCase() || String(x.Key || '').toLowerCase().endsWith(`|${name.toLowerCase()}`);
+      const exact = list.filter((x) => (isMail ? byMail(x) : same(x.DisplayText)));
       const hit = exact.length === 1 ? exact[0] : null;   // 1명이 와도 이름이 다르면(접두 일치) 받지 않는다
       if (hit) picked.push({ name, entry: hit });
       else if (list.length) ambiguous.push({ name, candidates: list.map((x) => String(x.DisplayText || '')) });
@@ -432,6 +509,44 @@ async function spSharePeople(a) {
     const out = { ok: true, shared, ambiguous, notFound, failed };
     if (failed.length) out.error = failed.map((f) => `${f.name}: ${f.error}`).join(' · ');
     return out;
+  } catch (e) { return fail('offline', String((e && e.message) || e)); }
+}
+
+/* [페이지] 사람(PrincipalId)의 권한 거두기(2026-10-19 참여인력 칸의 읽기·편집 체크): RoleAssignments/GetByPrincipalId(id)/RoleDefinitionBindings 로 묶인 역할을 읽고(404 → 그 사람은 missing)
+ *   Hidden·제한된 액세스(RoleTypeKind 1)가 아닌 역할마다 RoleAssignments/RemoveRoleAssignment(principalid=…,roledefid=…) → { ok, removed:[{ id, roles:[역할 id…] }], missing:[id…] }.
+ *   다이제스트 거부 → 'digest'(writer 가 다시 받아 한 번 더 — 이미 거둔 역할은 다시 읽히지 않으니 그대로). 역할을 거둔 사람의 "제한된 액세스"는 SharePoint 가 알아서 둔다 */
+async function spUnshare(a) {
+  const J = { Accept: 'application/json;odata=nometadata' };
+  const H = { Accept: J.Accept, 'X-RequestDigest': a.digest };
+  const fail = (code, error, status) => ({ ok: false, code, error, status });
+  const codeOf = (s) => (s === 401 || s === 403 ? 'auth' : s === 404 ? 'notfound' : 'http');
+  const snip = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const lit = (p) => encodeURIComponent(String(p).replace(/'/g, "''"));
+  const isDigest = (r, body) => r.status === 403 && /security validation|2130575251/i.test(body);
+  try {
+    const itemApi = `${a.api}/GetFolderByServerRelativePath(decodedurl='${lit(a.folderPath)}')/ListItemAllFields`;
+    const removed = [], missing = [];
+    for (const raw of Array.isArray(a.ids) ? a.ids : []) {
+      const id = Number(raw);
+      if (!(id > 0)) continue;
+      const br = await fetch(`${itemApi}/RoleAssignments/GetByPrincipalId(${id})/RoleDefinitionBindings?$select=Id,RoleTypeKind,Hidden`, { headers: J, credentials: 'include', cache: 'no-store' });
+      if (br.status === 404) { missing.push(id); continue; }
+      if (!br.ok) return fail(codeOf(br.status), `권한 읽기 ${br.status}`, br.status);
+      const bj = (await br.json().catch(() => null)) || {};
+      const roles = (Array.isArray(bj.value) ? bj.value : []).filter((b) => b && !b.Hidden && Number(b.RoleTypeKind) !== 1).map((b) => Number(b.Id)).filter((n) => n > 0);
+      const done = [];
+      for (const rid of roles) {
+        const r = await fetch(`${itemApi}/RoleAssignments/RemoveRoleAssignment(principalid=${id},roledefid=${rid})`, { method: 'POST', headers: H, credentials: 'include' });
+        if (!r.ok) {
+          const body = await r.text().catch(() => '');
+          if (isDigest(r, body)) return fail('digest', `권한 거두기 ${r.status}`, r.status);
+          return fail(codeOf(r.status), `권한 거두기 ${r.status}: ${snip(body)}`, r.status);
+        }
+        done.push(rid);
+      }
+      removed.push({ id, roles: done });
+    }
+    return { ok: true, removed, missing };
   } catch (e) { return fail('offline', String((e && e.message) || e)); }
 }
 
@@ -617,7 +732,7 @@ async function spRecycle(a) {
     return { ok: true, removed: true };
   } catch (e) { return fail('offline', String((e && e.message) || e)); }
 }
-api._page = { spDigest, spEnsureFolder, spBegin, spCommit, spRelease, spCreate, spRecycle, spSharePeople, spOrgLink, spRename };
+api._page = { spDigest, spEnsureFolder, spBegin, spCommit, spRelease, spCreate, spRecycle, spSharePeople, spUnshare, spOrgLink, spRename };
 
 /* ---------- 작업 창(AIP lib/scan/worker.js 포팅) ---------- */
 
@@ -690,7 +805,7 @@ function makeRun(c, tabId) {
 /* 작업 탭을 열고 다이제스트를 받아 writer 를 돌려준다. opts = { chrome, timeoutMs, intervalMs, now?(시각 함수 — 테스트) }
  * writer = { tabId, windowId, folderPath, ensureFolder(path?) → { created }, ensurePath(path?) → { created, made:[경로…] }, write(name, text, { comment }) → { changed, created, updated, checkedIn, version, meta },
  *            modify(name, transform(curText|null) → { changed, text, discard? }, { comment }) → 같은 꼴, remove(name) → { removed }, close(),
- *            sharePeople(path, names, { role:'edit'|'read' }) → { shared, ambiguous, notFound, failed, error? }, orgLink(path, { edit }) → { url, edit, via }, rename(path, newName) → { path, name, changed, url },
+ *            sharePeople(path, names, { role:'edit'|'read' }) → { shared, ambiguous, notFound, failed, error? }, unshare(path, ids) → { removed, missing }, orgLink(path, { edit }) → { url, edit, via }, rename(path, newName) → { path, name, changed, url },
  *            at(path|cfg) → 같은 사이트의 다른 폴더에 묶인 writer(같은 작업 탭·다이제스트 — 파일 함수(modify·write·remove)와 폴더 기본값이 그 폴더, close 는 no-op; 사이트 밖이면 badurl) }
  *   path 인수(폴더): 서버 상대 경로 · cfg(folderPath) · 비면 writer 의 폴더 — 이 writer 의 사이트 안이어야 한다(동료의 personal 사이트 폴더는 그 사이트로 writer 를 따로 연다)
  *   modify: 내가 잡고 있던 체크아웃을 이어받았는데(spBegin resumed) 안 바뀌면 UndoCheckOut 대신 CheckIn(checkedIn:true) — 올라가 있던 초안을 살리고 체크아웃을 끝낸다. transform 이 discard:true 를 주면 그래도 UndoCheckOut.
@@ -775,6 +890,15 @@ api.openWriter = async function (cfg, opts) {
       const out = { shared: Array.isArray(r.shared) ? r.shared : [], ambiguous: Array.isArray(r.ambiguous) ? r.ambiguous : [], notFound: Array.isArray(r.notFound) ? r.notFound : [], failed: Array.isArray(r.failed) ? r.failed : [] };
       if (r.error) out.error = String(r.error);
       return out;
+    },
+    /* 사람들(permissions 의 people[].id — PrincipalId)의 이 폴더 권한을 거둔다 → { removed:[{ id, roles:[역할 id…] }], missing:[id…] }(2026-10-19). 빈 목록이면 호출 없이 빈 결과 */
+    async unshare(p, ids) {
+      const folderPath = pathOf(p, fp);
+      const list = Array.from(new Set((Array.isArray(ids) ? ids : ids == null ? [] : [ids]).map(Number).filter((n) => n > 0)));
+      if (!list.length) return { removed: [], missing: [] };
+      const r = await runW(spUnshare, { api: cfg.api, folderPath, ids: list });
+      if (!r || !r.ok) throw errOfResult(r, `권한 거두기 ${folderPath}`);
+      return { removed: Array.isArray(r.removed) ? r.removed : [], missing: Array.isArray(r.missing) ? r.missing : [] };
     },
     /* 조직 내 공유 링크(기본 편집) → { url, edit, via:'ShareLink'|'CreateOrganizationSharingLink' } */
     async orgLink(p, o) {

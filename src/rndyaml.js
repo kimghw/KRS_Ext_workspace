@@ -12,7 +12,7 @@
 // 들여온 줄에는 key 가 붙어 같은 파일을 다시 넣어도 겹치지 않는다.
 
 import {
-  MAX_PROJECTS, isYmd, yearNo, amountOf, won, todayStr, newId, normalizeProject, normalizeRefs, projectChanges, yearBook, aliasOwner,
+  MAX_PROJECTS, isYmd, yearNo, amountOf, won, todayStr, newId, normalizeProject, normalizeRefs, projectChanges, yearBook, aliasOwner, yearsOf, yearEndFor,
 } from './rnd.js';
 
 export const UNIT = Object.freeze({ 천원: 1000, 원: 1, 백만원: 1e6 });
@@ -224,6 +224,13 @@ export function readSnapshot(obj) {
 /* ------------------------------------------------------------ 장부에 넣기 */
 
 const keyOf = (s) => str(s).replace(/\s/g, '').toLowerCase();
+
+/** 넣는 차년도가 연구기간 밖이면(1차년도만 적힌 과제에 2차년도 계획서 등) 종료일을 그 차년도 끝까지 늘려 차년도 칩이 서게 한다(2026-10-19). 시작일이 없으면 그대로. */
+function extendTo(p, n) {
+  if (!isYmd(p?.start) || !(n > yearsOf(p).length)) return;
+  const end = yearEndFor(p, n);
+  if (end) p.end = end;
+}
 /** 과제번호(둘 다 있으면)나 과제명이 같은 과제. */
 export function findProject(book, { code = '', name = '' } = {}) {
   return book.projects.find((p) => (code && p.code ? keyOf(p.code) === keyOf(code) : name && keyOf(p.name) === keyOf(name))) || null;
@@ -270,6 +277,7 @@ export function applySnapshot(book, snap, { today = todayStr(), header = { tag: 
   if (!p) {
     if (book.projects.length >= MAX_PROJECTS) throw new Error(`과제는 ${MAX_PROJECTS}개까지입니다 — 하나를 지우고 다시 넣으세요.`);
     p = normalizeProject(snap.project);
+    extendTo(p, snap.n);
     book.projects.push(p);
     report.created = true;
   } else {
@@ -277,12 +285,17 @@ export function applySnapshot(book, snap, { today = todayStr(), header = { tag: 
     for (const k of ['code', 'lead', 'note']) if (!draft[k] && snap.project[k]) draft[k] = snap.project[k];
     // 공문 참조자는 파일에 블록이 있을 때만 — 그것이 정본이라 통째로(비어 있으면 비운다).
     if (snap.project.refs) draft.refs = snap.project.refs;
-    // 연구기간·차년도 끊는 기준은 계획서가 정본이다.
+    // 연구기간·차년도 끊는 기준은 계획서가 정본이다. 다만 뒤 차년도(2차년도~)의 계획서가 그 차년도 기간만 적은 것이면(시작일이 장부보다 늦다) 시작일·기준은 두고 종료일만 늘린다
+    //   (2026-10-19 사용자 지정 "2,3,4차년도 사업계획을 추가하고 싶을 때" — 1차년도만 있는 과제에 뒤 차년도 계획서를 넣는 길. 시작일을 옮기면 1차년도가 사라진다).
     if (snap.project.start) {
-      draft.start = snap.project.start;
-      draft.end = snap.project.end || draft.end;
-      draft.calendar = snap.project.calendar;
+      const laterOnly = snap.n > 1 && isYmd(draft.start) && snap.project.start > draft.start;
+      if (!laterOnly) {
+        draft.start = snap.project.start;
+        draft.end = snap.project.end || draft.end;
+        draft.calendar = snap.project.calendar;
+      } else if (snap.project.end && (!draft.end || snap.project.end > draft.end)) draft.end = snap.project.end;
     }
+    extendTo(draft, snap.n);
     const ch = projectChanges(p, draft, today).map((c) => ({ ...c, reason, auto: false }));
     Object.assign(p, draft);
     if (ch.length) yearBook(p, snap.n).changes.push(...ch);

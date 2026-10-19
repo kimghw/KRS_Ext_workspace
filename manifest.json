@@ -10,7 +10,8 @@
     "tabs",
     "downloads",
     "nativeMessaging",
-    "offscreen"
+    "offscreen",
+    "management"
   ],
   "host_permissions": [
     "https://eclass.krs.co.kr/*",

@@ -30,6 +30,10 @@ const gate = () => { let open; const p = new Promise((r) => { open = r; }); retu
 
 /* ---------------------------------------------------------- 흉내 */
 
+/** 차년도 고르기(단추 줄 — 2026-10-19) — 그 값의 단추를 누른다 / 고른 값(#rdgStage 의 data-value) / 단추 줄 [값, 글, 켜짐, 점선(아직 없는 차년도)]. */
+const pickStage = (s, v) => { const b = s.$('rdgStage').querySelector(`[data-stage="${v}"]`); assert.ok(b, `차년도 단추 ${v}`); b.click(); };
+const stageOf = (s) => s.$('rdgStage').dataset.value;
+const stageBtns = (s) => [...s.$('rdgStage').querySelectorAll('button')].map((b) => [b.dataset.stage, b.textContent, b.getAttribute('aria-pressed') === 'true', b.classList.contains('off')]);
 const makeBook = () => ({
   projects: [
     { id: 'p1', name: P1_NAME, alias: 'SSCB', code: 'RS-2026-00000001', lead: '홍길동', start: '2025-04-01', end: '2028-12-31', calendar: true, note: '', refs: {}, years: {} },
@@ -303,12 +307,20 @@ test('openAdd — 대상(빈 차년도 카드)이면 setOverlay(add, fn) · 대�
   assert.ok(!s.$('rdgAdd').classList.contains('hidden'));
   assert.equal(s.$('rdgTarget').textContent, 'SSCB · 3차년도');
   assert.ok(!s.$('rdgTarget').classList.contains('hidden'));
-  const opts = [...s.$('rdgStage').options].map((o) => [o.value, o.textContent]);
-  assert.equal(opts.length, 2 + yearsOf(s.book.projects[0]).length);
-  assert.deepEqual(opts[0], ['', '자동(오늘이 든 차년도)']);
-  assert.deepEqual(opts[1], ['all', '모든 차년도']);
-  assert.deepEqual(opts[5], ['4', '4차년도']);
-  assert.equal(s.$('rdgStage').value, '3');
+  const btns = stageBtns(s);
+  assert.equal(btns.length, 3 + Math.max(5, yearsOf(s.book.projects[0]).length), '자동 · 1~5(연구기간이 더 길면 그만큼 — 2026-10-19) · 모두 · 없는 것만 — 단추 줄이지 드롭다운이 아니다');
+  assert.equal(s.$('rdgStage').querySelector('select'), null);
+  assert.deepEqual(btns[0], ['', '자동', false, false]);
+  assert.deepEqual(btns[1], ['1', '1', false, true], '예산 정보가 없는 차년도는 점선');
+  assert.deepEqual(btns[3], ['3', '3', true, true], '대상 차년도가 켜져 있다');
+  assert.deepEqual(btns[5], ['5', '5', false, true], '연구기간이 4개 차년도여도 5차년도까지 — 뒤 차년도 계획서를 넣으면 종료일이 늘어난다');
+  assert.deepEqual(btns[6], ['all', '모두', false, false]);
+  assert.deepEqual(btns[7], ['missing', '없는 것만', false, false]);
+  assert.equal(stageOf(s), '3');
+  for (const b of s.$('rdgStage').querySelectorAll('button')) assert.ok(b.title, `${b.textContent} 툴팁`);
+  pickStage(s, '5');
+  assert.equal(stageOf(s), '5');
+  assert.deepEqual(stageBtns(s).filter((b) => b[2]).map((b) => b[0]), ['5'], '누른 것만 켜진다');
   assert.equal(s.$('rdgAlias').value, 'SSCB');
   assert.ok(s.$('rdgAlias').readOnly);
   assert.deepEqual(s.panel.state().add.target, { projectId: 'p1', n: 3 });
@@ -320,11 +332,40 @@ test('openAdd — 대상이 없으면 보고 있는 과제가 있어도 대상�
   s.hooks.add({});
   assert.equal(s.panel.state().add.target, null);
   assert.ok(s.$('rdgTarget').classList.contains('hidden'));
-  assert.equal(s.$('rdgStage').value, '');
-  assert.equal(s.$('rdgStage').options.length, 12, '자동 · 모든 차년도 · 1~10차년도');
+  assert.equal(stageOf(s), '');
+  assert.equal(stageBtns(s).length, 13, '자동 · 1~10 · 모두 · 없는 것만');
+  assert.ok(stageBtns(s)[0][2] && !stageBtns(s).some((b) => b[3]), '자동이 켜져 있고 과제를 모르니 점선은 없다');
   assert.equal(s.$('rdgAlias').value, '');
   assert.ok(!s.$('rdgAlias').readOnly);
   assert.ok(s.$('rdgPreview').classList.contains('hidden'));
+});
+
+test('openAdd — 머리 줄의 차년도 아이콘({ projectId }만, 2026-10-19) → 대상은 그 과제, 아직 없는 첫 차년도가 골라지고(다 있으면 그 다음) 있는 차년도는 실선, 안내 한 줄', () => {
+  const book = makeBook();
+  book.projects[0].years[1] = { budget: [{ item: '인건비', plan: 1000 }] };
+  const s = setup({ book });
+  s.panel.wire();
+  s.hooks.add({ projectId: 'p1' });
+  assert.equal(s.overlay(), 'add');
+  assert.equal(s.$('rdgTarget').textContent, 'SSCB', '차년도 없이 과제만');
+  assert.deepEqual(s.panel.state().add.target, { projectId: 'p1', n: 0 });
+  assert.equal(stageOf(s), '2', '1차년도는 있으니 2차년도');
+  assert.deepEqual(stageBtns(s).slice(1, 3), [['1', '1', false, false], ['2', '2', true, true]], '있는 차년도는 실선, 없는 차년도는 점선');
+  assert.match(s.$('rdgStage').querySelector('[data-stage="1"]').title, /이미 있음/);
+  assert.match(s.$('rdgStage').querySelector('[data-stage="5"]').title, /연구기간 밖/);
+  assert.match(s.msg(), /차년도를 고르고 사업계획서/);
+  assert.equal(s.$('rdgAlias').value, 'SSCB');
+  assert.ok(s.$('rdgAlias').readOnly);
+  s.hooks.add({ projectId: 'p1' });   // 한 번 더 — 하던 일을 버리지 않는다
+  assert.equal(s.named('setOverlay').length, 1);
+  // 연구기간 안(4개 차년도)이 다 있으면 그 다음 차년도 — 연구기간 밖
+  const book2 = makeBook();
+  for (const n of [1, 2, 3, 4]) book2.projects[0].years[n] = { budget: [{ item: '인건비', plan: 1000 }] };
+  const s2 = setup({ book: book2 });
+  s2.panel.wire();
+  s2.hooks.add({ projectId: 'p1' });
+  assert.equal(stageOf(s2), '5');
+  assert.ok(!stageBtns(s2).slice(1, 5).some((b) => b[3]) && stageBtns(s2)[5][3], '1~4는 실선, 5는 점선');
 });
 
 test('닫기 · 취소 → setOverlay(null) 과 카드 숨김, rndpanel 이 덮개를 닫으면(칩) 카드만 숨는다', () => {
@@ -489,7 +530,7 @@ test('다시 뽑기 — 메모리의 같은 재료로, 차년도 고르기의 �
   const s = setup();
   await extracted(s);
   const first = s.named('askExtract')[0][1];
-  s.$('rdgStage').value = '3';
+  pickStage(s, '3');
   s.click('rdgRetry');
   await until(() => s.named('finalizeExtracted').length === 2 && !s.panel.state().add.busy, '다시 뽑기');
   assert.equal(s.named('readDocument').length, 1);
@@ -607,7 +648,8 @@ test('바쁠 때 — host aria-busy · 단추 잠금(닫기·취소·직접 적�
   s.pickFiles('rdgFile', [fakeFile('계획서.pdf')]);
   await until(() => s.named('askExtract').length === 1, '묻는 중');
   assert.equal(s.$('rdgAdd').getAttribute('aria-busy'), 'true');
-  for (const id of ['rdgFile', 'rdgStage', 'rdgApply', 'rdgSave', 'rdgRetry']) assert.ok(s.$(id).disabled, `${id} 잠김`);
+  for (const id of ['rdgFile', 'rdgApply', 'rdgSave', 'rdgRetry']) assert.ok(s.$(id).disabled, `${id} 잠김`);
+  assert.ok([...s.$('rdgStage').querySelectorAll('button')].every((b) => b.disabled), '차년도 단추 줄 잠김');
   for (const id of ['rdgAddClose', 'rdgCancel', 'rdgManual']) assert.ok(!s.$(id).disabled, `${id} 열림`);
   assert.ok(s.msg().startsWith(ASKING_EXTRACT), s.msg());
   s.tickClock(65_000);
@@ -684,7 +726,7 @@ const yearRows = (s) => [...s.doc.querySelectorAll('.rdg-years > li')].map((li) 
 async function extractedAll(s, { target = {}, asks } = {}) {
   s.panel.wire();
   s.hooks.add(target);
-  s.$('rdgStage').value = 'all';
+  pickStage(s, 'all');
   s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
   await until(() => s.named('askExtract').length >= asks && !s.panel.state().add.busy && s.logs.length > 0, '모든 차년도 뽑기 끝');
 }
@@ -743,7 +785,7 @@ test('모든 차년도 — 대상 과제의 연구기간으로 시작하고 답�
   const s = setup({ extract: async (mat, ctx) => { await g.p; return answer(mat, ctx); } });
   s.panel.wire();
   s.hooks.add({ projectId: 'p1', n: 3 });
-  s.$('rdgStage').value = 'all';
+  pickStage(s, 'all');
   s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
   await until(() => s.named('askExtract').length === 1, '첫 묻기');
   // 대상 과제(2025-04-01 ~ 2028-12-31, 1월 1일 끊기)는 4개 차년도 — 처음엔 1차년도를 묻고 나머지 셋이 기다린다
@@ -771,6 +813,68 @@ test('모든 차년도 — 대상 과제의 연구기간으로 시작하고 답�
   assert.deepEqual(s.panel.state().add.all.years.map((y) => y.state), ['ok', 'ok', 'ok']);
   assert.equal(s.logs[1][2], 'R&D 사업계획서에서 스냅샷 뽑음 — 시험용 직류 차단기 개발 2차년도 (로컬 CLI · $0.4213)');
   assert.equal(s.$('rdgAlias').value, 'SSCB');
+});
+
+/* ---------------------------------------------------------- 없는 차년도만 (2026-10-19 사용자 "E(있는거 빼고 아직 없는거)") */
+
+/** 장부의 과제에 그 차년도들의 예산 정보를 둔다(있는 차년도). */
+const withBudget = (book, id, ns) => { const p = book.projects.find((x) => x.id === id); for (const n of ns) p.years[n] = { budget: [{ item: '인건비', plan: 1000 }] }; return book; };
+
+test('없는 차년도만 — 대상 과제에 예산이 있는 차년도는 건너뛰고(skip 줄 · 뽑기 단추) 나머지만 차례로 · 답의 연차범위가 이긴다 · 건너뛴 줄의 뽑기는 그 차년도만', async () => {
+  const s = setup({ extract: allAnswer({ range: 3, name: () => P1_NAME }), book: withBudget(makeBook(), 'p1', [1]) });
+  s.panel.wire();
+  s.hooks.add({ projectId: 'p1', n: 2 });
+  pickStage(s, 'missing');
+  s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s.named('askExtract').length >= 2 && !s.panel.state().add.busy && s.logs.length > 0, '없는 차년도만 뽑기 끝');
+  assert.deepEqual(s.named('askExtract').map((c) => c[2].stage), [2, 3], '1차년도는 있어 건너뛰고 2·3차년도만(문서의 연차범위 3 — 대상의 4차년도 줄은 거둠)');
+  assert.deepEqual(s.panel.state().add.all.years.map((y) => [y.n, y.state]), [[1, 'skip'], [2, 'ok'], [3, 'ok']]);
+  assert.deepEqual(yearRows(s)[0], ['1차년도', '이미 있음 — 건너뜀(뽑아 넣으면 변경이력으로)', ['뽑기']]);
+  assert.ok(s.doc.querySelectorAll('.rdg-years > li')[0].classList.contains('skip'));
+  assert.match(s.msg(), /^뽑았습니다 — 시험용 직류 차단기 개발 2차년도·3차년도 · 로컬 CLI · \$0\.8426 · 1차년도는 이미 있어 건너뛰었습니다\. 확인하고 넣기를 누르세요/);
+  assert.match(s.logs[0][2], /^R&D 사업계획서에서 없는 차년도 스냅샷 뽑음 — 시험용 직류 차단기 개발 2차년도·3차년도 · 건너뜀 1차년도 \(/);
+  assert.ok(s.panel.state().add.warnings.includes('1차년도는 이미 있어 건너뛰었습니다 — 다시 뽑으려면 그 줄의 다시 뽑기(넣을 때 변경이력으로 남습니다)'));
+  assert.equal(s.$('rdgAlias').value, 'SSCB');
+  // 건너뛴 줄의 뽑기 — 그 차년도만(넣으면 변경이력으로)
+  s.doc.querySelector('[data-rdg-year-redo="1"]').click();
+  await until(() => s.logs.length === 2 && !s.panel.state().add.busy, '뽑기');
+  assert.deepEqual(s.named('askExtract').slice(2).map((c) => c[2].stage), [1]);
+  assert.deepEqual(s.panel.state().add.all.years.map((y) => y.state), ['ok', 'ok', 'ok']);
+});
+
+test('없는 차년도만 — 대상이 없으면 문서에 적힌 과제번호로 장부 과제를 짚고, 연구기간 안(1차년도)이 다 있으면 다음 차년도를 물어 답의 연차범위까지 간다(1차년도만 적힌 과제에 2·3차년도 계획서)', async () => {
+  const book = withBudget(makeBook(), 'p1', [1]);
+  Object.assign(book.projects[0], { start: '2026-04-01', end: '2026-12-31' });
+  const s = setup({
+    extract: allAnswer({ range: 3, name: () => P1_NAME }), book,
+    readDocument: async (file) => material(file.name, { text: '— 1쪽 —\n연구개발과제번호 RS-2026-00000001 · 2차년도 사업계획서' }),
+  });
+  s.panel.wire();
+  s.hooks.add({});
+  pickStage(s, 'missing');
+  s.pickFiles('rdgFile', [fakeFile('2차년도 사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s.named('askExtract').length >= 2 && !s.panel.state().add.busy && s.logs.length > 0, '끝');
+  assert.deepEqual(s.named('askExtract').map((c) => c[2].stage), [2, 3], '1차년도는 있어 건너뛰고, 연구기간 밖의 2차년도를 물어 연차범위(3)를 알고 3차년도까지');
+  assert.equal(s.named('askExtract')[0][2].project, null, '대상은 없다 — 짚은 과제는 있는 차년도를 가리는 데만');
+  assert.deepEqual(s.panel.state().add.all.years.map((y) => [y.n, y.state]), [[1, 'skip'], [2, 'ok'], [3, 'ok']]);
+  const where = [...s.doc.querySelectorAll('.rdg-meta > div')].find((d) => d.querySelector('dt').textContent === '넣을 곳');
+  assert.equal(where.querySelector('dd').textContent, 'SSCB — 장부에 있는 과제', '넣을 곳은 장부의 그 과제');
+  assert.equal(s.$('rdgAlias').value, 'SSCB');
+  assert.ok(s.$('rdgAlias').readOnly);
+});
+
+test('없는 차년도만 — 연구기간 안이 다 있으면 다음 차년도를 한 번 물어 보고, 문서가 거기까지가 아니면 그 답은 버리고 "뽑을 차년도가 없습니다"', async () => {
+  const s = setup({ extract: allAnswer({ range: 3, name: () => P1_NAME }), book: withBudget(makeBook(), 'p1', [1, 2, 3, 4]) });
+  s.panel.wire();
+  s.hooks.add({ projectId: 'p1', n: 2 });
+  pickStage(s, 'missing');
+  s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s.named('askExtract').length >= 1 && !s.panel.state().add.busy && /뽑을 차년도가 없습니다/.test(s.msg()), '끝');
+  assert.deepEqual(s.named('askExtract').map((c) => c[2].stage), [5], '1~4차년도는 있어 5차년도를 물어 본다');
+  assert.deepEqual(s.panel.state().add.all.years.map((y) => [y.n, y.state]), [[1, 'skip'], [2, 'skip'], [3, 'skip'], [4, 'skip']], '문서는 3차년도까지 — 5차년도 답은 버린다');
+  assert.equal(s.msg(), '뽑을 차년도가 없습니다 — 1차년도·2차년도·3차년도·4차년도는 이미 있습니다(문서는 3차년도까지). 다시 뽑아 변경이력으로 남기려면 그 차년도나 모든 차년도를 고르세요');
+  assert.equal(s.logs.length, 0, '로그는 없다');
+  assert.ok(s.$('rdgApply').disabled, '넣을 것이 없다');
 });
 
 test('모든 차년도 넣기 — 고친 YAML 칸은 그 차년도의 글로 · zip 저장(N차년도/KR_….yaml) · 한 번의 intake → setAlias → 닫고 오늘이 든 차년도로', async () => {
@@ -832,7 +936,7 @@ test('모든 차년도 — 묻는 동안 닫으면 남은 차년도를 묻지 �
   const s = setup({ extract: async (mat, ctx) => { await g.p; return answer(mat, ctx); } });
   s.panel.wire();
   s.hooks.add({});
-  s.$('rdgStage').value = 'all';
+  pickStage(s, 'all');
   s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf')]);
   await until(() => s.named('askExtract').length === 1, '묻는 중');
   assert.ok(s.msg().startsWith('Claude 에게 차년도마다 차례로 묻는 중 — 차년도마다 몇 분 걸릴 수 있습니다 · 1차년도 (1/?)'), s.msg());

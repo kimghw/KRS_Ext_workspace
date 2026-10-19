@@ -79,6 +79,7 @@ function stamp(src) {
     source: 'kr_ext_rerp', path: src.split(path.sep).join('/'),
     commit: git(src, 'rev-parse --short HEAD'), commitDate: git(src, 'log -1 --format=%ad --date=short'), version: JSON.parse(fs.readFileSync(path.join(src, 'manifest.json'), 'utf8')).version,
     dirty: git(src, 'status --short').split('\n').filter(Boolean).map((l) => l.trim()),
+    note: (() => { try { return readOrigin().note || ""; } catch { return ""; } })(),   // 손으로 적은 갱신 내력은 지키고 다시 적는다(2026-10-19 — 전에는 stamp 가 버렸다)
     portedAt: new Date().toISOString().slice(0, 10), files,
   };
   fs.writeFileSync(ORIGIN, `${JSON.stringify(origin, null, 2)}\n`);

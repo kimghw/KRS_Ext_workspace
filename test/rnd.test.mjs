@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   BOOK_KEY, MAX_PROJECTS, MAX_YEARS, BUDGET_ITEMS, CHANGE_KINDS,
   periodOf, periodText, isYmd, amountOf, comma, won, shortWon,
-  yearsOf, yearNo, currentYear, yearState, yearLabel,
+  yearsOf, yearEndFor, yearNo, currentYear, yearState, yearLabel,
   blankYear, normalizeYear, normalizeProject, normalizeRefs, refsText, normalizeSupport, supportRefs, supportText, SUPPORT_MAX, normalizeBook, viewYear, yearBook, aliasOwner, fileLog, noteLogs,
   budgetTotals, hasBudget, budgetChanges, projectChanges, newestFirst,
   fromGongmun, mergeProjects, exportJson, exportName, importJson, restoreBook, summaryText, parseRoster, parseSections,
@@ -52,6 +52,9 @@ t('시작일부터 한 해씩, 마지막은 종료일까지 — 2026.04.01~2029.
 });
 t('딱 한 해면 한 차년도, 종료일이 없으면 한 해, 시작일이 없으면 기간 없는 1차년도 하나', () => {
   assert.deepEqual(yearsOf({ start: '2026-01-01', end: '2026-12-31' }), [{ n: 1, start: '2026-01-01', end: '2026-12-31' }]);
+  assert.deepEqual(
+    [yearEndFor({ start: '2026-04-01', calendar: true }, 1), yearEndFor({ start: '2026-04-01', calendar: true }, 3), yearEndFor({ start: '2026-04-01' }, 2), yearEndFor({ start: '' }, 2), yearEndFor({ start: '2026-04-01' }, 0)],
+    ['2026-12-31', '2028-12-31', '2028-03-31', '', ''], 'n차년도의 끝날 — 1월 1일 기준은 그 해 12월 31일, 아니면 n해째의 전날(2026-10-19 — 연구기간 밖의 차년도를 넣을 때 종료일을 여기까지)');
   assert.deepEqual(yearsOf({ start: '2026-04-01', end: '' }), [{ n: 1, start: '2026-04-01', end: '2027-03-31' }]);
   assert.deepEqual(yearsOf({ start: '', end: '' }), [{ n: 1, start: '', end: '' }]);
   assert.deepEqual(yearsOf(null), [{ n: 1, start: '', end: '' }]);

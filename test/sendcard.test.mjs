@@ -124,6 +124,15 @@ globalThis.fetch = async (url, init = {}) => {
 
 /* ------------------------------------------------------------ 패널 */
 
+// 시계 — 이 테스트의 출장(9/9~9/23)은 기본 보기의 4주 창(src/settling.js itemsToShow — 오늘부터 BACK_DEFAULT 주 전까지) 안에 있어야 한다. 실제 날짜가 흐르면 창 밖으로 밀려
+// 2026-10-08 부터 TR-2 찾기(seek)가 빨갰다(2026-10-15 확인). 오늘을 테스트를 쓴 2026-10-04 로 옮긴 시계를 쓴다 — 멈추지 않고 그날부터 흐른다(Date.now 차이를 재는 코드가 있어서).
+// jsdom 의 window.Date 는 따로라 건드리지 않는다. 패널 모듈(attendpanel.js · src/attend.js attendToday)은 노드의 Date 를 쓴다.
+const RealDate = Date;
+const CLOCK_SHIFT = RealDate.now() - new RealDate('2026-10-04T10:00:00+09:00').getTime();
+globalThis.Date = class extends RealDate {
+  constructor(...a) { super(...(a.length ? a : [RealDate.now() - CLOCK_SHIFT])); }
+  static now() { return RealDate.now() - CLOCK_SHIFT; }
+};
 const { createAttendPanel } = await import('../attendpanel.js');
 const { createEvidenceStore } = await import('../src/evidence.js');
 const shelf = new Map();

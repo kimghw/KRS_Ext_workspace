@@ -21,11 +21,12 @@ export const SET_KEY = 'rndSettings';
  * unbilled 미청구(이 과제 카드로 썼지만 청구 전 — 비목이 없어 합계에만) · plan 사용계획(예상 비용).
  * 승인전(req — 청구했지만 결재 전인 신청금액)은 2026-10-11 사용자 지정으로 뺐다: 집행에 더하지 않고 저장돼 있던 req 도 읽지 않는다(rERP 집행비율에는 rerp 식대로 든다).
  * hide: 예산 칸에서 숨긴 비목 이름들(2026-10-11 사용자 지정 — "R&D 설정에서 어떤 항목을 볼지 고르게"). 줄만 숨고 합계·표 복사·요약에는 그대로 든다. 이름은 nameKey 로 견준다(isHidden).
+ * months: 참여인력 칸의 달마다 지급 줄을 펴 두었는가(머리 줄의 M — 2026-10-19 사용자 지정 "상단에 M 을 누르면 월별로 보였다가 접어졌다가"). 기본 접힘(false), 누르면 저장.
  */
 export function normalizeSet(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const hide = [...new Set((Array.isArray(o.hide) ? o.hide : []).map((v) => text(v, 60)).filter(Boolean))].slice(0, 40);
-  return { erp: o.erp !== false, unbilled: o.unbilled === true, plan: o.plan === true, hide };
+  return { erp: o.erp !== false, unbilled: o.unbilled === true, plan: o.plan === true, hide, months: o.months === true };
 }
 /** 설정에 따라 집행에 더하는 것의 이름들 — 기록 글용. */
 export const includeNames = (set) => [set?.unbilled ? '미청구' : '', set?.plan ? '사용계획' : ''].filter(Boolean);

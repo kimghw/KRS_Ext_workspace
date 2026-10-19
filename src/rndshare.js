@@ -53,13 +53,14 @@ const money = (v) => { if (typeof v === 'string') v = v.replace(/[,\s원₩]/g, 
 const ym = (s) => (isYmd(s) ? s.slice(0, 7) : '');
 const d8 = (s) => (isYmd(s) ? s.replace(/-/g, '') : '');
 
-/** 저장해 두는 공유 형편(chrome.storage 의 rndShare). folder 는 공유 폴더 주소(비면 내 OneDrive 의 DEFAULT_BASE), folderCache 는 푼 밑폴더(배선이 둔다), memo 는 열쇠마다 받은 시각·지문, del 은 묘비. */
+/** 저장해 두는 공유 형편(chrome.storage 의 rndShare). folder 는 공유 폴더 주소(비면 rERP 확장의 설정, 그것도 없으면 내 OneDrive 의 DEFAULT_BASE), folderCache 는 푼 밑폴더(배선이 둔다), memo 는 열쇠마다 받은 시각·지문, del 은 묘비.
+ *  peer 는 마지막으로 물어 둔 rERP 확장(kr_ext_rerp)의 공유 폴더 설정({ id, folder, driveHost, enabled, path, url, version, at } — 2026-10-19 "이 링크 공통으로 맞춰봐", 안 닿으면 {}), effective 는 마지막으로 쓴 밑폴더의 열쇠(배선이 바뀜을 알아채 캐시를 버리는 데 — 기본은 ''). */
 export function normalizeShare(raw) {
   const o = obj(raw) || {};
   const s = (v, max = 600) => (typeof v === 'string' ? v.slice(0, max) : '');
   const map = (v) => obj(v) || {};
   // shareWith: 과제 폴더를 새로 만들 때 참여연구원에게 자동 공유(편집) — 'participants'(기본, rerp 설정과 같음) | 'none' (2026-10-19 — 카드의 체크)
-  return { on: o.on === true, folder: s(o.folder, 2000).trim(), folderCache: map(o.folderCache), at: Number.isFinite(o.at) ? o.at : 0, memo: map(o.memo), del: map(o.del), last: s(o.last), error: s(o.error), shareWith: o.shareWith === 'none' ? 'none' : 'participants' };
+  return { on: o.on === true, folder: s(o.folder, 2000).trim(), folderCache: map(o.folderCache), at: Number.isFinite(o.at) ? o.at : 0, memo: map(o.memo), del: map(o.del), last: s(o.last), error: s(o.error), shareWith: o.shareWith === 'none' ? 'none' : 'participants', peer: map(o.peer), effective: s(o.effective, 4100) };
 }
 
 /* ------------------------------------------------------------ 열쇠 */
@@ -340,4 +341,50 @@ export function applyYear(p, n, part, data) {
   if (!changed) return { project: p, changed: false };
   years[n] = cur;
   return { project: { ...p, years }, changed: true };
+}
+
+/* ------------------------------------------------------------ 참여인력 공유 권한(2026-10-19 사용자 지정: "sharepoint 링크 읽기, 쓰기 권한 설정 … 아이콘에 공유아이콘 … 체크하면 반영") */
+
+/** 이름 → 찾은 사람의 캐시(chrome.storage 의 rndSharePeople — rerp/spstore.js findPeople 의 found 를 이름마다): { [이름]: { email, title, login, at } }. 이메일이 없는 것·모르는 것은 버린다. */
+export const PEOPLE_KEY = 'rndSharePeople';
+export function normalizePeople(raw) {
+  const out = {};
+  for (const [name, v] of Object.entries(obj(raw) || {})) {
+    const n = str(name, 60).trim(), email = str(v?.email, 200).trim().toLowerCase();
+    if (!n || !email.includes('@')) continue;
+    out[n] = { email, title: str(v?.title, 200), login: str(v?.login, 300), at: num(v?.at) };
+  }
+  return out;
+}
+
+/**
+ * 권한 표의 줄 — names(참여연구자·행정지원 차례, 나는 뺀다)와 폴더 권한(perms — rerp/spstore.js permissions: people[{ id, name, email, role, me }])을 **이메일**로 맞춘다(사이트 사용자 정보의 표시 이름은 영문이라 한글 이름으로는 못 맞춘다 — 실측 2026-10-19).
+ * people 은 이름 → { email, title } 캐시(normalizePeople)에 이 세션의 찾기 결과({ ambiguous:[후보] } | { notFound:true })를 덮은 것. 폴더에만 있는 사람(이름 목록 밖 — 나·링크 그룹은 빼고)은 뒤에 extra:true 로 — 거둘 수 있게.
+ * → [{ name, email, title(표시 이름), id(PrincipalId — 0 이면 폴더에 없음), role('owner'|'edit'|'read'|'other'|''), state(''|'lookup'(아직 못 찾음)|'ambiguous'|'notFound'), candidates, extra }]
+ */
+export function permRows(names, perms, people, { me = '' } = {}) {
+  const map = obj(people) || {};
+  const list = Array.isArray(perms?.people) ? perms.people : [];
+  const meMail = str(perms?.me?.email, 200).trim().toLowerCase();
+  const byMail = new Map();
+  for (const q of list) { const em = str(q?.email, 200).trim().toLowerCase(); if (em && !byMail.has(em)) byMail.set(em, q); }
+  const same = (a, b) => !!a && !!b && String(a).replace(/\s/g, '') === String(b).replace(/\s/g, '');
+  const rows = [], used = new Set(), seen = new Set();
+  for (const raw of Array.isArray(names) ? names : []) {
+    const name = str(raw, 60).trim();
+    if (!name || seen.has(name) || same(name, me)) continue;
+    seen.add(name);
+    const c = obj(map[name]);
+    const email = str(c?.email, 200).trim().toLowerCase();
+    const q = email ? byMail.get(email) : null;
+    if (q) used.add(email);
+    rows.push({ name, email, title: str(c?.title, 200) || str(q?.name, 200), id: q ? num(q.id) : 0, role: q ? str(q.role, 10) : '', state: email ? '' : Array.isArray(c?.ambiguous) ? 'ambiguous' : c?.notFound ? 'notFound' : 'lookup', candidates: Array.isArray(c?.ambiguous) ? c.ambiguous.map((x) => str(x, 200)) : [], extra: false });
+  }
+  for (const q of list) {
+    const em = str(q?.email, 200).trim().toLowerCase();
+    if (!em || used.has(em) || q?.me === true || (meMail && em === meMail) || same(q?.name, me)) continue;
+    used.add(em);
+    rows.push({ name: str(q.name, 200) || em, email: em, title: str(q.name, 200), id: num(q.id), role: str(q.role, 10), state: '', candidates: [], extra: true });
+  }
+  return rows;
 }

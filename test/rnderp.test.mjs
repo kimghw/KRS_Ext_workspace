@@ -148,8 +148,9 @@ t('미청구는 연구활동비 줄 하나에 든다(2026-10-12 사용자 지정
   assert.ok(rows.every((r) => r.erpUnbilled === undefined && r.erpKey === undefined));
 });
 t('R&D 설정 모양과 미청구 몫 — erp 는 기본 켬, 미청구·사용계획은 기본 끔. 승인전(req)은 없다(2026-10-11 사용자 지정 — 저장돼 있어도 읽지 않음)', () => {
-  assert.deepEqual(normalizeSet(null), { erp: true, unbilled: false, plan: false, hide: [] });
-  assert.deepEqual(normalizeSet({ erp: false, req: true, unbilled: true, plan: 'yes' }), { erp: false, unbilled: true, plan: false, hide: [] });
+  assert.deepEqual(normalizeSet(null), { erp: true, unbilled: false, plan: false, hide: [], months: false });
+  assert.deepEqual(normalizeSet({ erp: false, req: true, unbilled: true, plan: 'yes', months: true }), { erp: false, unbilled: true, plan: false, hide: [], months: true });
+  assert.equal(normalizeSet({ months: 'yes' }).months, false, '참여인력의 달마다 지급 줄 펼침(머리 줄의 M — 2026-10-19)은 참일 때만, 기본 접힘');
   assert.deepEqual(includeNames(normalizeSet({ unbilled: true, plan: true })), ['미청구', '사용계획']);
   assert.deepEqual(includeNames({ req: true }), []);
   // 예산 칸에서 숨긴 비목(hide — 2026-10-11 사용자 지정): 글만, 겹침·빈 것은 걷고, 이름 키로 견준다(연구시설·장비비 = 연구시설장비비, 간접비(출금) = 간접비)

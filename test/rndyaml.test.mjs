@@ -228,6 +228,26 @@ console.log('장부에 넣기 — 스냅샷');
       ['연구기간', '연구기간', '2026.04.01 ~ 2029.03.31', '2026.04.01 ~ 2029.12.31'], ['연구기간', '차년도 끊는 기준', '시작일부터 한 해씩', '1월 1일(첫 해는 시작일부터 12월 31일까지)'],
     ]);
   });
+  t('뒤 차년도 계획서 — 1차년도만 적힌 과제에 2차년도 스냅샷(그 차년도 기간만 적힘)을 넣으면 시작일·기준은 두고 종료일만 늘어 2차년도 칩이 선다 · 기간이 없는 3차년도도 종료일을 그 차년도 끝까지(2026-10-19)', () => {
+    const b = normalizeBook({ projects: [{ id: 'x', name: 'SSCB 과제', code: 'RS-1', start: '2026-04-01', end: '2026-12-31', calendar: true }] });
+    const snap2 = readSnapshot({ meta: { 과제명: 'SSCB 과제', 연구개발과제번호: 'RS-1', 차년도: '2차년도', 기간: '2027-01 ~ 2027-12' }, 예산: { 비목별: [{ 연차: 2, 직접비: { 인건비: 10 } }] } });
+    let rep = applySnapshot(b, snap2, { today: TODAY });
+    assert.ok(!rep.created);
+    assert.deepEqual([b.projects[0].start, b.projects[0].end, b.projects[0].calendar], ['2026-04-01', '2027-12-31', true], '시작일·기준은 그대로, 종료일만');
+    assert.deepEqual(yearsOf(b.projects[0]).map((y) => y.n), [1, 2]);
+    assert.deepEqual(rep.changes.map((c) => [c.kind, c.before, c.after]), [['연구기간', '2026.04.01 ~ 2026.12.31', '2026.04.01 ~ 2027.12.31']]);
+    assert.equal(b.projects[0].years[2].budget.find((r) => r.item === '인건비').plan, 10000, '2차년도 예산은 들어간다');
+    rep = applySnapshot(b, readSnapshot({ meta: { 과제명: 'SSCB 과제', 연구개발과제번호: 'RS-1', 차년도: '3차년도' }, 예산: { 비목별: [{ 연차: 3, 직접비: { 인건비: 10 } }] } }), { today: TODAY });
+    assert.equal(b.projects[0].end, '2028-12-31', '기간이 없는 스냅샷도 그 차년도 끝까지');
+    assert.deepEqual(yearsOf(b.projects[0]).map((y) => y.n), [1, 2, 3]);
+    // 전체 연구기간이 적힌 스냅샷은 그대로 정본
+    applySnapshot(b, readSnapshot({ meta: { 과제명: 'SSCB 과제', 연구개발과제번호: 'RS-1', 차년도: '2차년도', 기간: '2026-04 ~ 2029-12' } }), { today: TODAY });
+    assert.deepEqual([b.projects[0].start, b.projects[0].end], ['2026-04-01', '2029-12-31']);
+    // 새 과제를 3차년도 스냅샷(그 차년도 기간만)으로 만들면 — 시작일은 그 기간이지만 3차년도까지 칩이 서게 종료일을 늘린다
+    const b2 = normalizeBook({ projects: [] });
+    applySnapshot(b2, readSnapshot({ meta: { 과제명: '새 과제', 차년도: '3차년도', 기간: '2028-01 ~ 2028-12' } }), { today: TODAY });
+    assert.deepEqual(yearsOf(b2.projects[0]).map((y) => y.n), [1, 2, 3]);
+  });
   t('과제가 열 개 차 있으면 넣지 못한다 · 과제명 없는 스냅샷도', () => {
     const full = normalizeBook({ projects: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, name: `과제 ${i}` })) });
     assert.throws(() => applySnapshot(full, readSnapshot(r0)), /10개까지/);

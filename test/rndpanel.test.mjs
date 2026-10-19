@@ -61,11 +61,35 @@ const spWriter = (p) => ({
     if (r && r.changed) { sp.tree[p][name] = r.text; sp.puts.push(`${p}/${name}`); return { changed: true, created: cur == null, updated: cur != null, checkedIn: cur != null, version: '2.0' }; }
     return { changed: false, checkedIn: false };
   },
-  sharePeople: async (path, names, { role } = {}) => { sp.calls.push(`share:${path}:${names.join(',')}`); return { shared: names.map((n) => ({ name: n, email: `${n}@krs.co.kr` })), ambiguous: [], notFound: [], role }; },
+  // 사람 공유 — 이름이면 <이름>@krs.co.kr, 이메일이면 그 사람(표시 이름은 sp.titles — 영문). 폴더의 권한(sp.perms[path])에도 남겨 permissions 가 보게(같은 사람이면 역할을 바꿈). sp.permFail 이 'share' 면 아무도 공유되지 않는다.
+  sharePeople: async (path, names, { role } = {}) => {
+    sp.calls.push(`share:${path}:${names.join(',')}:${role || 'edit'}`);
+    if (sp.permFail === 'share') return { shared: [], ambiguous: [], notFound: [], failed: names.map((n) => ({ name: n, email: n, error: '공유 실패(검사)' })), error: '공유 실패(검사)', role };
+    const list = sp.perms[path] = sp.perms[path] || [];
+    const shared = names.map((n) => {
+      const email = n.includes('@') ? n.toLowerCase() : `${n}@krs.co.kr`;
+      const name = n.includes('@') ? (sp.titles[email] || n) : n;
+      let who = list.find((x) => x.email === email);
+      if (!who) { who = { id: ++sp.nextId, name, email, role: '' }; list.push(who); }
+      who.role = role === 'read' ? 'read' : 'edit';
+      return { name, email };
+    });
+    return { shared, ambiguous: [], notFound: [], failed: [], role };
+  },
+  // 권한 거두기(2026-10-19) — 그 사람을 폴더의 권한에서 뺀다. sp.permFail 이 'unshare' 면 실패.
+  unshare: async (path, ids) => {
+    sp.calls.push(`unshare:${path}:${ids.join(',')}`);
+    if (sp.permFail === 'unshare') throw spErr('http', '권한 거두기 실패(검사)');
+    const list = sp.perms[path] || []; const removed = [], missing = [];
+    for (const id of ids) { const i = list.findIndex((x) => x.id === id); if (i < 0) missing.push(id); else { removed.push({ id, roles: [list[i].role === 'read' ? 1073741826 : 1073741827] }); list.splice(i, 1); } }
+    return { removed, missing };
+  },
   orgLink: async (path, { edit } = {}) => { sp.calls.push(`link:${path}`); return { url: `${ORIGIN}/:f:/g/personal/me/${encodeURIComponent(path)}?e=${edit === false ? 'r' : 'w'}`, edit: edit !== false, via: 'fake' }; },
   rename: async () => { throw spErr('http', '검사에서는 이름을 바꾸지 않는다'); },
   close: async () => { sp.calls.push(`close:${p}`); },
 });
+// 공유 권한(2026-10-19) 흉내 — perms 는 폴더 경로 → [{ id, name(표시 이름 — 영문), email, role }], people 은 사람 찾기(findPeople)가 답할 이름 → { email, title }, ambiguous 는 이름 → 후보, titles 는 이메일 → 표시 이름, permFail 은 'share' | 'unshare'.
+Object.assign(sp, { perms: {}, people: {}, ambiguous: {}, titles: {}, nextId: 100, permFail: '', links: [] });
 sp.store = {
   // 밑폴더 풀기 — 비우면 내 OneDrive 의 문서/업무/shared(KRX_SP.resolveMyFolder 자리, fetch 없이), 주소면 진짜 parseFolder
   resolveFolder: async (input) => { sp.calls.push(`resolve:${input || '(내 OneDrive)'}`); if (sp.authList) throw spErr('auth', '이 브라우저에서 SharePoint(OneDrive)에 로그인하세요'); return input ? KRX_SP.parseFolder(input) : spCfg(BASE); },
@@ -80,6 +104,22 @@ sp.store = {
   readFile: async (cfg, name) => { sp.calls.push(`read:${cfg.folderPath}/${name}`); const f = sp.tree[cfg.folderPath]; return f && name in f ? { text: f[name], meta: spMeta(cfg.folderPath, name) } : null; },
   openWriter: async (cfg) => { sp.calls.push(`open:${cfg.siteUrl}`); return spWriter(cfg.folderPath); },
   sharedWithMe: async () => { sp.calls.push('shared'); return sp.shared; },
+  // 폴더 권한(2026-10-19) — sp.perms 의 사람들(나는 박기도 park@krs.co.kr · id 3). 로그인 필요(authList)·없는 폴더는 던진다.
+  permissions: async (cfg) => {
+    sp.calls.push(`perms:${cfg.folderPath}`);
+    if (sp.authList) throw spErr('auth', '이 브라우저에서 SharePoint(OneDrive)에 로그인하세요');
+    if (!(cfg.folderPath in sp.tree)) throw spErr('nofolder', `공유 폴더가 없습니다: ${cfg.folderPath}`);
+    const list = sp.perms[cfg.folderPath] || [];
+    return { unique: list.length > 0, me: { id: 3, name: 'PARK Kido', email: 'park@krs.co.kr' }, people: list.map((x) => ({ ...x, login: `i:0#.f|membership|${x.email}`, roles: [], me: x.email === 'park@krs.co.kr' })), links: sp.links };
+  },
+  // 사람 찾기(2026-10-19) — sp.people 에 있으면 found, sp.ambiguous 에 있으면 ambiguous, 아니면 notFound.
+  findPeople: async (cfg, names) => {
+    sp.calls.push(`find:${names.join(',')}`);
+    if (sp.authList) throw spErr('auth', '이 브라우저에서 SharePoint(OneDrive)에 로그인하세요');
+    const found = [], ambiguous = [], notFound = [];
+    for (const n of names) { if (sp.people[n]) found.push({ name: n, ...sp.people[n], login: `i:0#.f|membership|${sp.people[n].email}` }); else if (sp.ambiguous[n]) ambiguous.push({ name: n, candidates: sp.ambiguous[n] }); else notFound.push(n); }
+    return { found, ambiguous, notFound };
+  },
 };
 /** 과제 폴더의 파일을 JSON 으로. */
 const spDoc = (folder, name) => JSON.parse(sp.tree[`${BASE}/${folder}`][name]);
@@ -160,7 +200,7 @@ const staffWarns = () => [...$('rdRoster').querySelectorAll('.rd-staff-warn li')
 const sectionHeads = (li) => [...li.querySelectorAll('.rd-sec h4')].map((h) => h.textContent);
 const chItems = () => [...$('rdChanges').querySelectorAll('li')].map((li) => [
   li.querySelector('.rd-date').textContent, li.querySelector('.rd-kind').textContent, li.querySelector('.rd-title').textContent,
-  li.querySelector('.rd-diff')?.textContent || '', li.querySelector('.rd-reason')?.textContent || '', li.classList.contains('auto'),
+  li.querySelector('.rd-diff')?.textContent || '', li.querySelector('.rd-reason-text')?.textContent || '', li.classList.contains('auto'),
 ]);
 const status = () => $('rdStatus').textContent;
 const hidden = (id) => $(id).classList.contains('hidden');
@@ -180,6 +220,10 @@ t('과제 칩 하나(별칭)가 켜져 있고 머리는 별칭 한 줄 — 과�
   assert.equal($('rdName').title, 'MVDC 차단기 개발');
   assert.ok(!$('rdInfo').open, '과제 정보는 처음엔 접혀 있다');
   assert.ok($('rdInfo').querySelector('summary').contains($('rdEdit')) && $('rdEdit').querySelector('svg'), '과제 고치기는 머리 줄 별칭 옆의 연필 아이콘(2026-10-16)');
+  assert.deepEqual([...$('rdInfo').querySelectorAll(':scope > summary > *')].map((x) => x.id || x.tagName.toLowerCase() + (x.getAttribute('class') ? `.${x.getAttribute('class')}` : '')), ['svg', 'rdName', 'rdEdit', 'rdHeadYear', 'rdHeadLink', 'rdHeadSet', 'span.summary-detail'], '머리 줄: 폴더 그림 · 별칭 · 연필 · 차년도 · 링크 · 톱니 · 과제 정보(2026-10-19)');
+  assert.ok($('rdHeadYear').querySelector('svg') && !$('rdHeadYear').textContent.trim() && /차년도 더하기·고치기/.test($('rdHeadYear').title), '차년도 아이콘은 그림만 — 툴팁에 쓰임새');
+  assert.ok($('rdHeadLink').querySelector('svg') && $('rdHeadSet').querySelector('svg') && !$('rdHeadLink').textContent.trim() && !$('rdHeadSet').textContent.trim(), '링크·톱니는 그림만');
+  assert.match($('rdHeadLink').title, /꺼져 있습니다/, '공유가 꺼져 있으면 툴팁이 알린다');
   assert.ok(hidden('rdAliasAsk'), '별칭이 있으면 정하는 칸은 없다');
   assert.match(metaText(), /MVDC 차단기 개발.*과제번호 RND-20-2026.*책임자 박기도.*연구기간 2026\.04\.01 ~ 2029\.12\.31 \(총 4차년도\)/);
   assert.match(status(), /공문 탭의 과제 1개를 가져왔습니다/);
@@ -275,6 +319,22 @@ t('줄 안의 사유 칸에 적으면 붙는다', () => {
   assert.equal(chItems()[0][4], '연구원 1명 충원');
   assert.equal($('rdChangeState').textContent, '1건');
   assert.ok(!$('rdChanges').querySelector('[data-reason]'));
+});
+// 2026-10-19 사용자 지정 "이것도 주요 변경사항만 보이게 하고 세부적인 것은 접어줘" — YAML 고치기로 남은 줄마다 사유가 세 줄씩이던 그림.
+t('적은 사유는 접힌 한 줄 — 머리 줄·전 → 후만 펴 두고 사유는 "사유" 뒤에 한 줄로 잘라 보이며 눌러 편다. 펴 둔 채 다시 그려도 접히지 않는다', () => {
+  const li = q('#rdChanges li');
+  const fold = li.querySelector(':scope > details.rd-reason');
+  assert.ok(fold && !fold.open, '사유는 details 로, 처음엔 접힌 채');
+  assert.equal(fold.querySelector('summary').textContent, '사유연구원 1명 충원', '접힌 줄은 사유 이름표 + 한 줄로 자른 글');
+  assert.equal(fold.querySelector('.rd-reason-text').textContent, '연구원 1명 충원');
+  const folded = (sel) => li.contains(li.querySelector(sel).closest('details')); // 카드 자체(rdChangeBox)의 details 는 세지 않는다
+  assert.ok(!folded('.rd-row-head') && !folded('.rd-diff') && folded('.rd-reason-text'), '날짜·구분·항목·전 → 후는 접지 않고 사유 글만 접는다');
+  fold.open = true;
+  q('#rdChanges li [data-edit]').click(); // 고치기는 목록을 다시 그린다(editing 띠)
+  assert.ok(q('#rdChanges li').classList.contains('editing'));
+  assert.ok(q('#rdChanges li > details.rd-reason').open, '다시 그려도 펴 둔 사유는 펴진 채');
+  $('rdChCancel').click();
+  assert.ok(hidden('rdChForm') && !q('#rdChanges li').classList.contains('editing'));
 });
 t('못 읽는 금액은 되돌리고 말한다', () => {
   commit(row('인건비').querySelector('[data-k="plan"]'), 'abc');
@@ -1012,6 +1072,52 @@ await ta('공유 폴더 칸에 다른 밑폴더 주소를 넣으면 과제 → �
   assert.equal(sp.puts.length, n2, '파일이 장부와 같아 다시 쓰지 않는다');
   pickChip('파일 과제');
 });
+await ta('rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 따른다 — 칸이 비어 있으면 chrome.management 에서 이름으로 찾아 shareFolder 를 묻고 그 folder·driveHost 로 맞춘다(값이 바뀌면 캐시를 버림), 칸에 값이 있으면 그것이 이기고 다르면 알림, rERP 확장이 없으면 기본', async () => {
+  const OTHER = '/personal/rerp/Documents/업무/shared';
+  const OTHER_URL = `${ORIGIN}${OTHER.split('/').map(encodeURIComponent).join('/')}`;
+  const asked = [];
+  let peerFolder = OTHER_URL;
+  chrome.management = { getAll: async () => [{ id: 'zzz', name: '다른 확장', type: 'extension', enabled: true }, { id: 'rerp-off', name: 'KR eClass + R&D ERP 현황', type: 'extension', enabled: false }, { id: 'rerp1', name: 'KR eClass + R&D ERP 현황', type: 'extension', enabled: true }] };
+  chrome.runtime = { id: 'me', sendMessage: async (id, msg) => { asked.push(`${id}:${msg?.type}`); if (id !== 'rerp1') throw new Error('Could not establish connection. Receiving end does not exist.'); return { ok: true, enabled: true, folder: peerFolder, driveHost: ORIGIN, version: '0.8.7' }; } };
+  const under = (root) => { const v = Object.values(store.shareIndex || {}); return v.length >= 4 && v.every((e) => String(e.path || '').startsWith(`${root}/`)) && panel.book().projects.every((p) => store.shareIndex[p.id]); };
+  $('rdShareSync').click();
+  await untilLong(() => under(OTHER) && !$('rdShareSync').disabled);
+  assert.ok(asked.length >= 1 && asked.every((a) => a === 'rerp1:shareFolder'), `켜진 rERP 확장에만 묻는다 — ${asked.join(',')}`);
+  assert.ok(under(OTHER), `rERP 확장의 폴더에 맞춘다 — ${JSON.stringify(Object.values(store.shareIndex || {}).map((e) => e.path))}`);
+  assert.equal(store.shareFolder?.path, OTHER, '밑폴더 캐시도 그 자리');
+  assert.equal($('rdShareFolder').value, '', '칸은 비어 있고');
+  assert.equal($('rdShareFolder').placeholder, `rERP 확장의 설정을 따름 — ${OTHER_URL}`);
+  assert.ok($('rdShareMsg').textContent.includes(`밑폴더 ${OTHER}`), `결과 줄에 밑폴더 — ${$('rdShareMsg').textContent}`);
+  assert.ok(!/다릅니다/.test($('rdShareMsg').textContent));
+  assert.ok(logs.some((l) => /^R&D 공유 폴더\(rERP 확장의 설정을 따름\): https:/.test(l.text)));
+  assert.equal(store.rndShare?.peer?.folder, OTHER_URL, '기억(peer)은 저장소에');
+  // rERP 확장이 기본(비움)으로 돌아가면 — 다시 내 OneDrive, 캐시는 새 자리로
+  peerFolder = '';
+  $('rdShareSync').click();
+  await untilLong(() => under(BASE) && !$('rdShareSync').disabled);
+  assert.ok(under(BASE), `rERP 확장이 비우면 내 OneDrive — ${JSON.stringify(Object.values(store.shareIndex || {}).map((e) => e.path))}`);
+  assert.equal($('rdShareFolder').placeholder, 'rERP 확장의 설정을 따름 — 내 OneDrive 의 문서/업무/shared');
+  // 칸에 값을 넣으면 그것이 이긴다 — rERP 확장의 것(OTHER)과 다르면 알림 한 줄
+  peerFolder = OTHER_URL;
+  const n = sp.puts.length;
+  commit($('rdShareFolder'), `${ORIGIN}${BASE.split('/').map(encodeURIComponent).join('/')}`);
+  await untilLong(() => !$('rdShareSync').disabled && /다릅니다/.test($('rdShareMsg').textContent));
+  assert.ok(under(BASE), '칸의 자리에 맞춘다');
+  assert.match($('rdShareMsg').textContent, /rERP 확장의 공유 폴더\(https:[^)]*\)와 다릅니다 — 같은 폴더를 쓰려면 칸을 비우세요/);
+  assert.equal($('rdShareFolder').placeholder, '비우면 내 OneDrive 의 문서/업무/shared', '따르지 않을 때는 기본 문구');
+  assert.ok(sp.puts.slice(n).every((x) => x.startsWith(`${BASE}/`)), 'rERP 확장의 자리에는 쓰지 않는다');
+  // rERP 확장이 없으면(답 없음) — 기억을 지우고 기본값으로
+  delete chrome.management;
+  delete chrome.runtime;
+  const n3 = logs.length;
+  commit($('rdShareFolder'), '');
+  await untilLong(() => logs.slice(n3).some((l) => /^R&D 공유 맞춤\(폴더\)/.test(l.text)) && !$('rdShareSync').disabled);   // 칸을 비운 뒤의 맞춤이 끝날 때까지(캐시는 이미 그 자리라 under 로는 못 기다린다)
+  assert.ok(under(BASE));
+  assert.equal($('rdShareFolder').placeholder, '비우면 내 OneDrive 의 문서/업무/shared');
+  assert.deepEqual(store.rndShare?.peer, {}, 'rERP 확장이 안 닿으면 기억을 지운다');
+  assert.ok(!/다릅니다/.test($('rdShareMsg').textContent));
+  pickChip('파일 과제');
+});
 await ta('[링크 복사] — 보고 있는 과제 폴더의 조직 내 편집 링크를 만들어 복사한다', async () => {
   const n = copied.length;
   $('rdShareLink').click();
@@ -1019,6 +1125,29 @@ await ta('[링크 복사] — 보고 있는 과제 폴더의 조직 내 편집 �
   assert.match(copied[n], /^https:\/\/krclass-my\.sharepoint\.com\/:f:\/g\/personal\/me\/.*%ED%8C%8C%EC%9D%BC%20%EA%B3%BC%EC%A0%9C\?e=w$/, '파일 과제 폴더의 편집 링크');
   assert.match($('rdShareMsg').textContent, /^과제 폴더 파일 과제의 조직 내 편집 링크를 복사했습니다/);
   assert.ok(flashed.some(([id, text]) => id === 'rdShareLink' && text === '복사함'));
+});
+await ta('머리 줄의 링크 아이콘 — 같은 과제 폴더 링크를 복사하고 잠깐 체크(2026-10-19)', async () => {
+  const n = copied.length, was = $('rdInfo').open;
+  assert.match($('rdHeadLink').title, /과제 폴더 파일 과제의 조직 내 편집 링크$/);
+  $('rdHeadLink').click();
+  await until(() => copied.length === n + 1);
+  assert.equal(copied[n], copied[n - 1], '공유 카드의 링크 복사와 같은 주소');
+  assert.ok(copiedIcon('rdHeadLink'), '아이콘이 체크로');
+  assert.equal($('rdInfo').open, was, '누름이 접기/펴기로 번지지 않는다');
+  assert.match($('rdShareMsg').textContent, /^과제 폴더 파일 과제의 조직 내 편집 링크를 복사했습니다/);
+  await until(() => !$('rdHeadLink').classList.contains('done'));
+  assert.ok($('rdHeadLink').querySelector('svg path') && !$('rdHeadLink').classList.contains('done'), '링크 그림이 돌아온다');
+});
+await ta('머리 줄의 톱니 아이콘 — R&D 설정을 펴고, 손으로 편 것이라 과제를 옮겨도 접지 않는다(2026-10-19)', async () => {
+  $('rdSetBox').open = false;
+  const was = $('rdInfo').open;
+  $('rdHeadSet').click();
+  assert.ok($('rdSetBox').open, 'R&D 설정이 펴진다');
+  assert.equal($('rdInfo').open, was, '누름이 접기/펴기로 번지지 않는다');
+  pickChip('TEST');
+  pickChip('파일 과제');
+  assert.ok($('rdSetBox').open, '다른 과제로 가도 그대로');
+  $('rdSetBox').open = false;
 });
 await ta('로그인이 풀리면(auth) "OneDrive 에 로그인하세요" 와 OneDrive 열기 — 장부는 그대로', async () => {
   sp.authList = true;
@@ -1039,6 +1168,15 @@ await ta('끄면 더는 닿지 않는다 — 과제 정보를 고쳐도', async 
   assert.equal($('rdShareMsg').textContent, '');
   assert.ok($('rdShareSync').disabled);
   assert.equal($('rdSetState').textContent, 'rERP 켬 · 공유 꺼짐');
+  // 머리 줄의 링크 아이콘은 꺼져 있으면 복사하지 않고 R&D 설정의 공유 카드로 간다(2026-10-19)
+  const c = copied.length;
+  $('rdSetBox').open = false; $('rdShareBox').open = false;
+  $('rdHeadLink').click();
+  assert.equal(copied.length, c, '꺼져 있으면 복사하지 않는다');
+  assert.ok($('rdSetBox').open && $('rdShareBox').open, 'R&D 설정의 공유 카드가 펴진다');
+  assert.ok($('rdHeadLink').classList.contains('fail'), '× 표시');
+  assert.match($('rdHeadLink').title, /꺼져 있습니다/);
+  $('rdSetBox').open = false; $('rdShareBox').open = false;
   const n = sp.calls.length;
   pickChip('파일 과제');
   $('rdEdit').click();
@@ -1270,7 +1408,7 @@ await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그
   assert.ok(!/미청구\(과제카드/.test(copied[n]), '미청구 줄은 따로 없다(연구활동비 줄에 들었으므로)');
   assert.match(copied[n], /\n합계\t106,000\t32,731\t73,269\t31%$/);
   await wait(10);
-  assert.deepEqual(store.rndSettings, { erp: true, unbilled: true, plan: true, hide: [] }, '승인전(req)은 저장하지 않는다');
+  assert.deepEqual(store.rndSettings, { erp: true, unbilled: true, plan: true, hide: [], months: false }, '승인전(req)은 저장하지 않는다');
   // 기본값으로 돌려 둔다
   $('rdIncUnbilled').checked = false; change($('rdIncUnbilled'));
   $('rdIncPlan').checked = false; change($('rdIncPlan'));
@@ -1706,6 +1844,11 @@ await ta('빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기" �
   assert.equal(btn.closest('details'), null, '접힌 칸 뒤에 두지 않는다');
   btn.click();
   assert.deepEqual(adds.at(-1), { projectId: mvdc, n: empty });
+  // 머리 줄의 차년도 아이콘(2026-10-19) — 이 과제만 대상(차년도는 더하기 카드의 단추 줄에서), summary 안이라 접기/펴기로 번지지 않는다
+  const wasOpen = $('rdInfo').open;
+  $('rdHeadYear').click();
+  assert.deepEqual(adds.at(-1), { projectId: mvdc });
+  assert.equal($('rdInfo').open, wasOpen, '과제 정보가 접히거나 펴지지 않는다');
   panel.onAdd(null);
   q('#rdYearEmpty [data-rdg-extract]').click();
   assert.ok(!hidden('rdForm'));
@@ -1835,6 +1978,21 @@ await ta('이어진 차년도 — rERP 참여인력(지급기간을 달마다 �
   assert.equal(saved().people.length, 2, '잇기와 함께 저장소에 남는다');
   assert.ok(logs.some((l) => l.kind === 'rnd' && l.ok && /R&D 참여인력 받음\(검사\): P7 · 2명 · 다른 과제 참여율 2명/.test(l.text)));
 });
+await ta('M — 머리 줄의 M 을 누르면 사람 아래 달마다의 지급 줄이 펴지고 다시 누르면 접힌다(기본 접힘 — 줄은 표에 남고 보이지만 않는다, 누른 상태는 rndSettings.months 에 — 2026-10-19 사용자 지정)', async () => {
+  const m = $('rdStaffMonths');
+  assert.ok(!hidden('rdStaffMonths'), 'rERP 참여인력(달마다의 지급 줄)이 있으니 M 이 선다');
+  assert.ok(m.getAttribute('aria-pressed') === 'false' && !m.classList.contains('on') && !$('rdRoster').classList.contains('rd-months'), '기본은 접힘');
+  assert.equal($('rdRoster').querySelectorAll('.rd-staff-months').length, 2, '달마다의 지급 줄은 표에 남아 있다(복사·검사는 그대로)');
+  m.click();
+  assert.ok(m.getAttribute('aria-pressed') === 'true' && m.classList.contains('on') && $('rdRoster').classList.contains('rd-months'), '누르면 펴진다');
+  await until(() => store.rndSettings?.months === true);
+  assert.equal(store.rndSettings.months, true, '펼친 상태는 설정에 남는다');
+  assert.equal(staffMonths('성춘향').length, 9, '펴도 줄은 같다');
+  m.click();
+  assert.ok(m.getAttribute('aria-pressed') === 'false' && !m.classList.contains('on') && !$('rdRoster').classList.contains('rd-months'), '다시 누르면 접힌다');
+  await until(() => store.rndSettings?.months === false);
+  assert.equal(store.rndSettings.months, false);
+});
 await ta('복사 — 표 복사는 월급여·참여기간·지급 합·참여율·월 최대·월별 지급까지(rerp/staff.js staffTsv), 요약 복사에는 rERP 과제번호·조회 시각 머리 줄과 사람마다 한 줄', async () => {
   const n = copied.length;
   $('rdRosterCopy').click();
@@ -1857,6 +2015,7 @@ await ta('↻ — 다시 받는다(로그인이 풀렸으면 SSO 한 번). 지�
   assert.match($('rdRoster').querySelector('.rd-hint').textContent, /^rERP P7 참여인력에 지급계획이 없습니다 — 참여율·지급액의 계획과 변경은 .*사업비 변경 메뉴에서 합니다\.$/);
   assert.deepEqual([$('rdRosterState').textContent, $('rdRosterSrc').textContent], ['연구자 2명', '연구개발계획서 r2 기준']);
   assert.ok(!hidden('rdStaffRefresh') && hidden('rdStaffMsg'), '이어져 있으니 ↻ 는 남는다');
+  assert.ok(hidden('rdStaffMonths'), '달마다의 지급 줄이 없으니 M 은 숨는다');
   const saved = () => store.rndBook?.projects.find((x) => x.alias === 'TEST')?.years[1]?.erp;
   await until(() => saved() && !saved().staff);
   assert.deepEqual([saved().prjNo, saved().staff], ['P7', undefined], '저장소에서도 지워진다');
@@ -1865,6 +2024,7 @@ await ta('↻ — 다시 받는다(로그인이 풀렸으면 SSO 한 번). 지�
   await until(() => !panel.staffRun());
   assert.deepEqual(staffRows(), [['홍길동', '과제책임자', '8,480', '4~11월 (8개월)', '18,624', '27.46%']]);
   assert.equal($('rdRosterState').textContent, '연구자 1명');
+  assert.ok(!hidden('rdStaffMonths'), 'M 도 돌아온다');
   erpFake.loggedIn = false;
   erpFake.eclassDown = true;
   $('rdStaffRefresh').click();
@@ -1895,6 +2055,155 @@ await ta('저절로 받기 — 막 받았으면 건너뛰고(10분), 오래됐�
   await wait(20);
   assert.equal(staffRows().length, 2);
   assert.equal($('rdRosterState').textContent, '연구자 2명 · 100% 초과 1');
+});
+
+console.log('참여인력 공유 권한(2026-10-19 사용자 지정: "sharepoint 링크 읽기, 쓰기 권한 설정 … 아이콘에 공유아이콘 추가 … 그거 누르고.. 체크하면 반영")');
+/** 권한 표의 줄 → [성명, 읽기 체크, 편집 체크, 잠김, 상태 글, extra]. */
+const permDom = () => [...$('rdStaffPermBody').querySelectorAll('tr[data-perm]')].map((tr) => {
+  const read = tr.querySelector('[data-role="read"]'), edit = tr.querySelector('[data-role="edit"]');
+  return [tr.dataset.perm, read.checked, edit.checked, read.disabled && edit.disabled, tr.querySelector('.rd-td-state').textContent, tr.classList.contains('extra')];
+});
+const permBox = (name, role) => $('rdStaffPermBody').querySelector(`tr[data-perm="${name}"] [data-role="${role}"]`);
+const tick = async (name, role, on) => { const box = permBox(name, role); box.checked = on; change(box); await until(() => panel.perm().row === ''); };
+const permCalls = (n) => sp.calls.slice(n).filter((c) => /^(perms|find|open|share|unshare|close):/.test(c));
+let permPath = '', permFolder = '';
+await ta('공유가 꺼져 있으면 — 아이콘은 보이고, 누르면 칸이 펴지며 공유 카드로 안내(R&D 설정·공유 카드가 펴짐). 다시 누르면 접힌다', async () => {
+  assert.ok(!hidden('rdStaffShare') && hidden('rdStaffPerm') && !$('rdShareOn').checked, 'TEST 1차년도 — 공유는 꺼진 채');
+  const n = sp.calls.length;
+  $('rdStaffShare').click();
+  await wait(20);
+  assert.ok(!hidden('rdStaffPerm') && $('rdStaffShare').classList.contains('on') && $('rdStaffShare').getAttribute('aria-pressed') === 'true');
+  assert.equal($('rdStaffPermMsg').textContent, '공유 (SharePoint)가 꺼져 있습니다 — R&D 설정의 공유 카드에서 켜고 맞춘 뒤 다시 누르세요.');
+  assert.ok($('rdStaffPermMsg').classList.contains('error') && $('rdSetBox').open && $('rdShareBox').open, '공유 카드로');
+  assert.equal($('rdStaffPermBody').innerHTML, '');
+  assert.equal(sp.calls.length, n, '저장소에 닿지 않는다');
+  $('rdStaffShare').click();
+  assert.ok(hidden('rdStaffPerm') && !$('rdStaffShare').classList.contains('on') && hidden('rdStaffPermMsg'));
+});
+await ta('켜고 맞춘 뒤 누르면 — 과제 폴더(shareIndex)의 권한을 읽고 이메일을 모르는 이름을 찾는다: 참여연구자(rERP 참여인력)·행정지원(나는 빼고) 줄에 이메일로 맞춘 역할이 체크로, 못 찾은 사람은 잠긴 채 까닭, 폴더에만 있는 사람은 뒤에 연하게. 찾은 이메일은 저장소(rndSharePeople)에 남는다', async () => {
+  $('rdShareOn').checked = true;
+  change($('rdShareOn'));
+  await untilLong(() => /^맞춤 /.test($('rdShareState').textContent) && store.shareIndex?.P7?.folder);
+  const ent = store.shareIndex.P7;
+  permFolder = ent.folder;   // rERP P7 에 이어진 TEST 의 폴더(별칭 — 옛 열쇠의 TEST 폴더가 남아 있으면 'TEST-P7')
+  assert.match(permFolder, /^TEST/);
+  permPath = ent.path;
+  assert.ok(permPath && permPath in sp.tree, `폴더 ${permPath}`);
+  const p = bookProject('TEST');
+  p.support = [{ name: '새사람', role: '행정', ref: true }, { name: '없는사람', role: '', ref: false }, { name: '박기도', role: '', ref: false }];
+  sp.people['홍길동'] = { email: 'hong@krs.co.kr', title: 'HONG Gildong' };
+  sp.people['성춘향'] = { email: 'sung@krs.co.kr', title: 'SUNG Chunhyang' };
+  sp.titles['hong@krs.co.kr'] = 'HONG Gildong'; sp.titles['sung@krs.co.kr'] = 'SUNG Chunhyang';
+  sp.ambiguous['새사람'] = ['NEW A <a@krs.co.kr>', 'NEW B <b@krs.co.kr>'];
+  sp.perms[permPath] = [{ id: 11, name: 'HONG Gildong', email: 'hong@krs.co.kr', role: 'edit' }, { id: 12, name: 'LEE Jaehoon', email: 'jhlee@krs.co.kr', role: 'read' }, { id: 3, name: 'PARK Kido', email: 'park@krs.co.kr', role: 'edit' }];
+  sp.links = [{ id: 99, name: 'SharingLinks.x.OrganizationEdit.y', role: 'edit' }];
+  const n = sp.calls.length;
+  $('rdStaffShare').click();
+  await until(() => !panel.perm().busy && panel.perm().perms);
+  assert.deepEqual(permCalls(n), [`perms:${permPath}`, 'find:홍길동,성춘향,새사람,없는사람'], '권한 한 번, 이메일을 모르는 이름(나는 빼고)만 찾는다');
+  assert.equal($('rdStaffPermFolder').textContent, `${permFolder} 폴더 · 조직 내 링크 편집`);
+  assert.deepEqual(permDom(), [
+    ['홍길동', false, true, false, '', false],
+    ['성춘향', false, false, false, '', false],
+    ['새사람', false, false, true, '이름 겹침 — NEW A <a@krs.co.kr> · NEW B <b@krs.co.kr>', false],
+    ['없는사람', false, false, true, '사람을 찾지 못했습니다 — OneDrive 에서 직접 공유하세요', false],
+    ['LEE Jaehoon', true, false, false, '', true],
+  ], '박기도(나)는 없고, 폴더의 나(park@krs.co.kr)도 오지 않는다');
+  assert.equal($('rdStaffPermBody').querySelector('tr[data-perm="홍길동"] small').textContent, 'HONG Gildong <hong@krs.co.kr>', '표시 이름(영문)과 이메일');
+  assert.equal($('rdStaffPermBody').querySelector('tr[data-perm="LEE Jaehoon"] small').textContent, '<jhlee@krs.co.kr>');
+  assert.ok(hidden('rdStaffPermMsg') && !$('rdStaffPermRefresh').disabled);
+  await until(() => store.rndSharePeople?.['성춘향']);
+  assert.deepEqual([store.rndSharePeople['홍길동'].email, store.rndSharePeople['성춘향'].title, Object.keys(store.rndSharePeople).sort()], ['hong@krs.co.kr', 'SUNG Chunhyang', ['성춘향', '홍길동']], '찾은 사람만 저장(겹침·못 찾음은 이 세션에만)');
+  assert.deepEqual(panel.permPeople()['홍길동'].email, 'hong@krs.co.kr');
+});
+await ta('체크하면 바로 반영 — 읽기를 켜면 이메일로 읽기 공유, 편집을 켜면 거둔 뒤 편집 공유, 끄면 거두기. 끝나면 권한을 다시 읽어 실제 상태로(둘 중 하나만 켜짐). 활동 로그 한 줄씩', async () => {
+  let n = sp.calls.length;
+  await tick('성춘향', 'read', true);
+  assert.deepEqual(permCalls(n), [`open:${ORIGIN}/personal/me`, `share:${permPath}:sung@krs.co.kr:read`, `close:${permPath}`, `perms:${permPath}`], '역할이 없던 사람 — 거둘 것 없이 읽기로');
+  assert.deepEqual(permDom()[1], ['성춘향', true, false, false, '', false]);
+  assert.equal($('rdStaffPermBody').querySelector('tr[data-perm="성춘향"] small').textContent, 'SUNG Chunhyang <sung@krs.co.kr>');
+  assert.ok(logs.some((l) => l.kind === 'rnd' && l.ok && l.text === `R&D 공유 권한: ${permFolder} · 성춘향 → 읽기`));
+  const id = sp.perms[permPath].find((x) => x.email === 'sung@krs.co.kr').id;
+  n = sp.calls.length;
+  await tick('성춘향', 'edit', true);
+  assert.deepEqual(permCalls(n), [`open:${ORIGIN}/personal/me`, `unshare:${permPath}:${id}`, `share:${permPath}:sung@krs.co.kr:edit`, `close:${permPath}`, `perms:${permPath}`], '읽기 → 편집: 거둔 뒤 다시 준다');
+  assert.deepEqual(permDom()[1], ['성춘향', false, true, false, '', false]);
+  assert.ok(logs.some((l) => l.kind === 'rnd' && l.ok && l.text === `R&D 공유 권한: ${permFolder} · 성춘향 → 편집`));
+  const id2 = sp.perms[permPath].find((x) => x.email === 'sung@krs.co.kr').id;
+  n = sp.calls.length;
+  await tick('성춘향', 'edit', false);
+  assert.deepEqual(permCalls(n), [`open:${ORIGIN}/personal/me`, `unshare:${permPath}:${id2}`, `close:${permPath}`, `perms:${permPath}`], '끄면 거두기만');
+  assert.deepEqual(permDom()[1], ['성춘향', false, false, false, '', false]);
+  assert.ok(!sp.perms[permPath].some((x) => x.email === 'sung@krs.co.kr'));
+  assert.ok(logs.some((l) => l.kind === 'rnd' && l.ok && l.text === `R&D 공유 권한: ${permFolder} · 성춘향 → 없음`));
+  // 같은 역할을 다시 켜는 건(이미 편집인 홍길동의 편집) 아무것도 안 한다
+  n = sp.calls.length;
+  assert.equal(await panel.applyPerm('홍길동', 'edit'), false);
+  assert.equal(permCalls(n).length, 0);
+  // 폴더에만 있던 사람(extra)의 읽기를 끄면 거두어 줄이 사라진다
+  n = sp.calls.length;
+  await tick('LEE Jaehoon', 'read', false);
+  assert.deepEqual(permCalls(n), [`open:${ORIGIN}/personal/me`, `unshare:${permPath}:12`, `close:${permPath}`, `perms:${permPath}`]);
+  assert.deepEqual(permDom().map((r) => r[0]), ['홍길동', '성춘향', '새사람', '없는사람']);
+});
+await ta('실패 — 공유가 안 되면 그 줄의 상태에 까닭(빨강)·활동 로그, 체크는 실제 상태로 돌아온다. ↻ 는 까닭을 지우고 권한·못 찾은 이름을 다시 읽는다', async () => {
+  sp.permFail = 'share';
+  let n = sp.calls.length;
+  await tick('성춘향', 'read', true);
+  assert.deepEqual(permCalls(n), [`open:${ORIGIN}/personal/me`, `share:${permPath}:sung@krs.co.kr:read`, `close:${permPath}`, `perms:${permPath}`]);
+  assert.deepEqual(permDom()[1], ['성춘향', false, false, false, '공유 실패(검사)', false]);
+  assert.ok($('rdStaffPermBody').querySelector('tr[data-perm="성춘향"] .rd-td-state').classList.contains('error'));
+  assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && l.text.startsWith(`R&D 공유 권한 실패: ${permFolder} · 성춘향 → 읽기: 공유 실패(검사)`)));
+  sp.permFail = '';
+  sp.people['새사람'] = { email: 'new@krs.co.kr', title: 'NEW Saram' };
+  n = sp.calls.length;
+  $('rdStaffPermRefresh').click();
+  await until(() => !panel.perm().busy);
+  assert.deepEqual(permCalls(n), [`perms:${permPath}`, 'find:새사람,없는사람'], '캐시에 있는 이름은 다시 묻지 않는다');
+  assert.deepEqual(permDom().map((r) => [r[0], r[3], r[4]]), [['홍길동', false, ''], ['성춘향', false, ''], ['새사람', false, ''], ['없는사람', true, '사람을 찾지 못했습니다 — OneDrive 에서 직접 공유하세요']], '겹치던 사람이 찾히면 풀리고 실패 까닭은 지워진다');
+});
+await ta('남의 폴더(책임자의 것)는 읽기만 · 과제 폴더가 아직 없으면 안내 · 로그인이 풀리면 안내 · 다른 과제로 가면 접히고 돌아와 다시 열면 찾지 않는다(캐시) · 끄면 다시 안내', async () => {
+  store.shareIndex.P7.owner = '동료';
+  $('rdStaffPermRefresh').click();
+  await until(() => !panel.perm().busy);
+  assert.equal($('rdStaffPermFolder').textContent, `${permFolder} 폴더 · 책임자(동료)의 폴더 — 권한은 책임자가 · 조직 내 링크 편집`);
+  assert.ok(permDom().every((r) => r[3]), '체크가 모두 잠긴다');
+  assert.equal(await panel.applyPerm('성춘향', 'read'), false);
+  delete store.shareIndex.P7.owner;
+  const keep = store.shareIndex.P7;
+  delete store.shareIndex.P7;
+  $('rdStaffPermRefresh').click();
+  await until(() => !panel.perm().busy);
+  assert.equal($('rdStaffPermMsg').textContent, '과제 폴더가 아직 없습니다 — 공유 카드의 지금 맞추기로 폴더를 만든 뒤 ↻ 를 누르세요.');
+  assert.ok($('rdStaffPermMsg').classList.contains('error') && $('rdStaffPermBody').innerHTML === '' && $('rdStaffPermFolder').textContent === '');
+  store.shareIndex.P7 = keep;
+  sp.authList = true;
+  $('rdStaffPermRefresh').click();
+  await until(() => !panel.perm().busy);
+  assert.equal($('rdStaffPermMsg').textContent, 'OneDrive 에 로그인하세요 — 공유 카드의 폴더 열기로 로그인한 뒤 ↻');
+  assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /^R&D 공유 권한 읽기 실패: /.test(l.text)));
+  sp.authList = false;
+  $('rdStaffPermRefresh').click();
+  await until(() => !panel.perm().busy && panel.perm().perms);
+  assert.ok(hidden('rdStaffPermMsg') && permDom().length === 4);
+  pickChip('차단기 과제');
+  await wait(20);
+  assert.ok(hidden('rdStaffPerm') && !$('rdStaffShare').classList.contains('on') && panel.perm().open === '', '다른 과제로 가면 접힌다');
+  pickChip('TEST');
+  await wait(20);
+  assert.ok(hidden('rdStaffPerm'), '돌아와도 접힌 채');
+  const n = sp.calls.length;
+  $('rdStaffShare').click();
+  await until(() => !panel.perm().busy && panel.perm().perms);
+  assert.deepEqual(permCalls(n), [`perms:${permPath}`], '찾은 이름은 저장소의 캐시로, 이 세션에서 못 찾은 이름도 다시 묻지 않는다(↻ 만 다시)');
+  assert.deepEqual(permDom().map((r) => r[0]), ['홍길동', '성춘향', '새사람', '없는사람']);
+  $('rdStaffShare').click();
+  assert.ok(hidden('rdStaffPerm'));
+  $('rdShareOn').checked = false;
+  change($('rdShareOn'));
+  await until(() => $('rdShareState').textContent === '꺼짐');
+  bookProject('TEST').support = [];
+  sp.links = [];
 });
 
 console.log('다시 열기');

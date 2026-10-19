@@ -41,7 +41,15 @@
 /* 한 줄 — 차년도 고르기 · 직접 적기 / 문서 붙이기 · 붙인 문서 · YAML 고치기. */
 .rnd .rdg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
 .rnd .rdg-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-.rnd .rdg-field select { width: auto; min-width: 12em; min-height: 32px; padding: 4px 8px; }
+/* 차년도 고르기 — 단추 줄(2026-10-19 사용자 지정 "버튼으로 선택할 수 있게"): 자동 · 1…N · 모두 · 없는 것만. 머리의 차년도 칩(.rd-year)과 같은 꼴 — 누른 것은 파랑, 과제가 있을 때 아직 없는 차년도는 점선(off). */
+.rnd .rdg-stage { flex: 1 1 auto; flex-wrap: wrap; }
+.rnd .rdg-stage-btns { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+.rnd .rdg-stage-btn { min-width: 30px; min-height: 30px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--fg); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.rnd .rdg-stage-btn:hover { background: var(--pick-soft); border-color: var(--pick); }
+.rnd .rdg-stage-btn.off { border-style: dashed; background: color-mix(in srgb, var(--line) 45%, var(--surface)); color: var(--muted); }
+.rnd .rdg-stage-btn.off:hover { border-color: var(--pick); background: var(--pick-soft); color: var(--pick); }
+.rnd .rdg-stage-btn[aria-pressed="true"] { background: var(--pick); border-color: var(--pick); color: #fff; }
+.rnd .rdg-stage-btn.off[aria-pressed="true"] { border-style: dashed; background: var(--pick-soft); color: var(--pick); }
 .rnd .rdg-row #rdgManual { margin-left: auto; }
 
 /* 알림 줄 — 비면 자리를 차지하지 않는다. 바쁠 때는 앞에 도는 고리(움직임을 줄이는 설정이면 멈춤). */
@@ -81,6 +89,7 @@
 .rnd .rdg-year.ok .rdg-year-what { color: var(--fg); }
 .rnd .rdg-year.asking .rdg-year-what { color: var(--pick); }
 .rnd .rdg-year.fail .rdg-year-what { color: var(--danger); }
+.rnd .rdg-year.skip { opacity: .72; }   /* 없는 차년도만 — 이미 있어 건너뛴 차년도(2026-10-19) */
 .rnd .rdg-year button.small { min-height: 24px; padding: 1px 7px; font-size: 12px; }
 .rnd .rdg-yaml-year { color: var(--pick); font-weight: 650; }
 

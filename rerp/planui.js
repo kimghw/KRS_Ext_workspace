@@ -1,6 +1,6 @@
-// kr_ext_rerp `lib/render.js` 의 과제집행비율 표 부분(0.8.3, 880a6bc)을 그대로 옮긴 것 — rateCell·pct·rateOf·아이콘·isProjectLead·planBtn·planRow·planForm·budgetTable 과
+// kr_ext_rerp `lib/render.js` 의 과제집행비율 표 부분(0.8.3, 880a6bc)을 그대로 옮긴 것 — rateCell·pct·rateOf·아이콘·planBtn·planRow·planForm·budgetTable 과
 // 그 표가 쓰는 projectLink(deepLink). render.js 의 다른 부분(패널 틀·카드미청구·참여율·급여)은 옮기지 않았다. 몸통은 원본과 같고 머리의 import 와 꼬리의 export 만 다르다.
-// `g.KRX_FMT`·`g.KRX_PLAN` 은 아래 shim `g` 로 그대로 읽는다. 출처·갱신 규칙은 rerp/README.md.
+// `g.KRX_FMT`·`g.KRX_PLAN` 은 아래 shim `g` 로 그대로 읽는다. 출처·갱신 규칙은 rerp/README.md. 2026-10-19 원본 0.8.7(공유 (Plus) v2)의 예상 비용 아이콘 부분을 다시 옮김 — 원노트 가져오기(⬇ plan-import)·isProjectLead·ICON_IMPORT 는 원본이 걷어 내어 여기서도 지웠고, ⬆ plan-export 는 과제 폴더 주소 복사·↗ 는 예상비용.json(없으면 과제 폴더) 열기(plan.js pageOf).
 import FMT from './fmt.js';
 import PLAN from './plan.js';
 const g = { KRX_FMT: FMT, KRX_PLAN: PLAN };
@@ -33,16 +33,7 @@ const ICON_EYE = svgIcon('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
 const ICON_EYE_OFF = svgIcon('<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>');
 const ICON_REPEAT = svgIcon('<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>');
 const ICON_SAVE = svgIcon('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>');
-const ICON_IMPORT = svgIcon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>');   // 확장 Plus: 원노트에서 가져오기 (비목 머리글, 저장 아이콘 옆)
-const ICON_EXPORT = svgIcon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>');   // 확장 Plus: 원노트로 내보내기
-/* 내가 이 과제의 책임자인지 — 참여율 표의 "책" 태그와 같은 규칙: 참여인력 역할에 "책임"이 있거나 과제책임자 이름이 본인(참여인력 행 이름 · 설정/자동 감지 이름). d = state.data */
-function isProjectLead(d, prjNo, rspr) {
-  if (!d) return false;
-  const myNames = (d.myNames || []).map((n) => String(n || '').trim()).filter(Boolean);
-  const x = ((d.participation && d.participation.items) || []).find((i) => i && i.prjNo === prjNo);
-  if (x && (/책임/.test(String(x.role || '')) || (!!x.rspr && (String(x.rspr).trim() === String(x.empNm || '').trim() || myNames.includes(String(x.rspr).trim()))))) return true;
-  return !!rspr && myNames.includes(String(rspr).trim());
-}
+const ICON_EXPORT = svgIcon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>');   // 공유 (Plus): 공유 폴더 주소 복사 (비목 머리글, 저장 아이콘 옆)
 const ICON_EXT = svgIcon('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>');
 const planBtn = (prjNo, key) => `<button type="button" class="krext-plus-btn" data-act="plan-open" data-prj="${F.esc(prjNo)}" data-key="${F.esc(key)}" title="예상 비용 추가 (세목 · 수량 · 단가)">＋</button>`;
 /* 예상 비용 한 줄: 세목 · [−] 수량 [＋] × 단가 · −금액 · 예산 대비 비율. bgt 가 없으면(표에 없는 비목) 비율 생략.
@@ -104,27 +95,22 @@ function budgetTable(p, s, state) {
   const hidden = !!(P && pt.count && !(state.planShown && state.planShown.has(p.prjNo)));
   const savedMark = state.planSaved && state.planSaved.prjNo === p.prjNo ? `<span class="krext-plan-saved${state.planSaved.error ? ' krext-err' : ''}${state.planSaved.busy ? ' krext-busy' : ''}">${F.esc(state.planSaved.text || (state.planSaved.error ? '저장 실패' : '저장됨'))}</span>` : '';
   const saveTip = `예상 비용 ${F.money(pt.count)}건 저장${state.planSavedAt ? ` · 마지막 저장 ${F.fmtClock(state.planSavedAt)}` : ''} (입력·수정·삭제 때마다 자동 저장되어 브라우저를 다시 시작해도 남습니다. 눌러서 지금 저장)`;
-  // 확장 Plus: 저장 아이콘 옆에 원노트 가져오기(⬇ plan-import: RERP 섹션의 이 과제 페이지 항목을 내 목록에 반영)·내보내기(⬆ plan-export: 내 항목을 페이지에 씀, 페이지가 없으면 책임자일 때 만듦)·열기(↗ 링크, 우클릭으로 주소 복사) 아이콘.
-  // 눈 아이콘으로 예상 비용을 펼친 과제(hidden 아님)에만, 그리고 Plus 가 켜져 있을 때만 보인다 — 꺼져 있으면 원노트 관련 아이콘·동작이 아예 없다 (2026-09-27 사용자). 항목이 없는 과제는 늘 펼쳐진 상태라 보임.
-  // 툴팁에 이 과제 페이지의 마지막 동기화 결과(storage.local.planSyncState.pages[과제번호], lib/plan-sync.js). 실패면 빨간색. 동기화 자체는 켜져 있으면 자동(패널 열 때·편집 4초 뒤·자동 갱신)
+  // 공유 (Plus, 0.8.7 — SharePoint 공유 폴더의 과제별 폴더, 예상 비용은 그 안의 예상비용.json 한 파일): 저장 아이콘 옆에 과제 폴더 주소 복사(⬆ plan-export: 백그라운드 shareFolderCopy(prjNo) — 동료가 설정의 공유 폴더 칸에 붙여 넣으면 같은 파일을 씀)·열기(↗ = 예상비용.json planUrl, 아직 없으면 과제 폴더 folderUrl) 아이콘.
+  // 눈 아이콘으로 예상 비용을 펼친 과제(hidden 아님)에만, 그리고 Plus 가 켜져 있을 때만 보인다 — 꺼져 있으면 공유 관련 아이콘·동작이 아예 없다 (2026-09-27 사용자). 항목이 없는 과제는 늘 펼쳐진 상태라 보임.
+  // 툴팁에 이 과제의 마지막 공유 결과(storage.local.planSyncState.pages[과제번호] — background.js shareSync). 실패면 빨간색. 공유 자체는 켜져 있으면 자동(패널 열 때·편집 4초 뒤·자동 갱신)
   const syncOn = !!(s && s.planSync), ps = syncOn ? (state.planSync || null) : null, pg = ps && ps.pages ? ps.pages[p.prjNo] : null;
-  const link = syncOn && g.KRX_PLAN && g.KRX_PLAN.linkOf ? g.KRX_PLAN.linkOf(state, p.prjNo) : '';
-  const lead = syncOn && isProjectLead(state.data, p.prjNo, p.rspr);
-  const syncStatus = !syncOn ? '' : (pg && pg.error ? `${F.fmtClock(pg.at || ps.at)} 동기화 실패: ${pg.error}`
-    : pg && pg.noPage ? `${F.fmtClock(pg.at || ps.at)} 확인: 페이지가 아직 없음 — 과제 책임자만 만들 수 있습니다`
-    : pg ? `마지막 동기화 ${F.fmtClock(pg.at || ps.at)}${pg.remoteBy && pg.remoteAt ? ` · 페이지 마지막 갱신 ${pg.remoteBy} ${F.fmtClock(pg.remoteAt)}` : ''}`
-    : ps && ps.error ? `${F.fmtClock(ps.at)} 동기화 실패: ${ps.error}` : '아직 동기화 전');
-  const pageTxt = pg && pg.title ? `페이지 "${pg.title}"` : '이 과제의 페이지는 아직 없음';
-  const importTip = `원노트에서 가져오기: 동료(과제 책임자)가 내보내기로 복사해 준 페이지 링크를 붙여 넣으면 이 과제를 그 페이지에 연결하고 항목을 가져옵니다 (항목별로 더 최근 수정이 남고, 삭제도 반영) · ${pageTxt} · ${syncStatus}`;
-  const exportTip = `원노트로 내보내기: 이 과제 페이지의 링크(+ID)를 클립보드에 복사해 동료에게 전달합니다${syncOn && !link ? (lead ? ' · 페이지가 아직 없으면 먼저 RERP 섹션에 만듭니다 (내가 책임자)' : ' · 페이지는 과제 책임자만 만들 수 있습니다') : ''} · ${pageTxt} · ${syncStatus}`;
-  const importBox = state.planImport && state.planImport.prjNo === p.prjNo ? `<span class="krext-plan-import"><input type="text" data-plan-import value="${F.esc(state.planImport.value || '')}" placeholder="동료가 보낸 원노트 페이지 링크를 붙여 넣고 Enter" spellcheck="false" autocomplete="off"><button type="button" data-act="plan-import-apply" data-prj="${F.esc(p.prjNo)}">적용</button><button type="button" data-act="plan-import-cancel" data-prj="${F.esc(p.prjNo)}" title="닫기">×</button>${state.planImport.error ? `<span class="krext-err">${F.esc(state.planImport.error)}</span>` : ''}</span>` : '';
+  const page = syncOn && g.KRX_PLAN && g.KRX_PLAN.pageOf ? g.KRX_PLAN.pageOf(state, p.prjNo) : null, link = page ? page.webUrl : '';
+  const syncStatus = !syncOn ? '' : (pg && pg.error ? `${F.fmtClock(pg.at || ps.at)} 공유 실패: ${pg.error}`
+    : pg ? `마지막 공유 ${F.fmtClock(pg.at || ps.at)}${pg.remoteBy && pg.remoteAt ? ` · 파일 마지막 갱신 ${pg.remoteBy} ${F.fmtClock(pg.remoteAt)}` : ''}${pg.owner ? ` · ${pg.owner} 의 폴더` : ''}`
+    : ps && ps.error ? `${F.fmtClock(ps.at)} 공유 실패: ${ps.error}` : '아직 공유 전');
+  const pageTxt = pg && pg.planUrl ? `과제 폴더 "${pg.folder || pg.title || pg.prjNo || ''}" 의 예상비용.json` : pg && pg.folder ? `과제 폴더 "${pg.folder}" (예상비용.json 은 항목을 적으면 생김)` : '이 과제의 공유 폴더는 아직 없음';   // planUrl 은 파일에 항목이 있을 때만 들어온다(background.js shareDecoratePages) — title 은 늘 있어 그것으로 가르면 없는 파일도 "있다" 고 했다
+  const exportTip = `과제 폴더 주소 복사: 이 과제의 공유 폴더를 여는 주소를 클립보드에 복사합니다 — 동료가 설정 › 공유 (Plus) 의 공유 폴더 칸에 붙여 넣으면 같은 폴더의 같은 파일(예상비용.json · <n>차년도.json)을 쓰게 됩니다 (참여연구원에게는 폴더를 만들 때 자동 공유되므로 보통은 붙일 일이 없습니다) · ${pageTxt} · ${syncStatus}`;
   const syncErr = syncOn && ((pg && pg.error) || (ps && ps.ok === false && !pg));
   const ref = `data-prj="${F.esc(p.prjNo)}"`;
   const eyeBtn = pt.count ? `<button type="button" class="krext-ico-btn${hidden ? ' krext-ico-off' : ''}" data-act="plan-hide" data-prj="${F.esc(p.prjNo)}" title="${hidden ? F.esc(`예상 비용 보이기 (${F.money(pt.count)}건 · ${F.money(pt.sum)}원 저장되어 있음. 기본은 감춤이며 이 화면에서만 펼쳐집니다)`) : '예상 비용 감추기 (＋ 버튼·항목 줄·예상 반영 행을 숨기고 과제 행의 예상 잔액만 남김)'}">${hidden ? ICON_EYE_OFF : ICON_EYE}</button>` : '';
-  const oneBtns = (hidden || !syncOn) ? '' : `<button type="button" class="krext-ico-btn${syncErr ? ' krext-ico-err' : ''}" data-act="plan-import" ${ref} title="${F.esc(importTip)}">${ICON_IMPORT}</button>`
-    + `<button type="button" class="krext-ico-btn${syncErr ? ' krext-ico-err' : ''}" data-act="plan-export" ${ref} title="${F.esc(exportTip)}">${ICON_EXPORT}</button>`
-    + (link ? `<a class="krext-ico-btn" href="${F.esc(link)}" target="_blank" rel="noopener" title="${F.esc(`원노트에서 열기: ${pageTxt} (우클릭 › 링크 주소 복사로 동료에게 전달)`)}">${ICON_EXT}</a>` : '');
-  const icons = P && (pt.count || syncOn) ? `<span class="krext-plan-ico">${eyeBtn}<button type="button" class="krext-ico-btn" data-act="plan-persist" ${ref} title="${F.esc(saveTip)}">${ICON_SAVE}</button>${oneBtns}${savedMark}${importBox}</span>` : '';
+  const oneBtns = (hidden || !syncOn) ? '' : `<button type="button" class="krext-ico-btn${syncErr ? ' krext-ico-err' : ''}" data-act="plan-export" ${ref} title="${F.esc(exportTip)}">${ICON_EXPORT}</button>`
+    + (link ? `<a class="krext-ico-btn" href="${F.esc(link)}" target="_blank" rel="noopener" title="${F.esc(`${page.isFile ? '예상비용.json 열기' : '과제 폴더 열기'}: ${pageTxt} (SharePoint 에서 그대로 열립니다)`)}">${ICON_EXT}</a>` : '');
+  const icons = P && (pt.count || syncOn) ? `<span class="krext-plan-ico">${eyeBtn}<button type="button" class="krext-ico-btn" data-act="plan-persist" ${ref} title="${F.esc(saveTip)}">${ICON_SAVE}</button>${oneBtns}${savedMark}</span>` : '';
   const names = pe ? Array.from(new Set([].concat(
     (s.quickPicks || []).map((q) => String(q).split('=')[0].trim()),
     Object.values(plans).flatMap((byKey) => Object.values(byKey).flatMap((l) => l.map((e) => e.name)))).filter(Boolean))) : [];
@@ -166,4 +152,4 @@ function budgetTable(p, s, state) {
   return `<table class="krext-cards krext-bgt"><thead><tr><th>비목${icons}</th><th class="krext-num" title="예산액(A)">예산</th><th class="krext-num" title="예산잔액(A-B)">예산잔액</th><th class="krext-num" title="승인액(B) ÷ 예산액(A)">집행비율</th></tr></thead><tbody>${rows}${orphans}${ubRow}</tbody><tfoot>${foot}</tfoot></table>`;
 }
 
-export { budgetTable, planBtn, planRow, planForm, rateCell, rateOf, pct, isProjectLead, projectLink, ICON_EYE, ICON_EYE_OFF, ICON_SAVE, ICON_IMPORT, ICON_EXPORT, ICON_EXT };
+export { budgetTable, planBtn, planRow, planForm, rateCell, rateOf, pct, projectLink, ICON_EYE, ICON_EYE_OFF, ICON_SAVE, ICON_EXPORT, ICON_EXT };

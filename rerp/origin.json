@@ -1,58 +1,12 @@
 {
   "source": "kr_ext_rerp",
   "path": "E:/dev/kr_ext_rerp",
-  "commit": "dedbd24",
-  "commitDate": "2026-10-18",
+  "commit": "0afeedd",
+  "commitDate": "2026-10-19",
   "version": "0.8.6",
-  "dirty": [
-    "M CLAUDE.md",
-    "M README.md",
-    "M SPEC.md",
-    "M background.js",
-    "M content/eclass.js",
-    "M help-server/classify.js",
-    "M lib/fetch-sites.js",
-    "D lib/mcp-client.js",
-    "M lib/panel.css",
-    "M lib/plan-sync.js",
-    "M lib/plan.js",
-    "D lib/plus-onenote.js",
-    "M lib/prep-ai.js",
-    "M lib/prep-fetch.js",
-    "M lib/prep.js",
-    "M lib/render.js",
-    "M lib/research-sync.js",
-    "M lib/research.js",
-    "M lib/rnd-api.js",
-    "M lib/settings.js",
-    "M lib/staff-ui.js",
-    "M lib/staff.js",
-    "M manifest.json",
-    "M options/options.css",
-    "M options/options.html",
-    "M options/options.js",
-    "M popup/popup.html",
-    "M popup/popup.js",
-    "M tests/plan-sync.test.js",
-    "M tests/prep-ai.test.js",
-    "M tests/prep-fetch.test.js",
-    "M tests/research.test.js",
-    "M tests/staff-ui.test.js",
-    "M tests/staff.test.js",
-    "?? lib/classify-core.js",
-    "?? lib/claude-api.js",
-    "?? lib/prjdoc-sync.js",
-    "?? lib/prjdoc.js",
-    "?? lib/sp-store.js",
-    "?? lib/staff-sync.js",
-    "?? tests/prjdoc-sync.test.js",
-    "?? tests/prjdoc.test.js",
-    "?? tests/settings.test.js",
-    "?? tests/sp-store.test.js",
-    "?? tests/staff-sync.test.js"
-  ],
-  "portedAt": "2026-10-18",
-  "note": "2026-10-18 공유 (Plus) v2(SharePoint 폴더의 과제별 JSON) — 새로 옮김 sp-store · prjdoc · prjdoc-sync · staff-sync · background.js 공유 배선(sharesync.js), 다시 옮김 plan-sync · plan · panel.css · research · research-sync · staff 와 그 테스트. 지움 mcp-client · plus-onenote(원본이 걷어 냄). render.js · rnd-api.js · settings.js(erp.js 몫)는 옮기지 않아 옛 지문 그대로(드리프트가 check 에 보인다).",
+  "dirty": [],
+  "portedAt": "2026-10-19",
+  "note": "2026-10-18 공유 (Plus) v2(SharePoint 폴더의 과제별 JSON) — 새로 옮김 sp-store · prjdoc · prjdoc-sync · staff-sync · background.js 공유 배선(sharesync.js), 다시 옮김 plan-sync · plan · panel.css · research · research-sync · staff 와 그 테스트. 지움 mcp-client · plus-onenote(원본이 걷어 냄). render.js · rnd-api.js · settings.js(erp.js 몫)는 옮기지 않아 옛 지문 그대로(드리프트가 check 에 보인다). 2026-10-19 sp-store(+테스트)에 permissions·findPeople·writer.unshare·이메일 공유를 정본에서 먼저 더하고 다시 옮김(참여인력 칸 읽기·편집 체크). 2026-10-19 background.js 의 onMessageExternal shareFolder 응답은 WORKSPACE 가 묻는 쪽이라 옮기지 않음 — rndpanel.js askPeer(지문만 갱신). 2026-10-19 지문 갱신(0afeedd): render.js 의 예상 비용 아이콘 부분(공유 (Plus) v2 — plan-import·isProjectLead 지움, plan-export 는 폴더 주소 복사, ↗ 는 pageOf)을 planui.js 에 다시 옮김. rnd-api.js(collect 캐시 칸 planSync·plusOn 만)·settings.js(plus 기본값은 sharesync.js SHARE_DEFAULTS 와 이미 같음, adv·budgetExcludeDefault 그대로)·panel.css(.krext-ws 사업비 관리 화면 규칙만 — plan.css 범위 밖)는 옮길 것이 없어 지문만.",
   "files": [
     {
       "from": "lib/format.js",
@@ -66,165 +20,147 @@
       "to": "rerp/plansync.js",
       "how": "그대로 (export)",
       "sha1": "843759375b707bbbaecd9c13c42f5498e367ecb5",
-      "bytes": 6344,
-      "portedAt": "2026-10-18"
+      "bytes": 6344
     },
     {
       "from": "lib/plan.js",
       "to": "rerp/plan.js",
       "how": "그대로 + chrome.runtime.sendMessage 세 곳 → api.send",
       "sha1": "b5924b2c27ec63f402d001c331db81a584b94a58",
-      "bytes": 24049,
-      "portedAt": "2026-10-18"
+      "bytes": 24049
     },
     {
       "from": "lib/render.js",
       "to": "rerp/planui.js",
       "how": "과제집행비율 표 부분만 (rateCell·pct·rateOf·아이콘·isProjectLead·planBtn·planRow·planForm·budgetTable·projectLink)",
-      "sha1": "18606698f86d30efa128b060dd48eb673540c747",
-      "bytes": 139838
+      "sha1": "b7395dc807ba9e70196e24558bd013ceebfe6e7b",
+      "bytes": 170106
     },
     {
       "from": "lib/rnd-api.js",
       "to": "rerp/erp.js",
       "how": "call·describe·pool·fetchProjectRecs·fetchProjects·dateRange·fetchCards·trunc·execRate·fetchBudget·ssoLogin + collect 의 미청구 합산(withPending) · settings.js 의 adv 기본값",
-      "sha1": "26308e76cfccba3d399e9906a1ca9b08b71db5a5",
-      "bytes": 84718
+      "sha1": "43be6f7d3f08ac37b7fdcdf40f554a5a8194e4b4",
+      "bytes": 85589
     },
     {
       "from": "lib/settings.js",
       "to": "rerp/erp.js · rerp/sharesync.js",
       "how": "DEFAULTS 의 adv·budgetExclude(erp.js)·plus(sharesync.js SHARE_DEFAULTS) 와 parseJson 만",
-      "sha1": "74953307d2ada25873acaada47a5fcd8169d8ce3",
-      "bytes": 15845
+      "sha1": "a0d4568c105bd7ab58e1881bef6b63a84d6e540b",
+      "bytes": 25830
     },
     {
       "from": "background.js",
       "to": "rerp/sharesync.js",
       "how": "공유 (Plus) 배선(shareSync·queueShareSync·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps",
-      "sha1": "b570f282409d2af9fa604c8f46d2d73dd5cb59ca",
-      "bytes": 110483,
-      "portedAt": "2026-10-18"
+      "sha1": "96833682715ce37dbc9c22625da3753c489457db",
+      "bytes": 113095
     },
     {
       "from": "lib/panel.css",
       "to": "rerp/plan.css",
       "how": "과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·공유 아이콘 규칙만",
-      "sha1": "6f7b780172c04d15dcb6a74f126594ca9c86df17",
-      "bytes": 66532,
-      "portedAt": "2026-10-18"
+      "sha1": "5cb844a36121c94bb888ac7deee60ce6b54fb036",
+      "bytes": 75412
     },
     {
       "from": "tests/plan-sync.test.js",
       "to": "test/rerp.test.mjs",
       "how": "ESM 으로 옮기고 plan.js·erp.js 검사를 보탬",
       "sha1": "cfc22ea972caab9c62b0267704eb81e231c98d25",
-      "bytes": 5479,
-      "portedAt": "2026-10-18"
+      "bytes": 5479
     },
     {
       "from": "lib/research.js",
       "to": "rerp/research.js",
       "how": "그대로 (IIFE → export)",
       "sha1": "8971131a781f325b7cb7ecc1edef0b9dbc23fc3e",
-      "bytes": 19297,
-      "portedAt": "2026-10-18"
+      "bytes": 19297
     },
     {
       "from": "lib/research-sync.js",
       "to": "rerp/researchsync.js",
       "how": "그대로 (IIFE → export, g.KRX_RESEARCH 는 shim)",
       "sha1": "a327684a6a6fa68e2ee028e4a1531b5220b208b1",
-      "bytes": 2882,
-      "portedAt": "2026-10-18"
+      "bytes": 2882
     },
     {
       "from": "tests/research.test.js",
       "to": "test/rerp-research.test.mjs",
       "how": "ESM 으로 (help-server/classify.js 검사는 뺌)",
       "sha1": "e772f549db1e857d3e91bcb7ed8abf9eeee0649f",
-      "bytes": 16755,
-      "portedAt": "2026-10-18"
+      "bytes": 16755
     },
     {
       "from": "lib/staff.js",
       "to": "rerp/staff.js",
       "how": "그대로 (IIFE → export)",
       "sha1": "c9995b5085c41444ce7f24954136614cbd646c06",
-      "bytes": 38120,
-      "portedAt": "2026-10-18"
+      "bytes": 38120
     },
     {
       "from": "tests/staff.test.js",
       "to": "test/rerp-staff.test.mjs",
       "how": "ESM 으로",
       "sha1": "3600d1e44dd25960c06407938fe7025fbed9f9c9",
-      "bytes": 18247,
-      "portedAt": "2026-10-18"
+      "bytes": 18247
     },
     {
       "from": "lib/staff-sync.js",
       "to": "rerp/staffsync.js",
       "how": "그대로 (IIFE → export, g.KRX_STAFF 는 shim)",
       "sha1": "fca4d49700ba9175070c98753b25affb5bfec3fa",
-      "bytes": 5230,
-      "portedAt": "2026-10-18"
+      "bytes": 5230
     },
     {
       "from": "lib/sp-store.js",
       "to": "rerp/spstore.js",
       "how": "그대로 (g = globalThis, export)",
-      "sha1": "36f7b806fbf270f198e37123ca04bbed702eff75",
-      "bytes": 73001,
-      "portedAt": "2026-10-18"
+      "sha1": "81a7bb3d98fc07e0e4a32556b2556d6ff6c1b9c9",
+      "bytes": 86057
     },
     {
       "from": "lib/prjdoc.js",
       "to": "rerp/prjdoc.js",
       "how": "그대로 (IIFE → export, g.KRX_PLAN_SYNC·KRX_RESEARCH_SYNC·KRX_STAFF_SYNC·KRX_STAFF 는 shim)",
       "sha1": "8d787473da8637168c8aeb0a345555c1f6883bf8",
-      "bytes": 42527,
-      "portedAt": "2026-10-18"
+      "bytes": 42527
     },
     {
       "from": "lib/prjdoc-sync.js",
       "to": "rerp/prjdocsync.js",
       "how": "그대로 (IIFE → export, g.KRX_PRJDOC 는 shim)",
       "sha1": "f7c664e91825331aa1f2ada3b60da9eff4c34357",
-      "bytes": 38223,
-      "portedAt": "2026-10-18"
+      "bytes": 38223
     },
     {
       "from": "tests/staff-sync.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (한 파일에 넷 + sharesync 배선 검사)",
       "sha1": "fb57500e83094b9f967328546b697129456c04ab",
-      "bytes": 4840,
-      "portedAt": "2026-10-18"
+      "bytes": 4840
     },
     {
       "from": "tests/sp-store.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (가짜 fetch·chrome — 실 SharePoint 에 쓰지 않음)",
-      "sha1": "272e23e07bbc7f2f7849dad9ed694daaf20271ff",
-      "bytes": 102535,
-      "portedAt": "2026-10-18"
+      "sha1": "75c62afc39eff5bc114ca1adeed147fa6c3cb2fa",
+      "bytes": 119325
     },
     {
       "from": "tests/prjdoc.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로",
       "sha1": "c53fca57d67cfa91a3f6e7e728af8791fb422b18",
-      "bytes": 41535,
-      "portedAt": "2026-10-18"
+      "bytes": 41535
     },
     {
       "from": "tests/prjdoc-sync.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (가짜 store)",
       "sha1": "2a10bf1eeaece499ee493e1020135300400430ce",
-      "bytes": 62403,
-      "portedAt": "2026-10-18"
+      "bytes": 62403
     }
   ]
 }

@@ -371,12 +371,13 @@
           <button type="button" id="rdEmptyAdd" class="primary small">과제 더하기</button>
         </div>
       </div>
-      <!-- 고른 과제의 머리 — 별칭 한 줄(예산 칸처럼 접혀 있고, 펴면 과제명·과제번호·Job Id·책임자·연구기간·비고)과 별칭 오른쪽의 연필 아이콘(과제 고치기 폼 —
-           2026-10-16 사용자 지정 "아이콘으로 SSCB 글자 우측에". summary 안의 단추라 누름이 접기/펴기로 번지지 않게 막는다 — rndpanel.js)
+      <!-- 고른 과제의 머리 — 별칭 한 줄(예산 칸처럼 접혀 있고, 펴면 과제명·과제번호·Job Id·책임자·연구기간·비고)과 별칭 오른쪽의 세 아이콘(summary 안의 단추라 누름이 접기/펴기로 번지지 않게 막는다 — rndpanel.js):
+           연필(과제 고치기 폼 — 2026-10-16 사용자 지정 "아이콘으로 SSCB 글자 우측에") · 링크(이 과제 폴더의 SharePoint 조직 내 편집 링크 복사 — 공유 카드의 링크 복사와 같은 길, 꺼져 있으면 R&D 설정의 공유 카드로)
+           · 톱니(R&D 설정으로 바로 — 2026-10-19 사용자 지정 "shared point 링크 복사할 수 있게 해줘. 그리고 설정 아이콘 추가 해서 R&D 설정 으로 바로 가게 해줘")
            · 별칭이 없으면 그 자리에서 정하는 칸 · 차년도 칩(오늘이 든 차년도에 올해 표시 — 예산 정보가 없는 차년도는 회색 점선. 누르면 넘어가되 아래 기록 칸 대신 rdYearEmpty 카드와 R&D 설정이 선다). -->
       <div id="rdHead" class="rd-head card hidden">
         <details id="rdInfo" class="rd-info">
-          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span id="rdName"></span><button type="button" id="rdEdit" class="rd-icon rd-edit" title="과제 고치기 — 과제명·별칭·과제번호·Job Id·책임자·연구기간·비고" aria-label="과제 고치기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button><span class="summary-detail">과제 정보</span></summary>
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span id="rdName"></span><button type="button" id="rdEdit" class="rd-icon rd-edit" title="과제 고치기 — 과제명·별칭·과제번호·Job Id·책임자·연구기간·비고" aria-label="과제 고치기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button><button type="button" id="rdHeadYear" class="rd-icon rd-head-year" title="차년도 더하기·고치기 — 이 과제를 대상으로 과제 더하기 카드를 엽니다. 차년도 단추 줄에서 골라 사업계획서·YAML 을 넣으면 다른 차년도가 서고(연구기간 밖이면 종료일이 늘어남), 있는 차년도를 다시 넣으면 달라진 것이 변경이력으로 남습니다" aria-label="차년도 더하기·고치기"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M12 13.5v5M9.5 16h5"/></svg></button><button type="button" id="rdHeadLink" class="rd-icon rd-head-link" title="SharePoint 링크 복사 — 이 과제 폴더의 조직 내 편집 링크" aria-label="SharePoint 링크 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1.5 1.5"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1.5-1.5"/></svg></button><button type="button" id="rdHeadSet" class="rd-icon rd-head-set" title="R&amp;D 설정으로" aria-label="R&amp;D 설정으로"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface)"/><circle cx="15" cy="17" r="3" fill="var(--surface)"/></svg></button><span class="summary-detail">과제 정보</span></summary>
           <dl id="rdMeta" class="rd-meta"></dl>
           <!-- Job Id 저절로 찾기(2026-10-16 사용자 지정 — "job_id 찾기를 자동으로 하고 여기 페이지에서 맞는지 확인하면 버튼은 사라지고 Jobid 저장만"). Job Id 가 빈 과제를 고르면
                R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것 — 읽기만)을 받아 후보(책임자가 같은 과제 먼저 · 과제명 유사도 0.5 이상 — src/jobid.js)를 높은 차례로 보이고 가장 높은 것을
@@ -503,11 +504,22 @@
           <div class="rd-box-body">
             <!-- 참여연구자(rERP 근거 표시 — 2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고, 거기는 참여연구원 참여율/지급액 관리만 rerp 근거로 표시"):
                  이 차년도가 rERP 에 이어져 있으면(예산 칸의 rERP 집행내역) 그 과제의 참여인력(지급계획)을 받아 읽기만 하는 표로 — 성명 · 역할 · 월급여(지급한도액) · 참여 · 지급 합 · 참여율(연간, 아래에 월 최대),
-                 사람 아래 달마다의 지급(천원), 표 아래 100% 초과 알림. 머리 줄은 출처(rERP 과제번호 · 조회 시각)와 ↻(다시 받기) · 표 복사. 이어지지 않은 차년도는 계획서의 참여연구자 표와 안내.
+                 사람 아래 달마다의 지급(천원 — 기본 접힘, 머리 줄의 M 으로 펴고 접는다. 2026-10-19 사용자 지정), 표 아래 100% 초과 알림. 머리 줄은 출처(rERP 과제번호 · 조회 시각)와 ↻(다시 받기) · M · 표 복사. 이어지지 않은 차년도는 계획서의 참여연구자 표와 안내.
                  참여율·지급액의 계획과 변경(월별 나누기·적용월부터·초기화·예산 상한)은 kr_ext_rerp 의 사업비 변경 메뉴에서 한다. -->
             <div id="rdRosterTools" class="rd-box-tools"><span id="rdRosterSrc" class="rd-src"></span>
               <button type="button" id="rdStaffRefresh" class="rd-icon hidden" title="rERP 참여인력(지급계획)을 다시 받기 — 이 차년도가 이어진 rERP 과제의 월급여·월별 지급·다른 과제 참여율. 바꾸는 것은 KR eClass + R&D ERP 현황 확장의 사업비 변경 메뉴에서" aria-label="rERP 참여인력 다시 받기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button>
+              <button type="button" id="rdStaffMonths" class="rd-icon rd-icon-text hidden" title="달마다의 지급 보이기/접기 — 사람 아래 달마다의 지급(천원) 줄을 펴고 접습니다(기본 접힘)" aria-label="달마다의 지급 보이기" aria-pressed="false">M</button>
+              <button type="button" id="rdStaffShare" class="rd-icon" title="공유 권한 — 이 과제의 SharePoint 과제 폴더에 대한 사람마다의 읽기·편집 체크(체크하면 바로 반영). 공유 (SharePoint)가 켜져 있고 과제 폴더가 있을 때" aria-label="공유 권한" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg></button>
               <button type="button" id="rdRosterCopy" class="rd-icon" title="참여연구자 복사 — 표(탭으로 나눈 글)로(엑셀·한글 표에 그대로 붙습니다)" aria-label="참여연구자 표 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg></button></div>
+            <!-- 공유 권한(2026-10-19 사용자 지정: "sharepoint 링크 읽기, 쓰기 권한 설정 … 아이콘에 공유아이콘 … 그거 누르고.. 체크하면 반영") — 머리 줄의 공유 아이콘을 누르면 표 위에 펴진다:
+                 폴더 이름 · ↻(권한·사람 다시 읽기) · 사람마다 읽기/편집 체크(체크하면 바로 그 사람에게 그 권한 — 둘 중 하나, 바꾸면 거둔 뒤 다시 줌, 빼면 거둠) · 상태(표시 이름 <이메일> · 못 찾음 · 이름 겹침 · 반영 중 · 실패).
+                 대상은 이 차년도의 참여연구자·행정지원(나는 빼고)과 폴더에 권한이 있는 다른 사람. 권한은 rerp/spstore.js permissions 로 읽고 사람은 이메일로 맞춘다(rndpanel.js paintPerm·applyPerm). -->
+            <div id="rdStaffPerm" class="rd-staff-perm hidden">
+              <div class="rd-staff-perm-head"><span id="rdStaffPermFolder" class="rd-src"></span>
+                <button type="button" id="rdStaffPermRefresh" class="rd-icon" title="권한과 사람을 다시 읽기" aria-label="권한 다시 읽기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button></div>
+              <div id="rdStaffPermBody"></div>
+              <p id="rdStaffPermMsg" class="rd-staff-msg hidden" aria-live="polite"></p>
+            </div>
             <div id="rdRoster"></div>
             <p id="rdStaffMsg" class="rd-staff-msg hidden" aria-live="polite"></p>
             <!-- 행정지원은 참여연구자 표와 같은 꼴의 표(성명 · 맡은 일 · 공문 참조 · ×)로 — 칸은 표 안에서 바로 적는다(2026-10-16 사용자 지정 "참여연구원들이랑 … 비슷하게 표기").
@@ -595,11 +607,14 @@
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface)"/><circle cx="15" cy="17" r="3" fill="var(--surface)"/></svg><span>R&amp;D 설정</span><span id="rdSetState" class="summary-detail"></span></summary>
         <div class="rd-set-body">
           <!-- rERP 집행내역 — 끄면 예산 칸 아래의 rERP 칸이 숨고 rERP 를 부르지 않으며, 집행 칸은 다시 손으로 적는다(이어 둔 과제·스냅샷은 남아 켜면 돌아온다). -->
-          <label class="rd-check rd-set-check" title="예산 칸 아래에 R&D ERP 자금현황의 비목별 예산잔액·집행비율과 예상 비용(kr_ext_rerp 와 같은 표)을 보입니다. 끄면 rERP 를 부르지 않고 집행 칸은 손으로 적습니다."><input type="checkbox" id="rdErpOn" checked /><span>예산 칸에 <strong>rERP 집행내역</strong> 보이기 — R&amp;D ERP 자금현황의 비목별 잔액·집행비율과 예상 비용</span></label>
+          <label class="rd-check rd-set-check" title="예산 칸 아래에 R&D ERP 자금현황의 비목별 예산잔액·집행비율과 예상 비용(kr_ext_rerp 와 같은 표)을 보입니다. 끄면 rERP 를 부르지 않고 집행 칸은 손으로 적습니다.">
+            <span class="rd-setting-copy"><strong id="rdErpOnLabel">rERP 집행내역</strong><small id="rdErpOnHelp">예산 칸에 잔액·집행비율·예상 비용 표시</small></span>
+            <input type="checkbox" id="rdErpOn" class="rd-setting-switch" role="switch" aria-labelledby="rdErpOnLabel" aria-describedby="rdErpOnHelp" checked />
+          </label>
           <!-- 예산 칸에 보일 비목(2026-10-11 사용자 지정 — "R&D 설정에서 어떤 항목을 볼지 고르게") — 계획서의 여섯 비목과 장부에 있는 다른 비목이 체크로 늘어선다(rndpanel.js paintItems).
                끈 비목은 예산 칸의 줄에서만 숨고 합계·표 복사·요약·rERP 표에는 그대로 든다(숨긴 것이 있으면 합계 위에 한 줄로 알린다). 모든 과제에 같이 적용되고 chrome.storage 의 rndSettings.hide 에 남는다. -->
           <div id="rdItemBox" class="rd-set-items" title="끈 비목은 예산 칸의 줄에서만 숨습니다 — 합계·표 복사·요약에는 그대로 듭니다. 모든 과제에 같이 적용됩니다.">
-            <span class="rd-set-items-title">예산 칸에 보일 비목</span>
+            <span class="rd-set-items-title">예산에 표시할 비목</span>
             <div id="rdItems" class="rd-set-items-list" role="group" aria-label="예산 칸에 보일 비목"></div>
           </div>
           <!-- 집행에 더하기(승인전·미청구·사용계획) 체크는 예산 칸 맨 위 줄(rdIncRow)로 옮겼다 — 2026-10-11 사용자 지정. -->
@@ -607,36 +622,47 @@
                "onedrive 에 업무/shared 안에 과제별로 .. 약칭으로 없으면 jobid 없으면 임시번호 … 년차별로 1개 파일이고 1개 파일에서 변경사항이랑 다 관리 … 과제 정보랑 등등", "참여연구원들에게 공유할 수 있게 설정까지").
                원노트·MCP·Graph 를 걷어 내고 브라우저의 Microsoft 로그인 쿠키만으로 OneDrive(SharePoint) 공유 폴더를 쓴다 — 과제마다 폴더(약칭 → Job Id → 과제번호) 안에 연차 파일 <n>차년도.json(과제 정보·예산 계획·변경이력·연구내용)과
                kr_ext_rerp 가 적는 예상비용.json. 파일 모양·병합은 kr_ext_rerp 의 lib/prjdoc.js(정본, rerp/prjdoc.js). 변환은 src/rndshare.js, 배선(켜기·지금 맞추기·고친 뒤·탭 열 때)은 rndpanel.js 가 rerp/sharesync.js 로.
-               옛 원노트 묶음(과제 정보 페이지·예상 비용 받아 보기·연구내용 올리기)은 모두 이 파일에 들어 따로 없다. 꺼 두면 아무 데도 닿지 않는다. -->
-      <details id="rdShareBox" class="rd-box card">
+               옛 원노트 묶음(과제 정보 페이지·예상 비용 받아 보기·연구내용 올리기)은 모두 이 파일에 들어 따로 없다. 꺼 두면 아무 데도 닿지 않는다.
+               공유 폴더 칸이 비면 rERP 확장(kr_ext_rerp)의 설정을 따른다(2026-10-19 "이 링크 공통으로 맞춰봐" — management 권한으로 이름을 찾아 shareFolder 를 묻는다, rndpanel.js askPeer·shareEffective). -->
+      <details id="rdShareBox" class="rd-box card rd-share">
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 19h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6 9.3 4.85 4.85 0 0 0 7 19z"/><path d="M12 11v6m0-6-2.5 2.5M12 11l2.5 2.5"/></svg><span>공유 (SharePoint)</span><span id="rdShareState" class="summary-detail">꺼짐</span></summary>
         <div class="rd-box-body">
-          <label class="rd-check"><input type="checkbox" id="rdShareOn" /><span><strong>과제 폴더</strong>(OneDrive · SharePoint)로 다른 기기·참여연구원과 맞추기 — 과제 정보(별칭·과제명·책임자·연구기간·비고)·예산 계획·변경이력·연구내용은 양방향, kr_ext_rerp 가 적은 <strong>예상 비용</strong>은 받아 보기. 참여연구원 지급계획·집행·진행 기록은 올리지 않습니다</span></label>
+          <label class="rd-check rd-setting-row">
+            <span class="rd-setting-copy"><strong id="rdShareOnLabel">과제 폴더 동기화</strong><small id="rdShareOnHelp">다른 기기·참여연구원과 과제 자료 맞추기</small></span>
+            <input type="checkbox" id="rdShareOn" class="rd-setting-switch" role="switch" aria-labelledby="rdShareOnLabel" aria-describedby="rdShareOnHelp" />
+          </label>
           <div class="rd-share-row">
-            <input type="text" id="rdShareFolder" aria-label="공유 폴더" placeholder="비우면 내 OneDrive 의 문서/업무/shared" title="밑폴더 — 비우면 내 OneDrive 의 문서/업무/shared. 동료가 보낸 공유 폴더(그 사람의 …/shared 나 과제 폴더)·팀 사이트 폴더의 주소를 넣어도 됩니다" autocomplete="off" spellcheck="false" />
+            <label for="rdShareFolder">공유 폴더</label>
+            <input type="text" id="rdShareFolder" aria-label="공유 폴더" placeholder="비우면 내 OneDrive 의 문서/업무/shared" title="밑폴더 — 비우면 rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 그대로 따르고, 그것도 없으면 내 OneDrive 의 문서/업무/shared. 동료가 보낸 공유 폴더(그 사람의 …/shared 나 과제 폴더)·팀 사이트 폴더의 주소를 넣어도 됩니다(넣으면 rERP 확장의 설정보다 이것이 이깁니다)" autocomplete="off" spellcheck="false" />
           </div>
-          <label class="rd-check rd-share-with"><input type="checkbox" id="rdShareWith" /><span>과제 폴더를 <strong>새로 만들 때</strong> 그 과제의 참여연구원에게 자동으로 공유(편집) — 이름으로 사람을 찾아 권한을 줍니다(동명이인·못 찾은 사람은 결과 줄에 보임). 끄면 폴더만 만들고 공유는 kr_ext_rerp 의 [참여연구원에게 공유]나 OneDrive 에서 직접</span></label>
-          <div class="rd-actions">
+          <label class="rd-check rd-share-with">
+            <input type="checkbox" id="rdShareWith" aria-labelledby="rdShareWithLabel" aria-describedby="rdShareWithHelp" />
+            <span class="rd-setting-copy"><strong id="rdShareWithLabel">참여연구원에게 자동 공유</strong><small id="rdShareWithHelp">새 과제 폴더를 만들 때 편집 권한 부여</small></span>
+          </label>
+          <div class="rd-actions rd-share-actions">
             <button type="button" id="rdShareSync" class="primary small">지금 맞추기</button>
             <button type="button" id="rdShareOpen" class="ghost small" title="공유 폴더를 새 탭에 엽니다 — Microsoft 로그인이 풀렸으면 여기서 로그인하세요">폴더 열기</button>
             <button type="button" id="rdShareLink" class="ghost small" title="조직 안에서 열리는 공유 폴더 링크를 복사합니다 — 참여연구원이나 다른 기기의 공유 폴더 칸에 붙여 넣으면 같은 폴더를 씁니다">링크 복사</button>
           </div>
           <p id="rdShareMsg" class="rd-share-msg" role="status"></p>
           <details class="rd-share-help">
-            <summary>ⓘ 어떻게 맞추나</summary>
-            <p class="rd-share-how">과제마다 폴더(이름은 약칭 → Job Id → rERP 과제번호) 안에 연차마다 <code>&lt;n&gt;차년도.json</code> 한 장(과제 정보·예산 계획·변경이력·연구내용)과 kr_ext_rerp 가 적는 <code>예상비용.json</code>이 있습니다 — kr_ext_rerp 확장과 같은 파일·같은 병합(칸마다 늦게 고친 쪽, 변경이력은 합집합, rERP 과제번호·과제명·책임자는 rERP 값, 예산은 계획만 — 집행은 rERP·이 브라우저 몫).
-              공유 폴더를 비우면 내 OneDrive 의 <code>문서/업무/shared</code>. 참여연구원 자동 공유는 kr_ext_rerp 가 과제 폴더를 만들 때 하고, 받는 쪽은 "나와 공유"에 들어온 과제 폴더를 저절로 찾거나 동료가 보낸 주소를 위 칸에 넣습니다.
-              브라우저의 Microsoft 로그인(쿠키)만 쓰므로 MCP 서버는 필요 없습니다 — 로그인이 풀렸으면 <strong>폴더 열기</strong>로 로그인한 뒤 다시 맞춥니다. 언제: 켤 때 · 지금 맞추기 · 과제를 고친 잠깐 뒤 · R&amp;D 탭을 열 때(1분 안이면 건너뜀).</p>
+            <summary>공유 범위 및 동기화 안내</summary>
+            <dl class="rd-share-guide">
+              <div><dt>함께 맞추는 자료</dt><dd>과제 정보(별칭·과제명·책임자·연구기간·비고), 예산 계획, 변경이력, 연구내용을 양방향으로 맞춥니다. 예상 비용은 rERP에서 받아 봅니다.</dd></div>
+              <div><dt>이 기기에만 보관</dt><dd>참여연구원 지급계획, 집행, 진행 기록은 공유하지 않습니다.</dd></div>
+              <div><dt>폴더와 참여연구원</dt><dd>주소를 비우면 rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 그대로 따르고(두 확장이 한 폴더), rERP 확장이 없으면 내 OneDrive의 <code>문서/업무/shared</code>를 씁니다. 동료에게 받은 공유 폴더 주소도 넣을 수 있습니다(넣으면 rERP 확장의 설정보다 이것이 이깁니다). 자동 공유는 새 폴더에만 적용되며, 동명이인·찾지 못한 사람은 결과에 표시됩니다. 자동 공유를 끄면 OneDrive 또는 rERP에서 직접 공유하세요.</dd></div>
+              <div><dt>동기화 시점</dt><dd>공유를 켤 때, 지금 맞추기를 누를 때, 과제를 수정한 뒤, R&amp;D 탭을 열 때 맞춥니다. 로그인이 필요하면 <strong>폴더 열기</strong>에서 Microsoft에 로그인하세요.</dd></div>
+            </dl>
           </details>
         </div>
       </details>
       <!-- 연구개발계획서 YAML 넣기 — 맨 아래(2026-10-08 사용자 지정). RND 폴더의 KR_<과제>.yaml(스냅샷)과 history/*.yaml(개정 레지스트리·예산 이력·참여연구원 이력).
            탭 어디에 놓아도 여기로 온다. 글을 붙여 넣어도 읽는다. src/rndyaml.js 가 과제·차년도에 맞춰 넣고, YAML 은 vendor/yaml 로 푼다. -->
       <div id="rdIntake" class="rd-intake card">
-        <label class="rd-drop" for="rdYaml">
+        <label class="rd-drop" for="rdYaml" title="RND 폴더의 KR_&lt;과제&gt;.yaml · history/*.yaml">
           <input type="file" id="rdYaml" accept=".yaml,.yml,text/yaml,application/x-yaml,application/yaml" multiple />
           <span class="rd-drop-lead"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg><span id="rdDropLead">연구개발계획서 YAML 넣기</span></span>
-          <span class="rd-drop-how">RND 폴더의 KR_&lt;과제&gt;.yaml · history/*.yaml — 끌어다 놓기 · 붙여 넣기(Ctrl+V) · 눌러서 고르기</span>
+          <span class="rd-drop-how">끌어다 놓기 · 클릭해 선택 · Ctrl+V로 붙여넣기</span>
         </label>
       </div>
       <!-- 차년도 YAML 을 뽑는 스킬 묶음 — RND 프로젝트의 Claude Code 스킬 다섯 개를 rnd/skills/ 에 복사해 두고(tools/rndskills.mjs sync, 목록 rnd/skills.json),
