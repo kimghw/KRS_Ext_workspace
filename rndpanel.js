@@ -111,7 +111,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   const st = {
     loaded: false, book: normalizeBook(null),
     // editing 은 고치는 중인 과제 id('new' 는 새 과제). snap 은 그린 시점의 예산 줄 — 계획이 바뀌었는지 이것과 견준다.
-    // overlay 는 머리·몸통을 덮는 카드({ name, close } — rndgen 의 과제 더하기 'add', 2026-10-16). 폼·덮개가 열려 있으면 과제 칩은 어느 것도 켜지지 않고 ＋ 칩이 켜진다.
+    // overlay 는 머리·몸통을 덮는 카드({ name, close } — rndgen 의 과제 더하기 'add', 2026-10-16). 폼·덮개가 열려 있으면 과제 칩은 어느 것도 켜지지 않는다(＋ 칩은 2026-10-19 에 없앴다 — 대상은 그 카드의 배지에서).
     editing: null, overlay: null, snap: [], logEdit: null, chEdit: null,
     // Job Id 저절로 찾기(과제 정보 카드 — 2026-10-16 사용자 지정): for 는 찾은 과제 id(같은 과제는 다시 찾지 않는다 — 다시 찾기만), run 은 도는 중인 찾기(다른 과제로 가면 그 답은 버린다),
     // state 는 idle·busy·done·fail, list 는 후보(src/jobid.js rankJobs — 높은 차례), pick 은 고른 후보의 번호, msg/bad 는 알림 줄.
@@ -148,9 +148,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     pl: { plans: {}, planShown: new Set(), expanded: new Set(), data: { settings: { planSync: false }, myNames: [] } },
   };
 
-  // rndgen/(과제 더하기·변경사항 카드 — sidepanel.js 가 잇는다)의 훅 — 하나씩(마지막 등록이 이긴다). 없으면 ＋ 는 새 과제 폼이고 넣기·지우기 뒤에 할 일이 없다.
+  // rndgen/(과제 더하기·변경사항 카드 — sidepanel.js 가 잇는다)의 훅 — 하나씩(마지막 등록이 이긴다). 없으면 과제 더하기는 새 과제 폼이고 넣기·지우기 뒤에 할 일이 없다.
   //   viewHook(view())            : 그릴 때마다(paintAll·폼 열기) — 보고 있는 과제·차년도·폼/덮개
-  //   addHook({ projectId, n })   : ＋ 칩 · 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기"
+  //   addHook({ projectId, n })   : 머리 줄의 차년도 아이콘 · 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기"(칩 줄의 ＋ 는 2026-10-19 사용자 지정 "sscb 옆에 더하기 취소하고" 로 없앰)
   //   intakeHook(result, texts, meta) : YAML 이 하나라도 들어간 뒤(끌어 놓기·붙여 넣기·뽑기·고치기 모두) — 원문 저장(rndYamlText)
   //   deleteHook(projectId)       : 과제를 지운 뒤
   let viewHook = null, addHook = null, intakeHook = null, deleteHook = null;
@@ -206,17 +206,15 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   function paintProjects() {
     const p = cur();
-    const full = st.book.projects.length >= MAX_PROJECTS;
-    // 새 과제 폼·덮개(과제 더하기 카드)가 열려 있으면 과제 칩은 모두 꺼지고 ＋ 칩이 켜진다. 고치기 폼은 고치는 과제의 칩이 켜진 채다(2026-10-16 사용자 지정
+    // 새 과제 폼·덮개(과제 더하기 카드)가 열려 있으면 과제 칩은 모두 꺼진다. 고치기 폼은 고치는 과제의 칩이 켜진 채다(2026-10-16 사용자 지정
     // "어떤 과제인지 선택이 안되잖아" — 전에는 꺼져 어느 과제를 고치는지 보이지 않았다). 켜진 칩을 눌러도 폼·덮개를 닫고 그 과제로 간다(pickProject).
+    // 칩 줄 끝의 ＋ 칩은 2026-10-19 사용자 지정("sscb 옆에 더하기 취소하고, 과제 더하기 옆에 과제 뱃지를 선택할 수 있게")으로 없앴다 — 더하기 카드는 머리 줄의 차년도 아이콘으로 열고 대상은 그 카드의 배지에서.
     const covered = st.editing != null || !!st.overlay;
-    const adding = st.editing === 'new' || st.overlay?.name === 'add';
     const onId = st.editing != null && st.editing !== 'new' ? st.editing : (covered ? null : p?.id);
     const chips = st.book.projects.map((x) => {
       const on = !!onId && x.id === onId;
       return `<button type="button" class="rd-proj${on ? ' active' : ''}" data-proj="${x.id}" aria-pressed="${on}" title="${escapeHtml(x.name)}${x.code ? ` · ${escapeHtml(x.code)}` : ''}">${escapeHtml(label(x))}</button>`;
     });
-    chips.push(`<button type="button" class="rd-proj rd-proj-add${adding ? ' active' : ''}" data-add="1" aria-pressed="${adding}" aria-label="과제 더하기" title="${full ? `과제는 ${MAX_PROJECTS}개까지입니다` : '과제 더하기 — YAML 을 넣거나 사업계획서에서 뽑거나 직접 적습니다'}"${full ? ' disabled' : ''}>＋</button>`);
     el.projects.innerHTML = chips.join('');
     el.projects.classList.toggle('hidden', !st.book.projects.length);
     el.empty.classList.toggle('hidden', !!st.book.projects.length || covered);
@@ -650,7 +648,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     }
   }
 
-  /** ＋ · 과제 더하기 · 빈 차년도 카드의 단추 · 머리 줄의 차년도 아이콘 — rndgen 이 있으면 더하기 카드(target: {} · { projectId, n } · { projectId } — 차년도는 카드의 단추 줄에서), 없으면 새 과제 폼. */
+  /** 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 단추 · 머리 줄의 차년도 아이콘(＋ 칩은 2026-10-19 에 없앰) — rndgen 이 있으면 더하기 카드(target: {} · { projectId, n } · { projectId } — 차년도·대상 과제는 카드 안에서), 없으면 새 과제 폼. */
   function openAdd(target = {}) {
     if (addHook) addHook(target);
     else openForm('new');
@@ -2892,11 +2890,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   function wire() {
     el.chKind.innerHTML = CHANGE_KINDS.map((k) => `<option value="${k}">${k}</option>`).join('');
     el.projects.addEventListener('click', (e) => {
-      const b = e.target instanceof HTMLElement ? e.target.closest('[data-proj],[data-add]') : null;
-      if (!b) return;
-      // ＋ — 과제 더하기 카드(YAML 넣기 · 사업계획서에서 뽑기 · 직접 적기, rndgen — 2026-10-16). rndgen 이 없으면 새 과제 폼.
-      if (b.dataset.add) openAdd({});
-      else pickProject(b.dataset.proj);
+      const b = e.target instanceof HTMLElement ? e.target.closest('[data-proj]') : null;
+      if (b) pickProject(b.dataset.proj);
     });
     el.emptyAdd.addEventListener('click', () => openAdd({}));
     // 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기" — 이 과제·차년도로 더하기 카드를 연다.

@@ -2,7 +2,7 @@
 
 KRS WORKSPACE 사이드패널 **R&D** 탭의 카드 하나와 카드 하나의 위쪽 몫.
 
-- **과제 더하기**(＋ 칩 · 과제 없음 카드의 `과제 더하기` · 빈 차년도 카드의 `사업계획서에서 이 차년도 뽑기`) — 연구개발계획서 YAML 을 그대로 넣거나,
+- **과제 더하기**(머리 줄의 차년도 아이콘 · 과제 없음 카드의 `과제 더하기` · 빈 차년도 카드의 `사업계획서에서 이 차년도 뽑기` — 칩 줄의 ＋ 는 2026-10-19 사용자 지정 "sscb 옆에 더하기 취소하고, 과제 더하기 옆에 과제 뱃지를 선택할 수 있게" 로 없앴고, 대상 과제는 카드 제목 옆의 **배지**(장부의 과제들 · 새 과제)로 고른다) — 연구개발계획서 YAML 을 그대로 넣거나,
   **사업계획서·연구계획서**(PDF · HWPX · DOCX · XLSX · PPTX · TXT/MD)에서 **그 차년도의 KR 스냅샷 YAML**(`KR_<과제>.yaml`)을 Claude 로 뽑아 미리보기 뒤 장부에 넣는다. `직접 적기`는 지금까지의 새 과제 폼.
 - **변경 및 이력 관리의 YAML 고치기** — 과제를 보고 있고 그 차년도에 예산 정보가 있으면 늘 서는 **변경 및 이력 관리** 카드(`sidepanel.html` 의 `#rdChangeBox` — 진행 기록 아래, 다른 칸처럼 접힌 한 줄)의 위쪽 — 펴야 보인다.
   처음엔 머리 아래의 따로 선 `변경사항 반영` 카드였다가 2026-10-16 사용자 지정("이건 변경 및 이력 관리 로 해서 -- 변경이력 이걸 대체해줘")으로 변경이력 칸을 대체해 그 카드의 위쪽이 됐다 —
@@ -12,7 +12,7 @@ KRS WORKSPACE 사이드패널 **R&D** 탭의 카드 하나와 카드 하나의 �
 > 2026-10-16 사용자 지정(원문): "sscb 버튼 누르면 그리 안감, + 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출하도록 해줘. 그 스킬은 '차년도 YAML 뽑는 스킬' 거기 있지.
 > 그리고 변경사항의 내용을 임의 형식으로 제공 하면 yaml 로 수정해서 업데이트 하도록 해줘."
 >
-> 앞 문장("sscb 버튼 누르면 그리 안감")은 rndpanel.js 의 버그였다 — 새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 아무 일도 없었다. 이제 폼·덮개 동안에는 과제 칩이 모두 꺼지고 ＋ 칩이 켜지며,
+> 앞 문장("sscb 버튼 누르면 그리 안감")은 rndpanel.js 의 버그였다 — 새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 아무 일도 없었다. 이제 폼·덮개 동안에는 과제 칩이 모두 꺼지며(＋ 칩은 2026-10-19 에 없앴다),
 > 어느 칩이든 누르면 폼·덮개를 닫고 그 과제로 간다(`pickProject`).
 
 처음(2026-10-08)에는 "이 확장은 YAML 을 뽑지 않는다" 였다 — 스킬 묶음(`rnd/skills/`)을 복사해 쓰라고 두었을 뿐이다. 이제 **그 차년도 스냅샷 뽑기와 고치기**는 여기서 하고,
@@ -22,8 +22,9 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 ## 흐름
 
 ```
-＋ · 과제 더하기 · 빈 차년도 카드의 단추 · 머리 줄의 차년도 아이콘(2026-10-19) ── rndpanel.js(onAdd 훅) ──▶ panel.js openAdd(대상 {} · { projectId, n } · { projectId } — 아이콘이면 아직 없는 첫 차년도를 골라 둠 firstMissing)
-   덮개: rnd.setOverlay('add', close) — 머리·몸통·빈 차년도 카드가 숨고 과제 칩은 꺼지고 ＋ 가 켜진다. 과제 칩을 누르면 close → 카드가 닫히고 그 과제로.
+머리 줄의 차년도 아이콘(2026-10-19) · 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 단추 ── rndpanel.js(onAdd 훅) ──▶ panel.js openAdd(대상 { projectId } · {} · { projectId, n } — 아이콘이면 아직 없는 첫 차년도를 골라 둠 firstMissing)
+   덮개: rnd.setOverlay('add', close) — 머리·몸통·빈 차년도 카드가 숨고 과제 칩은 모두 꺼진다(칩 줄의 ＋ 는 2026-10-19 에 없앰). 과제 칩을 누르면 close → 카드가 닫히고 그 과제로.
+   제목 옆 과제 배지(paintProjects — 장부의 과제들 · 새 과제, 열 개면 새 과제 잠김) ─▶ retarget: 대상만 바꾼다 — 차년도 단추 줄(골라 둔 숫자·모두·없는 것만은 그대로, 자동이었으면 firstMissing)·별칭(뽑은 것이 없을 때만)이 따라가고 재료·미리보기는 둔다(다시 뽑기는 바뀐 대상으로)
    │
    ├─ YAML 파일 ─────────────────────────────▶ rnd.intake(texts, { source: 'file' }) ─▶ (들어가면) 카드 닫고 rnd.pick(과제, 차년도)
    │
@@ -41,7 +42,8 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
    차년도 고르기의 '모든 차년도'(2026-10-16) ─▶ 같은 재료로 1차년도부터 위 묻기·검사·마무리를 차년도마다 한 번씩 차례로(한 번에 하나)
    '없는 차년도만'(2026-10-19 사용자 "E(있는거 빼고 아직 없는거)") ─▶ 같은 길인데 예산 정보가 있는 차년도(대상 과제 → 재료 글의 과제번호·과제명으로 짚은 장부 과제 guessProject → 처음 답의 과제)는 skip 줄로 건너뛰고,
       연구기간 안이 다 있으면 그 다음 차년도를 물어 답의 연차범위까지(문서가 거기까지가 아니면 그 답은 버림 — beyond). 차년도 칸은 과제가 있으면 적어도 1~5(STAGE_MIN) — 연구기간 밖을 넣으면 src/rndyaml.js 가 종료일을 늘린다
-   차년도 고르기는 드롭다운이 아니라 단추 줄(paintStage · setStage — 자동 · 1…N · 모두 · 없는 것만, 고른 값은 #rdgStage 의 data-value; 2026-10-19 사용자 "버튼으로 선택할 수 있게") — 과제가 있으면 예산 정보가 없는 차년도는 점선(off), 툴팁에 이미 있음/아직 없음
+   차년도 고르기는 드롭다운이 아니라 단추 줄(paintStage · setStage · toggleStage — 자동 · 1…N · 모두 · 없는 것만, 고른 값은 #rdgStage 의 data-value; 2026-10-19 사용자 "버튼으로 선택할 수 있게") — 과제가 있으면 예산 정보가 없는 차년도는 점선(off), 툴팁에 이미 있음/아직 없음
+   숫자 단추는 여러 개를 켜고 끈다(같은 날 사용자 "3,4 이렇게 2개만 선택할 수도 있게" — 값은 '3,4'; 자동·모두·없는 것만은 하나, 숫자가 다 꺼지면 자동) ─▶ 둘 이상이면 extractYears(그 숫자들, PICKED): 같은 길로 그 차년도들만 차례로 — counted 로 두어 문서의 연차범위로 줄을 늘리거나 줄이지 않는다. zip 은 `_3-4차년도.zip`
                   몇 차년도까지 = 대상 과제의 연구기간(있으면) → 처음 읽힌 답의 yaml.stageCount(meta.연차범위 · 연차별기간 · 기간 — 문서가 이긴다) · 둘 다 모르면 1차년도만
                   ▼  한 차년도가 실패해도 다음으로 — 그 줄의 다시 뽑기는 그 차년도만
                차년도마다 한 줄(합계 · 참여연구자 · 경고 / 까닭 · YAML 칸에 열기 · 다시 뽑기) ─ 넣기 ─▶ rnd.intake 한 번(이름 'N차년도/KR_<과제>.yaml' — onIntake 가 차년도마다 짝지음)
@@ -76,7 +78,7 @@ rnd.intake 를 지나면(어느 길이든 — rndpanel 의 끌어 놓기·붙여
 |---|---|
 | `sidepanel.html` | `<link rel="stylesheet" href="rndgen/panel.css">` · `#rdStatus` 줄 앞의 `<div id="rdgAdd" class="rdg hidden">` · 변경 및 이력 관리 카드(`#rdChangeBox` — `#rdBody` 안 진행 기록 아래) 머리 줄 뒤의 `<div id="rdgRevise" class="rdg hidden">` (+ 과제 없음 카드·스킬 칸의 문구) |
 | `sidepanel.js` | `import { createRndGen } from './rndgen/index.js'` · `const rndgen = createRndGen({ rnd, $, escapeHtml, logEvent, flash, ai: () => ({ apiKey, cli }), today })` · `rnd.wire()` 뒤 `rndgen.wire()` |
-| `rndpanel.js` | 손잡이 `current`·`view`·`onView`·`onAdd`·`setOverlay`·`addManually`·`intake`(결과를 돌려줌)·`onIntake`·`onDelete`·`pick`·`setAlias`·`download`·`readAsset`, `st.overlay`, 칩·머리의 폼/덮개 칠, ＋·과제 더하기·빈 차년도 카드 단추 → onAdd(없으면 새 과제 폼), 드롭 표시 거두기(잡는 단계) |
+| `rndpanel.js` | 손잡이 `current`·`view`·`onView`·`onAdd`·`setOverlay`·`addManually`·`intake`(결과를 돌려줌)·`onIntake`·`onDelete`·`pick`·`setAlias`·`download`·`readAsset`, `st.overlay`, 칩·머리의 폼/덮개 칠, 머리 줄의 차년도 아이콘·과제 더하기·빈 차년도 카드 단추 → onAdd(없으면 새 과제 폼 — 칩 줄의 ＋ 는 2026-10-19 에 없앰), 드롭 표시 거두기(잡는 단계) |
 | `actions/spec/rnd/` | `_domain.yaml`(llm per-kind · consumer `rndgen/llm.js askRndTask`) · `extract.yaml`·`revise.yaml`(planned — 답 칸·규칙·uses) → `node tools/gen-actions.mjs` → `actions/spec.js` |
 | `src/tasktune.js` · `src/ai.js` · `native/host.mjs` | 두 작업만 effort medium · max_tokens 32000 · 입력 15만 자 · CLI 10분 · API 스트리밍(SSE). 다른 작업은 바이트까지 그대로 |
 | `doctext/browser.js` | 끝에 `pdfAllText`(모든 쪽 글자 층 — 기존 `pdfText` 는 6쪽) |
@@ -137,7 +139,7 @@ node --test "rndgen/test/*.test.mjs"
 | `llm.test.mjs` | 입력 글 배치·자르기·울타리, 스킬 문서 외우기, `askRndTask` 의 던짐과 `ask` 끼우기 |
 | `yaml.test.mjs` | 검사·마무리(머리 주석을 `headerOf` 가 되읽음)·다음 판·차년도 수(연차범위 목록·글 · 연차별기간 · 기간)·구조 차이(열쇠로 짝짓기)·미리 넣기(장부 원본 불변)·장부로 기준 짓기·파일 이름 |
 | `store.test.mjs` | put·history 5개·같은 글·remove·normalize·쓰기 실패 되돌림(가짜 저장소) |
-| `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·모든 차년도(차례로 묻기·몇 번·그 차년도만 다시·한 번의 intake·고친 칸·zip·과제가 다른 차년도·닫으면 멈춤)·없는 차년도만(있는 차년도는 건너뜀 줄·대상 없으면 재료 글의 과제번호로 짚기·연구기간 밖을 물어 연차범위까지·문서 범위 밖 답은 버림)·차년도 단추 줄(누른 것만 켜짐·점선·머리 줄 아이콘이면 없는 첫 차년도·바쁠 때 잠김)·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |
+| `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·모든 차년도(차례로 묻기·몇 번·그 차년도만 다시·한 번의 intake·고친 칸·zip·과제가 다른 차년도·닫으면 멈춤)·없는 차년도만(있는 차년도는 건너뜀 줄·대상 없으면 재료 글의 과제번호로 짚기·연구기간 밖을 물어 연차범위까지·문서 범위 밖 답은 버림)·고른 차년도들(숫자 둘 이상 — 그것만 차례로·연차범위를 안 봄·zip 이름 `_3-4차년도`·한 번의 intake)·차년도 단추 줄(숫자는 여러 개 켜고 끄기·자동/모두/없는 것만은 하나·점선·머리 줄 아이콘이면 없는 첫 차년도·바쁠 때 잠김)·과제 배지(대상 바꾸기 — 단추 줄·별칭 따라감·재료와 미리보기는 둠·과제 없으면 숨김·열 개면 새 과제 잠김)·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |
 | `index.test.mjs` | import·만들기·wire 가 chrome·fetch 를 만지지 않음(손잡이에 새 키가 없어도), onIntake 로 원문 저장(짝짓기·오래된 판 빼기·지난 판), onDelete, 저장 실패 로그, 저장 뒤 기준 줄 |
 
 API 길의 스트리밍은 `test/llm.test.mjs`(덩어리 경계·CRLF·refusal·max_tokens·error 사건·끊긴 연결, 다른 작업은 본문에 `stream` 없음), 한도는 `test/host.test.mjs`,

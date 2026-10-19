@@ -530,8 +530,9 @@ await ta('보고 있던 차년도가 저장된다 — 예산 없는 3차년도�
 });
 
 console.log('과제 더하기·고치기·지우기');
-t('＋ → 폼이 서고 머리·몸통은 숨는다. 과제명 없이는 저장 안 됨', () => {
-  q('#rdProjects [data-add]').click();
+t('과제 더하기(머리 줄의 차년도 아이콘 — rndgen 이 없으면 새 과제 폼; 칩 줄의 ＋ 는 2026-10-19 에 없앰) → 폼이 서고 머리·몸통은 숨는다. 과제명 없이는 저장 안 됨', () => {
+  assert.equal(q('#rdProjects [data-add]'), null, '칩 줄에 ＋ 가 없다');
+  $('rdHeadYear').click();
   assert.ok(!hidden('rdForm'));
   assert.ok(hidden('rdHead'));
   assert.ok(hidden('rdBody'));
@@ -993,7 +994,7 @@ await ta('이 기기에서 과제 정보를 고치면 잠깐 뒤 저절로 맞�
 });
 /** 새 과제를 폼으로 더한다(별칭 필수) — 공유가 켜져 있으면 잠깐 뒤 저절로 폴더·연차 파일이 생긴다. */
 const addProject = async (name, alias, extra = {}) => {
-  q('#rdProjects [data-add]').click();
+  panel.addManually();   // 더하기 카드의 직접 적기 — 새 과제 폼(＋ 칩은 없다)
   type($('rdFName'), name);
   type($('rdFAlias'), alias);
   for (const [id, v] of Object.entries(extra)) type($(id), v);
@@ -1727,30 +1728,26 @@ await ta('회계 I/O 저절로 찾기 — 과제 정보 카드가 회계(e-accou
 
 console.log('과제 더하기 카드(rndgen)의 손잡이 — 2026-10-16 사용자 지정: "sscb 버튼 누르면 그리 안감, + 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출"');
 const projId = (alias) => panel.book().projects.find((x) => x.alias === alias)?.id;
-const addChip = () => q('#rdProjects [data-add]');
 const chipOf = (name) => [...$('rdProjects').querySelectorAll('[data-proj]')].find((b) => b.textContent === name);
-await ta('새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 폼이 닫히고 그 과제가 선다 — 폼 동안 과제 칩은 꺼지고 ＋ 칩이 켜진다(rndgen 이 없으면 ＋ 는 폼)', async () => {
+await ta('새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 폼이 닫히고 그 과제가 선다 — 폼 동안 과제 칩은 모두 꺼진다(칩 줄의 ＋ 는 2026-10-19 에 없앰 — 대상은 더하기 카드의 배지에서)', async () => {
   assert.equal(chips().at(-1)[0], 'TEST');
   assert.equal(chips().at(-1)[1], true);
-  addChip().click();
+  assert.equal(q('#rdProjects [data-add]'), null, '＋ 칩이 없다');
+  assert.equal($('rdProjects').querySelectorAll('button').length, chips().length, '칩 줄은 과제 칩뿐');
+  panel.addManually();   // 더하기 카드의 직접 적기 — 새 과제 폼
   assert.ok(!hidden('rdForm'));
   assert.equal($('rdFormTitle').textContent, '새 과제');
   assert.deepEqual(chips().filter((c) => c[1]), [], '폼 동안 켜진 과제 칩이 없다');
-  assert.ok(addChip().classList.contains('active'));
-  assert.equal(addChip().getAttribute('aria-pressed'), 'true');
   chipOf('TEST').click();   // 보고 있던 TEST — 전에는 아무 일도 없었다
   assert.ok(hidden('rdForm'));
   assert.ok(!hidden('rdHead'));
   assert.ok(!hidden('rdBody'));
   assert.equal(chips().at(-1)[1], true);
-  assert.ok(!addChip().classList.contains('active'));
-  assert.equal(addChip().getAttribute('aria-pressed'), 'false');
-  // 고치기 폼은 고치는 과제의 칩이 켜진 채다(2026-10-16 사용자 지정 "어떤 과제인지 선택이 안되잖아") — ＋ 는 켜지지 않고, 그 칩을 누르면 닫힌다.
+  // 고치기 폼은 고치는 과제의 칩이 켜진 채다(2026-10-16 사용자 지정 "어떤 과제인지 선택이 안되잖아") — 그 칩을 누르면 닫힌다.
   $('rdEdit').click();
   assert.ok(!hidden('rdForm'));
   assert.deepEqual(chips().filter((c) => c[1]).map((c) => c[0]), ['TEST'], '고치는 과제의 칩이 켜져 있다');
   assert.equal(chipOf('TEST').getAttribute('aria-pressed'), 'true');
-  assert.ok(!addChip().classList.contains('active'));
   chipOf('TEST').click();
   assert.ok(hidden('rdForm'));
   assert.equal(chips().at(-1)[1], true);
@@ -1761,7 +1758,7 @@ const seenViews = [];
 const adds = [];
 const intakes = [];
 const deletes = [];
-await ta('훅을 달면 ＋·과제 없음 카드의 과제 더하기는 더하기 카드(onAdd)로 — 덮개(setOverlay add) 동안 머리·몸통이 숨고 ＋ 가 켜지며, 다른 칩을 누르면 덮개를 닫고 그리 간다', async () => {
+await ta('훅을 달면 머리 줄의 차년도 아이콘·과제 없음 카드의 과제 더하기는 더하기 카드(onAdd)로 — 덮개(setOverlay add) 동안 머리·몸통이 숨고 과제 칩은 모두 꺼지며, 다른 칩을 누르면 덮개를 닫고 그리 간다', async () => {
   panel.onView((v) => seenViews.push(v));
   panel.onAdd((target) => adds.push(target));
   panel.onIntake((result, texts, meta) => intakes.push({ result, texts, meta }));
@@ -1771,18 +1768,17 @@ await ta('훅을 달면 ＋·과제 없음 카드의 과제 더하기는 더하�
   const v = panel.view();
   assert.deepEqual([v.project.id, v.n, v.editing, v.overlay, v.yearEmpty], [test, 1, false, null, false]);
   assert.equal(v.snapshot.rev, 'r2');
-  addChip().click();
-  assert.deepEqual(adds, [{}]);
+  $('rdHeadYear').click();
+  assert.deepEqual(adds, [{ projectId: test }], '머리 줄의 차년도 아이콘 — 보던 과제가 대상');
   assert.ok(hidden('rdForm'), '훅이 있으면 폼을 열지 않는다');
   $('rdEmptyAdd').click();
-  assert.deepEqual(adds, [{}, {}]);
+  assert.deepEqual(adds, [{ projectId: test }, {}]);
   // 덮개 — rndgen 의 openAdd 가 부르는 것
   let closed = 0;
   panel.setOverlay('add', () => { closed++; });
   assert.ok(hidden('rdHead') && hidden('rdBody') && hidden('rdYearEmpty'));
   assert.ok(hidden('rdEmpty'));
-  assert.deepEqual(chips().filter((c) => c[1]), []);
-  assert.ok(addChip().classList.contains('active'));
+  assert.deepEqual(chips().filter((c) => c[1]), [], '덮개 동안 켜진 과제 칩이 없다');
   assert.equal(seenViews.at(-1).overlay, 'add', 'paintAll 끝에 훅이 view 를 받는다');
   assert.equal(panel.view().overlay, 'add');
   // 같은 과제 칩 — 덮개를 닫고(닫는 쪽을 한 번 부름) 그 과제가 다시 선다
@@ -1815,7 +1811,7 @@ await ta('훅을 달면 ＋·과제 없음 카드의 과제 더하기는 더하�
   assert.ok(!hidden('rdForm'));
   assert.equal($('rdFormTitle').textContent, '새 과제');
   assert.equal(seenViews.at(-1).editing, true, '폼을 열어도 훅이 받는다');
-  assert.ok(addChip().classList.contains('active'));
+  assert.deepEqual(chips().filter((c) => c[1]), [], '새 과제 폼 동안 켜진 과제 칩이 없다');
   $('rdFCancel').click();
   assert.ok(hidden('rdForm'));
   // pick — 그 과제·차년도로

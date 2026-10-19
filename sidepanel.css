@@ -1614,7 +1614,7 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 /* 탭이 여섯 개(근태·공문·R&D·회의실·차량·현황)다 — 위의 공문 쪽 간격 그대로 한 줄에 든다. */
 .rnd { margin-bottom: 18px; }
 
-/* 과제 칩 한 줄 — 별칭(없으면 과제명을 열네 자 남짓에서 자른다). 전체 과제명은 툴팁. 끝의 ＋ 는 과제 더하기. */
+/* 과제 칩 한 줄 — 별칭(없으면 과제명을 열네 자 남짓에서 자른다). 전체 과제명은 툴팁. 끝의 ＋ 칩은 2026-10-19 에 없앴다(과제 더하기는 머리 줄의 차년도 아이콘 — 대상은 그 카드의 배지, rndgen/panel.css .rdg-proj). */
 .rnd .rd-projects { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
 .rnd .rd-proj {
   display: block; max-width: min(100%, 15em); min-height: 32px; padding: 4px 11px; border: 1px solid var(--line); border-radius: 9px;
@@ -1622,7 +1622,6 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 }
 .rnd .rd-proj:hover { background: var(--pick-soft); border-color: var(--pick); }
 .rnd .rd-proj.active { background: var(--pick); border-color: var(--pick); color: #fff; }
-.rnd .rd-proj-add { width: 34px; padding: 4px; color: var(--pick); font-size: 16px; font-weight: 500; }
 .rnd .rd-empty { margin-bottom: 12px; padding: 14px 16px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .rnd .rd-empty p { margin: 0 0 8px; }
 .rnd .rd-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

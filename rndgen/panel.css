@@ -9,13 +9,20 @@
 .rnd .rdg-revise { position: relative; padding-bottom: 12px; }
 .rnd .rdg-revise.over { border-radius: 10px; outline: 2px solid color-mix(in srgb, var(--pick) 45%, transparent); outline-offset: 4px; }
 
-/* 머리 — 제목 · 대상(과제 · 차년도) 또는 기준 줄 · 닫기. */
+/* 머리 — 제목 · 대상 과제 배지(장부의 과제들 · 새 과제 — 2026-10-19 사용자 지정 "과제 더하기 옆에 과제 뱃지를 선택할 수 있게") 또는 기준 줄 · 닫기. */
 .rnd .rdg-head { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-bottom: 8px; }
 .rnd .rdg-head strong { flex: none; font-size: 14px; font-weight: 650; }
-.rnd .rdg-target {
-  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 1px 8px; border-radius: 7px; background: var(--pick-soft); color: var(--pick); font-size: 12px; font-weight: 650;
+/* 과제 배지 — 칩 줄(.rd-proj)과 같은 꼴을 조금 작게. 켜진 것이 대상, 새 과제는 점선. 많으면 제목 옆에서 접어 넘긴다. */
+.rnd .rdg-projects { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.rnd .rdg-proj {
+  max-width: min(100%, 12em); min-height: 28px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--fg); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.rnd .rdg-proj:hover { background: var(--pick-soft); border-color: var(--pick); }
+.rnd .rdg-proj[aria-pressed="true"] { background: var(--pick); border-color: var(--pick); color: #fff; }
+.rnd .rdg-proj-new { border-style: dashed; color: var(--pick); }
+.rnd .rdg-proj-new[aria-pressed="true"] { border-style: solid; color: #fff; }
+.rnd .rdg-proj:disabled { opacity: .45; cursor: default; }
 /* 기준 줄 — 카드 이름 바로 아래 한 줄. 이름 옆에 붙어 있을 때 잘려 보이던 것(2026-10-16)이라 길면 접어 넘긴다. */
 .rnd .rdg-base { margin: -4px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
 .rnd .rdg-base.lossy { color: color-mix(in srgb, var(--mine) 70%, var(--fg)); }
