@@ -153,7 +153,11 @@ t('normalizeYear — 금액 글은 원으로, 내용 없는 연구내역·변경
   assert.equal(y.budget[0].id, 'a');
   assert.ok(y.budget[1].id);
   assert.deepEqual(noId(y.logs), [{ date: '2026-05-01', title: 'x', text: '' }, { date: '', title: '', text: '날짜가 틀림' }]);
-  assert.deepEqual(noId(y.changes), [{ date: '2026-05-01', kind: '기타', item: 'x', before: '1', after: '2', reason: '', auto: false }]);
+  assert.deepEqual(noId(y.changes), [{ date: '2026-05-01', kind: '기타', item: 'x', before: '1', after: '2', reason: '', by: '', at: 0, auto: false }], 'by·at(공유 — 2026-10-18)가 없던 줄은 빈 값·0');
+  assert.deepEqual(noId(normalizeYear({ changes: [{ item: 'y', by: ' 홍길동 ', at: '1760000000000' }, { item: 'z', at: -5 }] }).changes), [
+    { date: '', kind: '기타', item: 'y', before: '', after: '', reason: '', by: '홍길동', at: 1760000000000, auto: false },
+    { date: '', kind: '기타', item: 'z', before: '', after: '', reason: '', by: '', at: 0, auto: false },
+  ], 'by·at 가 있으면 남는다(음수·글은 0)');
   assert.deepEqual(normalizeYear(null).budget.length, 6);
   assert.deepEqual(normalizeYear({ budget: [] }).budget, [], '비목을 다 뺀 차년도는 빈 채로 둔다');
   // 파일에서 들여온 줄의 꼬리표(key)와 마지막 스냅샷(snapshot)은 남고, 손으로 적은 줄에는 key 가 안 붙는다.
@@ -182,7 +186,11 @@ t('normalizeProject — 날짜 칸이 비면 연구기간 글에서, 앞선 종�
   assert.equal(normalizeProject({ name: 'a', start: '2026-01-01', end: '2027-01-01', period: '2000.01.01 ~ 2001.01.01' }).start, '2026-01-01', '날짜 칸이 이긴다');
   assert.equal(normalizeProject({ name: 'a', start: '2027-01-01', end: '2026-01-01' }).end, '');
   assert.equal(normalizeProject({ name: 'a', end: '2026-01-01' }).end, '', '시작일 없이 종료일만은 버린다');
-  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', aliasAt: 0, code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+  // aliasAt(별칭을 바꾼 시각 — 공유의 병합 기준, 2026-10-18)은 별칭이 있을 때만 남고, 음수·글은 0.
+  assert.equal(normalizeProject({ name: 'a', alias: 'A', aliasAt: 1760000000000 }).aliasAt, 1760000000000);
+  assert.equal(normalizeProject({ name: 'a', alias: 'A', aliasAt: 'x' }).aliasAt, 0);
+  assert.equal(normalizeProject({ name: 'a', alias: '', aliasAt: 1760000000000 }).aliasAt, 0, '별칭이 없으면 시각도 없다');
   assert.equal(normalizeProject({ name: 'a', job: ' RND00202026 ' }).job, 'RND00202026', 'Job Id(전자결재 과제 찾기 — 2026-10-16)는 과제번호와 따로');
   // 회계 I/O(e-accounting 과제 코드 — 2026-10-17)와 그 과제의 회계 예산 스냅샷. 스냅샷은 I/O 가 있고 같은 과제의 것일 때만 붙는다.
   const acct = { year: 2026, at: '2026-10-17T10:00:00.000Z', io: '2145NR0124', ioName: '대용량 모듈러', rows: [{ code: '603010311', name: '수탁과제(국가)_연구재료비', base: '31,376,000', budget: 31376000, available: 31376000 }] };
@@ -321,9 +329,13 @@ t('공문 탭의 과제 → 이 모양 · 보태기: 과제번호(없으면 과�
   assert.equal(x.name, 'MVDC 차단기 개발 (구)', '이름은 안 바꾼다');
   assert.equal(x.code, 'rnd-20-2026', '있는 칸은 안 바꾼다');
   assert.deepEqual([x.lead, x.alias, x.start, x.end], ['박기도', '차단기 과제', '2026-04-01', '2029-12-31']);
+  assert.ok(x.aliasAt > 0, '별칭을 채우면 그 시각(aliasAt — 공유의 병합 기준, 2026-10-18)');
+  assert.equal(mergeProjects(book, inc, 1760000000000).book.projects.find((p) => p.id === 'x').aliasAt, 1760000000000, 'now 를 주면 그것');
   assert.equal(x.years[1].logs[0].title, '남아 있어야');
   assert.equal(res.book.current.project, 'x');
   assert.ok(res.book.projects[1].id && res.book.projects[1].id !== inc[1].id, '더한 과제는 새 id');
+  assert.equal(res.book.projects[1].aliasAt, 0, '별칭 없이 더한 과제는 시각도 0');
+  assert.equal(mergeProjects(book, [{ name: '별칭 있는 새 과제', alias: 'NEW' }], 5).book.projects.at(-1).aliasAt, 5, '별칭이 있는 새 과제는 지금');
   const again = mergeProjects(res.book, inc);
   assert.deepEqual([again.added, again.filled], [[], []], '한 번 더 가져와도 달라질 것 없음');
   const full = normalizeBook({ projects: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, name: `과제 ${i}` })) });

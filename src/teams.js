@@ -35,7 +35,7 @@ export function rpcReply(text, id) {
 
 /**
  * MCP 서버와 한 번 붙어(initialize) 도구를 부를 수 있는 손잡이를 준다. 닿지 않으면 던진다.
- * KR_MS365_mcp 의 다른 서버(onenote — src/rndnote.js)도 이것으로 붙는다. label 은 오류 글에 쓰는 서버 이름.
+ * KR_MS365_mcp 의 다른 서버(onenote — 설정 › 연결의 OneNote MCP 연결 확인, sidepanel.js checkMcp)도 이것으로 붙는다. R&D 탭의 공유는 2026-10-18 부터 MCP 를 쓰지 않는다(src/rndnote.js 는 없어짐 — 공유 (SharePoint)). label 은 오류 글에 쓰는 서버 이름.
  */
 export async function connect(url, fetchFn, timeoutMs, label = 'Teams MCP') {
   let session = '';

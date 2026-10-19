@@ -295,6 +295,7 @@ console.log('한 번에 — applyYaml');
     const b = applyYaml(book, parse(fx('revisions.yaml')), { text: fx('revisions.yaml'), current: null, today: TODAY });
     assert.equal(b.summary, 'TEST 1차년도 · 변경이력 3건 넣음 · 별칭 TEST 붙임', '주석의 과제명으로 찾은 과제에 별칭이 없으면 project: 값(과제 약어)을 별칭으로');
     assert.equal(book.projects[0].alias, 'TEST');
+    assert.ok(book.projects[0].aliasAt > 0, '별칭을 붙인 시각도 — 공유의 병합 기준(2026-10-19 검토: 없으면 맞출 때마다 지금으로 셈해 동료의 별칭을 되덮는다)');
     const c = applyYaml(book, parse(fx('snapshot_r2.yaml')), { text: fx('snapshot_r2.yaml'), file: 'KR_test_r2.yaml', today: TODAY });
     assert.equal(c.summary, '과제 찾음: TEST · 1차년도 · 비목 5개 · 참여연구자 — 1차년도 고침 · 변경이력 3건');
     const d = applyYaml(book, parse(fx('budget_history.yaml')), { current: book.projects[0], today: TODAY });

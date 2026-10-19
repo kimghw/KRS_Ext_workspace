@@ -2278,8 +2278,8 @@ console.log('R&D 탭');
       // 과제 더하기·변경사항 카드(rndgen/ — 2026-10-16): host 마다 위임 리스너, 빈 차년도 카드의 "사업계획서에서 이 차년도 뽑기".
       ['rdYearEmpty', 'click'], ['rdgAdd', 'click'], ['rdgAdd', 'change'], ['rdgAdd', 'dragover'], ['rdgAdd', 'dragleave'], ['rdgAdd', 'drop'],
       ['rdgRevise', 'click'], ['rdgRevise', 'change'], ['rdgRevise', 'dragover'], ['rdgRevise', 'dragleave'], ['rdgRevise', 'drop'],
-      ['rdNoteOn', 'change'], ['rdNoteSection', 'change'], ['rdNoteSections', 'click'], ['rdNoteSync', 'click'],
-      ['rdPlusOn', 'change'], ['rdPlusFind', 'click'], ['rdPlusSection', 'keydown'],
+      // 공유 (SharePoint)(2026-10-18 — 원노트 공유·예상 비용·연구내용 올리기 묶음을 바꿈): 켜기 · 공유 폴더 칸 · 지금 맞추기 · 폴더 열기 · 링크 복사.
+      ['rdShareOn', 'change'], ['rdShareFolder', 'change'], ['rdShareFolder', 'keydown'], ['rdShareSync', 'click'], ['rdShareOpen', 'click'], ['rdShareLink', 'click'],
       ['rdErpRefresh', 'click'], ['rdErpLink', 'click'], ['rdErpUnlink', 'click'], ['rdErpPickOk', 'click'], ['rdErpSelect', 'keydown'], ['rdErpOn', 'change'], ['rdIncUnbilled', 'change'], ['rdIncPlan', 'change'], ['rdItems', 'change'],
       ['rdFSave', 'click'], ['rdFCancel', 'click'], ['rdFDel', 'click'], ['rdForm', 'keydown'],
       ['rdBudget', 'input'], ['rdBudget', 'change'], ['rdBudget', 'click'],

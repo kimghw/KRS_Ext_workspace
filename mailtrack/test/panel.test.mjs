@@ -272,7 +272,7 @@ t('htmlToText — 스크립트·스타일·머리는 통째로, 태그는 떼고
   assert.equal(htmlToText('<img src=x onerror=alert(1)>남음'), '남음');
   assert.equal(htmlToText(null), '');
 });
-t('checkMcpUrl — http(s)://localhost · 127.0.0.1 만(rerp/plussync.js 와 같은 규칙)', () => {
+t('checkMcpUrl — http(s)://localhost · 127.0.0.1 만(옛 rerp/plussync.js 와 같은 규칙)', () => {
   assert.equal(checkMcpUrl('http://localhost:5001/mcp').ok, true);
   assert.equal(checkMcpUrl('https://127.0.0.1:5001/mcp').ok, true);
   assert.match(checkMcpUrl('http://evil.example.com:5001/mcp').error, /localhost · 127\.0\.0\.1.*evil\.example\.com/);

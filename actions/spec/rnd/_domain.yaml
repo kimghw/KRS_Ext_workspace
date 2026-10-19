@@ -1,5 +1,5 @@
 # R&D 탭 갈래(rndpanel.js) — 2단계(§12, status planned). 과제 장부(chrome.storage 의 rndBook — src/rnd.js)는 이 브라우저에만 남고, rERP 집행내역(rerp/ — kr_ext_rerp 에서 옮긴 것,
-# 읽기만)·OneNote 과제 정보 페이지(src/rndnote.js)·연구내용 페이지(rerp/researchsync.js)와 맞춘다. 지금은 rndpanel.js 가 src/rnd*.js·rerp/* 를 바로 부르고 logEvent('rnd', …) 를 남긴다 —
+# 읽기만)·SharePoint(OneDrive) 공유 폴더의 과제별 연차 파일(rerp/sharesync.js · src/rndshare.js — 2026-10-18 부터; 그 전은 원노트 페이지 src/rndnote.js·rerp/plussync.js)과 맞춘다. 지금은 rndpanel.js 가 src/rnd*.js·rerp/* 를 바로 부르고 logEvent('rnd', …) 를 남긴다 —
 # 여기 적은 칸은 그 함수들이 받는 값이다. 어댑터는 2단계에 쓴다(runner 이름만 맡아 둔다).
 # LLM 작업은 per-kind 모드 — 사업계획서에서 KR 스냅샷 YAML 뽑기(extract.yaml → rnd.extract)와 변경사항으로 YAML 고치기(revise.yaml → rnd.revise) 두 종류만
 # 켜고(2026-10-16 사용자 지정: "＋ 누르면 … 사업계획서를 넣으면 과제의 YAML 을 추출 … 변경사항 … yaml 로 수정해서 업데이트"), 나머지 종류는 llm: false 다
@@ -8,10 +8,10 @@
 domain: rnd
 title: R&D
 log: rnd                       # rndpanel.js 가 지금 쓰는 'rnd'(src/logbook.js KIND_LABEL 에는 아직 이름이 없다 — 통합자)
-kinds: [project, delete, yaml, erp.link, erp.fetch, note.sync, research.share, skills.zip, extract, revise]
+kinds: [project, delete, yaml, erp.link, erp.fetch, share.sync, skills.zip, extract, revise]
 preset:
   today: { from: today, desc: 오늘(YYYY-MM-DD) — 차년도(오늘이 든 것)·변경이력 날짜·zip 이름 }
-  me:    { from: me, desc: 내 이름 — 연구내용 페이지의 올린 사람(by) }
+  me:    { from: me, desc: 내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름) }
 llm:
   task: rnd                    # 작업 이름의 머리 — 실제 이름은 종류 파일의 llm.task(rnd.extract · rnd.revise)
   mode: per-kind

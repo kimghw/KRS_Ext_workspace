@@ -6,7 +6,8 @@ import { describeModifyResult } from './src/modify.js';
 import { parseSmart, diagnoseSmart, nativeProbe, nativeLogs } from './src/llm.js';
 import { DEFAULT_MODEL } from './src/ai.js';
 import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js';
-import { ONENOTE_MCP_URL } from './src/rndnote.js';
+// 설정 › 연결 갈래의 "OneNote MCP" 연결 확인에만 쓰는 주소(KR_MS365_mcp onenote 서버). R&D 탭의 공유는 2026-10-18 부터 원노트·MCP 를 쓰지 않는다(src/rndnote.js 는 없어짐 — 공유 (SharePoint), rndpanel.js).
+const ONENOTE_MCP_URL = 'http://localhost:5005/mcp';
 import { bridgeGuide, bridgeRoot } from './src/bridgeguide.js';
 import { bridgeUses } from './src/bridgeuse.js';
 import { specGroups, yamlLines } from './src/specview.js';
@@ -1886,12 +1887,12 @@ const gongmun = createGongmunPanel({
   compareTab: COMPARE_KIND,
 });
 
-/** R&D 탭. 화면 조각은 rndpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
+/** R&D 탭. 화면 조각은 rndpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. 공유 (SharePoint)의 fetch·저장소는 기본값(전역 fetch 와 rerp/spstore.js — 브라우저 로그인 쿠키, manifest *.sharepoint.com). */
 const rnd = createRndPanel({
   $, escapeHtml, logEvent,
   copyText: (text) => copyText(text),
   flash: (btn, text, ms) => flash(btn, text, ms),
-  // 내 이름(설정) — 예상 비용 원노트 페이지는 과제책임자만 만든다(장부의 과제책임자 == 내 이름, src/rnderp.js).
+  // 내 이름(설정) — 공유 (SharePoint)의 책임자 판정(과제 폴더를 만들 수 있는 사람 — 장부의 과제책임자 == 내 이름)·변경이력의 by·연차 파일의 updatedBy.
   me: () => state.myName,
 });
 

@@ -1443,7 +1443,7 @@ function connTemplate({ standalone }) {
 
 /* ------------------------------------------------------------ 순수 도우미 */
 
-/** MCP 주소 검사 — http(s)://localhost | 127.0.0.1 만(manifest host_permissions, rerp/plussync.js plusAllowed 와 같은 규칙). */
+/** MCP 주소 검사 — http(s)://localhost | 127.0.0.1 만(manifest host_permissions — 옛 rerp/plussync.js plusAllowed 와 같은 규칙). */
 export function checkMcpUrl(url) {
   let u = null;
   try { u = new URL(String(url ?? '')); } catch { u = null; }

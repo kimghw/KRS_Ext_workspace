@@ -12,7 +12,8 @@
  *  같은 과제·차년도에 이미 넣은 판보다 오래된 판(r2 뒤의 r0 = 판 번호 없는 KR_<과제>.yaml)은 넣지 않는다(put 'older').
  *  R&D ERP 과제 잇기(match): 과제명이 같은(띄어쓰기·기호·대소문자 무시) 과제 → 이름이 가장 비슷한 과제(글자 둘씩 겹침 Dice 0.75 이상, 둘째와 0.05 넘게 차이 —
  *   "통합형 PEMFC" ↔ ERP "통합형 100kW급 PEMFC" 같은 것). 설정에서 손으로 고르면 linkBy 'user' 로 남아 다시 넣어도 바뀌지 않는다. 과제 목록은 storage.local.projectList(+ 패널 캐시).
- *  원노트 공유(lib/research-sync.js): KRS WORKSPACE R&D 탭이 올린 「[연구내용] 과제명」 페이지 링크를 설정에 붙여 넣으면 그 기록이 여기로 온다(src = 페이지 id, background.js researchPull).
+ *  공유 (Plus, 0.8.7 — 2026-10-18 부터 SharePoint 폴더의 과제별 JSON 파일): 켜 두면 백그라운드(background.js shareSync)가 이 기록을 과제별 공유 파일의 research 칸과 맞춘다 — 병합 규칙은 lib/research-sync.js merge(판 → 넣은 시각 → 로컬), 결과는 storage.local.researchSyncState.
+ *   0.8.5~0.8.7 개발 중의 원노트 링크 받기(researchBind · researchPull — storage.local.researchPages · researchPullAt)는 걷어 냈다(저장소 키만 옛 저장분에 남아 있을 수 있음).
  *  쓰는 곳: 패널의 연구내용 탭(카드미청구 · 과제집행비율 다음 — 과제를 펼치면 그 계획서, lib/render.js researchSection, state.research) ·
  *   청구 준비 자동 분류(lib/prep-ai.js → help-server/classify.js)에 그 과제의 개발목표·개발내용·연구활동비 세부사용계획을 근거로(refOf) */
 const KEY = 'researchPlans';
@@ -196,7 +197,7 @@ const monthsOf = (a) => (a.from && a.to ? `${a.from}~${a.to}월` : a.from ? `${a
 const perfTarget = (p) => `${p.target}${p.unit && /^[\d.,]+$/.test(p.target) ? ` ${p.unit}` : ''}`;
 /** 머리 한 줄 — "RS-… · 기간 … · 협약 … · KR 공동 · KR 책임자 …" */
 const infoOf = (rec) => [rec.code, rec.period ? `기간 ${rec.period}` : '', rec.agree ? `협약 ${rec.agree}` : '', rec.role ? `KR ${rec.role}` : '', rec.lead ? `KR 책임자 ${rec.lead}` : ''].filter(Boolean).join(' · ');
-/** 레코드 → 절 [{ title, lines }] — 빈 절은 빼고. 글(textOf)과 원노트 표(lib/research-sync.js blockHtml)가 같이 쓴다 */
+/** 레코드 → 절 [{ title, lines }] — 빈 절은 빼고. 글(textOf)이 쓴다 (0.8.7 까지는 원노트 표 blockHtml 도 같이 썼음) */
 function sections(rec) {
   if (!rec) return [];
   const out = [];
@@ -256,11 +257,14 @@ function bind(host, state, draw) {
   });
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
-      try { if (area === 'local' && ch[KEY]) { state.research = obj(ch[KEY].newValue) || {}; draw(); } } catch (e) {}
+      try {
+        if (area !== 'local') return;
+        if (ch[KEY]) { state.research = obj(ch[KEY].newValue) || {}; draw(); }
+        if (ch.researchSyncState) { state.researchSync = ch.researchSyncState.newValue || null; draw(); }   // 공유 (Plus) 연구내용 결과 (background.js shareSync — shareState 와 같은 내용)
+      } catch (e) {}
     });
   } catch (e) {}
-  // 원노트 링크로 이어 둔 연구내용 페이지(KRS WORKSPACE 가 올린 것)를 패널을 열 때 다시 받는다 — 백그라운드가 10분 안이면 건너뛰고, 이어 둔 페이지가 없으면 아무것도 안 함 (background.js researchPull)
-  try { const p = chrome.runtime.sendMessage({ type: 'researchPull', reason: 'load' }); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  try { const r = chrome.storage.local.get('researchSyncState'); if (r && r.then) r.then((l) => { if (l.researchSyncState) { state.researchSync = l.researchSyncState; draw(); } }, () => {}); } catch (e) {}   // 공유 (Plus) 의 마지막 결과 (연구내용 탭 제목 줄)
 }
 
 const api = { KEY, kindOf, readSnapshot, normName, revNo, dice, uniq, match, link, put, forProject, countFor, summary, infoOf, sections, textOf, sameAsContents, spendTotal, perfTarget, monthsOf, refOf, load, save, bind };

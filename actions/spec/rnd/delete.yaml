@@ -1,4 +1,4 @@
-# R&D 과제 지우기 — 과제 폼의 `지우기`(두 번 누름 — rndpanel.js delProject, confirmTwice). 장부에서만 지운다(원노트 페이지의 과제는 다음 맞춤에서 묘비(del)로 남는다 — src/rndnote.js syncInfo).
+# R&D 과제 지우기 — 과제 폼의 `지우기`(두 번 누름 — rndpanel.js delProject, confirmTwice). 장부에서 지운다 — 공유 (SharePoint)가 켜져 있고 그 과제 폴더를 알면 묘비(rndShare.del)를 남겨 다음 맞춤에 연차 파일 project.deletedAt 으로 퍼진다(rndpanel.js shareTomb · 다른 기기는 src/rndshare.js applyProject 가 받아 지움).
 id: rnd.delete
 title: R&D 과제 지우기
 status: planned

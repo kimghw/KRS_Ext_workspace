@@ -1304,15 +1304,15 @@ Telerik 피커(`$find(control).set_selectedDate`)로 넣고 다시 읽으며, �
 ## R&D 탭
 
 탭 줄의 **공문** 바로 옆 **R&D** 는 R&D 과제마다 **올해(차년도)의 예산·참여연구자·연구개발 계획·진행 기록·변경이력**을 적어 두는 곳입니다(2026-10-08 사용자 지정).
-이 브라우저(`chrome.storage` 의 `rndBook`)에 남고, JSON 으로 내보내고 들여옵니다. 과제 정보만은 원하면 원노트에 두고 다른 기기와 맞춥니다(아래 **원노트 공유**). `rndpanel.js` 가 그리고 `src/rnd.js` 가 셈합니다.
-예산 칸 아래에는 **rERP 집행내역**(R&D ERP 자금현황의 비목별 잔액·집행비율과 예상 비용)이 **접힌 한 줄**로 붙습니다 — kr_ext_rerp 확장의 과제집행비율·확장 Plus 코드를 `rerp/` 로 옮겨 **같은 표·같은 원노트 페이지**를 씁니다(2026-10-11 사용자 지정, 아래 **rERP 집행내역**·**예상 비용**).
+이 브라우저(`chrome.storage` 의 `rndBook`)에 남고, JSON 으로 내보내고 들여옵니다. 원하면 과제 정보·예산 계획·변경이력·연구내용을 OneDrive(SharePoint) 공유 폴더의 과제별 연차 파일로 다른 기기·참여연구원과 맞춥니다(아래 **공유 (SharePoint)**). `rndpanel.js` 가 그리고 `src/rnd.js` 가 셈합니다.
+예산 칸 아래에는 **rERP 집행내역**(R&D ERP 자금현황의 비목별 잔액·집행비율과 예상 비용)이 **접힌 한 줄**로 붙습니다 — kr_ext_rerp 확장의 과제집행비율·확장 Plus 코드를 `rerp/` 로 옮겨 **같은 표·같은 공유 파일**을 씁니다(2026-10-11 사용자 지정, 아래 **rERP 집행내역**·**예상 비용**·**공유 (SharePoint)**).
 
 ```
 과제 칩(별칭) 고르기 → 머리(별칭 한 줄, 펴면 과제 정보) · 차년도 칩(오늘이 든 차년도에 "올해")
   ＋(과제 더하기 카드) → YAML 넣기 · 사업계획서에서 고른 차년도(또는 모든 차년도) 스냅샷 뽑기(Claude) · 직접 적기
 → 예산(맨 위 줄에 집행에 더하기 체크 · 천원 · 아래에 접힌 한 줄 rERP 집행내역과 예상 비용) · 참여연구자 · 연구개발 계획 · 진행 기록(칸마다 한 줄로 접고 폄)
 → 변경 및 이력 관리(접힌 한 줄 — 머리에 변경이력 건수, 펴면 위: 아무 꼴의 글·문서로 YAML 고치기(Claude) · 아래: 변경이력) → 요약 복사 · JSON 저장·불러오기
-→ R&D 설정(접힌 한 줄 — rERP 집행내역 켜기 · 원노트 공유(과제 정보 · 예상 비용 · 연구내용 → rerp) · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬)
+→ R&D 설정(접힌 한 줄 — rERP 집행내역 켜기 · 예산 칸에 보일 비목 · 공유 (SharePoint)(과제 정보 · 예산 계획 · 변경이력 · 연구내용 ↔ 과제 폴더의 연차 파일, 예상 비용은 받기만) · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬)
 ```
 
 - **과제** — 열 개까지. 처음 열 때 과제가 없으면 **공문 탭 공문 설정의 과제**(과제명·별명·과제번호·책임자·연구기간)를 그대로 가져오고,
@@ -1389,7 +1389,7 @@ Telerik 피커(`$find(control).set_selectedDate`)로 넣고 다시 읽으며, �
   (잔액 − 예상, (승인액 + … + 예상) ÷ 예산액)은 rerp 의 것 그대로지만, 여기서는 **적고 고치고 지우는 단추(＋·✎·×·수량 −/＋·저장·내보내기)를 걷어 냅니다**. 항목이 있는 과제는 기본 **감춤**(눈 아이콘으로 펼침).
   줄 차례는 **비목 → `↳ 연구활동비 예상 반영 1건 · 150,000원` → `↳ 회의비 …`**(예상 반영 줄이 항목 줄보다 먼저 비목 줄 **바로 아래** — 2026-10-11 사용자 지정, kr_ext_rerp `lib/render.js` 와 같이 옮긴 것).
   비목 이름을 앞에 붙이는 것만 이 패널의 것(`rndpanel.js namePlanRows` — `rerp/planui.js` 는 원본 그대로). 합계 아래의 예상 반영 행(총액)은 rerp 와 같이 그대로입니다.
-  예상 비용은 kr_ext_rerp 확장(eClass 홈 패널)에서 적고, **원노트 공유**(아래)로 받아 옵니다 — 받은 것은 rerp 와 같은 키 `chrome.storage.local.plannedExpenses` 에 **rERP 과제번호로** 남고, R&D 설정의 **사용계획**을 켜면 장부의 집행에도 더해집니다.
+  예상 비용은 kr_ext_rerp 확장(eClass 홈 패널)에서 적고, **공유 (SharePoint)**(아래 — 과제 폴더의 `예상비용.json`, 받기만)로 받아 옵니다 — 받은 것은 rerp 와 같은 키 `chrome.storage.local.plannedExpenses` 에 **rERP 과제번호로** 남고, R&D 설정의 **사용계획**을 켜면 장부의 집행에도 더해집니다.
 - **변경이력은 저절로** — 예산 **계획**을 고치거나(전에 적은 계획이 있던 줄만 — 처음 적는 것은 변경이 아님) 계획이 있던 **비목을 빼면**,
   `과제 고치기`에서 **과제책임자·연구기간**을 바꾸면 변경이력에 한 줄이 남습니다(`budgetChanges`·`projectChanges` — 줄 왼쪽에 띠, 변경 및 이력 관리 카드의 `변경이력` 줄에 `n건 · 사유 없음 n`).
   사람은 그 줄의 **사유** 칸만 적습니다. 집행액·과제명·별명·비고는 이력이 아닙니다. 손으로도 적습니다 — `직접 적기`(줄은 `고치기`)를 누르면 날짜·구분(예산·연구내용·연구기간·연구진·기타)·항목·변경 전·후·사유 칸이 열리고, 기록·취소하면 닫힙니다.
@@ -1417,9 +1417,9 @@ Telerik 피커(`$find(control).set_selectedDate`)로 넣고 다시 읽으며, �
   한 줄씩, 줄마다의 복사 아이콘은 그 줄만.
 - **JSON 저장·불러오기** — 과제 전부를 `R&D과제_2026-10-08.json` 으로 받고, 다른 PC·브라우저에서 들여옵니다. 들여올 때 **통째로 갈아 끼우지 않습니다** —
   같은 과제(id)는 파일 것으로 바꾸고, 없던 과제는 더하고, 파일에 없는 과제는 그대로 둡니다(`restoreBook`).
-- **R&D 설정**(2026-10-11 사용자 지정) — 탭 **맨 아래**, 공문 탭의 **공문 설정과 같은 카드 한 줄**(`rdSetBox` — 아이콘 · 굵은 이름 · 오른쪽 끝에 형편 · 화살표, 안의 원노트 공유·스킬 칸은 연한 바탕). 안에 **rERP 집행내역 보이기** 체크(끄면 예산 칸 아래
+- **R&D 설정**(2026-10-11 사용자 지정) — 탭 **맨 아래**, 공문 탭의 **공문 설정과 같은 카드 한 줄**(`rdSetBox` — 아이콘 · 굵은 이름 · 오른쪽 끝에 형편 · 화살표, 안의 공유·스킬 칸은 연한 바탕). 안에 **rERP 집행내역 보이기** 체크(끄면 예산 칸 아래
   rERP 칸과 예산 칸 위의 집행에 더하기 줄이 숨고 rERP 를 부르지 않으며 집행 칸은 다시 손으로 적음 — 이어 둔 과제·스냅샷은 남아 켜면 돌아옴, `chrome.storage` 의 `rndSettings.erp`),
-  **예산 칸에 보일 비목** 체크(아래), **원노트 공유**, **연구개발계획서 YAML 넣기**, **차년도 YAML 뽑는 스킬**이 차례로 있습니다. 머리 줄 오른쪽에 `rERP 켬 · 원노트 꺼짐 · 비목 1 숨김` 처럼 형편이 보입니다(공문 설정처럼 한 줄 — 길면 줄임표).
+  **예산 칸에 보일 비목** 체크(아래), **공유 (SharePoint)**, **연구개발계획서 YAML 넣기**, **차년도 YAML 뽑는 스킬**이 차례로 있습니다. 머리 줄 오른쪽에 `rERP 켬 · 공유 꺼짐 · 비목 1 숨김` 처럼 형편이 보입니다(공문 설정처럼 한 줄 — 길면 줄임표).
 - **예산 칸에 보일 비목**(2026-10-11 사용자 지정 — "R&D 설정에서 어떤 항목을 볼지 고르게", `rdItems`) — 계획서의 여섯 비목(과 장부 어느 차년도에든 있는 다른 비목)이 체크로 늘어서고, 끈 비목은 **예산 칸의 줄에서만 숨습니다** —
   합계·표 복사·요약 복사·rERP 표에는 그대로 들고, 숨긴 것이 그 차년도에 있으면 합계 위에 `숨긴 비목 1 · 간접비 — 합계에는 듭니다 (R&D 설정)` 한 줄로 알립니다. 모든 과제에 같이 적용되며 `rndSettings.hide` 에 이름으로 남습니다
   (띄어쓰기·`·`·괄호 안은 무시해 견줌). 바꾸면 기록에 `R&D 설정: 예산 칸에 숨긴 비목 — 간접비`. 줄의 × 와 다릅니다 — × 는 장부에서 빼는 것, 이것은 보기만 끄는 것.
@@ -1465,38 +1465,37 @@ Telerik 피커(`$find(control).set_selectedDate`)로 넣고 다시 읽으며, �
   2026-10-16 사용자 지정으로 **그 차년도 스냅샷 뽑기는 위 과제 더하기가, 고치기는 변경 및 이력 관리 카드가** 합니다 — 첫 스킬 `rnd-kr-extract` 의 references 두 문서(`extract_fields.yaml`·`structured_output.md`)를
   지시문에 실어서. 이력(`history/*.yaml`)·인력/예산 변경안·최신본 모으기는 여전히 이 스킬 묶음으로 합니다.
 
-- **원노트 공유**(선택, 2026-10-08 사용자 지정, `src/rndnote.js`) — R&D 설정 칸 안의 접힌 줄(YAML 넣는 곳 바로 위). 켜면 **과제 정보**(별칭·과제명·과제번호·책임자·
-  연구기간·차년도 기준·비고)만 원노트의 한 페이지에 두고 다른 기기와 맞춥니다 — 예산·참여연구자·계획·진행 기록·변경이력은 올리지 않습니다. 꺼 두면(기본) 아무 데도
-  닿지 않습니다. 확장이 Microsoft 에 직접 로그인하지 않고 **이 PC 에서 도는 KR_MS365_mcp 의 onenote 서버**(`http://localhost:5005/mcp`, manifest 호스트 권한)에
-  기댑니다 — Teams 송부(`src/teams.js`, 5003)와 같은 MCP 연결을 쓰고, kr_ext_rerp 의 확장 Plus(예상 비용 동기화)와 같은 표 블록 방식입니다.
-  - **켜기** — 체크하면 내 노트북들의 섹션을 불러오고(`read_onenote list_sections`), 섹션을 고르면 그 안의 페이지 **`[R&D 과제 정보] KRS WORKSPACE`** 를
-    찾아(`list_pages` — 서버 PC 의 목록이라 못 찾으면 `sync_onenote_db` 뒤 한 번 더) 없으면 만듭니다. 다른 기기도 같은 노트북의 같은 섹션을 고르면 같은 페이지를
-    씁니다(공유 노트북은 OneNote 에서 한 번 열어 둬야 섹션 목록에 나옴). 노트북은 OneDrive 로 동기화되니 휴대폰 OneNote 앱에서도 표로 보입니다.
-  - **언제** — `지금 맞추기`, 탭을 열 때(마지막으로 맞춘 지 1분이 지났으면), 이 기기에서 과제 정보를 고친 1.2초 뒤(모아서 한 번 — 과제 더하기·고치기·지우기·
-    별칭 정하기·YAML 넣기·가져오기 무엇이든 지난번에 맞춘 지문과 다르면). 한 번에 하나만 돌고, 칸 머리에 `맞춤 10.08 14:05`·`못 맞춤`, 칸 안에 결과·까닭이 보입니다.
-  - **맞추는 규칙**(`syncInfo`) — 과제마다 **나중에 고친 쪽**이 이깁니다(이 기기에서 고친 것은 지난번에 맞춘 지문과 달라진 것으로 압니다). 지운 과제는
-    **묘비**로 퍼집니다(묘비보다 늦게 고친 기기에서는 살아남음, 90일 지나면 버림). 다른 기기에서 따로 만든 같은 과제(과제번호, 없으면 과제명이 같음)는 원노트 쪽
-    id 로 묶고, **처음 맞추는 과제는 원노트 쪽이 기준**입니다. 과제가 열 개 차서 못 들인 것은 원노트에 그대로 둡니다. 섹션을 바꾸면 처음부터 다시 맞춥니다.
-  - **페이지 블록** — 표 하나(`<table data-id="krs-rnd-projects">`): 제목 줄 · 머리글 · 과제마다 한 줄(별칭·과제명·과제번호·책임자·연구기간·비고) · 맨 아래
-    기계용 칸(`krsrnd1:` + base64 UTF-8 JSON `{ v, at, projects:[{ id, …과제 정보, ts }], del:{ id: 지운 시각 } }`). 기준은 JSON 이라 원노트에서 표를 손으로
-    고쳐도 다음에 맞출 때 덮입니다. 있던 표는 `include_ids` 로 읽은 **생성 id** 로 통째로 바꾸고(`write_onenote replace` — `#data-id` 나 div 는 Graph 가 거부), 없으면 붙입니다.
-  - 형편은 `chrome.storage` 의 `rndNote`(`on`·섹션·페이지·마지막으로 맞춘 시각·과제마다의 지문 `memo`·묘비 `del`)에 둡니다.
-- **연구내용 공유 → kr_ext_rerp**(2026-10-14 사용자 지정 — "workplace 에 기입한 것을 rerp 에 원노트 주소 링크만 공유하면 동기화", `rndpanel.js shareResearch`, `rerp/research.js`·`rerp/researchsync.js`) — 원노트 공유 칸 맨 아래.
-  연구개발계획서 YAML(스냅샷)을 넣을 때 장부에 더해 **rerp 와 같은 기록**(`chrome.storage` 의 `researchPlans` — 과제명#차년도, 개발목표·개발내용·성능목표·결과물·일정·**연구활동비 세부사용계획**·비목 예산·참여연구자)으로도 남깁니다
-  (이 기능 전에 넣은 과제는 YAML 을 한 번 다시 넣어야 기록이 생깁니다). **연구내용 올리기**는 보고 있는 과제(과제명이나 과제번호가 같은 기록들)를 원노트 페이지 **「[연구내용] 과제명」** 한 장에 올리고 —
-  섹션은 예상 비용과 같은 **RERP**(`plusResolveSection` — 원노트 칸의 섹션 이름·노트북), 그것을 못 정하면 과제 정보 섹션 — **링크**(웹 링크 + `[연구내용 페이지 ID] 1-…`)를 복사합니다.
-  그 글을 **kr_ext_rerp 확장 설정의 연구개발계획서 칸**에 붙여 넣으면 rerp 가 그 페이지를 기억해 받아 가고(패널을 열 때 10분에 한 번·다시 받기), 여기서 계획서 YAML 을 다시 넣으면
-  올린 페이지를 저절로 고쳐(클립보드는 건드리지 않음) rerp 가 다음 받기 때 맞춥니다. 사이드패널은 긴 작업 뒤 클립보드에 못 쓸 수 있어 **링크 복사**가 따로 있습니다. 올린 페이지는 `researchShare = { [과제명 키]: { pageId, webUrl, title, at } }`.
-  페이지 블록은 표 하나 `<table data-id="krx-research">`(차년도마다 절 줄 + 기계용 칸 `krxres1:` base64 JSON) — rerp 의 `lib/research-sync.js` 를 그대로 옮긴 것이라 양쪽이 같은 모양을 씁니다(rerp/README.md 상호운용 규약).
-    기기마다 KR_MS365_mcp 서버(그 기기의 Microsoft 로그인)가 떠 있어야 합니다 — 없으면 `이 PC 의 OneNote MCP 서버(…)에 닿지 않습니다` 로 알려 줍니다.
-  - **예상 비용**(2026-10-11, `rerp/plussync.js`·`rerp/plansync.js`·`rerp/onenote.js` — kr_ext_rerp 확장 Plus 그대로) — 같은 칸의 두 번째 체크. 켜면 섹션 이름(기본 **`RERP`**, 대소문자 무시)의 섹션을
-    찾고 없으면 고른 노트북에 만들어(`ensureSection` — 노트북이 여럿이거나 없으면 드롭다운이 섬) 과제마다 한 장 **`[예상 비용] {과제번호} {과제명}`** 페이지에 예상 비용을 둡니다 —
-    rerp 패널(eClass 홈)과 **같은 섹션·같은 페이지·같은 블록(`krx-plan`/`krxplan1:`)·같은 병합(id 별 ts, 묘비 90일)** 이라 rerp 에서 적은 것이 다른 PC 의 WORKSPACE 에 그대로 옵니다.
-    **여기서는 페이지를 만들지 않습니다**(2026-10-11 사용자 지정 — 보기만. 내가 책임자여도 `leadPrjNos` 를 비워 넘김). 페이지는 rerp 확장에서 책임자가 만들고, 이어진 과제에 페이지가 없으면
-    `페이지 없음 n개(rerp 확장에서 만듭니다)` 로 알립니다. 동료가 보낸 링크를 **⬇ 가져오기**에 붙여 넣으면 그 페이지에 묶이고(`bound`), **↗** 로 엽니다(⬆ 내보내기는 없음).
-    언제: 켤 때·`지금 맞추기`(과제 정보와 함께)·눈으로 펼칠 때·탭 열 때(1분 안이면 건너뜀). 결과는 rerp 와 같은 키 `planSyncState`·`plusPlanPages`·`plusSection` 에. 형편은 `rndNote.plus`(`on`·`sectionName`·`notebookId`).
+- **공유 (SharePoint)**(선택, 2026-10-18 사용자 지정 — kr_ext_rerp 에서 먼저 바뀌고 "거기도 이렇게 진행하도록 해줘" · "workspace 에도 경로주면 알아서 동기화"; `rdShareBox` · `rndpanel.js` · `src/rndshare.js` · `rerp/sharesync.js`) — R&D 설정 칸 안의 접힌 카드(비목 체크 아래, YAML 넣는 곳 위).
+  2026-10-08 의 **원노트 공유**(과제 정보 페이지, `src/rndnote.js`)·2026-10-11 의 예상 비용 받아 보기(`rerp/plussync.js`)·2026-10-14 의 연구내용 올리기(「[연구내용] 과제명」 페이지)를 **이 카드 하나가 대신합니다** — 원노트·MCP·Graph 는 쓰지 않고
+  ("원노트 공유는 mcp 없어도 되긴하지? … 아니 mcp 없이 grph api 하지 않고 브라우저 토큰으로 하라고") **이 브라우저의 Microsoft 로그인 쿠키만으로** OneDrive(SharePoint) 공유 폴더를 읽고 씁니다(읽기는 확장 출처 GET, 쓰기는 최소화 작업 창에서
+  contextinfo → CheckOut → PUT → CheckIn — `rerp/spstore.js`, manifest 호스트 권한 `https://*.sharepoint.com/*`). 코드·파일 모양·병합 규칙은 kr_ext_rerp 의 공유 (Plus) v2 그대로(`rerp/spstore.js`·`prjdoc.js`·`prjdocsync.js`·`sharesync.js` — 정본은 그쪽 `lib/`,
+  `rerp/README.md` 상호운용 규약). 꺼 두면(기본) 아무 데도 닿지 않습니다.
+  - **폴더와 파일** — 밑폴더(base)는 카드의 **공유 폴더** 칸(비우면 **내 OneDrive 의 문서/업무/shared** — 없으면 만듦; 동료의 base 나 팀 사이트 폴더 주소를 넣어도 됨). 과제마다 그 아래 폴더 하나(이름은 **약칭 → 없으면 Job Id → 없으면 rERP 과제번호**, 표시용 —
+    과제는 파일 안 `project.prjNo`, 없으면 `jobId` 로 알아봄)에 연차마다 **`<n>차년도.json`** 하나(`{ v:2, kind:'year', project, year, budget, staff, research, changes, updatedAt, updatedBy }`)와 kr_ext_rerp 가 적는 **`예상비용.json`**(`{ v:2, kind:'plan', project, plan }`).
+    2칸 들여쓰기 JSON·키 차례 고정·모르는 칸 보존이라 다른 확장이 칸을 더해도 됩니다.
+  - **무엇을 맞추나(이 패널의 몫)** — 연차 파일의 **`project` 칸**(별칭 `alias`·`aliasAt` · Job Id · I/O · 과제 전체 연구기간 `start`/`end` · 비고 · 이 장부의 `wsId`·`code`·`calendar` — 과제명·책임자 `prjNm`·`rspr` 는 rERP 값이 이김)이 **과제 정보의 다른 기기 맞춤**을 맡고(별도 페이지 없음),
+    **예산 계획**(`budget` — 비목 이름으로 맞추고 집행은 rERP/로컬), **변경이력**(`changes` — id 합집합·덧붙이기만·500), **연구내용**(`research` — `researchPlans` 기록, 과제명#차년도)은 **양방향**, **예상 비용**(`예상비용.json`)은 **받아 보기만**
+    (`pullOnly` — 2026-10-11 "여기서는 모니터링만"; rerp 와 같은 키 `chrome.storage.local.plannedExpenses` 에 rERP 과제번호로), 참여연구원 지급계획(`staff`)은 올리지도 받지도 않습니다(2026-10-18 저녁 — rERP 에서 직접 읽음).
+    변환은 `src/rndshare.js`(`projectOf`·`yearOf`·`applyYear`·`applyProject`·`matchProject` — 과제 찾기는 wsId → prjNo → 과제번호 → 과제명 차례, 겹치는 별칭은 `-2`).
+  - **언제** — 켤 때, `지금 맞추기`, 공유 폴더 칸을 바꿀 때, 탭을 열 때(마지막으로 맞춘 지 1분이 지났으면), 이 기기에서 장부를 고친 1.2초 뒤(모아서 한 번 — 공유로 가는 지문이 지난번과 다를 때만). 한 번에 하나만 돌고(도는 중의 고침은 끝난 뒤 한 번 더),
+    카드 머리에 `꺼짐` / `맞추는 중…` / `맞춤 10.18 14:05 · 과제 3개` / `못 맞춤` / **`OneDrive 에 로그인하세요`**(로그인이 풀림 — `폴더 열기`가 OneDrive 로 감)가, 카드 안에 결과·까닭이 보입니다.
+  - **맞추는 규칙**(`rerp/prjdoc.js mergeYear` — 정본 그대로) — 칸마다 **나중에 고친 쪽**: 별칭은 `aliasAt`, 과제 정보의 WORKSPACE 몫 칸은 파일 `updatedAt` 과 이 기기가 마지막으로 맞춘 뒤 고쳤는지(지문 `rndShare.memo`)로, 예산 줄은 한 덩이 `at`, 변경이력은 합집합, 연구내용은 판 → 넣은 시각.
+    처음 맞추는 과제는 **파일 쪽이 기준** — 다만 파일에 **비어 있는** WORKSPACE 몫 칸(Job Id·I/O·연구기간·비고·과제번호)은 장부 값을 지우지 않고 두었다가 잠깐 뒤 한 번 더 맞춰 파일로 올립니다(rerp(책임자)가 먼저 만든 파일은 그 칸이 다 비어 있어 장부 값을 지웠다 — 2026-10-19 검토;
+    같은 사람의 다른 WORKSPACE 기기가 적은 값은 그대로 받음). 다른 기기에서 따로 만든 같은 과제는 파일의 `wsId` 로 장부 id 를 맞추고, 장부에 없는 과제는 `project` 칸이 올 때 만듭니다(열 개 한도 — 별칭만으로는 만들지 않음).
+    지운 과제는 **묘비**(`rndShare.del` → 파일 `project.deletedAt`, 90일)로 퍼져 다른 기기에서도 지워지고, 그 열쇠로 되돌아오는 별칭·예산·변경이력은 받지 않습니다(묘비를 받아 지운 쪽은 그 열쇠에 이어 둔 연구내용 기록의 연결도 끊어 다시 만들지 않음).
+    공유하던 과제를 뒤에 **rERP 에 이으면**(열쇠가 장부 id·Job Id → 과제번호) 옛 폴더의 파일 `project.prjNo` 를 과제번호로 고쳐 쓰고 색인·기억을 옮겨 **같은 폴더를 이어 씁니다**(`shareRekey` — 새 열쇠에 이미 폴더가 있으면 그것을 쓰고 옛 폴더는 둠; 다른 WORKSPACE 기기도 그 과제를 이어야 같은 폴더를 씁니다).
+    **공유 폴더 칸을 바꾸면** 과제 → 폴더 캐시(`shareIndex`)·밑폴더 캐시(`shareFolder`)를 버려 모든 과제가 새 자리에서 다시 맞춰집니다(두면 옛 밑폴더의 폴더를 계속 썼다).
+  - **공유** — 과제 폴더를 **새로 만들 때** 참여연구원(이어진 rERP 참여인력, 없으면 계획서의 참여연구자)에게 편집 권한으로 자동 공유합니다(이름이 꼭 같은 1명 — `rerp/spstore.js sharePeople`). 카드의 "자동으로 공유" 체크(`rndShare.shareWith` — 기본 켬, kr_ext_rerp 의 같은 설정과 뜻이 같음)를 끄면 폴더만 만들고 사람 공유는 하지 않습니다(2026-10-19). `링크 복사`는 보고 있는 과제 폴더(내 것이면)·아니면 밑폴더의 **조직 내 편집 링크**를 만들어 복사하고,
+    받는 쪽은 아무것도 적지 않아도 **"나와 공유"**(`/_api/v2.0/me/drive/sharedWithMe`)에서 과제 폴더를 저절로 찾거나(`discover`) 그 주소를 공유 폴더 칸에 붙여 넣습니다. 폴더는 책임자(과제책임자 == 내 이름)거나 rERP 에 이어지지 않은 이 장부만의 과제일 때 만들고,
+    그 밖은 책임자의 폴더가 공유로 올 때까지 `폴더 없음`으로 기다립니다.
+  - 형편은 `chrome.storage` 의 `rndShare`(`on`·`folder`·`at`·`memo`·`del`·`last`·`error`), 결과는 rerp 와 같은 키 `shareState`(= `planSyncState`)·`shareIndex`(과제 → 폴더)·`shareFolder`(base 캐시)에 둡니다. 설정 › 연결의 **OneNote MCP** 확인 줄은 남아 있지만 R&D 탭은 더 쓰지 않습니다.
+  - **안 될 때**(카드 안 메시지와 활동 로그의 `R&D 공유 맞춤` 줄에 까닭이 남습니다 — 쿠키·다이제스트 값은 어디에도 찍지 않음) — 머리에 `OneDrive 에 로그인하세요`(`auth`)면 단추가 **`OneDrive 열기`** 로 바뀌니 그 탭에서 Microsoft 에 로그인한 뒤 `지금 맞추기`(장부는 그대로).
+    `공유 폴더와 맞추지 못했습니다 — …`: 주소 모양이 틀림(`badurl` — 공유 링크(`/:f:/…`) 대신 **폴더를 연 뒤 주소창의 주소**를 넣으세요; 캐시한 밑폴더 주소는 버려 다음에 다시 풂) · 연결 안 됨(`offline`) · 작업 창이 30초 안에 뜨지 않음(`tab`).
+    결과 줄의 `폴더 없음 n(책임자가 만들어 공유할 때까지)`은 오류가 아닙니다 — rERP 에 이어진 과제인데 내가 책임자가 아니고 이 장부에 자료도 없으면 책임자(rerp 나 다른 WORKSPACE)가 폴더를 만들어 공유해 줄 때까지 기다립니다.
+    과제 하나·파일 하나만 건너뛰는 것: 남이 체크아웃한 파일(`locked`) · v2 가 아니거나 JSON 이 아닌 파일(`parse` — 폴더에서 지우면 다시 만듦) · 다른 과제의 파일(건너뛰고 알림). 쓰기 도중 패널이 닫혀 최소화된 작업 창(`…/_api/web/currentuser?$select=Id`)이 남으면 그냥 닫으면 됩니다.
+    `링크 복사`가 `못 만듦`이면 메시지의 까닭(권한·조직 정책)을 보고 `폴더 열기`로 열어 SharePoint 의 공유 단추로 대신합니다.
 
-적어 둔 것은 이 브라우저에 남습니다(`rndBook` — 원노트 공유를 켜면 과제 정보는 원노트에도, 예상 비용은 과제별 페이지에도). 확장을 지우면 같이 사라지니 JSON 저장으로 받아 두세요.
+적어 둔 것은 이 브라우저에 남습니다(`rndBook` — 공유 (SharePoint)를 켜면 과제 정보·예산 계획·변경이력·연구내용은 과제 폴더의 연차 파일에도). 확장을 지우면 같이 사라지니 JSON 저장으로 받아 두세요.
 `rerp/` 는 kr_ext_rerp 에서 옮겨 온 코드라 **그쪽이 정본**입니다 — 원본이 바뀌면 `npm run rerp`(`tools/rerp.mjs check`)가 알리고 `test/rerp-origin.test.mjs` 가 빨개집니다. 반영하는 차례는 `rerp/README.md`.
 
 ## 메일 탭
@@ -1505,7 +1504,7 @@ Telerik 피커(`$find(control).set_selectedDate`)로 넣고 다시 읽으며, �
 도메인이 같은 경우 이를 식별해서 등록 … 같은 도메인 메일 수신이 보낸 거랑 같으면 완료하는데 이 숫자를 관리 … 메일 내용과 첨부파일을 한 곳에 관리 … docx 파일이나 excel 양식으로
 작성을 요청한 경우 받아서 병합까지"). 코드는 패널과 **떨어진 폴더 `mailtrack/`** 에 다 있고(같은 날 사용자 지정 — "지금 프로젝트와 가능한 분리해서"), 패널에는 탭 단추·
 `<section id="mail">`·`mailtrack/index.js` 의 `createMailPanel` 하나로만 닿습니다. 메일은 확장이 Microsoft 에 직접 로그인하지 않고 **이 PC 의 KR_MS365_mcp Outlook 서버**
-(`http://localhost:5001/mcp`, manifest 호스트 권한)로 읽습니다 — R&D 원노트 공유(5005)·Teams 송부(5003)와 같은 MCP 연결(`rerp/mcp.js`)입니다. 자세한 것은 `mailtrack/README.md`.
+(`http://localhost:5001/mcp`, manifest 호스트 권한)로 읽습니다 — Teams 송부(`src/teams.js`, 5003)와 같은 KR_MS365_mcp 묶음의 MCP 연결(`rerp/mcp.js` — 2026-10-18 부터 R&D 탭의 공유는 MCP 를 쓰지 않아 이 저장소 몫)입니다. 자세한 것은 `mailtrack/README.md`.
 서버 주소(MCP 주소)와 내 메일 주소는 패널 머리의 `설정 → 연결` 에서 적고 `연결 확인` 으로 봅니다(2026-10-16 — 메일 탭이 그 칸을 그립니다, `connRoot`;
 Teams·OneNote 서버도 같은 갈래에서 확인). 나머지 메일 설정(기간·조회 창·저절로 갱신·세는 규칙)은 메일 탭 아래 접힌 칸입니다.
 
@@ -1885,16 +1884,16 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `src/quotecut.js` | 구매·교육 공문의 견적서 오리기: 읽기가 짚은 칸(`quoteArea`) 고르기(`cutBoxes` — 그림만·양식 문서 빼기·0~1 비 고치기), 넓혀 픽셀 자리로·폭이 같은 장은 좌우 맞춰 잇기(`cutPlan`), 첨부에서 빠지는 장(`cutDrop` — 같은 묶음, 교육이면 주문·결제 화면만), 오린 그림 이름(`cutName`), 그림에서 오려 PNG 하나로(`cutQuote` — 캔버스) |
 | `src/pagecap.js` | 웹페이지 캡처: 보고 있는 탭 통째로(`captureFront`), 페이지 위의 고르기 막(`pagePick` — 프레임 짐작·여러 개·↑↓·Enter/Esc), 고른 칸만 찍기(`capturePart` — 창·상자·틀 안을 내리며, 틀은 `frameProbe`·`matchFrame` 으로 frameId), 사이트 접근 권한 묻기, 읽기 자리 나누기(`readSlots`), 탭을 앞에 두고 찍고 보던 탭으로 돌아오기(`captureMany` — 탭 목록에서 고르던 때의 것, 지금은 보고 있는 탭 하나), 탭 안에서 한 화면씩 내려가며 찍기(고정 띠 숨김·되돌리기), A4 비율 장으로 잇고 자르기(장마다 캔버스), 화면 글자 가져오기 — 공문 탭의 문서 넣기와 첨부 PDF, 출장 카드의 증빙으로 간다 |
 | `src/panelcap.js` | 패널 캡처(2026-10-17): 머리의 캡처 단추가 씌우는 고르기 막(`startPick` — 상자·단추·입력칸 짐작·여러 개·끌어 네모 안에 통째로 든 것들 한꺼번에(바깥 것부터, 미리 보기)·↑↓·Esc·아래쪽 띠), 코드 복사(`codeOf` — 자리 주석 + 입력칸 값을 속성으로 넣은 HTML `snapshot`, 3만 자 자르기), 이미지 복사(`renderPng` — 계산 스타일을 인라인한 복제 `cloneStyled`(기본값은 숨은 틀 문서 `openDefaults`, `::before`/`::after` 는 span, 스위치 입력칸도 span) → SVG foreignObject `svgOf` → 캔버스 → PNG, 여러 개면 세로로 번호 붙여 한 장, 클립보드에 못 넣으면 파일로), 설정 키(`panelCapture`, 기본 켬) |
-| `rndpanel.js` | R&D 탭 화면: 과제 칩(별칭)·더하기·고치기(별칭 필수·겹치지 않게)·지우기(두 번), 접힌 머리(별칭 한 줄 — 펴면 과제 정보(YAML 에서 온 공문 참조자 포함)·과제 고치기)와 별칭 정하는 칸, 차년도 칩(오늘이 든 차년도에 올해), 예산 줄(비목·계획·집행·잔액·집행률 막대·합계 — 칸을 나갈 때 읽고 그 줄만 다시 적음), 참여인력·연구개발 계획 칸(계획서에서 온 표·절 목록), 진행 기록·변경이력 적기·고치기·지우기(두 번)와 줄 안의 사유 칸, 복사 아이콘(누르면 체크), 요약 복사, JSON 저장·불러오기, 공문 탭의 과제 가져오기(처음 열 때 저절로), 원노트 공유(켜기·섹션 고르기·지금 맞추기·열 때와 고친 뒤 저절로) |
+| `rndpanel.js` | R&D 탭 화면: 과제 칩(별칭)·더하기·고치기(별칭 필수·겹치지 않게)·지우기(두 번), 접힌 머리(별칭 한 줄 — 펴면 과제 정보(YAML 에서 온 공문 참조자 포함)·과제 고치기)와 별칭 정하는 칸, 차년도 칩(오늘이 든 차년도에 올해), 예산 줄(비목·계획·집행·잔액·집행률 막대·합계 — 칸을 나갈 때 읽고 그 줄만 다시 적음), 참여인력·연구개발 계획 칸(계획서에서 온 표·절 목록), 진행 기록·변경이력 적기·고치기·지우기(두 번)와 줄 안의 사유 칸, 복사 아이콘(누르면 체크), 요약 복사, JSON 저장·불러오기, 공문 탭의 과제 가져오기(처음 열 때 저절로), 공유 (SharePoint)(켜기·공유 폴더 칸·지금 맞추기·링크 복사·폴더 열기·열 때와 고친 뒤 저절로 — `rerp/sharesync.js createShareSync` 를 deps 로 돌리고 장부는 `src/rndshare.js` 로 변환) |
 | `src/rnd.js` | R&D 과제의 순수 로직: 연구기간 글 읽기, 차년도 자르기(시작일부터 한 해씩 · 1월 1일 기준)·오늘이 든 차년도, 금액 읽기(만·억)·짧게 적기, 장부 모양 정리(과제 열 개·차년도 스무 개), 예산 합계·잔액·집행률, 저절로 남는 변경이력(계획 바뀜·비목 뺌·책임자·연구기간·차년도 기준), 별칭 겹침(`aliasOwner`), 공문 참조자(`normalizeRefs`·`refsText` — 공문 종류 → 이름들, 계획서 YAML 에서), 계획서에서 온 줄과 진행 기록 나누기(`fileLog`·`noteLogs`), 공문 탭 과제 가져와 보태기, JSON 내보내기·들여오기·얹기, 요약 글 |
 | `src/rndyaml.js` | 연구개발계획서 YAML 을 장부에 넣기: 머리 주석(꼬리표·변경분)·연구기간(달까지만 적힌 것) 읽기, 파일 종류 가리기(스냅샷·개정 레지스트리·예산 이력·참여연구원 이력), 스냅샷 → 과제(찾거나 만듦·1월 1일 기준 가리기)·차년도 예산(천원 → 원)·연구개발 계획·참여연구자·공문 참조자(`공문.참조자` 블록 — 있을 때만 통째로, 변경이력 없이 알림만), 두 번째 스냅샷의 달라진 것 → 변경이력, history 파일 → 변경이력(같은 변경에는 사유만 붙임)·`project:` 값(과제 약어)이 별칭인 과제로·과제명으로 찾은 과제에 별칭 붙이기, 들여온 줄의 꼬리표(key) |
-| `src/rndnote.js` | R&D 원노트 공유(선택): 과제 정보만 맞추기(`syncInfo` — 나중에 고친 쪽·처음엔 원노트 쪽·묘비·따로 만든 같은 과제 묶기·열 개 한도), 원노트 표 블록 쓰기·찾기·읽기(base64 JSON 칸), OneNote MCP(`localhost:5005`) 섹션 목록·페이지 찾기·만들기·읽기·표 바꾸기 |
+| `src/rndshare.js` | R&D 장부 ↔ SharePoint 공유 폴더의 연차 파일 변환(2026-10-18, 원노트 공유 `src/rndnote.js` 를 대신함): 저장 형편 `rndShare`(`normalizeShare`), 공유 열쇠(`shareKeyOf` — rERP 과제번호 → Job Id → 장부 id), 과제 → `project` 칸(`projectOf`·`localProjectOf` — 별칭·Job Id·I/O·책임자·전체 기간·비고·wsId·code·calendar), 차년도 → `budget`(계획만)·`changes`·`research`(`yearOf`·`localPlanOf`·`researchOf`·`budgetHash`), 받은 것을 장부에(`applyYear`·`applyProject` — 새 과제 만들기·겹치는 별칭 `-2`·wsId 로 id 맞추기·`deletedAt` 묘비), 과제 찾기(`matchProject` — wsId → prjNo → 과제번호 → 과제명) |
 | `src/eacct.js` | 회계(e-accounting.krs.co.kr) 조회(2026-10-17): 부서 예산 요약 화면(`PageStyle050.aspx?PageID=CO10021`)이 받는 것과 같은 꼴로 컴파일된 처리기(`App_Compile/<CallsUrl>.aspx` — 이름은 화면에서 읽고 404 면 다시 읽음)에 `mode`·`snddata` XML 을 POST — 내 부서 과제(I/O) 목록(`getOrder`)·과제 하나의 계정과목(보조세목)별 기초·전용·실적·가용(`getlist1`)·내 부서(`Load_Basic_Data`). 순수 부분은 XML 읽기(`parseEa`)·I/O 후보(`rankIo` — Job Id 와 같은 유사도 + 잘린 이름 앞머리)·계정 줄(`budgetRows`)·과제 스냅샷(`normalizeAcct`·`acctFresh`)·구매요청서 예산 내역 값(`orderBudgetOf` — 과제의 계정에 맞는 줄)·요약 줄. 로그인이 풀리면(답이 XML 이 아님) `err.login` |
 | `src/rnderp.js` | R&D 탭의 예산 칸과 rERP 집행내역을 잇는 이 확장만의 풀(2026-10-11): 차년도 ↔ rERP 과제 잇기(과제번호·과제명의 연차 행 → 연차·기간·하나뿐 차례로 고름, 못 고르면 후보 목록), 받기(`fetchSnapshot` — 비목별 잔액 + 미청구 카드 + 승인전, 로그인 풀리면 SSO 한 번), 스냅샷을 장부 줄에(집행 = 승인액·`erpKey`), 비목 이름 맞추기(재원 합), 살아 있는 차년도·10분 신선도, 칸 머리·요약 글 |
-| `rerp/` | **kr_ext_rerp 에서 옮겨 온 코드**(2026-10-11, 정본은 그쪽 — `rerp/README.md`·`rerp/CLAUDE.md`·`rerp/origin.json`): `erp.js`(rERP 호출·과제 목록·비목별 잔액·미청구 카드·SSO), `planui.js`(과제집행비율 표·예상 비용 줄과 폼), `plan.js`(예상 비용 저장소·입력 처리), `plansync.js`(예상 비용 ↔ 과제별 원노트 페이지 병합·블록), `onenote.js`(섹션·페이지·블록·링크), `mcp.js`(MCP Streamable HTTP), `plussync.js`(확장 Plus 배선), `plan.css`(표 모양), `fmt.js` |
+| `rerp/` | **kr_ext_rerp 에서 옮겨 온 코드**(2026-10-11, 공유 쪽은 2026-10-18 다시 — 정본은 그쪽 — `rerp/README.md`·`rerp/CLAUDE.md`·`rerp/origin.json`): `erp.js`(rERP 호출·과제 목록·비목별 잔액·미청구 카드·SSO), `planui.js`(과제집행비율 표·예상 비용 줄과 폼), `plan.js`(예상 비용 저장소·입력 처리), `plansync.js`(예상 비용 병합 규칙), `spstore.js`(SharePoint 저장소 — 브라우저 쿠키로 읽기·최소화 작업 창에서 쓰기·사람 공유·조직 내 링크·나와 공유), `prjdoc.js`(연차 파일·예상비용.json 문서 v2 의 모양과 병합), `prjdocsync.js`(과제별 차례 `run` — want·pullOnly), `staffsync.js`·`researchsync.js`(사업비·연구내용 병합 규칙), `staff.js`(참여연구원 계산 — 여기서는 보이기만), `research.js`(연구개발계획서 기록), `sharesync.js`(공유 배선 `createShareSync(deps)` — background.js 를 옮김), `mcp.js`(MCP Streamable HTTP — 원본이 지워져 이 저장소 몫, 메일 탭이 씀), `plan.css`(표 모양), `fmt.js` |
 | `mailtrack/` | **메일 탭**(2026-10-15, 패널과 떨어진 폴더 — `mailtrack/README.md`·`mailtrack/CLAUDE.md`): `index.js`(조립 — 패널이 import 하는 유일한 입구), `panel.js`·`panel.css`(화면 — 머리 칩·등록 대화·N/M 목록·상세·양식 병합·설정), `sync.js`(등록·갱신·수동 조작·병합 호출), `model.js`·`match.js`(받을 곳·N/M·회신 분류·점수·잇기 — 순수), `mcp/outlook.js`(Outlook MCP :5001 어댑터 — `rerp/mcp.js` 로 부름), `store/book.js`(`mailtrackBook`)·`store/vault.js`(IndexedDB `krsMailtrack`), `ooxml/`(ZIP 읽기·xlsx·docx 병합 — 쓰기는 `src/zip.js`) |
 | `rndgen/` | **R&D 탭의 과제 더하기·변경 및 이력 관리의 YAML 고치기**(2026-10-16, 패널과 떨어진 폴더 — `rndgen/README.md`·`rndgen/CLAUDE.md`): `index.js`(조립 — 패널이 import 하는 유일한 입구, 원문 저장 훅), `panel.js`·`panel.css`(두 카드), `source.js`(문서 → 재료: PDF 쪽 고르기·작은 PDF, HWPX·DOCX·XLSX·TXT 글자 구역), `llm.js`(입력 글 — 머리말·스킬 문서 둘·재료 — 과 `askRndTask`), `yaml.js`(답 검사·판과 머리 주석 마무리·구조 차이·장부 사본에 미리 넣기·장부로 기준 짓기·파일 이름 — 순수), `store.js`(`rndYamlText` — 과제·차년도마다 원문 지금 판 + 지난 판 다섯) |
-| `tools/rerp.mjs` | `rerp/` 가 옮긴 뒤로 kr_ext_rerp 원본이 바뀌었는지 보고(`check` — `npm run rerp`, `test/rerp-origin.test.mjs` 가 같은 것을 돌림), 반영한 뒤 지문·커밋을 다시 적는다(`stamp`). `list` 는 무엇이 어디서 왔는지 |
+| `tools/rerp.mjs` | `rerp/` 가 옮긴 뒤로 kr_ext_rerp 원본이 바뀌었는지 보고(`check` — `npm run rerp`, `test/rerp-origin.test.mjs` 가 같은 것을 돌림), 반영한 뒤 지문·커밋을 다시 적는다(`stamp` — 다 옮겼을 때만: 옮기지 않은 `render.js`·`rnd-api.js`·`settings.js` 의 드리프트를 가리므로 일부만 옮겼으면 `rerp/origin.json` 의 그 파일 지문만 손으로). `list` 는 무엇이 어디서 왔는지 |
 | `vendor/yaml/` | npm `yaml` 2.9.1 의 브라우저 빌드(ISC — `vendor/yaml.LICENSE`) 그대로 — 고치지 않는다. R&D 탭이 YAML 을 넣을 때만 읽어 들인다 |
 | `rnd/` | 차년도 YAML 을 뽑는 RND 프로젝트의 Claude Code 스킬 다섯 개의 **복사본**(`skills/`)과 목록(`skills.json`). R&D 탭이 zip 으로 내려받게 한다 — 여기서 고치지 않고 `node tools/rndskills.mjs sync` 로 다시 복사한다(`rnd/README.md`) |
 | `tools/rndskills.mjs` · `.claude/skills/…` 아님 | RND 프로젝트(`E:\dev\RND\.claude\skills`)에서 스킬 다섯 개를 `rnd/skills/` 로 복사하고(파이썬 캐시·실값 설정 제외) 목록을 만드는 도구 — `sync` · `check`(원본과 다른지) · `list` |
@@ -1951,7 +1950,7 @@ ID 는 **불러온 폴더 경로에서 나옵니다.** 폴더를 옮기면 ID �
 | `doctext/` | 첨부(출장 증빙·공문 문서)에서 **글자를 먼저 뽑는** 공통 규칙과 브라우저 길(2026-10-16): `core.js` 는 다리와 브라우저가 같이 쓰는 순수 규칙(글자 층이 읽을 만한가 `usable`, 무엇을 보낼지 `withText` — 엔진은 끼워 준다), `browser.js` 는 확장 페이지 안의 엔진(pdf.js 글자 층·쪽 그리기, Tesseract wasm OCR — 워커 하나를 차례로 쓰고 유휴 뒤 내림, 꾸러미 `vendor/doctext/` 가 있는지 `ready`), `index.js` 는 한 진입점 `docText` — 페이지면 바로, 서비스 워커면 offscreen 문서(`offscreen.html`·`offscreen.js`)로. `src/llm.js` 의 API 키 길이 부른다. 꾸러미는 `tools/vendor.mjs` 가 node_modules 에서 베낀다(`npm install` 의 postinstall) |
 | `src/calpdf.js` | 여비계산서를 PDF 로 받는다 — 계산서 화면이 리포트 서버(ClipReport)에 보내는 폼을 읽어 뷰어의 "PDF 로 인쇄"와 같은 차례로 받는다. 보낼 때 증빙 앞에 붙는다 |
 | `src/memo.js` | eclass 쪽지 — 받는 사람 찾기, 글과 첨부 하나 보내기(임시저장 → 첨부 올리기 → 저장 → 보내기) |
-| `src/teams.js` | Teams MCP(`localhost:5003`)가 닿는지·파일을 보낼 수 있는지 확인하고, 되면 채팅으로 파일을 보낸다. MCP 연결(`connect`)은 원노트 공유(`src/rndnote.js`)도 쓴다 |
+| `src/teams.js` | Teams MCP(`localhost:5003`)가 닿는지·파일을 보낼 수 있는지 확인하고, 되면 채팅으로 파일을 보낸다. MCP 연결(`connect`)은 설정 › 연결의 OneNote MCP 연결 확인(`sidepanel.js checkMcp`)도 쓴다 — R&D 탭의 공유는 2026-10-18 부터 MCP 를 쓰지 않는다 |
 | `src/inputspec.js` | 생성물. 고치지 않는다 |
 | `src/input.js` | 명세로 지시문·JSON 스키마를 만들고, 돌아온 답을 검증·정규화하는 관문. `TASKS` 는 input.yaml·공문 레시피·행위 명세의 작업을 합친 것이고, `structureOf`(명세 객체를 직접 받는 관문 — 초안/실행 모드, `when`, `tags`·`file`·`object` 형)를 행위 층이 쓴다 |
 | `src/ai.js` | 명세의 작업 하나를 Anthropic Messages API 에 맡긴다 (`claude-opus-5-5`, 생각의 깊이 `low` — 로컬 CLI 다리와 같은 모델·같은 깊이, 구조화 출력. 2026-10-05 사용자 지정으로 `claude-haiku-4-5` 에서 바꿨다). 몇 분 걸리는 작업(R&D 뽑기·고치기)은 스트리밍(SSE)으로 받아 모은다 |
@@ -2027,10 +2026,12 @@ node test/carform.test.mjs      # 차량 폼 감지기 (합성 폼 — 구조가
 node test/carform-real.test.mjs # 실제 신청 폼 캡처로 감지기·필수조건 검증
 node test/modify.test.mjs       # 수정: 취소→재예약→되돌리기 분기 전부
 node test/rnd.test.mjs          # R&D 과제: 연구기간 글 읽기, 차년도 자르기(2월 29일·스무 해 한도)·오늘이 든 차년도·형편, 금액 읽기(쉼표·만·억)·짧게, 장부 모양(과제 열 개·차년도 1~20·current), 예산 합계·집행률, 저절로 남는 변경이력(계획 바뀜·비목 뺌·책임자·연구기간 — 처음 적는 것은 아님), 늦은 것부터, 공문 탭 과제 보태기(번호·이름 맞춤·빈 칸만), JSON 내보내기·들여오기·얹기, 요약 글(참여연구자·연구개발 계획·진행 기록 절), 별칭 겹침, 공문 참조자(모양 — 종류 열 개·이름 스무 명·같은 이름 한 번, 한 줄 글)
-node test/rndpanel.test.mjs     # R&D 탭 화면: 처음 열 때 공문 탭 과제 가져오기, 과제·차년도 칩(올해), 예산 줄(만·억 읽기, 잔액·막대, 계획 고치면 변경이력에 저절로·줄 안의 사유 칸, 못 읽는 금액 되돌림, 비목 빼기 두 번 — 비목 더하기 단추는 없음), 접힌 머리·칸 차례("연구내역" 없음·YAML 넣는 곳은 맨 아래), 진행 기록·변경이력 적기·고치기·지우기(두 번), 과제 더하기·고치기(별칭 필수·겹침, 책임자·연구기간 바꾸면 이력 두 줄)·지우기(두 번), 요약 복사, JSON 저장·불러오기(같은 id 는 파일 것·없던 것은 더함·못 읽는 파일), 연구개발계획서 YAML 넣기(끌어다 놓기 → 과제·1월 1일 기준 차년도·예산·참여연구자·연구개발 계획 칸이 표·절 목록 꼴로·공문 참조자가 과제 정보에, 머리에서 별칭 정하기(겹침·Enter), 1월 1일 기준 끄고 켜기, r2 재생성본과 history 세 파일을 한꺼번에 → 변경이력, 붙여 넣기, 못 읽는 파일), 칸마다 복사 아이콘(예산 표·참여연구자 표·계획 글·진행 기록과 변경이력 전부·한 줄, 누르면 체크, 아이콘 그림을 눌러도), 차년도 YAML 뽑는 스킬(목록·zip 묶음·쓰는 법 복사·목록 못 읽을 때), 원노트 공유(흉내 원노트 — 꺼짐이 기본·켜면 섹션 고르기·페이지 만들고 과제 정보만 쓰기·다른 기기에서 고친 것 받기·지우면 저절로 묘비·서버 없을 때·끄면 안 닿음), 과제 더하기 카드의 손잡이(폼·덮개 동안 과제 칩 꺼짐·＋ 켜짐·보던 과제의 칩으로도 닫고 그 과제로, ＋·빈 차년도 카드 단추 → onAdd, setOverlay·addManually·pick, intake 결과의 판·applied·onIntake·onDelete·setAlias, 놓기 표시 거두기), 다시 열기(저장소는 흉내)
-node test/rndnote.test.mjs      # R&D 원노트 공유(src/rndnote.js): 맞추기(처음 올리기·새 기기 받기·처음엔 원노트 쪽·따로 만든 같은 과제 묶기·나중에 고친 쪽·묘비와 90일·열 개 한도), 표 블록(쓰고 찾고 읽기 — Graph 의 생성 id·span·줄 나눔), OneNote MCP 왕복(흉내 fetch — 섹션·페이지 찾기와 sync 뒤 다시·만들기·include_ids 읽기·replace/append·도구 실패·서버 없음)
+node test/rndpanel.test.mjs     # R&D 탭 화면: 처음 열 때 공문 탭 과제 가져오기, 과제·차년도 칩(올해), 예산 줄(만·억 읽기, 잔액·막대, 계획 고치면 변경이력에 저절로·줄 안의 사유 칸, 못 읽는 금액 되돌림, 비목 빼기 두 번 — 비목 더하기 단추는 없음), 접힌 머리·칸 차례("연구내역" 없음·YAML 넣는 곳은 맨 아래), 진행 기록·변경이력 적기·고치기·지우기(두 번), 과제 더하기·고치기(별칭 필수·겹침, 책임자·연구기간 바꾸면 이력 두 줄)·지우기(두 번), 요약 복사, JSON 저장·불러오기(같은 id 는 파일 것·없던 것은 더함·못 읽는 파일), 연구개발계획서 YAML 넣기(끌어다 놓기 → 과제·1월 1일 기준 차년도·예산·참여연구자·연구개발 계획 칸이 표·절 목록 꼴로·공문 참조자가 과제 정보에, 머리에서 별칭 정하기(겹침·Enter), 1월 1일 기준 끄고 켜기, r2 재생성본과 history 세 파일을 한꺼번에 → 변경이력, 붙여 넣기, 못 읽는 파일), 칸마다 복사 아이콘(예산 표·참여연구자 표·계획 글·진행 기록과 변경이력 전부·한 줄, 누르면 체크, 아이콘 그림을 눌러도), 차년도 YAML 뽑는 스킬(목록·zip 묶음·쓰는 법 복사·목록 못 읽을 때), 공유 (SharePoint)(가짜 SharePoint 저장소 — 꺼짐이 기본·켜면 base 풀기와 과제마다 약칭 폴더의 1차년도.json(project 칸의 wsId·code·aliasAt·예산 계획만·변경이력 by/at·staff 비움·research, 예상비용.json 은 안 만듦)·동료 변경 받기(비고·별칭·변경이력 합집합·예산 줄 — 파일은 안 씀)·내 변경 1.2초 뒤 저절로 올림·지운 과제는 되살아나지 않음(묘비 deletedAt)·다른 기기가 지운 과제 받아 지우기(연구내용 연결도 끊음)·공유 폴더 칸을 바꾸면 shareIndex 버림·링크 복사·로그인 필요 문구와 OneDrive 열기·끄면 안 닿음; rERP 에 이어진 과제는 과제번호 열쇠·rERP 과제명/책임자·예상비용.json 받기만·책임자여도 안 씀·이어지지 않은 채 공유하던 과제를 이으면 옛 폴더 이어 쓰기(shareRekey)·rerp 가 먼저 만든 파일의 빈 WORKSPACE 칸은 지우지 않고 다음 맞춤에 올림), 과제 더하기 카드의 손잡이(폼·덮개 동안 과제 칩 꺼짐·＋ 켜짐·보던 과제의 칩으로도 닫고 그 과제로, ＋·빈 차년도 카드 단추 → onAdd, setOverlay·addManually·pick, intake 결과의 판·applied·onIntake·onDelete·setAlias, 놓기 표시 거두기), 다시 열기(저장소는 흉내)
+node test/rndshare.test.mjs     # R&D 장부 ↔ 연차 파일 변환(src/rndshare.js): 형편 모양(꺼짐 기본)·공유 열쇠(rERP 과제번호 → Job Id → 장부 id)·project 칸(정본 차례 뒤 wsId·code·calendar)·budget(계획만)/changes(by·at)/research 변환·localPlanOf·budgetHash·applyYear(예산 계획만 맞추고 집행은 그대로·변경이력 합집합)·matchProject 차례·applyProject(새 과제·있는 과제·별칭 -2·wsId 로 id 맞추기·deletedAt 묘비·열쇠로 찾기)·정본 rerp/prjdoc.js 와 왕복(serialize/parse·동료의 늦은 파일 받기·이 기기의 늦은 예산·별칭 올리기)
 node test/rnderp.test.mjs       # R&D 탭 ↔ rERP 잇기(src/rnderp.js): 천원 단위(원 ↔ 천원·단위 붙이면 그 단위), 이름 키·날짜, 연차 행 고르기(연차 → 기간 → 하나뿐), 후보(비슷한 이름 ★), 잇기·저장 모양, 살아 있는 차년도·10분, 비목 맞추기(재원 합·rERP 에만 있는 비목), 스냅샷을 장부 줄에, 받기(흉내 erp — 로그인 한 번·카드 기간·카드만 실패), 칸 머리·요약 줄
-node test/rerp.test.mjs         # rerp/ (kr_ext_rerp 에서 옮긴 코드): 원본 tests/plan-sync.test.js 그대로(평면화·제목·병합·묘비·직렬화 왕복·Graph 꼴 읽기·링크 풀기·섹션 찾기/만들기·run 의 책임자·bound·과제별 묘비·실패) + erp.js(흉내 fetch — 이중 인코딩·GWM0001·비목별 잔액·본예산 대체·미청구 합산·과제 목록·카드·SSO) + plussync.js(가짜 MCP 서버 — 켜짐·RERP 섹션·책임자·노트북 고르기·내보내기·가져오기·서버 없음)
+node test/rerp.test.mjs         # rerp/ (kr_ext_rerp 에서 옮긴 코드): 원본 tests/plan-sync.test.js 그대로(평면화·병합·묘비·delSlice/putBack — 원노트 페이지 부분은 원본이 걷어 냄) + plan.js(월간 구독·api.send·pageOf) + erp.js(흉내 fetch — 이중 인코딩·GWM0001·비목별 잔액·본예산 대체·미청구 합산·과제 목록·카드·SSO)
+node test/rerp-share.test.mjs   # rerp/spstore.js·prjdoc.js·prjdocsync.js·staffsync.js (원본 tests/sp-store·prjdoc·prjdoc-sync·staff-sync.test.js 를 ESM 으로 한 파일에 — 가짜 fetch·chrome·메모리 폴더 트리, 실 SharePoint 에 닿지 않음) + rerp/sharesync.js 배선(가짜 store — 켜기·받기만(pullOnly)·자동 공유·연결 확인·주소/링크 복사·공유·이름 바꾸기·auth/badurl·진행 중 요청)
+node test/rerp-research.test.mjs # rerp/research.js·researchsync.js (원본 tests/research.test.js 를 ESM 으로): 스냅샷 읽기·잇기·판 차례·clean·merge(기록 id 마다 판 → 넣은 시각 → 로컬)
 node test/rerp-origin.test.mjs  # rerp/origin.json 이 옮긴 파일마다 출처·지문을 적고, 옮긴 모듈이 Node 에서 읽히며, kr_ext_rerp 원본(E:\dev\kr_ext_rerp)이 옮긴 뒤로 바뀌지 않았는지(바뀌었으면 빨갛게 — rerp/README.md 의 갱신 차례)
 node test/rerp-staff.test.mjs   # rerp/staff.js (kr_ext_rerp lib/staff.js 그대로 — 참여연구원 참여율·지급액, 2026-10-18): 달·돈 읽기, rERP 식(월급여 절삭·계상률 올림 — reference §3 의 표·참여율의 금액·균등 분할 = rERP 저장 행), rERP 참여인력 행 → 사람(rowsOfErp·byName·peopleOfErp — 지급기간을 달마다 펼침·다른 과제 참여율 othersOfErp·초기화 재료 sharesOfErp), 계획서 사람들로 월별 지급·다시 만들기·저장 모양(normalizeStaff·normalizePlans), 월급여 기준(직접 > rERP > 계획서)·직접 적기, 적용월부터(앞 달 그대로·제외·구간·더하기·틀린 값)·총액·참여율 통째로, 이전 사람들 비율로 초기화(합 = 예산·잔차·rERP 행에서·기간 없음), 100% 알림(밖의 값·rERP 합치기 — 같은 달은 rERP 만, 정확히 100 은 아님)·예산 상한·월급여 없음, 요약 줄·탭 표(rERP 에서 받은 사람들도)
 node --test "mailtrack/test/*.test.mjs"  # 메일 탭(mailtrack/): Outlook MCP 어댑터(가짜 Streamable HTTP 서버)·받을 곳·회신 분류·잇기·N/M, 등록·갱신(큰 첨부는 주의로)·장부·금고, xlsx·docx 병합, 화면, 조립(import 만으로는 아무것도 안 부름 · 끝에서 끝까지)

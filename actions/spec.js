@@ -203,8 +203,7 @@ export const ACTIONS = {
         "yaml",
         "erp.link",
         "erp.fetch",
-        "note.sync",
-        "research.share",
+        "share.sync",
         "skills.zip",
         "extract",
         "revise"
@@ -216,7 +215,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         }
       },
       "llm": {
@@ -5529,7 +5528,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         }
       },
       "fields": {
@@ -5668,7 +5667,7 @@ export const ACTIONS = {
         }
       ],
       "then": [],
-      "next": "장부(rndBook)에 넣고 저장한다(rndpanel.js save). 원노트 공유가 켜져 있으면 잠깐 뒤 rnd.note.sync 가 따라온다(noteSoon)"
+      "next": "장부(rndBook)에 넣고 저장한다(rndpanel.js save). 공유 (SharePoint)가 켜져 있으면 잠깐 뒤 rnd.share.sync 가 따라온다(shareSoon — 공유로 가는 지문이 바뀌었을 때만)"
     },
     "rnd.delete": {
       "id": "rnd.delete",
@@ -5687,7 +5686,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         }
       },
       "fields": {
@@ -5742,7 +5741,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         },
         "current": {
           "from": "storage:rndBook.current.project",
@@ -5800,7 +5799,7 @@ export const ACTIONS = {
         }
       ],
       "then": [],
-      "next": "하나라도 들어갔으면 장부를 다시 그리고 저장한다. 스냅샷을 넣었고 그 과제의 연구내용 페이지가 원노트에 있으면 rnd.research.share(auto)가 따라온다(기다리지 않는다)"
+      "next": "하나라도 들어갔으면 장부를 다시 그리고 저장한다. 스냅샷을 넣었으면 rerp 와 같은 연구내용 기록(researchPlans)도 남기고, 공유 (SharePoint)가 켜져 있으면 잠깐 뒤 rnd.share.sync 가 따라온다(shareSoon — 기다리지 않는다)"
     },
     "rnd.erp.link": {
       "id": "rnd.erp.link",
@@ -5819,7 +5818,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         },
         "erp": {
           "from": "storage:rndSettings",
@@ -5923,7 +5922,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         },
         "erp": {
           "from": "storage:rndSettings",
@@ -6004,16 +6003,16 @@ export const ACTIONS = {
       "then": [],
       "next": "스냅샷을 장부 줄에 넣고(applyErp) 합계를 다시 그린다. 실패하면 erp.error 를 두고 칸에 까닭을 보인다"
     },
-    "rnd.note.sync": {
-      "id": "rnd.note.sync",
+    "rnd.share.sync": {
+      "id": "rnd.share.sync",
       "domain": "rnd",
-      "kind": "note.sync",
-      "title": "원노트 과제 정보 맞추기",
+      "kind": "share.sync",
+      "title": "공유 (SharePoint) 맞추기",
       "status": "planned",
       "confirm": false,
       "effect": "write",
       "log": "rnd",
-      "summary": "원노트 과제 정보 맞춤 ({reason})",
+      "summary": "공유 (SharePoint) 맞춤 ({reason})",
       "preset": {
         "today": {
           "from": "today",
@@ -6021,29 +6020,28 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         },
-        "note": {
-          "from": "storage:rndNote",
+        "share": {
+          "from": "storage:rndShare",
           "type": "object",
-          "desc": "원노트 공유 설정과 지난 맞춤의 손잡이(on·sectionId·sectionLabel·pageId·webUrl·memo·del·at — src/rndnote.js normalizeNote). syncInfo 의 memo·del 이 여기서 온다"
+          "desc": "공유 카드의 형편(on·folder·at·memo(과제·예산마다 마지막으로 맞춘 지문과 시각 — 병합 기준 localAt)·del(지운 과제의 묘비 90일)·last·error — src/rndshare.js normalizeShare)"
         }
       },
       "fields": {
-        "sectionId": {
+        "folder": {
           "type": "string",
-          "required": true,
-          "label": "섹션",
-          "desc": "과제 정보를 둘 OneNote 섹션 id(설정에서 고른 것 — 다른 기기도 같은 섹션)",
-          "read": "사용자가 섹션을 골랐을 때 그 id",
+          "label": "공유 폴더",
+          "desc": "밑폴더(base) 주소 — 비우면 내 OneDrive 의 문서/업무/shared(rerp/spstore.js resolveMyFolder — 없으면 만듦). 동료의 base 나 팀 사이트 폴더 주소도 된다",
+          "read": "사용자가 공유 폴더 칸에 적은 주소. 비웠으면 null",
           "llm": false,
           "ui": true,
-          "max": 200
+          "max": 2000
         },
         "reason": {
           "type": "string",
           "label": "까닭",
-          "desc": "왜 맞추는지(켬·섹션 고름·고침·탭 열기·다시 — 활동 로그 한 줄)",
+          "desc": "왜 맞추는지(켬·폴더·고침·열 때·지금 맞추기 — 활동 로그 한 줄. sharesync 의 reason 은 load·edit·manual)",
           "read": "왜 맞추는지 짧게. 모르면 null",
           "llm": false,
           "ui": true,
@@ -6053,98 +6051,39 @@ export const ACTIONS = {
       "checks": [],
       "rules": [],
       "llm": false,
-      "runner": "rnd.note.sync",
+      "runner": "rnd.share.sync",
       "uses": [
         {
-          "module": "src/rndnote.js",
-          "export": "syncInfo"
+          "module": "rerp/sharesync.js",
+          "export": "createShareSync"
         },
         {
-          "module": "src/rndnote.js",
-          "export": "findPage"
+          "module": "src/rndshare.js",
+          "export": "projectOf"
         },
         {
-          "module": "src/rndnote.js",
-          "export": "readPage"
+          "module": "src/rndshare.js",
+          "export": "yearOf"
         },
         {
-          "module": "src/rndnote.js",
-          "export": "createPage"
+          "module": "src/rndshare.js",
+          "export": "applyYear"
         },
         {
-          "module": "src/rndnote.js",
-          "export": "writeBlock"
+          "module": "src/rndshare.js",
+          "export": "applyProject"
         },
         {
-          "module": "src/rndnote.js",
-          "export": "openNote"
-        }
-      ],
-      "then": [],
-      "next": "받아 고친 것이 있으면 장부를 저장하고, 페이지가 없으면 만들고 달라졌으면 쓴다. 손잡이(pageId·memo·del·at)를 rndNote 에 적는다. 도는 중에 다시 부르면 끝난 뒤 한 번 더 돈다"
-    },
-    "rnd.research.share": {
-      "id": "rnd.research.share",
-      "domain": "rnd",
-      "kind": "research.share",
-      "title": "연구내용 원노트 올리기",
-      "status": "planned",
-      "confirm": true,
-      "effect": "write",
-      "log": "rnd",
-      "summary": "연구내용 원노트 올림 {projectId}",
-      "preset": {
-        "today": {
-          "from": "today",
-          "desc": "오늘(YYYY-MM-DD) — 차년도(오늘이 든 것)·변경이력 날짜·zip 이름"
+          "module": "src/rndshare.js",
+          "export": "matchProject"
         },
-        "me": {
-          "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
-        },
-        "share": {
-          "from": "storage:researchShare",
-          "type": "object",
-          "desc": "올린 페이지의 손잡이({ [과제명 키]: { pageId, webUrl, title, name, at } } — 있으면 그 페이지를 고친다)",
-          "log": false
-        }
-      },
-      "fields": {
-        "projectId": {
-          "type": "string",
-          "required": true,
-          "label": "과제 id",
-          "desc": "올릴 과제의 id(장부의 과제 — 과제명·과제번호로 기록을 찾는다)",
-          "read": "올릴 과제의 id",
-          "llm": false,
-          "ui": true,
-          "max": 40
-        },
-        "auto": {
-          "type": "boolean",
-          "label": "저절로",
-          "desc": "계획서를 다시 넣은 뒤 저절로 다시 올리는 것인가(링크를 복사하지 않는다)",
-          "read": "사용자가 누른 것이 아니면 true",
-          "llm": false,
-          "ui": true
-        }
-      },
-      "checks": [],
-      "rules": [],
-      "llm": false,
-      "runner": "rnd.research.share",
-      "uses": [
         {
           "module": "rndpanel.js",
           "export": "createRndPanel"
-        },
-        {
-          "module": "rerp/plussync.js",
-          "export": "createPlusSync"
         }
       ],
       "then": [],
-      "next": "올린 페이지(pageId·webUrl·title)를 researchShare 에 적고, 누른 것이면 링크 글(RSY.linkText)을 복사한다"
+      "next": "받은 칸(project·alias·budget·changes·research)은 장부에 들여 저장하고(saveLocal → src/rndshare.js applyProject·applyYear), 예상 비용은 plannedExpenses 에(받기만 — pullOnly), 결과는 rerp 와 같은 shareState(= planSyncState)·shareIndex 에. 지문·묘비는 rndShare 의 memo·del 에 적는다. 도는 중에 다시 부르면 끝난 뒤 한 번 더 돈다"
     },
     "rnd.skills.zip": {
       "id": "rnd.skills.zip",
@@ -6163,7 +6102,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         }
       },
       "fields": {
@@ -6216,7 +6155,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         }
       },
       "fields": {
@@ -6354,7 +6293,7 @@ export const ACTIONS = {
         },
         "me": {
           "from": "me",
-          "desc": "내 이름 — 연구내용 페이지의 올린 사람(by)"
+          "desc": "내 이름 — 변경이력·연차 파일의 쓴 사람(by·updatedBy)과 폴더를 만들 수 있는 과제(과제책임자 == 내 이름)"
         }
       },
       "fields": {

@@ -5,7 +5,8 @@
 //   → 예산(비목 줄) · 참여연구자 · 연구개발 계획 · 진행 기록 · 변경 및 이력 관리(위는 rndgen 의 YAML 고치기, 아래는 변경이력) → 요약 복사 · JSON 저장·불러오기 → R&D 설정(연구개발계획서 YAML 넣기 …)
 //   예산 정보가 없는 차년도를 보고 있으면(2026-10-11 사용자 지정) 기록 칸들 대신 까닭 카드가 서고 R&D 설정이 저절로 펴진다 — 지난 차년도의 기록을 보이지 않는다.
 //
-// 어디에도 올리지 않는다 — 이 브라우저에만 남는다. 공문 탭의 공문 설정 과제를 가져올 수 있다(처음 열 때 과제가 없으면 저절로).
+// 공유 (SharePoint — R&D 설정 안의 카드)를 켜지 않으면 어디에도 올리지 않는다 — 이 브라우저에만 남는다. 켜면 과제마다 OneDrive 공유 폴더의 연차 파일과 맞춘다(2026-10-18 사용자 지정, 아래 "공유" 절).
+// 공문 탭의 공문 설정 과제를 가져올 수 있다(처음 열 때 과제가 없으면 저절로).
 // 예산 **계획**을 고치거나 비목을 빼면, 과제의 책임자·연구기간을 고치면 변경이력에 저절로 한 줄이 남고 사유만 사람이 적는다.
 // 과제는 별칭으로 다룬다 — 폼에서 별칭은 필수이고 과제끼리 겹치지 않으며, 별칭이 없는 과제는 머리에 정하는 칸이 선다.
 
@@ -16,16 +17,23 @@ import {
   budgetTsv, entryText, logLines, changeLine, changeLines, thousand, amountOfThousand, refsText, normalizeSupport, SUPPORT_MAX,
 } from './src/rnd.js';
 import { SET_KEY, normalizeSet, includeNames, isHidden, nameKey, projectRecs, pickYearRec, candidates, linkOf, isLive, isFresh, fetchSnapshot, applySnapshot, erpExtras, erpHead, clock as erpClock } from './src/rnderp.js';
-// kr_ext_rerp 에서 옮긴 것(rerp/ — 출처·갱신 규칙은 rerp/README.md): rERP 호출(erp), 예상 비용 저장소와 입력 처리(PLAN), 과제집행비율 표(budgetTable), 원노트 동기화 배선(createPlusSync).
+// kr_ext_rerp 에서 옮긴 것(rerp/ — 출처·갱신 규칙은 rerp/README.md): rERP 호출(erp), 예상 비용 저장소와 입력 처리(PLAN), 과제집행비율 표(budgetTable),
+// 공유 (SharePoint) 배선(createShareSync — kr_ext_rerp background.js 의 shareSync; 2026-10-18 원노트·MCP 대신 브라우저 로그인 쿠키로 OneDrive 공유 폴더의 과제별 연차 파일), 예상 비용 묘비 되돌리기(KRX_PLAN_SYNC.putBack).
 import ERP from './rerp/erp.js';
 import PLAN from './rerp/plan.js';
 import { budgetTable } from './rerp/planui.js';
-import { createPlusSync, PLUS_DEFAULTS } from './rerp/plussync.js';
-// 연구내용 원노트 공유(2026-10-14) — rerp 의 연구개발계획서 기록(research)과 「[연구내용] 과제명」 페이지(researchsync), MCP·OneNote 손잡이.
+import { createShareSync, SHARE_DEFAULTS } from './rerp/sharesync.js';
+import KRX_PLAN_SYNC from './rerp/plansync.js';
+// rERP 에 이은 뒤 공유 열쇠가 바뀐 과제의 폴더를 이어 쓰기(shareRekey — 옛 폴더의 파일 project.prjNo 를 새 열쇠로): 저장소(KRX_SP — 검사에서는 가짜 store)와 문서 모양(KRX_PRJDOC).
+import KRX_SP from './rerp/spstore.js';
+import KRX_PRJDOC from './rerp/prjdoc.js';
+// 연구내용 기록(2026-10-14) — rerp 의 연구개발계획서 기록(research). 2026-10-18 부터 원노트 페이지가 아니라 연차 파일의 research 칸으로 간다.
 import RS from './rerp/research.js';
-import RSY from './rerp/researchsync.js';
-import KRX_MCP from './rerp/mcp.js';
-import KRX_ONENOTE from './rerp/onenote.js';
+// 장부 ↔ 연차 파일 변환(2026-10-18): 공유 설정(rndShare)·연차 파일 project 칸·받은 것을 장부에 들이기·차년도 변환·과제 맞추기.
+import {
+  SHARE_KEY, normalizeShare, shareKeyOf, projectOf as shareProjectOf, localProjectOf, localPlanOf, yearOf as shareYearOf, researchOf as shareResearchOf, budgetHash as shareBudgetHashOf,
+  applyProject as shareApplyProject, applyYear as shareApplyYear, matchProject as shareMatchProject,
+} from './src/rndshare.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
 import { JOB_LIST_PATH, JOB_QUERY, parseJobRows, rankJobs, jobLine } from './src/jobid.js';
 import { fetchIoList, fetchAcct, rankIo, ioLine, acctFresh, fiscalYearOf, EA_HOME } from './src/eacct.js';
@@ -37,19 +45,14 @@ import { kindOf, applyYaml, KIND_ORDER, revOf, readSnapshot } from './src/rndyam
 import { ERP_TTL_MS, fetchParticipants, fetchOthers } from './src/rnderp.js';
 import { monthLabel, ymText, rateText, personStats, checks, mergeOthers, peopleOfErp, staffTsv } from './rerp/staff.js';
 import { MANIFEST_PATH, checkManifest, skillGuide, bundleSkills, zipName, kb } from './src/rndskills.js';
-import {
-  NOTE_KEY, INFO_KEYS, normalizeNote, bookHash, syncInfo, blockHtml, findBlock, readBlock, openNote as defaultOpenNote,
-  listSections, findPage, createPage, readPage, writeBlock,
-} from './src/rndnote.js';
 
 const SAVE_WAIT_MS = 400;
 /** 예산 정보가 없는 차년도 칩의 풍선말·상태 줄·까닭 카드(2026-10-11 사용자 지정) — 칩은 회색 점선이고, 누르면 넘어가되 기록 칸 대신 R&D 설정이 선다. */
 const NO_BUDGET = '예산 정보가 들어 있지 않습니다';
 /** 지우기 버튼은 두 번 누른다 — 처음 누르면 이만큼 동안 "정말 지우기" 로 바뀌고, 그 안에 다시 누르면 지운다. */
 const CONFIRM_MS = 3000;
-/** 원노트 공유가 켜져 있으면 과제 정보를 고친 뒤 이만큼 기다렸다 맞춘다(그 사이 더 고치면 모아서 한 번). 탭을 열 때는 이만큼 지났을 때만. */
+/** 공유 (SharePoint)가 켜져 있으면 장부를 고친 뒤 이만큼 기다렸다 맞춘다(그 사이 더 고치면 모아서 한 번). 탭을 열 때는 sharesync 의 load 규칙(1분 안 재실행 안 함)을 따른다. */
 const NOTE_WAIT_MS = 1200;
-const NOTE_OPEN_MS = 60_000;
 /** 복사 아이콘(sidepanel.html 의 것과 같다) — 누르면 잠깐 체크(못 했으면 ×)로 바뀌었다 돌아온다. */
 const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>';
 const DONE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"/></svg>';
@@ -60,14 +63,14 @@ const copyBtn = (attr, what) => `<button type="button" class="rd-icon" ${attr} t
  * @param {{$:Function, escapeHtml:Function, logEvent:Function, copyText?:(text:string) => Promise<boolean>,
  *   flash?:(btn:HTMLElement, text:string, ms?:number) => void, download?:(data:string|Uint8Array, filename:string, type?:string) => Promise<void>,
  *   readAsset?:(path:string, as?:'text'|'bytes') => Promise<string|Uint8Array>, today?:() => string,
- *   openNote?:() => Promise<{tool:(name:string, args:object, ms?:number) => Promise<any>}>}} deps
+ *   spFetch?:typeof fetch, store?:object}} deps
  *   readAsset 은 확장 안의 파일(rnd/skills.json · rnd/skills/…)을 읽는 길, today 는 검사에서 날짜를 못 박는 데 쓴다,
- *   openNote 는 OneNote MCP 서버에 붙는 길(검사에서는 흉내), erp 는 rERP 를 부르는 것(rerp/erp.js — 검사에서는 흉내), me 는 내 이름(설정),
- *   mcpFetch 는 예상 비용 원노트 동기화가 MCP 서버를 두드릴 fetch(검사에서는 흉내, 없으면 전역),
+ *   erp 는 rERP 를 부르는 것(rerp/erp.js — 검사에서는 흉내), me 는 내 이름(설정 — 책임자 판정·변경이력의 by·공유 파일의 updatedBy),
+ *   spFetch 는 공유 (SharePoint)가 OneDrive 를 읽을 fetch(브라우저 로그인 쿠키 — 검사에서는 흉내, 없으면 전역), store 는 SharePoint 저장소 흉내(검사에서만 — 실 SharePoint 에 쓰지 않게; 없으면 rerp/sharesync.js 가 rerp/spstore.js 로),
  *   jobs 는 과제 정보 카드의 Job Id 저절로 찾기가 받는 R&D PMS 과제 목록(줄 배열 — 검사에서는 흉내),
  *   acct 는 회계(e-accounting — src/eacct.js)를 부르는 것 { list(year) → 내 부서 과제(I/O) 목록, get(year, io, options) → 그 과제의 회계 예산 스냅샷 } (검사에서는 흉내)
  */
-export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, openNote = defaultOpenNote, erp = ERP, me = () => '', mcpFetch = undefined, jobs = defaultJobs, acct = defaultAcct }) {
+export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, erp = ERP, me = () => '', spFetch = defaultSpFetch, store = undefined, jobs = defaultJobs, acct = defaultAcct }) {
   const el = {
     root: $('rnd'), projects: $('rdProjects'), empty: $('rdEmpty'), emptyImport: $('rdEmptyImport'), emptyAdd: $('rdEmptyAdd'),
     intake: $('rdIntake'), yaml: $('rdYaml'),
@@ -93,17 +96,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     chReason: $('rdChReason'), chAdd: $('rdChAdd'), chCancel: $('rdChCancel'), chNew: $('rdChNew'), chForm: $('rdChForm'), changes: $('rdChanges'), changesCopy: $('rdChangesCopy'),
     copy: $('rdCopy'), export: $('rdExport'), import: $('rdImport'), importGm: $('rdImportGm'),
     skillBox: $('rdSkillBox'), skillState: $('rdSkillState'), skills: $('rdSkills'), skillZip: $('rdSkillZip'), skillGuide: $('rdSkillGuide'),
-    noteState: $('rdNoteState'), noteOn: $('rdNoteOn'), noteSection: $('rdNoteSection'), noteSections: $('rdNoteSections'), noteSync: $('rdNoteSync'),
-    noteOpen: $('rdNoteOpen'), noteMsg: $('rdNoteMsg'),
-    // rERP 집행내역(예산 칸 아래, 접힌 한 줄 — erpState 가 그 줄의 형편)과 원노트 칸의 예상 비용 공유 — 2026-10-11.
+    // 공유 (SharePoint, 2026-10-18 — R&D 설정 안의 카드 "공유 (SharePoint)"): 켜기 · 공유 폴더 칸(비우면 내 OneDrive 의 문서/업무/shared) · 지금 맞추기 · 폴더 열기 · 링크 복사 · 상태 · 알림 줄.
+    shareBox: $('rdShareBox'), shareState: $('rdShareState'), shareOn: $('rdShareOn'), shareFolder: $('rdShareFolder'), shareWith: $('rdShareWith'), shareSync: $('rdShareSync'), shareOpen: $('rdShareOpen'), shareLink: $('rdShareLink'), shareMsg: $('rdShareMsg'),
+    // rERP 집행내역(예산 칸 아래, 접힌 한 줄 — erpState 가 그 줄의 형편) — 2026-10-11. 예상 비용은 공유가 켜져 있으면 과제 폴더의 예상비용.json 에서 받아 표에 보인다(보기만).
     erp: $('rdErp'), erpState: $('rdErpState'), erpInfo: $('rdErpInfo'), erpRefresh: $('rdErpRefresh'), erpLink: $('rdErpLink'), erpUnlink: $('rdErpUnlink'),
     erpPick: $('rdErpPick'), erpSelect: $('rdErpSelect'), erpPickOk: $('rdErpPickOk'), erpMsg: $('rdErpMsg'), erpTable: $('rdErpTable'),
-    plusOn: $('rdPlusOn'), plusRow: $('rdPlusRow'), plusSection: $('rdPlusSection'), plusNotebook: $('rdPlusNotebook'), plusFind: $('rdPlusFind'), plusMsg: $('rdPlusMsg'),
-    // 원노트 칸의 연구내용 공유(2026-10-14) — 올리기 · 링크 복사 · 열기 · 알림 줄.
-    resShare: $('rdResShare'), resCopy: $('rdResCopy'), resOpen: $('rdResOpen'), resMsg: $('rdResMsg'),
     // 예산 칸 맨 위 줄 — 집행에 더할 것(미청구·사용계획 — 승인전 체크는 2026-10-11 사용자 지정으로 뺐다). 2026-10-11 사용자 지정으로 R&D 설정에서 옮겼다(값은 여전히 rndSettings).
     incRow: $('rdIncRow'), incUnbilled: $('rdIncUnbilled'), incPlan: $('rdIncPlan'),
-    // R&D 설정(접힌 한 줄) — rERP 집행내역 켜기/끄기 · 예산 칸에 보일 비목(items — 2026-10-11 사용자 지정). 원노트 공유·YAML 넣기·스킬 칸도 이 안에 있다.
+    // R&D 설정(접힌 한 줄) — rERP 집행내역 켜기/끄기 · 예산 칸에 보일 비목(items — 2026-10-11 사용자 지정). 공유 (SharePoint)·YAML 넣기·스킬 칸도 이 안에 있다.
     setBox: $('rdSetBox'), setState: $('rdSetState'), erpOn: $('rdErpOn'), itemBox: $('rdItemBox'), items: $('rdItems'),
   };
   const st = {
@@ -127,18 +127,20 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     emptyKey: '', setAuto: false,
     // 스킬 목록(rnd/skills.json)은 그 칸을 처음 펼 때 읽는다. 못 읽었으면 까닭을 둔다.
     manifest: null, manifestError: '',
-    // 원노트 공유 — 저장해 두는 형편(rndNote), 마지막으로 맞춘 장부의 지문(고친 것이 있는지), 도는 중인 맞추기와 그 사이 들어온 요청.
-    note: normalizeNote(null), noteHash: '', noteRun: null, noteAgain: false, noteBusy: false,
+    // 공유 (SharePoint) — 저장해 두는 형편(rndShare: on·folder·at·memo(과제·차년도마다 마지막으로 맞춘 시각·지문 — 병합 기준)·last·error), 마지막으로 맞춘 장부의 지문(shareHash — 고친 것이 있는지),
+    // 연구내용 기록처럼 지문 밖에서 바뀐 것(shareDirty), 도는 중인가(shareBusy), 받은 것을 장부에 들이는 중인가(shareApplying — 그동안 되돌이 동기화를 막는다), 마지막 결과(shareState = planSyncState — 과제별 폴더·주소),
+    // 마지막 실패의 종류(shareKind — 'auth' 면 로그인 안내), 링크 복사 같은 잠깐의 알림(shareNote).
+    share: normalizeShare(null), shareHash: '', shareDirty: false, shareBusy: false, shareApplying: false, shareState: null, shareKind: '', shareNote: null,
+    // 처음 받는 과제에서 빈 값으로 덮지 않고 둔 WORKSPACE 몫 칸이 있으면(shareRepush) 맞춘 뒤 한 번 더 돌아 그 값을 파일에 올린다 · 장부에 없는 열쇠로 project 칸보다 먼저 온 별칭(shareAliasWait — project 칸이 오면 함께 넣는다).
+    shareRepush: false, shareAliasWait: {},
     // R&D 설정(chrome.storage 의 rndSettings, src/rnderp.js normalizeSet) — erp: rERP 집행내역을 보이는가 · unbilled/plan: 집행에 미청구·사용계획을 더하는가(승인전은 더하지 않는다 — 2026-10-11 사용자 지정)
     // · hide: 예산 칸에서 숨긴 비목 이름들(줄만 숨고 합계에는 든다 — 2026-10-11 사용자 지정).
     set: normalizeSet(null),
     // rERP 집행내역 — 도는 중인 조회, 이 세션에서 저절로 잇기를 해 본 차년도, 마지막으로 받은 과제 목록(고르기용), 이벤트를 달았는지.
     erpRun: null, erpTried: new Set(), erpRecs: null, erpBusy: false, plHost: null,
     // 예상 비용의 화면 상태 — rerp/plan.js(bind)와 rerp/planui.js(budgetTable)가 rerp 의 패널 state 와 같은 모양으로 읽고 쓴다.
-    // data.settings.planSync 는 원노트 예상 비용 공유가 켜져 있는지, data.myNames 는 책임자 판정(과제책임자 == 내 이름)에 쓴다.
+    // data.settings.planSync 는 공유 (SharePoint)가 켜져 있는지(예상 비용을 예상비용.json 에서 받는다), data.myNames 는 책임자 판정(과제책임자 == 내 이름)에 쓴다.
     pl: { plans: {}, planShown: new Set(), expanded: new Set(), data: { settings: { planSync: false }, myNames: [] } },
-    // 연구내용 공유 — 과제(과제명 키)마다 올린 페이지(chrome.storage 의 researchShare), 도는 중인가, 알림 줄(resFor 과제의 것만 보인다).
-    resShare: {}, resBusy: false, resMsg: '', resError: false, resFor: '',
   };
 
   // rndgen/(과제 더하기·변경사항 카드 — sidepanel.js 가 잇는다)의 훅 — 하나씩(마지막 등록이 이긴다). 없으면 ＋ 는 새 과제 폼이고 넣기·지우기 뒤에 할 일이 없다.
@@ -156,6 +158,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   const yearEmpty = (p, n) => n !== currentYear(p, today()) && !hasBudget(p.years[n]);
   const curBook = (p) => yearBook(p, curYear(p));
   const label = (p) => p.alias || p.name;
+  /** 변경이력 줄에 적은 시각·적은 사람(공유 — 연차 파일의 changes 칸과 같은 칸, 2026-10-18)을 찍는다. */
+  const stampChanges = (list) => list.map((c) => ({ ...c, at: Date.now(), by: String(me() || '').trim() }));
 
   function setStatus(msg, kind = '') {
     el.status.className = `status ${kind}`;
@@ -168,7 +172,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   function save() {
     clearTimeout(timer);
     timer = setTimeout(() => chrome.storage.local.set({ [BOOK_KEY]: st.book }), SAVE_WAIT_MS);
-    noteSoon();
+    shareSoon();
   }
 
   /* ---------------------------------------------------------- 두 번 누르기 */
@@ -329,6 +333,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       return;
     }
     p.alias = alias;
+    p.aliasAt = Date.now();   // 공유의 병합 기준 — 늦게 바꾼 쪽이 이긴다(2026-10-18)
     el.aliasIn.value = '';
     setStatus(`별칭을 정했습니다 — ${alias}`);
     logEvent('rnd', true, `R&D 과제 별칭: ${p.name} → ${alias}`);
@@ -681,6 +686,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const dup = aliasOwner(st.book, a, p.id);
     if (dup) return { ok: false, error: `같은 별칭의 과제가 있습니다 — ${dup.name}` };
     p.alias = a;
+    p.aliasAt = Date.now();
     logEvent('rnd', true, `R&D 과제 별칭: ${p.name} → ${a}`);
     paintAll();
     save();
@@ -713,6 +719,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
         el.fNeed.textContent = `과제는 ${MAX_PROJECTS}개까지입니다.`;
         return;
       }
+      draft.aliasAt = Date.now();
       st.book.projects.push(draft);
       st.book.current.project = draft.id;
       logEvent('rnd', true, `R&D 과제 더함: ${draft.name}`);
@@ -720,12 +727,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     } else {
       const p = projectOf(st.book, st.editing);
       if (!p) return closeForm();
-      const changes = projectChanges(p, draft, today());
+      const changes = stampChanges(projectChanges(p, draft, today()));
       // 회계 I/O 를 고치면 전 과제의 회계 예산 스냅샷은 버린다 — 새 코드로 다시 받는다(acctAuto).
       if (draft.io !== p.io) {
         delete p.acct;
         st.acctRun = { ...st.acctRun, for: '', msg: '', bad: false, login: false };
       }
+      // 별칭이 바뀌었으면 그 시각도 — 공유의 병합 기준(2026-10-18).
+      if (draft.alias !== p.alias) p.aliasAt = Date.now();
       Object.assign(p, { name: draft.name, alias: draft.alias, code: draft.code, job: draft.job, io: draft.io, lead: draft.lead, start: draft.start, end: draft.end, calendar: draft.calendar, note: draft.note });
       if (changes.length) {
         // 연구기간이 바뀌어 차년도가 달라졌을 수 있다 — 고친 뒤의 보고 있는 차년도에 남긴다.
@@ -743,6 +752,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const p = projectOf(st.book, st.editing);
     if (!p) return;
     if (!confirmTwice(el.fDel, '정말 지우기')) return;
+    shareTomb(p);   // 공유 — 묘비를 남겨 다른 기기도 지우게(파일 project.deletedAt)
     st.book.projects = st.book.projects.filter((x) => x.id !== p.id);
     delete st.book.current.year[p.id];
     st.book.current.project = st.book.projects[0]?.id || '';
@@ -925,7 +935,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /** 예산 줄을 적은 뒤 — 계획이 바뀐 줄을 변경이력에 남긴다. rowEl 을 주면 그 줄만 다시 적고, 없으면 표를 다시 그린다. */
   function commitBudget(p, rowEl = null, r = null) {
     const b = curBook(p);
-    const changes = budgetChanges(st.snap, b.budget, today());
+    const changes = stampChanges(budgetChanges(st.snap, b.budget, today()));
     if (changes.length) {
       b.changes.push(...changes);
       setStatus(`예산 계획이 바뀌어 변경이력에 ${changes.length}건을 남겼습니다 — 사유를 적어 두세요.`);
@@ -1361,7 +1371,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       Object.assign(hit, { date, kind, item, before, after, reason });
       setStatus('변경이력을 고쳤습니다.');
     } else {
-      b.changes.push({ id: newId(), date, kind, item, before, after, reason, auto: false });
+      b.changes.push(stampChanges([{ id: newId(), date, kind, item, before, after, reason, auto: false }])[0]);
       setStatus('변경이력을 적었습니다.');
     }
     clearChangeForm();
@@ -1562,7 +1572,6 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const lines = [];
     const results = [];
     let error = '';
-    let resAfter = [];   // 연구내용 페이지를 다시 올릴 과제 (원노트에 올린 적이 있는 것만)
     try {
       const { parse } = await loadYaml();
       const docs = [];
@@ -1587,9 +1596,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
         logEvent('rnd', true, `R&D YAML 넣음 — ${res.label}: ${res.summary}`, { file: d.name });
         results.push(intakeResult(d, res));
       }
-      // 스냅샷은 연구내용 공유에 쓸 모양(rerp/research.js 기록 — 개발목표·개발내용·연구활동비 세부사용계획 …)으로도 남기고, 이미 원노트에 올린 과제면 그 페이지를 고친다.
+      // 스냅샷은 연구내용 공유에 쓸 모양(rerp/research.js 기록 — 개발목표·개발내용·연구활동비 세부사용계획 …)으로도 남긴다 — 공유가 켜져 있으면 잠깐 뒤 과제 폴더의 연차 파일(research 칸)로 간다(2026-10-18).
       const recs = docs.filter((d) => d.kind === 'snapshot').map((d) => { try { return RS.readSnapshot(d.obj, { text: d.text, file: d.name }); } catch { return null; } }).filter(Boolean);
-      if (recs.length) resAfter = await storeResearch(recs);
+      if (recs.length) await storeResearch(recs);
       setStatus(lines.join(' / '));
     } catch (err) {
       error = err.message;
@@ -1606,7 +1615,6 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       }
       // 넣는 칸은 맨 아래라 알림 줄(머리 아래)이 화면 밖일 수 있다 — 결과가 보이게 끌어온다.
       el.status.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-      for (const p of resAfter) shareResearch(p, { auto: true });   // 기다리지 않는다
     }
     const result = { ok: !error, error, lines, results };
     if (lines.length && intakeHook) {
@@ -1746,57 +1754,34 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     try { return await fn(); } catch (err) { if (err?.kind !== 'login') throw err; await erp.ssoLogin(); return fn(); }
   }
 
-  /**
-   * 장부에서 rERP 로 이어진 차년도들 — 원노트 예상 비용 동기화의 문맥(과제명·내 과제·내 이름).
-   * 책임 과제(leadPrjNos)는 늘 비운다 — 여기서는 페이지를 만들지 않는다(보기만, 2026-10-11 사용자 지정). 페이지는 rerp 확장에서 책임자가 만든다.
-   */
-  function erpContext() {
-    const names = {};
-    const mine = new Set();
-    for (const p of st.book.projects) {
-      for (const y of Object.values(p.years)) {
-        const e = y.erp;
-        if (!e?.prjNo) continue;
-        names[e.prjNo] = e.prjNm || p.name;
-        mine.add(e.prjNo);
-      }
-    }
-    return { names, myPrjNos: [...mine], leadPrjNos: [], who: myName() };
-  }
-
-  // 원노트 예상 비용 동기화 배선(rerp background.js 의 planSync 와 같은 것, rerp/plussync.js) — 설정은 원노트 칸의 rndNote.plus, 과제 문맥은 장부, 클립보드는 copyText.
-  const plus = createPlusSync({
-    settings: () => ({ ...st.note.plus, enabled: st.note.plus.on }),
-    context: erpContext, copyText, fetch: mcpFetch,
-    version: (globalThis.chrome?.runtime?.getManifest?.() || {}).version || '0',
+  /* ---------------------------------------------------------- 공유 (SharePoint) 배선 — rerp/sharesync.js(createShareSync — kr_ext_rerp background.js 의 shareSync 를 옮긴 것) */
+  // 2026-10-18 사용자 지정(kr_ext_rerp 에서 먼저 바뀌고 "거기도 이렇게 진행하도록 해줘" · "workspace 에도 경로주면 알아서 동기화"): 원노트·MCP·Graph 를 걷어 내고 **브라우저 로그인 쿠키만으로 SharePoint(OneDrive) 공유 폴더**를 쓴다 —
+  // "원노트 공유는 mcp 없어도 되긴하지? … 글치 mcp 없이 할 수 있게 해줘" · "아니 mcp 없이 grph api 하지 않고 브라우저 토큰으로 하라고" · "onedrive 에 업무/shared 안에 과제별로 .. 약칭으로 없으면 jobid 없으면 임시번호 … 년차별로 1개 파일이고 1개 파일에서 변경사항이랑 다 관리 … 과제 정보랑 등등" ·
+  // "참여연구원들에게 공유할 수 있게 설정까지" · "예상지출도 … 별도 파일에서 해도 되긴하는데". 밑폴더(base)는 공유 칸의 주소(비면 내 OneDrive 문서/업무/shared — sharesync 가 푼다), 과제 폴더는 약칭(→ Job Id → rERP 과제번호), 그 안에 <n>차년도.json 과 예상비용.json.
+  // 여기 몫(want): 예상 비용은 **받기만**(보기만 — 2026-10-11 사용자 지정, 파일은 rerp 가 쓴다) · 연구내용·예산 **계획**(파일 budget 줄 — 집행은 rERP/로컬)·변경이력(id 합집합)·별칭(aliasAt 늦은 쪽)은 양방향 · 참여연구원 계획(staff)은 안 한다(rERP 에서 읽는다 — 2026-10-18 저녁).
+  // 과제 정보의 다른 기기 맞춤도 이제 연차 파일의 project 칸이 맡는다(별도 페이지 없음). 설정·과제 문맥·장부 읽기/쓰기(src/rndshare.js 변환)·참여연구원 이름·클립보드는 deps 로 넘기고,
+  // 메시지(planSync · planSyncQueue · shareProbe · shareFolderCopy · shareOrgLink · shareFolderPeople · shareRename)는 send(msg) 로 — rerp/plan.js 의 api.send 에도 끼운다.
+  /** 이 패널의 동기화 몫 — plan 은 받기만(pullOnly), staff 는 안 함. sharesync 가 rerp 식으로 settings 에서 want 를 셈하면(budget 은 staffSync 와 함께) 어긋나므로 want 를 따로 준다(settings 에도 같이 실어 둔다). */
+  const SHARE_WANT = Object.freeze({ plan: true, research: true, budget: true, changes: true, alias: true, staff: false });
+  const SHARE_PULL_ONLY = Object.freeze({ plan: true });
+  /** 내 OneDrive 를 찾는 호스트(설정 folder 가 비었을 때) — rerp 의 기본값과 같다. 로그인이 필요할 때 "폴더 열기"가 여기로 간다. */
+  const SHARE_DRIVE_HOST = String(SHARE_DEFAULTS?.driveHost || 'https://krclass-my.sharepoint.com').replace(/\/+$/, '');
+  const share = createShareSync({
+    settings: () => ({
+      enabled: !!st.share.on, folder: String(st.share.folder || ''), driveHost: SHARE_DRIVE_HOST, discover: true, shareWith: st.share.shareWith === 'none' ? 'none' : 'participants',   // 카드의 체크(rndShare.shareWith) — 2026-10-19
+      planSync: true, researchSync: true, staffSync: false, changesSync: true, want: { ...SHARE_WANT }, pullOnly: { ...SHARE_PULL_ONLY },
+    }),
+    want: () => ({ ...SHARE_WANT }), pullOnly: { ...SHARE_PULL_ONLY },
+    context: () => shareContext(), loadLocal: () => shareLoadLocal(), saveLocal: (part, prj, data) => shareSaveLocal(part, prj, data), participants: (prjNo) => shareParticipants(prjNo),
+    copyText, chrome: globalThis.chrome, fetch: spFetch, store,
   });
-  // rerp/plan.js 가 백그라운드에 보내던 요청(planSync · planExport · planBind …)을 같은 창의 배선으로. 끝나면 상태 글·표를 다시 그린다.
-  PLAN.send = (msg) => plus.send(msg).then((r) => { if (msg?.type !== 'planSyncQueue') afterPlanSync(r); return r; });
-
-  /** 동기화가 끝나면 — 결과(rerp 와 같은 저장 키 planSyncState · plusPlanPages)를 화면 상태에 들이고 원노트 칸·표를 다시 그린다. */
-  async function afterPlanSync(r) {
-    if (!r || r.skipped === 'off') return;
-    try {
-      // 받은 예상 비용(plannedExpenses)도 다시 읽는다 — rerp/plan.js 는 storage.onChanged 로 받지만 검사에는 그 알림이 없다.
-      const s = await chrome.storage.local.get([PLAN.SKEY, PLAN.PKEY, PLAN.KEY]);
-      st.pl.planSync = s?.[PLAN.SKEY] || st.pl.planSync;
-      st.pl.planPages = s?.[PLAN.PKEY] || st.pl.planPages;
-      st.pl.plans = s?.[PLAN.KEY] || st.pl.plans;
-    } catch { /* 저장소를 못 읽어도 결과는 r 에 있다 */ }
-    if (!r.skipped) {
-      const q = st.note.plus;
-      q.error = r.ok ? '' : (r.error || '맞추지 못했습니다');
-      // 이어진 과제 가운데 페이지가 아직 없는 것 — 여기서는 만들지 않으니 rerp 확장에서 만들어야 한다고 알린다.
-      const missing = erpContext().myPrjNos.filter((no) => !r.pages?.[no]?.pageId);
-      q.last = r.ok ? `맞춤 ${when(r.at)} · 과제 ${Object.keys(r.pages || {}).length}개 · 항목 ${r.count || 0}건${missing.length ? ` · 페이지 없음 ${missing.length}개(rerp 확장에서 만듭니다)` : ''}${r.sectionWarn ? ` · ${r.sectionWarn.error}` : ''}` : q.last;
-      if (r.kind === 'notebook') plusNotebookPick(r.notebooks || []);
-      saveNote();
-      logEvent('rnd', !!r.ok, `R&D 예상 비용 원노트 맞춤(${r.reason || ''}): ${r.ok ? `과제 ${Object.keys(r.pages || {}).length}개 · 항목 ${r.count || 0}건` : q.error}`);
-    }
-    paintPlus();
-    paintNote();
-    drawErp();
-  }
+  /** 저장소 손잡이(shareRekey 용 — rERP 에 이은 뒤 옛 폴더의 파일 project.prjNo 를 새 열쇠로) — sharesync 와 같은 꼴: KRX_SP 에 검사의 가짜 store 를 덧씌움. 쓰기는 공유가 켜져 있고 옛 폴더를 알 때만. */
+  const SPX = Object.assign(Object.create(null), KRX_SP, store || {});
+  const spIo = () => ({ fetch: spFetch, chrome: globalThis.chrome });
+  // rerp/plan.js 가 백그라운드에 보내던 요청(planSync · planSyncQueue · shareFolderCopy …)을 같은 창의 배선으로. 동기화 결과(planSync)면 상태 줄·표를 다시 그린다.
+  // PLAN 은 모듈 하나(싱글턴)라 패널 인스턴스가 둘이면(검사 — 같은 화면을 빌린 다른 인스턴스) 마지막 것이 이긴다 — show() 가 보이는 인스턴스로 다시 끼운다.
+  const planSend = (msg) => share.send(msg).then((r) => { if (msg?.type === 'planSync') afterShareSync(r, msg.reason === 'load' ? '열 때' : String(msg.reason || 'manual')); return r; });
+  PLAN.send = planSend;
 
   function paintErp() {
     const p = cur();
@@ -1827,10 +1812,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     }
     // 표는 rerp 의 것 그대로 — p 는 rerp 패널의 과제(prjNo·rspr·budget·budgetError), s 는 설정(planSync·quickPicks), state 는 예상 비용 화면 상태.
     el.erpTable.innerHTML = e
-      ? budgetTable({ prjNo: e.prjNo, rspr: e.rspr, budget: e.snap?.budget || null, budgetError: e.snap?.budget ? '' : (e.error?.message || ''), unbilledShared: 0 }, { planSync: st.note.plus.on, quickPicks: [] }, st.pl)
+      ? budgetTable({ prjNo: e.prjNo, rspr: e.rspr, budget: e.snap?.budget || null, budgetError: e.snap?.budget ? '' : (e.error?.message || ''), unbilledShared: 0 }, { planSync: st.share.on, quickPicks: [] }, st.pl)
       : '';
-    // 보기만(2026-10-11 사용자 지정) — 예상 비용을 적고 고치고 페이지를 만드는 것은 rerp 확장(eClass 홈)에서 한다. 여기서는 ＋·✎·×·수량 −/＋·저장·내보내기를 걷어 내고
-    // 눈(펼치기)·가져오기(⬇ 동료가 보낸 페이지 링크 묶기)·열기(↗)만 둔다. 원노트 동기화로 받은 것이 표와 장부(사용계획)에 보인다.
+    // 보기만(2026-10-11 사용자 지정) — 예상 비용을 적고 고치고 파일을 만드는 것은 rerp 확장(eClass 홈)에서 한다. 여기서는 ＋·✎·×·수량 −/＋·저장·주소 복사(⬆)를 걷어 내고
+    // 눈(펼치기)·열기(↗ 예상비용.json)만 둔다. 공유 (SharePoint)로 받은 것이 표와 장부(사용계획)에 보인다.
     for (const node of el.erpTable.querySelectorAll('[data-act="plan-open"], .krext-plan-acts, [data-act="plan-qty"], [data-act="plan-persist"], [data-act="plan-export"]')) node.remove();
     namePlanRows(el.erpTable);
   }
@@ -1883,9 +1868,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       const rows = projectRecs(got.recs, { code: p.code, name: p.name });
       const rec = pickYearRec(rows, y);
       if (rec) {
+        const oldKey = keyOfProject(p);   // 공유 열쇠 — 이으면 rERP 과제번호로 바뀐다(shareRekey 가 폴더를 이어 쓴다)
         b.erp = linkOf(rec, { auto: !manual, now: Date.now() });
         clearErpPick();
         logEvent('rnd', true, `R&D rERP 잇기: ${label(p)} ${yearLabel(y.n)} → ${rec.prjNo}${rec.anl ? ` ${rec.anl}연차` : ''}`);
+        await shareRekey(p, oldKey);
         save();
         st.erpBusy = false;
         paintErp();
@@ -1928,9 +1915,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const rows = projectRecs(st.erpRecs || [], { code: prjNo });
     const rec = pickYearRec(rows, y) || rows[rows.length - 1];
     if (!rec) return;
+    const oldKey = keyOfProject(p);   // 공유 열쇠 — 이으면 rERP 과제번호로 바뀐다(shareRekey 가 폴더를 이어 쓴다)
     b.erp = linkOf(rec, { auto: false, now: Date.now() });
     clearErpPick();
     logEvent('rnd', true, `R&D rERP 잇기(고름): ${label(p)} ${yearLabel(y.n)} → ${rec.prjNo}${rec.anl ? ` ${rec.anl}연차` : ''}`);
+    await shareRekey(p, oldKey);
     save();
     paintErp();
     paintStaff();
@@ -1996,9 +1985,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     return st.erpRun;
   }
 
-  /* ---------------------------------------------------------- R&D 설정 (접힌 한 줄 — rERP 집행내역 켜기/끄기 · 그 안에 원노트 공유·YAML 넣기·스킬) + 예산 칸 위 "집행에 더하기" */
+  /* ---------------------------------------------------------- R&D 설정 (접힌 한 줄 — rERP 집행내역 켜기/끄기 · 그 안에 공유 (SharePoint)·YAML 넣기·스킬) + 예산 칸 위 "집행에 더하기" */
 
-  /** 설정 줄의 머리 글 — `rERP 켬 · 원노트 꺼짐 · 비목 1 숨김` — 과 체크들. 예산 칸 위 "집행에 더하기"(2026-10-11 사용자 지정으로 설정에서 옮김)는 rERP 를 껐으면 잠그고 숨긴다. */
+  /** 설정 줄의 머리 글 — `rERP 켬 · 공유 꺼짐 · 비목 1 숨김` — 과 체크들. 예산 칸 위 "집행에 더하기"(2026-10-11 사용자 지정으로 설정에서 옮김)는 rERP 를 껐으면 잠그고 숨긴다. */
   function paintSet() {
     el.erpOn.checked = st.set.erp;
     el.incUnbilled.checked = st.set.unbilled;
@@ -2006,10 +1995,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     for (const node of [el.incUnbilled, el.incPlan]) node.disabled = !st.set.erp;
     el.incRow.classList.toggle('hidden', !st.set.erp);
     paintItems();
-    const n = st.note;
-    const note = !n.on && !n.plus.on ? '원노트 꺼짐' : `원노트 ${[n.on ? '과제 정보' : '', n.plus.on ? '예상 비용' : ''].filter(Boolean).join('·')}`;
     // 공문 설정의 형편 줄처럼 한 줄에 들어가게 짧게(2026-10-11) — 긴 것은 CSS 가 줄임표로 자른다.
-    el.setState.textContent = `rERP ${st.set.erp ? '켬' : '끔'} · ${note}${st.set.hide.length ? ` · 비목 ${st.set.hide.length} 숨김` : ''}`;
+    el.setState.textContent = `rERP ${st.set.erp ? '켬' : '끔'} · 공유 ${st.share.on ? '켬' : '꺼짐'}${st.set.hide.length ? ` · 비목 ${st.set.hide.length} 숨김` : ''}`;
   }
 
   /**
@@ -2071,322 +2058,506 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     paintErp();
   }
 
-  /* ---------------------------------------------------------- 원노트 공유(선택) — 과제 정보(src/rndnote.js) · 예상 비용(rerp/plussync.js) */
+  /* ---------------------------------------------------------- 공유 (SharePoint) — 과제 정보·예산 계획·변경이력·연구내용 ↔ 과제 폴더의 연차 파일, 예상 비용 ← 예상비용.json (rerp/sharesync.js · src/rndshare.js) */
+  // 2026-10-18 사용자 지정 — 원노트 공유(과제 정보 페이지 · 예상 비용 페이지 · 연구내용 페이지)를 모두 걷어 내고 SharePoint(OneDrive) 공유 폴더의 과제별 연차 파일 하나로:
+  // "onedrive 에 업무/shared 안에 과제별로 .. 약칭으로 없으면 jobid 없으면 임시번호 … 년차별로 1개 파일이고 1개 파일에서 변경사항이랑 다 관리 … 과제 정보랑 등등" · "workspace 에도 경로주면 알아서 동기화".
+  // 켜면: 열 때(1분 안 재실행 안 함 — sharesync 의 load 규칙) · 지금 맞추기 · 장부를 고친 뒤 NOTE_WAIT_MS 모아서(고친 것이 있을 때만 — shareHashOf) 돈다. 과제 열쇠(prjdoc-sync 의 과제번호 자리)는 src/rndshare.js shareKeyOf(rERP 과제번호 → Job Id → 장부 id).
+  // 병합 기준(localAt — st.share.memo): 과제 정보는 memo[열쇠] = { id, at, hash } — 마지막으로 맞춘 뒤 WORKSPACE 몫 칸을 고쳤으면(지문이 다르면) 지금(로컬이 이김), 아니면 받아 둔 시각(그 뒤 고친 파일이 이김), 처음은 0(파일 쪽이 이김 — 다른 기기의 장부가 들어온다;
+  //   다만 파일에 **비어 있는** 칸은 장부 값을 두고 다음 맞춤에 올린다 — rerp 가 먼저 만든 파일, shareSaveLocal 머리 주석).
+  //   예산 계획은 memo[열쇠@n] = { h, at } — 처음은 계획서 스냅샷 날짜, 고쳤으면 지금, 받으면 파일 줄의 at(그래야 같은 내용을 매번 다시 쓰지 않는다). 지운 과제는 st.share.del[열쇠] 묘비 → 파일 project.deletedAt 로 퍼져 다른 기기가 지운다(90일) —
+  //   그 열쇠로 되돌아오는 칸은 받지 않는다. rERP 에 이어 열쇠가 바뀐 과제는 shareRekey 가 옛 폴더를 이어 쓴다(파일의 prjNo 를 고치고 색인·memo 를 옮김).
+  // 참여연구원 자동 공유는 폴더를 새로 만들 때 sharesync 가 한다(deps.participants — 이어진 rERP 참여인력, 없으면 계획서의 참여연구자). 받는 쪽은 "나와 공유"에서 저절로 찾거나(discover) 공유 폴더 칸에 주소를 넣는다.
 
-  const saveNote = () => chrome.storage.local.set({ [NOTE_KEY]: st.note });
+  const saveShare = () => chrome.storage.local.set({ [SHARE_KEY]: st.share });
   const when = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const shareObj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  /** 지운 과제의 묘비는 이만큼 둔다 — 다른 기기가 받아 지울 때까지(rerp 의 묘비 90일과 같다). */
+  const SHARE_TOMB_MS = 90 * 24 * 60 * 60 * 1000;
 
-  /** 예상 비용 공유 줄 — 켜짐·섹션 이름·노트북 고르기·마지막 결과. rerp/planui.js 가 읽는 화면 상태(planSync·myNames)도 여기서 맞춘다. */
-  function paintPlus() {
-    const q = st.note.plus;
-    el.plusOn.checked = q.on;
-    el.plusRow.classList.toggle('hidden', !q.on);
-    if (document.activeElement !== el.plusSection) el.plusSection.value = q.sectionName || 'RERP';
-    el.plusMsg.textContent = q.on ? (q.error || q.last) : '';
-    el.plusMsg.classList.toggle('error', !!(q.on && q.error));
-    st.pl.data.settings.planSync = q.on;
-    st.pl.data.myNames = [myName()].filter(Boolean);
+  /** 과제의 공유 열쇠(보고 있는 차년도의 rERP 로) — src/rndshare.js shareKeyOf. */
+  const keyOfProject = (p) => shareKeyOf(p, curYear(p));
+  /** 과제에 이어 둔 rERP(보고 있는 차년도, 없으면 이어 둔 가장 낮은 차년도) — 과제명·책임자는 R&D ERP 값이 이긴다(정본 ERP_FIELDS). */
+  function erpOfProject(p) {
+    const ys = p.years || {};
+    const n = curYear(p);
+    if (ys[n]?.erp?.prjNo) return ys[n].erp;
+    for (const k of Object.keys(ys).map(Number).sort((a, b) => a - b)) if (ys[k]?.erp?.prjNo) return ys[k].erp;
+    return null;
   }
-
-  /** 섹션을 둘 노트북을 고르게 한다 — RERP 섹션이 없거나 여러 노트북에 있을 때(rerp 팝업과 같은 흐름). */
-  function plusNotebookPick(notebooks) {
-    el.plusNotebook.innerHTML = `<option value="">(${st.note.plus.sectionName || 'RERP'} 섹션을 둘 노트북 고르기)</option>`
-      + notebooks.map((n) => `<option value="${escapeHtml(n.id)}"${n.id === st.note.plus.notebookId ? ' selected' : ''}>${escapeHtml(n.name || n.id)}</option>`).join('');
-    el.plusNotebook.classList.remove('hidden');
+  const shareProjectByKey = (key) => st.book.projects.find((p) => keyOfProject(p) === key) || null;
+  /** 연차 파일의 project 칸 — src/rndshare.js projectOf(wsId·code·calendar 를 모르는 칸으로 싣는다). */
+  const shareFileProject = (p) => shareProjectOf(p, curYear(p));
+  /** WORKSPACE 몫 칸(jobId·io·start·end·note·code·calendar …)의 지문 — ERP 칸·별칭은 뺀다. 마지막으로 맞춘 뒤 고쳤는지 보는 데 쓴다(병합의 localAt). */
+  function shareInfoHash(p) {
+    const o = { ...shareFileProject(p) };
+    for (const k of ['prjNo', 'prjNm', 'rspr', 'alias', 'aliasAt']) delete o[k];
+    return JSON.stringify(o);
   }
+  /** 그 차년도 예산 **계획** 줄(계획이 적힌 줄만 — 집행은 아니다)의 지문(src/rndshare.js budgetHash) — 마지막으로 맞춘 뒤 고쳤는지 본다. */
+  const shareBudgetHash = (p, n) => shareBudgetHashOf(p.years?.[n]);
+  /** 장부에서 공유로 가는 것의 지문 — 이것이 바뀌었을 때만 잠깐 뒤 맞춘다(shareSoon). */
+  const shareHashOf = (book) => JSON.stringify(book.projects.map((p) => [
+    keyOfProject(p), p.alias, shareInfoHash(p),
+    Object.entries(p.years || {}).map(([n, y]) => [n, shareBudgetHash(p, Number(n)), (y?.changes || []).map((c) => c.id)]),
+  ]));
 
-  async function onPlusToggle() {
-    const q = st.note.plus;
-    q.on = el.plusOn.checked;
-    q.error = '';
-    if (!q.on) q.last = '';
-    saveNote();
-    paintPlus();
-    paintNote();
-    paintErp();
-    logEvent('rnd', true, `R&D 예상 비용 원노트 공유 ${q.on ? '켬' : '끔'}`);
-    if (q.on) await findPlusSection();
-  }
-
-  /** 섹션 이름(기본 RERP)으로 섹션을 찾고 없으면 고른 노트북에 만든 뒤 바로 맞춘다. 노트북을 골라야 하면 드롭다운이 선다. */
-  async function findPlusSection() {
-    const q = st.note.plus;
-    q.sectionName = el.plusSection.value.trim() || 'RERP';
-    if (el.plusNotebook.value) {
-      q.notebookId = el.plusNotebook.value;
-      q.notebookLabel = el.plusNotebook.selectedOptions[0]?.textContent || '';
+  /**
+   * 과제 문맥(sharesync deps.context) — 과제명·책임자·내 과제(장부의 모든 과제 + 묘비)·폴더를 만들 수 있는 과제(leadPrjNos)·별칭·내 이름.
+   * 폴더는 정본 규칙대로 책임자(책임자 == 내 이름)거나 로컬 자료(별칭·예산 계획·변경이력·연구내용)가 있을 때 만드는데, rERP 에 이어지지 않은 과제는 이 장부만의 과제라(동료가 만들어 줄 폴더가 없다) 여기서 만들 수 있게 leadPrjNos 에 넣는다.
+   * 이어진 과제는 책임자가 아니고 자료도 없으면 책임자의 폴더가 "나와 공유"로 올 때까지 기다린다(noFolder — 오류 아님).
+   */
+  function shareContext() {
+    const names = {}, rsprs = {}, aliases = {}, myPrjNos = [], leadPrjNos = [];
+    for (const p of st.book.projects) {
+      const key = keyOfProject(p), info = shareFileProject(p), e = erpOfProject(p);
+      names[key] = e?.prjNm || info.prjNm || p.name;
+      rsprs[key] = e?.rspr || info.rspr || p.lead || '';
+      // 폴더 이름(정본 folderNameFor: 별칭 → Job Id → 과제번호)에만 쓰는 별칭 — 별칭이 없으면 과제명으로(열쇠가 장부 id 인 과제의 폴더가 뜻 모를 글자가 되지 않게). 파일의 project.alias 는 loadLocal 의 aliases(진짜 별칭)로 간다.
+      aliases[key] = p.alias || p.name;
+      myPrjNos.push(key);
+      if (!e || sameName(rsprs[key], myName())) leadPrjNos.push(key);
     }
-    q.error = '';
-    q.last = `${q.sectionName} 섹션을 찾는 중…`;
-    saveNote();
-    paintPlus();
-    const r = await plus.plusResolveSection();
-    if (r.ok) {
-      el.plusNotebook.classList.add('hidden');
-      q.last = `${r.section.name} 섹션: ${r.section.notebook || r.section.label}${r.section.created ? ' (새로 만듦)' : ''} · 맞추는 중…`;
-      saveNote();
-      paintPlus();
-      afterPlanSync(await plus.planSync('manual', {}));
-      return;
-    }
-    if (r.kind === 'notebook') {
-      plusNotebookPick(r.notebooks || []);
-      q.last = `${r.error} — 고른 뒤 다시 '섹션 찾기/만들기'`;
-    } else {
-      q.error = r.error || '섹션을 찾지 못했습니다';
-    }
-    saveNote();
-    paintPlus();
-    paintNote();
+    for (const [key, t] of Object.entries(shareTombs())) if (!shareProjectByKey(key)) { myPrjNos.push(key); names[key] = String(t.project?.prjNm || t.name || key); }
+    return { names, rsprs, myPrjNos, leadPrjNos, aliases, who: myName() };
+  }
+  /** 살아 있는 묘비(90일 안) — { [열쇠]: { at, project } }. */
+  function shareTombs() {
+    const out = {}, cut = Date.now() - SHARE_TOMB_MS;
+    for (const [key, t] of Object.entries(shareObj(st.share.del))) if (t && Number(t.at) > cut) out[key] = t;
+    return out;
+  }
+  /** 과제를 지웼다 — 공유가 켜져 있고 그 과제의 폴더를 알 때만(마지막 결과 pages 에 폴더가 있을 때) 묘비를 남겨 다음 맞춤에 파일 project.deletedAt 로 퍼뜨린다(다른 기기의 applyProject 가 받아 지운다). 맞춘 적 없는 과제는 남길 것이 없다. */
+  function shareTomb(p) {
+    const key = keyOfProject(p);
+    const pg = st.shareState?.pages?.[key];
+    if (!st.share.on || !pg || pg.noFolder || !pg.folder) return;
+    st.share.del = shareObj(st.share.del);
+    st.share.del[key] = { at: Date.now(), name: p.name, project: shareFileProject(p) };
+    st.shareDirty = true;
+    saveShare();
   }
 
-  function paintNote() {
-    const n = st.note;
-    const busy = st.noteBusy;
-    el.noteOn.checked = n.on;
-    // 다시 열면 섹션 목록은 아직 안 불러왔다 — 고른 섹션 하나는 이름으로 세워 둔다.
-    if (n.sectionId && ![...el.noteSection.options].some((o) => o.value === n.sectionId)) {
-      el.noteSection.add(Object.assign(document.createElement('option'), { value: n.sectionId, textContent: n.sectionLabel || n.sectionId }));
-    }
-    el.noteSection.value = n.sectionId;
-    el.noteSection.disabled = !n.on || busy;
-    el.noteSections.disabled = !n.on || busy;
-    // 지금 맞추기는 과제 정보(섹션을 골랐을 때)나 예상 비용(켰을 때) 어느 쪽이든 할 일이 있으면 된다.
-    el.noteSync.disabled = busy || !((n.on && n.sectionId) || n.plus.on);
-    el.noteOpen.classList.toggle('hidden', !n.on || !n.webUrl);
-    if (n.webUrl) el.noteOpen.href = n.webUrl;
-    const info = !n.on ? '' : busy ? '맞추는 중…' : n.error ? '못 맞춤' : !n.sectionId ? '섹션을 고르세요' : n.at ? `맞춤 ${when(n.at)}` : '켜짐';
-    const q = n.plus;
-    const plusInfo = !q.on ? '' : `예상 비용 ${q.error ? '못 맞춤' : /^맞춤/.test(q.last) ? q.last.split(' · ')[0] : '켜짐'}`;
-    el.noteState.textContent = [info, plusInfo].filter(Boolean).join(' · ') || '꺼짐';
-    el.noteMsg.textContent = n.on ? n.error || n.last : '';
-    el.noteMsg.classList.toggle('error', !!n.error);
-    paintSet();
-  }
-
-  async function onNoteToggle() {
-    st.note.on = el.noteOn.checked;
-    st.note.error = '';
-    saveNote();
-    paintNote();
-    logEvent('rnd', true, `R&D 원노트 공유 ${st.note.on ? '켬' : '끔'}`);
-    if (!st.note.on) return;
-    if (st.note.sectionId) await noteSync('켬');
-    else await loadSections();
-  }
-
-  /** 내 노트북들의 섹션을 불러와 고르게 한다 — 다른 기기에서도 같은 섹션을 고르면 같은 페이지를 쓴다. */
-  async function loadSections() {
-    st.noteBusy = true;
-    paintNote();
-    try {
-      const list = await listSections(await openNote());
-      el.noteSection.innerHTML = `<option value="">섹션 고르기 — ${list.length}개</option>`
-        + list.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label)}</option>`).join('');
-      st.note.error = '';
-      st.note.last = list.length ? '과제 정보를 둘 섹션을 고르세요 — 다른 기기에서도 같은 노트북의 같은 섹션을 고릅니다.' : '섹션이 없습니다 — OneNote 에서 섹션을 하나 만들고 다시 불러오세요.';
-    } catch (err) {
-      st.note.error = String(err?.message || err);
-    } finally {
-      st.noteBusy = false;
-      saveNote();
-      paintNote();
-    }
-  }
-
-  /** 섹션을 고르면 그 섹션의 페이지와 처음부터 맞춘다(지난 지문·묘비는 다른 페이지의 것이라 버린다). */
-  async function onNoteSection() {
-    const opt = el.noteSection.selectedOptions[0];
-    Object.assign(st.note, { sectionId: el.noteSection.value, sectionLabel: el.noteSection.value ? opt?.textContent || '' : '', pageId: '', webUrl: '', memo: {}, del: {}, at: 0, error: '', last: '' });
-    saveNote();
-    paintNote();
-    if (st.note.sectionId) await noteSync('섹션 고름');
-  }
-
-  /** 과제 정보를 고쳤으면(지난번에 맞춘 지문과 다르면) 잠깐 뒤 맞춘다. */
-  let noteTimer = null;
-  function noteSoon() {
-    if (!st.note.on || !st.note.sectionId || bookHash(st.book) === st.noteHash) return;
-    clearTimeout(noteTimer);
-    noteTimer = setTimeout(() => noteSync('고침'), NOTE_WAIT_MS);
-  }
-
-  /** 원노트에서 받은 것을 장부에 — 원노트 id 로 바꾸기 · 고침 · 더함 · 지움. 차년도 내용(예산·기록 …)은 건드리지 않는다. */
-  function applyNote(res) {
-    const b = st.book;
-    for (const [from, to] of res.renames) {
-      const p = projectOf(b, from);
-      if (!p) continue;
-      p.id = to;
-      if (b.current.project === from) b.current.project = to;
-      if (from in b.current.year) {
-        b.current.year[to] = b.current.year[from];
-        delete b.current.year[from];
+  /**
+   * prjdoc-sync 의 loadLocal — 장부·예상 비용 저장소·연구내용 기록을 kr_ext_rerp 의 로컬 모양으로(변환은 src/rndshare.js):
+   *   plan { plans, del }(rerp/plan.js 저장 키 그대로) · research(researchPlans 맵 — 기록마다 어느 과제 것인지 prjNo 를 열쇠로 채워 준다, 저장분은 그대로) · staff { plans, del }(참여연구원 계획은 안 하지만
+   *   **예산 계획 줄은 최소 계획 항목(localPlanOf)의 budget 으로 간다** — rerp prjdoc.fromLocalYear 가 거기서 읽는다) · aliases/aliasesAt · changes('열쇠@차년도' → 파일 모양 줄들) ·
+   *   projects { [열쇠]: localProjectOf(project 칸 + anl·stDt·endDt + at(병합 기준 — 머리 주석)) }, 지운 과제는 묘비(deletedAt).
+   */
+  async function shareLoadLocal() {
+    const s = await chrome.storage.local.get([PLAN.KEY, PLAN.DKEY]);
+    st.share.memo = shareObj(st.share.memo);
+    const memo = st.share.memo, now = Date.now(), who = myName();
+    const projects = {}, aliases = {}, aliasesAt = {}, changes = {}, plans = {};
+    for (const p of st.book.projects) {
+      const key = keyOfProject(p), hash = shareInfoHash(p);
+      const m = shareObj(memo[key]);
+      if (!memo[key]) memo[key] = { id: p.id, at: 0, hash };                       // 처음 — 파일 쪽이 기준(다른 기기의 장부가 들어온다)
+      else if (m.hash !== hash) Object.assign(memo[key], { hash, at: now });      // 마지막으로 맞춘 뒤 이 기기에서 고침 — 로컬이 이긴다
+      projects[key] = localProjectOf(p, curYear(p), { at: Number(memo[key].at) || 0, today: today() });
+      if (p.alias) { aliases[key] = p.alias; if (p.aliasAt) aliasesAt[key] = p.aliasAt; }
+      for (const [k, y] of Object.entries(p.years || {})) {
+        const n = Number(k);
+        if (!(n >= 1) || !y) continue;
+        const yk = `${key}@${n}`;
+        const part = shareYearOf(p, n, { key, by: who });
+        if (part.changes.length) changes[yk] = part.changes;
+        if (!part.budget.length) continue;
+        const h = shareBudgetHash(p, n), bm = shareObj(memo[yk]);
+        if (!memo[yk]) memo[yk] = { h, at: Date.parse(y.snapshot?.date || '') || 0 };   // 처음 — 계획서 스냅샷 날짜가 이 계획의 시각
+        else if (bm.h !== h) Object.assign(memo[yk], { h, at: now });                  // 이 기기에서 고침
+        const plan = localPlanOf(p, n, key, { at: Number(memo[yk].at) || 0, by: who });
+        if (plan) plans[yk] = plan;
       }
     }
-    const info = new Map(res.projects.map((p) => [p.id, p]));
-    for (const id of res.updated) {
-      const p = projectOf(b, id);
-      if (p) for (const k of INFO_KEYS) p[k] = info.get(id)[k];
+    for (const [key, t] of Object.entries(shareTombs())) {   // 지운 과제 — 파일 project 칸에 deletedAt 을 퍼뜨린다(모르는 칸이라 로컬 것이 실린다)
+      if (shareProjectByKey(key)) continue;
+      const tp = shareObj(t.project);
+      projects[key] = Object.assign({}, tp, { prjNo: key, deletedAt: Number(t.at) || now, anl: 0, stDt: '', endDt: '', at: Number(t.at) || now });
+      // 지웠을 때의 별칭도 그대로 — 파일의 별칭과 같아야 '별칭이 바뀌었다' 고 되돌아오지 않는다(되돌아오면 지운 과제의 열쇠로 별칭만 든 payload 가 saveLocal 에 온다, 2026-10-19 검토)
+      if (tp.alias) { aliases[key] = String(tp.alias); if (Number(tp.aliasAt) > 0) aliasesAt[key] = Number(tp.aliasAt); }
     }
-    for (const id of res.added) b.projects.push(normalizeProject({ ...info.get(id), years: {} }));
-    b.projects = b.projects.filter((p) => !res.removed.includes(p.id));
-    for (const id of res.removed) delete b.current.year[id];
-    st.book = normalizeBook(b);
-    if (st.editing && st.editing !== 'new' && !projectOf(st.book, st.editing)) {
-      st.editing = null;
-      el.form.classList.add('hidden');
+    const research = Object.assign({}, shareObj(await RS.load()));
+    for (const p of st.book.projects) Object.assign(research, shareResearchOf(research, p, keyOfProject(p)));
+    return { plan: { plans: shareObj(s?.[PLAN.KEY]), del: shareObj(s?.[PLAN.DKEY]) }, research, staff: { plans, del: {} }, aliases, aliasesAt, changes, projects };
+  }
+
+  /**
+   * prjdoc-sync 의 saveLocal(part, prj, data) — 받은 칸을 장부(변환은 src/rndshare.js applyYear·applyProject)·저장소에. 모양은 rerp background.js 처럼 느슨하게 받는다.
+   *   plan → rerp/plan.js 저장(그 과제 몫만) · research → researchPlans(그 과제 몫 갈아 넣기, 다른 과제에 이어 둔 기록은 글만) · staff → 안 한다 ·
+   *   budget → 그 차년도 장부 줄의 **계획**만(applyYear — 이름으로 맞추고, 없는 비목은 줄을 더하며, 파일에 없는 줄의 계획은 비운다: 줄 전체가 한 덩이) · changes → 그 차년도 변경이력(이미 합집합) ·
+   *   alias → 별칭(applyProject — 다른 과제와 겹치면 '-2' 로 비켜 가고 그 시각을 지금으로 해 파일에도 가게) · project → applyProject(WORKSPACE 몫 칸 — jobId·io·start·end·note·…, deletedAt 이면 지움, wsId 로 장부 id 맞춤).
+   * 장부를 고치면 다시 그리고 저장한다 — 그동안 shareSoon 은 막는다(되돌이 방지).
+   * 2026-10-19 검토로 더한 규칙:
+   *   · 지운 과제의 열쇠(묘비 — shareTombs)로 온 것은 어느 칸이든 받지 않는다 — 묘비는 deletedAt 을 퍼뜨리러 대상에 들 뿐, 별칭·예산·변경이력이 되돌아와 빈 과제를 되살리면 안 된다.
+   *   · 장부에 없는 열쇠의 alias 는 받아 두고(shareAliasWait) project 칸이 오면 함께 넣는다(applyProject 는 별칭만으로 과제를 만들지 않는다) — 동료 폴더에서 처음 받는 과제의 이름이 별칭이 되게.
+   *   · 처음 받는 과제(memo[열쇠].at 이 0)의 project 칸에서 파일 값이 '' 인데 장부에 값이 있는 WORKSPACE 몫 칸(Job Id·I/O·연구기간·비고·과제번호)은 지우지 않고 둔다 — rerp(책임자)가 먼저 만든 파일은 그 칸이 다 비어 있어
+   *     "파일 쪽이 기준" 규칙대로면 장부 값을 지웠다. 둔 칸은 그 시각을 지금으로 적어 맞춘 뒤 한 번 더 돌 때(shareRepush) 파일로 올라간다. 같은 사람의 다른 WORKSPACE 기기가 적은 값(비어 있지 않은 것)은 그대로 받는다.
+   *   · 묘비로 과제를 지웠으면 그 열쇠에 이어 둔 연구내용 기록의 연결(prjNo …)을 끊는다 — 남아 있으면 그 열쇠가 매번 대상이 되어 만들고 지우기를 되풀이했다.
+   */
+  const SHARE_WS_FIELDS = Object.freeze({ jobId: 'job', io: 'io', start: 'start', end: 'end', note: 'note', code: 'code' });   // 파일 project 칸 → 장부 칸(WORKSPACE 몫)
+  async function shareSaveLocal(part, prj, data) {
+    prj = String(prj || '');
+    const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+    if (shareTombs()[prj] && !shareProjectByKey(prj)) return;   // 지운 과제의 열쇠 — 받을 것이 없다(묘비만 퍼뜨린다)
+    if (part === 'plan') {
+      const d = shareObj(data);
+      let plans = shareObj(d.plans);
+      if (!Object.keys(plans).length && Array.isArray(d.items)) plans = KRX_PLAN_SYNC.unflatten(d.items.map((it) => Object.assign({ prj }, it)));
+      if (Object.values(plans).some(Array.isArray)) plans = { [prj]: plans };   // 이 과제 몫({ key: [항목] })이 왔다
+      let del = shareObj(d.del);
+      if (!Object.values(del).some(isObj)) {   // 이 과제 몫 숫자 맵 → 전체 묘비 맵에 되돌려 넣기(다른 과제의 묘비는 그대로)
+        const cur = shareObj((await chrome.storage.local.get(PLAN.DKEY))?.[PLAN.DKEY]);
+        del = KRX_PLAN_SYNC.putBack({ plans: {}, del: cur }, prj, [], del).del;
+      }
+      await PLAN.save(plans, del, prj);
+      st.pl.plans = await PLAN.load();
+      return;
+    }
+    if (part === 'research') {
+      const map = await RS.load();
+      const names = shareContext().names;
+      let recs = Array.isArray(data) ? data : isObj(data) && Array.isArray(data.recs) ? data.recs : null;
+      if (!recs && isObj(data)) recs = Object.values(data).filter((r) => r && r.prjNo === prj);
+      for (const [id, rec] of Object.entries(map)) if (rec && rec.prjNo === prj) delete map[id];
+      for (const rec of recs || []) if (rec && rec.id) map[rec.id] = Object.assign({}, rec, rec.prjNo ? {} : { prjNo: prj, prjNm: rec.prjNm || names[prj] || '', linkBy: rec.linkBy || 'auto' });
+      for (const [id, rec] of Object.entries(shareObj(isObj(data) ? data.others : null))) {
+        const cur = map[id];
+        if (!rec?.id || !cur?.prjNo || cur.prjNo === prj) continue;
+        const keep = {};
+        for (const k of ['prjNo', 'prjNm', 'linkBy', 'src']) if (cur[k] !== undefined) keep[k] = cur[k];
+        map[id] = Object.assign({}, rec, keep);
+      }
+      await RS.save(map);
+      return;
+    }
+    if (part === 'staff') return;   // 참여연구원 계획은 rERP 에서 읽는다(2026-10-18 저녁) — 받지도 올리지도 않는다
+    st.shareApplying = true;
+    try {
+      st.share.memo = shareObj(st.share.memo);
+      // 열쇠로 못 찾으면(이은 뒤 열쇠가 바뀐 과제 등) 받은 project 칸으로 맞춘다 — src/rndshare.js matchProject(wsId → prjNo → code → name).
+      let p = shareProjectByKey(prj);
+      if (!p && isObj(data)) { try { p = shareMatchProject(st.book, { project: Object.assign({ prjNo: prj }, data) }) || null; } catch { p = null; } }
+      let touched = false;
+      if (part === 'budget' || part === 'changes') {
+        if (!p || !isObj(data) && !Array.isArray(data)) return;
+        const n = Number(String((isObj(data) ? data.year : '') ?? '').split('@').pop()) || 0;
+        if (!(n >= 1)) return;
+        const r = shareApplyYear(p, n, part, data);
+        if (r.changed) {
+          st.book.projects[st.book.projects.indexOf(p)] = r.project;
+          touched = true;
+        }
+        if (part === 'budget') st.share.memo[`${prj}@${n}`] = { h: shareBudgetHash(r.project, n), at: Number(data.at) || Date.now() };   // 받은 줄의 at — 다음 맞춤에 같은 내용을 다시 쓰지 않게
+      } else if (part === 'alias' || part === 'project') {
+        let fields = part === 'alias'
+          ? (isObj(data) ? { alias: String(data.alias ?? ''), aliasAt: Number(data.aliasAt) || 0 } : { alias: String(data ?? ''), aliasAt: Date.now() })
+          : (isObj(data) ? { ...data } : null);
+        if (!fields) return;
+        if (!p && part === 'alias') { st.shareAliasWait[prj] = fields; return; }   // 어느 과제인지 아직 모른다 — project 칸이 오면 함께(applyProject 는 별칭만으로 만들지 않는다)
+        if (!p && st.shareAliasWait[prj]) { fields = { ...st.shareAliasWait[prj], ...fields }; delete st.shareAliasWait[prj]; }
+        // 처음 받는 과제 — 파일에 비어 있는 WORKSPACE 몫 칸은 장부 값을 두고(rerp 가 먼저 만든 파일), 그 값이 다음 맞춤에 올라가게 시각을 지금으로
+        let kept = 0;
+        if (p && part === 'project' && st.share.memo[prj] && Number(st.share.memo[prj].at) === 0) {
+          for (const [k, f] of Object.entries(SHARE_WS_FIELDS)) if (fields[k] === '' && p[f]) { delete fields[k]; kept++; }
+        }
+        const r = shareApplyProject(st.book, prj, fields, st.share.memo, { now: Date.now() });
+        if (r && r.book) {
+          st.book = r.book;
+          st.share.memo = shareObj(r.memo);
+          touched = r.created || r.removed || !!r.renamed || r.changed.length > 0;
+          if (r.aliasFixed) logEvent('rnd', true, `R&D 과제 별칭(공유에서 받음 — 겹쳐 비켜 감): ${r.alias}`);
+          if (r.removed) {
+            logEvent('rnd', true, `R&D 과제 지움(공유에서 받음 — 다른 기기가 지웠다): ${prj}`);
+            await shareUnlinkResearch(prj);   // 이 열쇠에 이어 둔 기록을 끊는다 — 남으면 다음 맞춤마다 이 열쇠가 대상이 된다
+          }
+          const q = r.id ? projectOf(st.book, r.id) : null;
+          if (q) st.share.memo[prj] = Object.assign({}, shareObj(st.share.memo[prj]), { hash: shareInfoHash(q) });   // 받은 뒤의 지문 — 이것과 다르면 이 기기에서 고친 것
+          if (q && kept) {
+            st.share.memo[prj].at = Date.now();   // 둔 칸은 이 기기가 주인 — 파일(updatedAt 이 이보다 앞)을 이긴다
+            st.shareRepush = true;                // 이번 쓰기는 병합 결과(빈 값)로 나갔으니 한 번 더 돌아 올린다(afterShareSync)
+            logEvent('rnd', true, `R&D 공유 처음 받기(${prj}): 파일에 비어 있는 칸 ${kept}개는 장부 값을 두고 다음 맞춤에 올린다`);
+          }
+        }
+      } else {
+        throw new Error(`모르는 저장 칸: ${part}`);
+      }
+      if (!touched) return;
+      st.book = normalizeBook(st.book);
+      if (st.editing && st.editing !== 'new' && !projectOf(st.book, st.editing)) { st.editing = null; el.form.classList.add('hidden'); }
+      paintAll();
+      save();   // shareSoon 은 shareApplying 동안 막힌다 — 맞춘 뒤의 지문은 afterShareSync 가 적는다
+    } finally {
+      st.shareApplying = false;
     }
   }
 
   /**
-   * 원노트의 과제 정보 페이지와 맞춘다 — 찾고(없으면 만들고) 읽어 syncInfo 로 맞춘 뒤, 장부에 받고 달라졌으면 페이지에 쓴다.
-   * 한 번에 하나만 돈다(도는 중에 들어온 요청은 끝난 뒤 한 번 더). 던지지 않는다 — 까닭은 칸에 보인다.
+   * rERP 에 이어 공유 열쇠가 바뀐 과제(장부 id·Job Id → rERP 과제번호)의 폴더를 이어 쓴다(2026-10-19 검토) — 공유가 켜져 있고 옛 열쇠로 맞춘 폴더(shareIndex)를 알면 그 폴더의 연차 파일(·예상비용.json)의
+   * project.prjNo 를 새 열쇠로 고쳐 쓰고, 폴더 색인·맞춘 기억(memo — 열쇠·열쇠@n)·마지막 결과(pages)를 새 열쇠로 옮긴다. 안 하면 prjdocsync 가 파일 안의 prjNo(옛 열쇠)로 폴더를 옛 과제 것으로 보아
+   * 새 열쇠에 '<약칭>-<과제번호>' 폴더를 따로 만들었다(옛 폴더는 버려지고 동료 rerp 가 보는 폴더와도 어긋남). 새 열쇠에 이미 폴더가 있으면(책임자·동료가 먼저 만든 rERP 과제 폴더) 옛 폴더는 건드리지 않는다 — 그 폴더를 쓰고 로컬 자료는 거기로 올라간다.
+   * 다른 WORKSPACE 기기에 같은 과제가 이어지지 않은 채 있으면 그 기기는 그 과제도 rERP 에 이어야 같은 폴더를 쓴다(그때까지는 제 열쇠로 폴더를 하나 더 만든다 — 이어지지 않은 과제는 이 장부만의 것이라 그렇다).
+   * 도는 중인 맞춤이 있으면 끝날 때까지(최대 20초) 기다리고, 그동안·고쳐 쓰는 동안 shareSoon 은 막는다(shareApplying).
    */
-  function noteSync(reason = '') {
-    if (!st.note.on || !st.note.sectionId) return Promise.resolve(false);
-    clearTimeout(noteTimer);
-    if (st.noteRun) {
-      st.noteAgain = true;
-      return st.noteRun;
-    }
-    st.noteRun = (async () => {
-      st.noteBusy = true;
-      paintNote();
-      let ok = false;
+  async function shareRekey(p, oldKey) {
+    const newKey = keyOfProject(p);
+    if (!p || !oldKey || oldKey === newKey || !st.share.on) return false;
+    for (let i = 0; i < 100 && st.shareBusy; i++) await new Promise((r) => setTimeout(r, 200));
+    const was = st.shareApplying;
+    st.shareApplying = true;
+    try {
+      const index = shareObj((await chrome.storage.local.get('shareIndex'))?.shareIndex);
+      const e = index[oldKey];
+      if (!e || !e.folder) return false;   // 옛 열쇠로 맞춘 폴더가 없다 — 다음 맞춤이 새 열쇠로 만든다
+      if (index[newKey]?.folder) { logEvent('rnd', true, `R&D 공유: ${label(p)} 의 rERP 과제 ${newKey} 폴더(${index[newKey].folder})가 이미 있어 옛 폴더 ${e.folder} 는 두고 그것을 씁니다`); return false; }
+      const cfg = await share.shareProjectCfg(oldKey, { folder: String(st.share.folder || ''), driveHost: SHARE_DRIVE_HOST }, index);
+      if (!cfg) return false;
+      const names = ((await SPX.listFiles(cfg, spIo())) || []).map((f) => String(f?.name || '')).filter((nm) => KRX_PRJDOC.isYearName(nm) || KRX_PRJDOC.isPlanName(nm));
+      const erp = erpOfProject(p);
+      const w = await SPX.openWriter(cfg, spIo());
+      let n = 0;
       try {
-        const nc = await openNote();
-        const sectionId = st.note.sectionId;
-        let page = st.note.pageId ? { pageId: st.note.pageId, webUrl: st.note.webUrl } : await findPage(nc, sectionId);
-        let html = '';
-        if (page) {
-          try {
-            html = await readPage(nc, page.pageId);
-          } catch (err) {
-            // 기억해 둔 페이지가 지워졌거나 옮겨졌을 수 있다 — 섹션에서 다시 찾는다.
-            if (!st.note.pageId) throw err;
-            page = await findPage(nc, sectionId);
-            html = page ? await readPage(nc, page.pageId) : '';
-          }
+        for (const name of names) {
+          const r = await w.modify(name, (cur) => {
+            const parsed = cur == null ? null : KRX_PRJDOC.parse(cur, { year: KRX_PRJDOC.isYearName(name) });
+            if (!parsed) return { changed: false };
+            const prjNo = String(parsed.doc.project.prjNo || '');
+            if (prjNo && prjNo !== oldKey) return { changed: false };   // 남의 과제 파일 — 건드리지 않는다
+            parsed.doc.project.prjNo = newKey;
+            if (parsed.kind === 'year' && erp) { if (erp.prjNm) parsed.doc.project.prjNm = erp.prjNm; if (erp.rspr) parsed.doc.project.rspr = erp.rspr; }
+            return { changed: true, text: KRX_PRJDOC.serialize(parsed.doc) };
+          }, { comment: `KRS WORKSPACE rERP 잇기 ${myName() ? `· ${myName()} ` : ''}${new Date().toISOString()}` });
+          if (r?.changed) n++;
         }
-        const block = html ? findBlock(html) : null;
-        const remote = (block && readBlock(block.inner)) || { projects: [], del: {} };
-        const res = syncInfo(st.book.projects, remote, { memo: st.note.memo, del: st.note.del, now: Date.now() });
-        const local = res.renames.length + res.added.length + res.updated.length + res.removed.length;
-        if (local) {
-          applyNote(res);
-          paintAll();
-        }
-        st.noteHash = bookHash(st.book);
-        if (local) save();
-        const out = blockHtml(res.page);
-        if (!page) page = await createPage(nc, sectionId, out);
-        else if (res.push || !block) await writeBlock(nc, page.pageId, out, block);
-        const parts = [
-          res.added.length ? `원노트에서 더함 ${res.added.length}` : '', res.updated.length ? `받아 고침 ${res.updated.length}` : '',
-          res.removed.length ? `지움 ${res.removed.length}` : '', res.renames.length ? `같은 과제 묶음 ${res.renames.length}` : '',
-          res.push || !block ? '원노트에 씀' : '',
-        ].filter(Boolean);
-        const msg = `맞췄습니다 — ${parts.join(' · ') || '달라진 것 없음'} (과제 ${res.projects.length}개)`;
-        Object.assign(st.note, { pageId: page.pageId, webUrl: page.webUrl || st.note.webUrl, memo: res.memo, del: res.del, at: Date.now(), error: '', last: msg });
-        logEvent('rnd', true, `R&D 원노트 맞춤(${reason}): ${parts.join(' · ') || '같음'}`);
-        ok = true;
-      } catch (err) {
-        st.note.error = `원노트와 맞추지 못했습니다 — ${String(err?.message || err)}`;
-        logEvent('rnd', false, `R&D 원노트 맞추기 실패(${reason}): ${String(err?.message || err)}`);
-      } finally {
-        st.noteBusy = false;
-        st.noteRun = null;
-        saveNote();
-        paintNote();
+      } finally { try { await w.close(); } catch { /* 이미 닫힘 */ } }
+      index[newKey] = Object.assign({}, e, { at: Date.now() });
+      delete index[oldKey];
+      await chrome.storage.local.set({ shareIndex: index });
+      const memo = st.share.memo = shareObj(st.share.memo);
+      for (const k of Object.keys(memo)) {
+        if (k !== oldKey && !k.startsWith(`${oldKey}@`)) continue;
+        const nk = newKey + k.slice(oldKey.length);
+        if (!memo[nk]) memo[nk] = memo[k];
+        delete memo[k];
       }
-      if (st.noteAgain) {
-        st.noteAgain = false;
-        return noteSync('다시');
-      }
-      return ok;
-    })();
-    return st.noteRun;
+      const pages = st.shareState?.pages;
+      if (pages && pages[oldKey]) { pages[newKey] = Object.assign({}, pages[oldKey], { prjNo: newKey }); delete pages[oldKey]; }
+      saveShare();
+      logEvent('rnd', true, `R&D 공유 폴더 이어 쓰기: ${e.folder} (${oldKey} → ${newKey}, 파일 ${n}개)`);
+      return true;
+    } catch (err) {
+      logEvent('rnd', false, `R&D 공유 폴더 이어 쓰기 실패(${oldKey} → ${newKey}): ${String(err?.message || err)}`);
+      return false;
+    } finally {
+      st.shareApplying = was;
+    }
   }
 
-  /* ---------------------------------------------------------- 연구내용 원노트 공유 */
-
-  // 2026-10-14 사용자 지정 — "workplace 에 기입한 것을 rerp 에 원노트 주소 링크만 공유하면 동기화". 연구개발계획서 YAML 을 넣을 때 rerp 와 같은 기록(rerp/research.js —
-  // chrome.storage 의 researchPlans, 과제명#차년도)으로도 남기고, 원노트 칸의 "연구내용 올리기"가 보고 있는 과제의 기록들을 「[연구내용] 과제명」 페이지 한 장(rerp/researchsync.js —
-  // 표 하나 + krxres1: base64 JSON)에 올린 뒤 링크(웹 링크 + 페이지 ID)를 복사한다. kr_ext_rerp 설정의 연구개발계획서 칸에 그 링크를 붙여 넣으면 받아 가고(rerp background.js researchPull),
-  // 그 뒤로 여기서 계획서를 다시 넣으면 페이지를 저절로 고쳐 rerp 가 다음 받기 때 맞춘다. 섹션은 예상 비용과 같은 RERP(rerp/plussync.js plusResolveSection — 원노트 칸의 섹션 이름·노트북),
-  // 그 섹션을 못 정하면(노트북을 골라야 함) 과제 정보 섹션. 올린 페이지는 chrome.storage 의 researchShare = { [과제명 키]: { pageId, webUrl, title, name, at } }.
-  const RES_SHARE_KEY = 'researchShare';
-  const resKey = (p) => RS.normName(p?.name);
-  const codeKey = (s) => String(s || '').replace(/\s/g, '').toLowerCase();
-
-  /** 이 과제의 연구개발계획서 기록들(차년도 차례) — 과제명이나 과제번호가 같은 것. */
-  async function researchOf(p) {
-    const map = await RS.load();
-    const k = resKey(p), code = codeKey(p.code);
-    return Object.values(map).filter((r) => r && (RS.normName(r.name) === k || (code && codeKey(r.code) === code))).sort((a, b) => a.n - b.n);
+  /** 그 열쇠에 이어 둔 연구내용 기록(researchPlans)의 연결 칸(prjNo·prjNm·linkBy·src)을 끊는다 — 과제를 지운 뒤(묘비를 받았거나 여기서 지웠거나). 기록은 남는다(같은 이름의 과제가 다시 생기면 researchOf 가 이름으로 다시 잇는다). */
+  async function shareUnlinkResearch(prj) {
+    let map;
+    try { map = await RS.load(); } catch { return 0; }
+    let n = 0;
+    for (const [id, rec] of Object.entries(shareObj(map))) {
+      if (!rec || rec.prjNo !== prj) continue;
+      const o = { ...rec };
+      for (const k of ['prjNo', 'prjNm', 'linkBy', 'src']) delete o[k];
+      map[id] = o;
+      n++;
+    }
+    if (n) await RS.save(map);
+    return n;
   }
 
-  /** YAML 에서 읽은 기록들을 저장하고, 원노트에 올린 적이 있는 과제들을 돌려준다(다시 올릴 것). 더 오래된 판은 RS.put 이 건너뛴다. */
+  /** 폴더를 새로 만들 때 공유할 참여연구원 이름(내 이름은 sharesync 가 뺀다) — 이어진 rERP 참여인력(받아 둔 것, 없으면 지금 조회), 없으면 계획서의 참여연구자. */
+  async function shareParticipants(prjNo) {
+    const p = shareProjectByKey(String(prjNo || ''));
+    if (!p) return [];
+    const out = new Set();
+    const add = (name) => { const s = String(name || '').trim(); if (s) out.add(s); };
+    for (const y of Object.values(p.years || {})) for (const x of y?.erp?.staff?.people || []) add(x?.name);
+    const e = shareFileProject(p);
+    if (!out.size && e.prjNo && st.set.erp) {
+      try { for (const r of await fetchParticipants(erp, e.prjNo)) add(r?.name || r?.EMP_NM); } catch { /* 로그인이 풀렸으면 계획서의 참여연구자로 */ }
+    }
+    if (!out.size) for (const y of Object.values(p.years || {})) for (const x of parseRoster(fileLog(y, 'roster')?.text) || []) add(x.name);
+    return [...out];
+  }
+
+  /** 공유 카드 — 켜짐 · 공유 폴더 칸 · 상태 줄("꺼짐" / "맞춤 MM.DD HH:MM · 과제 n개" / 오류 — 로그인 필요면 "OneDrive 에 로그인하세요" + 폴더 열기) · 알림 줄 · 단추. rerp/planui.js 가 읽는 화면 상태(planSync·myNames)도 여기서 맞춘다. */
+  function paintShare() {
+    const q = st.share, s = st.shareState;
+    el.shareOn.checked = !!q.on;
+    if (document.activeElement !== el.shareFolder) el.shareFolder.value = q.folder || '';
+    el.shareFolder.disabled = st.shareBusy;
+    if (el.shareWith) { el.shareWith.checked = q.shareWith !== 'none'; el.shareWith.disabled = st.shareBusy || !q.on; }
+    el.shareSync.disabled = st.shareBusy || !q.on;
+    el.shareLink.disabled = st.shareBusy || !q.on;
+    const auth = !!q.error && st.shareKind === 'auth';
+    const count = s && Number.isFinite(Number(s.count)) ? Number(s.count) : null;
+    el.shareState.textContent = !q.on ? '꺼짐' : st.shareBusy ? '맞추는 중…' : q.error ? (auth ? 'OneDrive 에 로그인하세요' : '못 맞춤') : q.at ? `맞춤 ${when(q.at)}${count != null ? ` · 과제 ${count}개` : ''}` : '켜짐';
+    const note = st.shareNote;
+    el.shareMsg.textContent = q.on ? String(note?.text || q.error || q.last || '') : '';
+    el.shareMsg.classList.toggle('error', !!(q.on && (note ? note.error : q.error)));
+    // 폴더 열기(단추 — 누르면 새 탭) — 보고 있는 과제의 폴더(알면), 아니면 밑폴더(viewUrl), 아니면 OneDrive(로그인하러)
+    const p = cur();
+    const pg = p && s?.pages ? s.pages[keyOfProject(p)] : null;
+    el.shareOpen.dataset.url = pg?.folderUrl || s?.base?.viewUrl || `${SHARE_DRIVE_HOST}/`;
+    el.shareOpen.textContent = auth ? 'OneDrive 열기' : pg?.folderUrl ? `폴더 열기 — ${pg.folder || label(p)}` : '공유 폴더 열기';
+    el.shareOpen.disabled = !q.on && !auth;
+    st.pl.data.settings.planSync = !!q.on;
+    st.pl.data.myNames = [myName()].filter(Boolean);
+  }
+
+  /** [폴더 열기] — 새 탭으로(사이드패널은 chrome.tabs, 검사에서는 window.open). */
+  function openShareFolder() {
+    const url = el.shareOpen.dataset.url;
+    if (!url) return;
+    try { if (globalThis.chrome?.tabs?.create) { chrome.tabs.create({ url }); return; } } catch { /* 아래로 */ }
+    window.open(url, '_blank', 'noopener');
+  }
+
+  async function onShareToggle() {
+    st.share.on = el.shareOn.checked;
+    st.share.error = '';
+    st.shareKind = '';
+    st.shareNote = null;
+    if (!st.share.on) { st.share.last = ''; clearTimeout(shareTimer); }
+    saveShare();
+    paintShare();
+    paintSet();
+    paintErp();
+    logEvent('rnd', true, `R&D 공유 (SharePoint) ${st.share.on ? '켬' : '끔'}`);
+    if (st.share.on) await runShare('켬');
+  }
+
+  /**
+   * 공유 폴더 칸을 고치면 — 다른 폴더면 지난 지문(memo)은 다른 파일의 것이라 버리고, 과제 → 폴더 캐시(shareIndex)와 밑폴더 캐시(shareFolder)도 지운 뒤 켜져 있으면 바로 맞춘다.
+   * shareIndex 를 두면 prjdocsync 가 옛 밑폴더의 과제 폴더를 "색인에 있는 동료 폴더(base 밖)" 로 믿어 이미 맞춘 과제는 계속 옛 자리에 쓰고 새 주소는 새 과제에만 쓰였다(2026-10-19 검토 — 사용자 "workspace 에도 경로주면 알아서 동기화").
+   * 마지막 결과(shareState — 과제별 폴더 주소)도 옛 자리 것이라 화면에서 비운다(저장소의 것은 다음 맞춤이 갈아 쓴다).
+   */
+  async function onShareFolder() {
+    const v = el.shareFolder.value.trim().slice(0, 2000);
+    if (v === String(st.share.folder || '')) return;
+    Object.assign(st.share, { folder: v, error: '', at: 0, memo: {} });
+    st.shareKind = '';
+    st.shareNote = null;
+    st.shareState = null;
+    try { await chrome.storage.local.remove(['shareIndex', 'shareFolder']); } catch { /* 캐시가 없거나 못 지웠다 — 다음 맞춤이 다시 훑는다 */ }
+    saveShare();
+    paintShare();
+    logEvent('rnd', true, `R&D 공유 폴더: ${v || '(비움 — 내 OneDrive 문서/업무/shared)'}`);
+    if (st.share.on) await runShare('폴더');
+  }
+
+  /** 장부를 고쳤으면(지난번에 맞춘 지문과 다르면) 잠깐 뒤 맞춘다 — 받은 것을 들이는 중(shareApplying)에는 아니다. */
+  let shareTimer = null;
+  function shareSoon() {
+    if (!st.share.on || st.shareApplying) return;
+    if (!st.shareDirty && shareHashOf(st.book) === st.shareHash) return;
+    clearTimeout(shareTimer);
+    shareTimer = setTimeout(() => runShare('고침'), NOTE_WAIT_MS);
+  }
+
+  /** 까닭 → sharesync 의 reason: 열 때는 load(1분 안 재실행 안 함), 고침은 edit(도는 중이면 끝난 뒤 한 번 더), 그 밖은 manual. */
+  const SHARE_REASON = Object.freeze({ '열 때': 'load', '고침': 'edit' });
+  /** 공유 폴더와 맞춘다(한 번에 하나 — sharesync 가 모은다). 던지지 않는다 — 까닭은 칸에 보인다. */
+  function runShare(reason = '지금 맞추기') {
+    if (!st.share.on) return Promise.resolve(false);
+    clearTimeout(shareTimer);
+    st.shareBusy = true;
+    st.shareNote = null;
+    paintShare();
+    return share.send({ type: 'planSync', reason: SHARE_REASON[reason] || 'manual' })
+      .catch((err) => ({ ok: false, error: String(err?.message || err), kind: 'error', at: Date.now() }))
+      .then((r) => afterShareSync(r, reason));
+  }
+
+  /** 동기화가 끝나면 — 결과(rerp 와 같은 저장 키 planSyncState · plannedExpenses)를 화면 상태에 들이고 지문·묘비를 정리한다. */
+  async function afterShareSync(r, reason = '') {
+    st.shareBusy = false;
+    if (!r || r.skipped === 'off') return false;   // 꺼져 있을 때 들어온 요청(rerp/plan.js 의 load·view) — 그릴 것이 없다(화면은 이미 꺼짐)
+    try {
+      const s = await chrome.storage.local.get([PLAN.KEY, PLAN.SKEY]);
+      st.pl.plans = shareObj(s?.[PLAN.KEY]);
+      st.pl.planSync = s?.[PLAN.SKEY] || st.pl.planSync;
+    } catch { /* 저장소를 못 읽어도 결과는 r 에 있다 */ }
+    if (r.pages || 'ok' in r) st.shareState = r;
+    if (r.skipped !== 'recent') {
+      const q = st.share, now = Date.now();
+      const pages = shareObj(r.pages);
+      if (r.ok) {
+        q.at = Number(r.at) || now;
+        q.error = '';
+        st.shareKind = '';
+        const list = Object.values(pages);
+        const waiting = list.filter((pg) => pg?.noFolder).length, failed = list.filter((pg) => pg?.error).length;
+        q.last = `맞췄습니다 — 과제 ${Number.isFinite(Number(r.count)) ? Number(r.count) : list.length}개${r.files ? ` · 파일 ${r.files}개` : ''}${r.written ? ` · 씀 ${r.written}` : ''}${r.pulled ? ` · 받음 ${r.pulled}` : ''}${waiting ? ` · 폴더 없음 ${waiting}(책임자가 만들어 공유할 때까지)` : ''}${failed ? ` · 실패 ${failed}` : ''}`;
+      } else {
+        st.shareKind = String(r.kind || 'error');
+        q.error = st.shareKind === 'auth'
+          ? `OneDrive 에 로그인하세요 — 이 브라우저에서 SharePoint(OneDrive)에 로그인한 뒤 지금 맞추기를 누르세요${r.error ? ` (${r.error})` : ''}`
+          : `공유 폴더와 맞추지 못했습니다 — ${r.error || r.message || '알 수 없는 오류'}`;
+      }
+      // 묘비 — 파일에 퍼졌고(쓴 과제) 90일이 지난 것은 버린다. 지문은 맞춘 뒤의 장부로.
+      q.del = shareObj(q.del);
+      for (const [key, t] of Object.entries(q.del)) if (!t || Number(t.at) < now - SHARE_TOMB_MS) delete q.del[key];
+      st.shareHash = shareHashOf(st.book);
+      st.shareDirty = false;
+      saveShare();
+      logEvent('rnd', !!r.ok, `R&D 공유 맞춤(${reason || r.reason || ''}): ${r.ok ? `과제 ${Number(r.count) || 0}개 · 씀 ${r.written || 0} · 받음 ${r.pulled || 0}` : q.error}`);
+    }
+    st.shareAliasWait = {};
+    paintShare();
+    drawErp();
+    // 처음 받는 과제에서 빈 값으로 덮지 않고 둔 칸이 있으면 — 이번 쓰기는 병합 결과(빈 값)로 나갔으니 잠깐 뒤 한 번 더 돌아 장부 값을 올린다(memo 의 시각이 파일보다 늦어 이긴다)
+    if (st.shareRepush) { st.shareRepush = false; if (r.ok) { st.shareDirty = true; shareSoon(); } }
+    return !!r.ok;
+  }
+
+  /** [링크 복사] — 보고 있는 과제의 폴더(알고 내 것이면), 아니면 밑폴더의 조직 내 편집 링크를 만들어 복사한다(sharesync shareOrgLink). 동료는 그 주소를 공유 폴더 칸(rerp 는 설정 › 공유 (Plus))에 붙여 넣는다. */
+  async function copyShareLink() {
+    if (!st.share.on || st.shareBusy) return;
+    const p = cur();
+    const key = p ? keyOfProject(p) : '';
+    const pg = key && st.shareState?.pages ? st.shareState.pages[key] : null;
+    const prjNo = pg?.folder && !pg.owner ? key : '';
+    el.shareLink.disabled = true;
+    try {
+      const r = await share.send({ type: 'shareOrgLink', prjNo });
+      if (r?.ok && r.url) {
+        const ok = !!r.copied || await copyText(r.url);
+        flash(el.shareLink, ok ? '복사함' : '못 복사함');
+        st.shareNote = { text: `${prjNo ? `과제 폴더 ${pg.folder}` : '공유 폴더'}의 조직 내 편집 링크를 ${ok ? '복사했습니다' : '만들었습니다(복사는 다시 눌러)'} — 동료는 공유 폴더 칸(rerp 는 설정 › 공유 (Plus))에 붙여 넣습니다`, error: false };
+        logEvent('rnd', true, `R&D 공유 링크 복사: ${prjNo ? pg.folder : '밑폴더'}`);
+      } else {
+        flash(el.shareLink, '못 만듦');
+        st.shareNote = { text: `링크를 만들지 못했습니다 — ${r?.error || r?.message || '응답 없음'}`, error: true };
+        logEvent('rnd', false, `R&D 공유 링크 실패: ${r?.error || r?.message || '응답 없음'}`);
+      }
+    } catch (err) {
+      flash(el.shareLink, '못 만듦');
+      st.shareNote = { text: `링크를 만들지 못했습니다 — ${String(err?.message || err)}`, error: true };
+    } finally {
+      el.shareLink.disabled = !st.share.on;
+      paintShare();
+    }
+  }
+
+  /* ---------------------------------------------------------- 연구내용 기록(rerp/research.js) — YAML 을 넣을 때 rerp 와 같은 기록(researchPlans — 과제명#차년도)으로도 남긴다 */
+  // 2026-10-14 사용자 지정("workplace 에 기입한 것을 rerp 에 … 공유하면 동기화")의 받는 길이 2026-10-18 에 원노트 페이지에서 **연차 파일의 research 칸**으로 바뀌었다 — 올리는 단추·링크 복사는 없고,
+  // 공유가 켜져 있으면 기록이 바뀐 뒤 잠깐 뒤 저절로 과제 폴더의 <n>차년도.json 으로 간다(shareLoadLocal 이 과제명·과제번호로 과제를 찾아 열쇠를 붙인다 — src/rndshare.js researchOf). rerp 는 같은 파일을 읽어 맞춘다.
+
+  /** YAML 에서 읽은 기록들을 저장한다 — 더 오래된 판은 RS.put 이 건너뛴다. 새로 남은 것이 있으면 공유를 잠깐 뒤 맞춘다. 돌려주는 것은 새로 남은 기록 수. */
   async function storeResearch(recs) {
     const map = await RS.load();
-    const touched = new Set();
-    for (const rec of recs) if (RS.put(map, rec).state !== 'older') touched.add(RS.normName(rec.name));
+    let touched = 0;
+    for (const rec of recs) if (RS.put(map, rec).state !== 'older') touched++;
     await RS.save(map);
-    return st.book.projects.filter((p) => touched.has(resKey(p)) && st.resShare[resKey(p)]?.pageId);
-  }
-
-  /** 보고 있는 과제(또는 p)의 연구내용을 원노트에 올린다. auto 면(계획서를 다시 넣은 뒤) 링크를 복사하지 않는다. 던지지 않는다 — 까닭은 알림 줄에. */
-  async function shareResearch(p, { auto = false } = {}) {
-    if (!p || st.resBusy) return false;
-    Object.assign(st, { resBusy: true, resError: false, resFor: resKey(p), resMsg: '원노트에 올리는 중…' });
-    paintRes();
-    let client = null, ok = false;
-    try {
-      const recs = await researchOf(p);
-      if (!recs.length) throw new Error('이 과제의 연구개발계획서 기록이 없습니다 — 아래 연구개발계획서 YAML 넣기에 KR_<과제>.yaml 을 넣으세요(이 기능 전에 넣은 것은 다시 한 번)');
-      const sec = await plus.plusResolveSection();
-      const sectionId = sec?.ok ? sec.section.id : st.note.sectionId;
-      if (!sectionId && !st.resShare[resKey(p)]?.pageId) {
-        throw new Error(sec?.kind === 'notebook' ? `${sec.error} — 위 예상 비용 칸의 섹션 찾기/만들기에서 노트북을 고르거나 과제 정보 섹션을 고르세요` : (sec?.error || 'OneNote MCP 서버에 닿지 않습니다'));
-      }
-      client = await KRX_MCP.open(PLUS_DEFAULTS.onenoteMcpUrl, { clientName: 'krs-workspace', fetch: mcpFetch });
-      const page = await RSY.publish({ client, onenote: KRX_ONENOTE, sectionId, page: st.resShare[resKey(p)] || null, name: p.name, code: p.code, recs, by: myName(), now: Date.now() });
-      st.resShare[resKey(p)] = { pageId: page.pageId, webUrl: page.webUrl, title: page.title, name: p.name, at: Date.now() };
-      await chrome.storage.local.set({ [RES_SHARE_KEY]: st.resShare });
-      st.resMsg = `${page.created ? '만들었습니다' : '고쳤습니다'} — 「${page.title}」 · 차년도 ${recs.length}개`;
-      if (!auto) st.resMsg += (await copyText(RSY.linkText(page))) ? ' · 링크를 복사했습니다 — kr_ext_rerp 확장 설정의 연구개발계획서 칸에 붙여 넣으세요' : ' · 링크 복사를 누르세요';
-      logEvent('rnd', true, `R&D 연구내용 원노트 ${auto ? '다시 ' : ''}올림(${label(p)}): ${page.title} · 차년도 ${recs.length}개`);
-      ok = true;
-    } catch (err) {
-      Object.assign(st, { resError: true, resMsg: `연구내용을 올리지 못했습니다 — ${String(err?.message || err)}` });
-      logEvent('rnd', false, `R&D 연구내용 원노트 올리기 실패(${label(p)}): ${String(err?.message || err)}`);
-    } finally {
-      if (client) { try { await client.close(); } catch { /* 이미 닫힘 */ } }
-      st.resBusy = false;
-      paintRes();
+    if (touched) {
+      st.shareDirty = true;
+      shareSoon();
     }
-    return ok;
-  }
-
-  async function copyResLink() {
-    const sh = cur() ? st.resShare[resKey(cur())] : null;
-    if (!sh?.pageId) return;
-    const ok = await copyText(RSY.linkText(sh));
-    flash(el.resCopy, ok ? '복사함' : '못 복사함');
-  }
-
-  function paintRes() {
-    const p = cur();
-    const sh = p ? st.resShare[resKey(p)] : null;
-    if (st.resFor !== resKey(p) && !st.resBusy) Object.assign(st, { resFor: resKey(p), resMsg: '', resError: false });   // 다른 과제로 가면 지난 알림은 지운다
-    el.resShare.disabled = st.resBusy || !p;
-    el.resShare.textContent = st.resBusy ? '올리는 중…' : sh ? '연구내용 다시 올리기' : '연구내용 올리기';
-    el.resCopy.disabled = st.resBusy || !sh?.pageId;
-    el.resOpen.classList.toggle('hidden', !sh?.webUrl);
-    if (sh?.webUrl) el.resOpen.href = sh.webUrl;
-    el.resMsg.textContent = st.resMsg || (sh ? `「${sh.title}」 · 올림 ${when(sh.at)} — 링크 복사로 rerp 에 보냅니다` : p ? '' : '과제를 고르세요');
-    el.resMsg.classList.toggle('error', !!st.resError);
+    return touched;
   }
 
   /* ---------------------------------------------------------- 그리기·배선 */
@@ -2395,7 +2566,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     paintProjects();
     paintHead();
     paintItems();   // 장부에 새 비목이 들어왔을 수 있다(YAML·JSON 들이기) — 설정의 비목 체크도 맞춘다
-    paintRes();     // 원노트 칸의 연구내용 공유는 보고 있는 과제의 것
+    paintShare();   // 공유 카드의 폴더 열기는 보고 있는 과제의 폴더
     if (cur()) {
       paintBudget();
       paintErp();
@@ -2503,19 +2674,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // 더하기·변경사항 카드(rndgen)는 놓인 문서를 받아 전파를 멈춘다 — 그때도 YAML 넣기 칸의 "놓기" 표시는 거둔다(잡는 단계에서).
     el.root.addEventListener('drop', () => el.intake.classList.remove('over'), true);
     document.addEventListener('paste', onPaste);
-    el.noteOn.addEventListener('change', onNoteToggle);
-    el.noteSection.addEventListener('change', onNoteSection);
-    el.noteSections.addEventListener('click', loadSections);
-    // 지금 맞추기 — 과제 정보와 예상 비용 둘 다(켜진 것만).
-    el.noteSync.addEventListener('click', () => {
-      if (st.note.on && st.note.sectionId) noteSync('지금 맞추기');
-      if (st.note.plus.on) plus.planSync('manual', {}).then(afterPlanSync);
-    });
-    el.plusOn.addEventListener('change', onPlusToggle);
-    el.plusFind.addEventListener('click', findPlusSection);
-    el.plusSection.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); findPlusSection(); } });
-    el.resShare.addEventListener('click', () => shareResearch(cur()));
-    el.resCopy.addEventListener('click', copyResLink);
+    // 공유 (SharePoint) — 켜기 · 공유 폴더 칸(바꾸면 바로 맞춘다) · 지금 맞추기 · 링크 복사(폴더 열기는 링크).
+    el.shareOn.addEventListener('change', onShareToggle);
+    el.shareWith?.addEventListener('change', () => { st.share.shareWith = el.shareWith.checked ? 'participants' : 'none'; saveShare(); paintShare(); logEvent('rnd', true, `R&D 공유 — 참여연구원 자동 공유 ${el.shareWith.checked ? '켬' : '끔'}`); });   // 폴더를 새로 만들 때 참여연구원에게 자동 공유
+    el.shareFolder.addEventListener('change', onShareFolder);
+    el.shareFolder.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onShareFolder(); } });
+    el.shareSync.addEventListener('click', () => runShare('지금 맞추기'));
+    el.shareOpen.addEventListener('click', openShareFolder);
+    el.shareLink.addEventListener('click', copyShareLink);
     el.erpRefresh.addEventListener('click', () => refreshErp({ force: true, reason: '↻' }));
     el.erpLink.addEventListener('click', () => linkErp({ manual: true }));
     el.erpUnlink.addEventListener('click', unlinkErp);
@@ -2529,12 +2695,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   async function show() {
     el.root.classList.remove('hidden');
     if (!st.loaded) {
-      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, NOTE_KEY, SET_KEY, RES_SHARE_KEY]);
+      const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, SHARE_KEY, SET_KEY, PLAN.SKEY]);
       st.book = normalizeBook(saved?.[BOOK_KEY]);
-      st.note = normalizeNote(saved?.[NOTE_KEY]);
+      st.share = normalizeShare(saved?.[SHARE_KEY]);
       st.set = normalizeSet(saved?.[SET_KEY]);
-      const share = saved?.[RES_SHARE_KEY];
-      st.resShare = share && typeof share === 'object' && !Array.isArray(share) ? share : {};
+      // 마지막 공유 결과(sharesync 가 rerp 와 같은 planSyncState 에 남긴 것) — 과제별 폴더 주소·과제 수, 실패면 종류('auth' 는 로그인 안내).
+      const last = saved?.[PLAN.SKEY];
+      st.shareState = last && typeof last === 'object' && !Array.isArray(last) ? last : null;
+      st.shareKind = st.shareState && st.shareState.ok === false ? String(st.shareState.kind || 'error') : '';
       st.loaded = true;
       clearLogForm();
       clearChangeForm();
@@ -2551,9 +2719,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       // 예상 비용(rerp/plan.js 의 plannedExpenses — rerp 와 같은 저장 키)을 읽는다.
       st.pl.plans = await PLAN.load();
       st.pl.planWho = myName();
+      // 지금 장부의 지문 — 이 뒤로 고친 것이 있을 때만 잠깐 뒤 맞춘다(shareSoon).
+      st.shareHash = shareHashOf(st.book);
     }
     // 집행내역 표에 ＋·줄·폼·아이콘의 이벤트(rerp/plan.js bind)를 단다 — 이 패널이 표 요소를 가진 동안 한 번. 다른 패널 인스턴스(검사)가 같은 화면을 썼으면
     // 그 리스너가 남지 않게 요소를 새것으로 바꿔 끼우고 다시 단다.
+    PLAN.send = planSend;   // 보이는 인스턴스가 rerp/plan.js 의 요청(planSync · shareFolderCopy …)을 받는다
     const host = $('rdErpTable');
     if (host && host !== st.plHost) {
       const fresh = host.cloneNode(false);
@@ -2562,11 +2733,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       st.plHost = fresh;
       PLAN.bind(fresh, st.pl, drawErp);
     }
-    paintPlus();
     paintAll();
-    paintNote();
-    // 원노트 공유가 켜져 있으면 열 때 맞춘다 — 다른 기기에서 고친 과제 정보를 받는다(막 맞췄으면 건너뛴다). 기다리지 않는다.
-    if (st.note.on && st.note.sectionId && Date.now() - st.note.at > NOTE_OPEN_MS) noteSync('열 때');
+    paintSet();
+    // 공유 (SharePoint)가 켜져 있으면 열 때 맞춘다 — 다른 기기·동료가 고친 것을 받는다(1분 안에 맞췼으면 sharesync 가 건너뛴다). 기다리지 않는다.
+    if (st.share.on) runShare('열 때');
     // rERP — 이어져 있으면 신선하지 않을 때 다시 받고, 아니면 올해 차년도를 이 세션에서 한 번 저절로 잇는다. 기다리지 않는다.
     erpAuto();
   }
@@ -2576,7 +2746,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   }
 
   return {
-    wire, show, hide, book: () => st.book, skills: loadManifest, note: () => st.note, noteSync, erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
+    wire, show, hide, book: () => st.book, skills: loadManifest, share: () => st.share, shareSync: (reason) => runShare(reason || '지금 맞추기'), erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
     staff: () => (cur() ? curBook(cur()).erp?.staff || null : null), refreshStaff, staffRun: () => st.staffRun,
     // rndgen/(과제 더하기·변경사항 카드)의 손잡이 — 2026-10-16. 훅은 하나씩(마지막 등록이 이긴다).
     current: () => { const p = cur(); return p ? { project: p, n: curYear(p) } : null; },
@@ -2591,6 +2761,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   };
 }
 
+/** 공유 (SharePoint)가 OneDrive 를 읽을 fetch — 전역 fetch 그대로(브라우저 로그인 쿠키는 저장소 쪽이 credentials:'include' 로 붙인다, manifest host_permissions *.sharepoint.com). */
+const defaultSpFetch = (url, init) => globalThis.fetch(url, init);
 /** 회계(e-accounting) — 내 부서 과제(I/O) 목록과 과제 하나의 계정과목별 예산 스냅샷(src/eacct.js — 확장에서 바로, host_permissions 로 쿠키가 실린다. 로그인은 e-accounting 자체 세션). */
 const defaultAcct = {
   list: (year) => fetchIoList(year),

@@ -6,8 +6,7 @@ import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 import { readZip } from '../src/zip.js';
-import { PAGE_TITLE, blockHtml, findBlock, readBlock } from '../src/rndnote.js';
-import PLAN_SYNC from '../rerp/plansync.js';
+import KRX_SP from '../rerp/spstore.js';
 import { normalizeBook } from '../src/rnd.js';
 
 let pass = 0;
@@ -15,6 +14,8 @@ const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
 const ta = async (name, fn) => { await fn(); pass++; console.log('  ok  ' + name); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (ok) => { for (let i = 0; i < 80 && !ok(); i++) await wait(25); };
+/** 저절로 맞추기(장부를 고친 뒤 1.2초)까지 기다리는 긴 until — 최대 5초. */
+const untilLong = async (ok) => { for (let i = 0; i < 200 && !ok(); i++) await wait(25); };
 
 const html = fs.readFileSync(new URL('../sidepanel.html', import.meta.url), 'utf8');
 const { window } = new JSDOM(html, { url: 'https://example.org/' });
@@ -24,7 +25,7 @@ globalThis.window = window;
 
 // 공문 탭의 공문 설정에 과제 하나가 있다. 저장은 복사해 둔다 — 정말 저장이 됐는지 보려고.
 const store = { gongmunProjects: [{ name: 'MVDC 차단기 개발', alias: '차단기 과제', code: 'RND-20-2026', lead: '박기도', period: '2026.04.01 ~ 2029.12.31', about: '', content: '', account: '' }] };
-globalThis.chrome = { storage: { local: { get: async () => store, set: async (obj) => { Object.assign(store, JSON.parse(JSON.stringify(obj))); } } } };
+globalThis.chrome = { storage: { local: { get: async () => store, set: async (obj) => { Object.assign(store, JSON.parse(JSON.stringify(obj))); }, remove: async (keys) => { for (const k of [].concat(keys)) delete store[k]; } } } };
 
 // rerp/plan.js 의 내보내기(⬆)는 navigator.clipboard 로 바로 복사한다 — 패널의 copyText 와 같은 바구니(copied)에 담는다.
 const copied = [];
@@ -35,30 +36,54 @@ const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 const logs = [];
 const downloads = [];
 const flashed = [];
-// 원노트 흉내(KR_MS365_mcp 의 onenote 서버 자리) — 섹션 하나, 페이지는 글(body)로 둔다. 다른 기기가 고친 것은 body 를 직접 바꿔 흉내 낸다.
-// 목록(list_pages)은 서버 PC 의 저장분이라 sync_onenote_db 뒤에야 다른 데서 만든 페이지가 보인다.
-const one = { up: true, pages: [], listed: [], calls: [], n: 0 };
-const fakeNote = {
-  async tool(name, a) {
-    one.calls.push(`${name}${a.action ? `:${a.action}` : ''}`);
-    const fail = (error) => { throw new Error(error); };
-    if (name === 'read_onenote' && a.action === 'list_sections') return { sections: [{ id: 's1', display_name: 'R&D', parent_notebook_name: '연구' }] };
-    if (name === 'read_onenote' && a.action === 'list_pages') return { pages: one.listed.filter((p) => p.section === a.section_id).map((p) => ({ page_id: p.id, title: p.title, web_url: p.url })) };
-    if (name === 'sync_onenote_db') { one.listed = [...one.pages]; return { success: true }; }
-    if (name === 'write_onenote' && a.action === 'create_page') {
-      const p = { id: `p${++one.n}`, section: a.section_id, title: a.title, url: `https://onenote.example/p${one.n}`, body: a.content };
-      one.pages.push(p);
-      one.listed.push(p);
-      return { success: true, page: { id: p.id, web_url: p.url } };
-    }
-    const p = one.pages.find((x) => x.id === a.page_id) || fail('page not found');
-    // Graph 처럼 생성 id 를 붙여 돌려주고, replace 는 그 id 로만 받는다.
-    if (a.action === 'get_content') return { success: true, content: `<html><head><title>${p.title}</title></head><body>${p.body.replace('<table data-id', '<table id="table:{t1}{1}" data-id')}</body></html>` };
-    if (a.action === 'replace') { if (a.target !== 'table:{t1}{1}') fail('bad target'); p.body = p.body.replace(/<table[\s\S]*<\/table>/, a.content); return { success: true }; }
-    if (a.action === 'append') { p.body += a.content; return { success: true }; }
-    return fail(`모르는 도구 ${name}`);
+// SharePoint(OneDrive) 흉내 — rerp/sharesync.js 가 rerp/spstore.js(KRX_SP) 대신 쓰는 가짜 저장소(deps.store): 메모리 폴더 트리 sp.tree = { [서버 상대 경로]: { [파일 이름]: 글 } }.
+// cfg 는 진짜 KRX_SP.parseFolder·childCfg 것(순수 함수)이라 folderPath 로 찍는다. 쓰기(openWriter)도 메모리 — 실 SharePoint 에는 닿지 않고 실 fetch 는 막아 둔다(make 의 spFetch).
+// kr_ext_rerp tests/prjdoc-sync.test.js 의 가짜 store 와 같은 꼴. authList 를 켜면 폴더 목록이 로그인 필요(auth)로 끝난다.
+const ORIGIN = 'https://krclass-my.sharepoint.com';
+const BASE = '/personal/me/Documents/업무/shared';
+const sp = { tree: { '/personal/me/Documents': {} }, calls: [], puts: [], authList: false, shared: [], store: null };
+/** 트리를 비운다(밑폴더까지만 남김) — 공유 검사 사이에 지난 과제 폴더가 남지 않게. */
+sp.reset = () => { sp.tree = { '/personal/me/Documents': {}, '/personal/me/Documents/업무': {}, [BASE]: {} }; sp.calls.length = 0; sp.puts.length = 0; };
+const spErr = (kind, msg) => Object.assign(new Error(msg || kind), { kind });
+const spCfg = (p) => { const c = KRX_SP.parseFolder(`${ORIGIN}${p.split('/').map(encodeURIComponent).join('/')}`); c.mine = true; return c; };
+const spMeta = (p, name) => ({ name, length: sp.tree[p][name].length, modified: '2026-10-08T00:00:00Z', version: '1.0', uniqueId: `u-${name}`, checkedOut: false, checkedOutByMe: false });
+const spWriter = (p) => ({
+  folderPath: p,
+  ensureFolder: async () => { sp.calls.push(`ensureFolder:${p}`); if (p in sp.tree) return { created: false }; sp.tree[p] = {}; return { created: true }; },
+  // KRX_SP 처럼 여러 단을 한 번에(문서함 뿌리 /personal/me/Documents 는 있다) → { created, made }
+  ensurePath: async (pp) => { sp.calls.push(`ensurePath:${pp}`); const segs = pp.split('/').filter(Boolean); const made = []; for (let i = 3; i <= segs.length; i++) { const at = `/${segs.slice(0, i).join('/')}`; if (!(at in sp.tree)) { sp.tree[at] = {}; made.push(at); } } return { created: made.length > 0, made }; },
+  at: (cfg) => spWriter(cfg.folderPath),
+  modify: async (name, transform) => {
+    sp.calls.push(`modify:${p}/${name}`);
+    if (!(p in sp.tree)) throw spErr('nofolder', `공유 폴더가 없습니다: ${p}`);
+    const cur = name in sp.tree[p] ? sp.tree[p][name] : null;
+    const r = transform(cur);
+    if (r && r.changed) { sp.tree[p][name] = r.text; sp.puts.push(`${p}/${name}`); return { changed: true, created: cur == null, updated: cur != null, checkedIn: cur != null, version: '2.0' }; }
+    return { changed: false, checkedIn: false };
   },
+  sharePeople: async (path, names, { role } = {}) => { sp.calls.push(`share:${path}:${names.join(',')}`); return { shared: names.map((n) => ({ name: n, email: `${n}@krs.co.kr` })), ambiguous: [], notFound: [], role }; },
+  orgLink: async (path, { edit } = {}) => { sp.calls.push(`link:${path}`); return { url: `${ORIGIN}/:f:/g/personal/me/${encodeURIComponent(path)}?e=${edit === false ? 'r' : 'w'}`, edit: edit !== false, via: 'fake' }; },
+  rename: async () => { throw spErr('http', '검사에서는 이름을 바꾸지 않는다'); },
+  close: async () => { sp.calls.push(`close:${p}`); },
+});
+sp.store = {
+  // 밑폴더 풀기 — 비우면 내 OneDrive 의 문서/업무/shared(KRX_SP.resolveMyFolder 자리, fetch 없이), 주소면 진짜 parseFolder
+  resolveFolder: async (input) => { sp.calls.push(`resolve:${input || '(내 OneDrive)'}`); if (sp.authList) throw spErr('auth', '이 브라우저에서 SharePoint(OneDrive)에 로그인하세요'); return input ? KRX_SP.parseFolder(input) : spCfg(BASE); },
+  resolveMyFolder: async () => spCfg(BASE),
+  listFolders: async (cfg) => {
+    sp.calls.push(`folders:${cfg.folderPath}`);
+    if (sp.authList) throw spErr('auth', '이 브라우저에서 SharePoint(OneDrive)에 로그인하세요');
+    if (!(cfg.folderPath in sp.tree)) throw spErr('nofolder', `공유 폴더가 없습니다: ${cfg.folderPath}`);
+    return Object.keys(sp.tree).filter((k) => k.startsWith(`${cfg.folderPath}/`) && !k.slice(cfg.folderPath.length + 1).includes('/')).map((k) => ({ name: k.split('/').pop(), path: k, itemCount: Object.keys(sp.tree[k]).length, modified: '2026-10-08T00:00:00Z' }));
+  },
+  listFiles: async (cfg) => { sp.calls.push(`list:${cfg.folderPath}`); if (!(cfg.folderPath in sp.tree)) throw spErr('nofolder', `공유 폴더가 없습니다: ${cfg.folderPath}`); return Object.keys(sp.tree[cfg.folderPath]).map((nm) => spMeta(cfg.folderPath, nm)); },
+  readFile: async (cfg, name) => { sp.calls.push(`read:${cfg.folderPath}/${name}`); const f = sp.tree[cfg.folderPath]; return f && name in f ? { text: f[name], meta: spMeta(cfg.folderPath, name) } : null; },
+  openWriter: async (cfg) => { sp.calls.push(`open:${cfg.siteUrl}`); return spWriter(cfg.folderPath); },
+  sharedWithMe: async () => { sp.calls.push('shared'); return sp.shared; },
 };
+/** 과제 폴더의 파일을 JSON 으로. */
+const spDoc = (folder, name) => JSON.parse(sp.tree[`${BASE}/${folder}`][name]);
+const spFolders = () => Object.keys(sp.tree).filter((k) => k.startsWith(`${BASE}/`)).map((k) => k.slice(BASE.length + 1)).sort();
 // rERP 흉내(rerp/erp.js 자리) — 과제 목록(recs)·비목별 잔액(items)·미청구 카드(cards)를 검사가 정한다. 처음엔 비어 있어 저절로 잇기가 "목록이 비어 있습니다" 로 끝난다.
 const erpFake = {
   recs: [], items: [], cards: [], loggedIn: true, calls: [],
@@ -86,33 +111,6 @@ const erpFake = {
   withPending(b, unbilled, count) { b.unbilled = unbilled; b.unbilledCount = count; b.pending = unbilled + (b.reqAmt || 0); b.execAmt = b.apprAmt + b.pending; b.balAfter = b.balAmt - unbilled; b.rateAll = b.bgtAmt > 0 && b.execAmt > 0 ? Math.trunc(b.execAmt / b.bgtAmt * 10000) / 100 : 0; b.pendingRate = b.bgtAmt > 0 && b.pending > 0 ? Math.trunc(b.pending / b.bgtAmt * 10000) / 100 : 0; return b; },
   async ssoLogin() { erpFake.calls.push('sso'); if (erpFake.eclassDown) throw Object.assign(new Error('eClass 로그인이 풀려 R&D ERP 자동 로그인(SSO)을 못 했습니다'), { kind: 'eclass-login' }); erpFake.loggedIn = true; return { ok: true }; },
 };
-// 예상 비용 원노트 동기화가 두드릴 OneNote MCP 서버 흉내(rerp/mcp.js 가 fetch 로 부른다) — 섹션 RERP 하나, 페이지는 메모리. test/rerp.test.mjs 의 것과 같은 꼴.
-const mcp = { pages: [], calls: [], up: true, n: 0 };
-const mcpGuid = (k) => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`;
-const mcpTool = (name, a) => {
-  mcp.calls.push(`${name}${a.action ? `:${a.action}` : ''}`);
-  if (name === 'read_onenote' && a.action === 'list_sections') return { success: true, sections: [{ id: 'sec-rerp', display_name: 'RERP', parent_notebook_id: 'nb1', parent_notebook_name: '연구' }] };
-  if (name === 'read_onenote' && a.action === 'list_pages') return { success: true, pages: mcp.pages.filter((p) => !a.section_id || p.section === a.section_id).map((p) => ({ page_id: p.id, title: p.title, web_url: p.url, section_id: p.section })) };
-  if (name === 'sync_onenote_db') return { success: true };
-  if (name === 'write_onenote' && a.action === 'create_page') { const k = ++mcp.n; const p = { id: `1-${'b'.repeat(32)}!${k}-${mcpGuid(k)}`, section: a.section_id, title: a.title, url: `https://krclass-my.sharepoint.com/x?wd=target%28RERP.one%7C${mcpGuid(0)}%2Fp%7C${mcpGuid(k)}%2F%29`, body: a.content }; mcp.pages.push(p); return { success: true, page: { id: p.id, web_url: p.url, title: p.title } }; }
-  const p = mcp.pages.find((x) => x.id === a.page_id);
-  if (!p) throw new Error('page not found');
-  if (a.action === 'get_content') return { success: true, content: `<html><head><title>${p.title}</title></head><body>${p.body.replace('<table data-id', '<table id="table:{t}{1}" data-id')}</body></html>` };
-  if (a.action === 'replace') { p.body = p.body.replace(/<table[\s\S]*<\/table>/, a.content); return { success: true }; }
-  if (a.action === 'append') { p.body += a.content; return { success: true }; }
-  throw new Error(`모르는 도구 ${name}`);
-};
-const mcpFetch = async (url, init) => {
-  if (!mcp.up) throw new TypeError('Failed to fetch');
-  if (init.method === 'DELETE') return { ok: true, status: 200, headers: { get: () => null }, text: async () => '' };
-  const msg = JSON.parse(init.body);
-  const reply = (result) => ({ ok: true, status: 200, headers: { get: (h) => (h === 'mcp-session-id' ? 's-1' : h === 'content-type' ? 'text/event-stream' : null) }, text: async () => `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })}\n\n` });
-  if (msg.method === 'initialize') return reply({ protocolVersion: '2025-06-18' });
-  if (!('id' in msg)) return { ok: true, status: 202, headers: { get: () => null }, text: async () => '' };
-  if (msg.method === 'tools/list') return reply({ tools: [{ name: 'read_onenote' }, { name: 'write_onenote' }, { name: 'sync_onenote_db' }] });
-  try { return reply({ content: [{ type: 'text', text: JSON.stringify(mcpTool(msg.params.name, msg.params.arguments || {})) }], isError: false }); }
-  catch (e) { return reply({ content: [{ type: 'text', text: JSON.stringify({ success: false, error: e.message }) }], isError: true }); }
-};
 let myName = '박기도';   // 설정의 내 이름 — 예상 비용 페이지는 과제책임자(== 내 이름)만 만든다
 // R&D PMS 과제 목록 흉내(Job Id 저절로 찾기가 받는다 — 줄은 PMS 그대로의 꼴, src/jobid.js slimJob 이 줄인다). 검사가 rows 를 정하고, fail 이 있으면 받지 못한 것으로.
 const jobsFake = { rows: [], fail: '', calls: 0 };
@@ -120,13 +118,12 @@ const jobsFake = { rows: [], fail: '', calls: 0 };
 const acctFake = { options: [], acct: {}, fail: '', login: false, lists: 0, gets: 0 };
 const acctErr = () => { const e = new Error(acctFake.fail); e.login = acctFake.login; return e; };
 const make = () => createRndPanel({
-  erp: erpFake, me: () => myName, mcpFetch,
+  erp: erpFake, me: () => myName, store: sp.store, spFetch: async () => { throw new Error('실 fetch 금지 — 공유는 가짜 저장소(sp)로'); },
   jobs: async () => { jobsFake.calls++; if (jobsFake.fail) throw new Error(jobsFake.fail); return jobsFake.rows; },
   acct: {
     list: async () => { acctFake.lists++; if (acctFake.fail) throw acctErr(); return acctFake.options; },
     get: async (year, io) => { acctFake.gets++; if (acctFake.fail) throw acctErr(); return acctFake.acct[io] ? { year, at: '2026-10-08T09:30:00.000Z', io, ...acctFake.acct[io] } : null; },
   },
-  openNote: async () => (one.up ? fakeNote : Promise.reject(new Error('이 PC 의 OneNote MCP 서버(http://localhost:5005/mcp)에 닿지 않습니다'))),
   $: (id) => doc.getElementById(id), escapeHtml,
   logEvent: (kind, ok, text) => logs.push({ kind, ok, text }),
   copyText: async (text) => { copied.push(text); return true; },
@@ -218,13 +215,13 @@ t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 
   assert.ok($('rdgRevise').compareDocumentPosition($('rdChanges')) & window.Node.DOCUMENT_POSITION_FOLLOWING, 'YAML 고치기가 위, 변경이력이 아래');
   assert.ok(hidden('rdChForm') && !hidden('rdChNew'));
   assert.ok(!$('rnd').textContent.includes('연구내역'), '"연구내역" 이라는 말은 화면에 없다');
-  // R&D 설정(2026-10-11 사용자 지정) — 탭 맨 아래 접힌 한 줄 안에 rERP 집행내역 체크 · 원노트 공유 · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬
+  // R&D 설정(2026-10-11 사용자 지정) — 탭 맨 아래 접힌 한 줄 안에 rERP 집행내역 체크 · 공유 (SharePoint) · 연구개발계획서 YAML 넣기 · 차년도 YAML 뽑는 스킬
   assert.equal($('rnd').lastElementChild.id, 'rdSetBox');
   assert.ok(!$('rdSetBox').open, 'R&D 설정은 접혀 있다');
   // 2026-10-11 사용자 지정 — 공문 탭의 공문 설정(gmPresetBox)과 같은 카드 한 줄: 아이콘 · 이름 · 형편(summary-detail) · 화살표
   assert.ok($('rdSetBox').classList.contains('card') && $('rdSetBox').classList.contains('rd-box'), 'R&D 설정은 공문 설정처럼 카드');
   assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > summary > *')].map((x) => x.tagName.toLowerCase() + (x.getAttribute('class') ? `.${x.getAttribute('class')}` : '')), ['svg', 'span', 'span.summary-detail']);
-  assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > .rd-set-body > *')].map((x) => x.id || x.className), ['rd-check rd-set-check', 'rdItemBox', 'rdNoteBox', 'rdIntake', 'rdSkillBox']);
+  assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > .rd-set-body > *')].map((x) => x.id || x.className), ['rd-check rd-set-check', 'rdItemBox', 'rdShareBox', 'rdIntake', 'rdSkillBox']);
   assert.ok($('rdErpOn').checked, 'rERP 집행내역은 기본 켬');
   // 예산 칸에 보일 비목(2026-10-11 사용자 지정) — 계획서의 여섯 비목이 모두 켜진 채 늘어선다
   assert.deepEqual([...$('rdItems').querySelectorAll('label')].map((l) => [l.textContent, l.querySelector('input').checked]), [['인건비', true], ['연구시설·장비비', true], ['연구재료비', true], ['연구활동비', true], ['연구수당', true], ['간접비', true]]);
@@ -235,7 +232,7 @@ t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 
   assert.ok(!hidden('rdIncRow'));
   assert.equal($('rdIncReq'), null, '승인전 체크는 없다');
   assert.deepEqual([$('rdIncUnbilled').checked, $('rdIncPlan').checked], [false, false], '집행은 승인액만이 기본');
-  assert.equal($('rdSetState').textContent, 'rERP 켬 · 원노트 꺼짐', '형편은 공문 설정처럼 한 줄에 들어가게 짧게');
+  assert.equal($('rdSetState').textContent, 'rERP 켬 · 공유 꺼짐', '형편은 공문 설정처럼 한 줄에 들어가게 짧게');
   assert.equal($('rdSkillBox').previousElementSibling.id, 'rdIntake', '연구개발계획서 넣기는 스킬 칸 바로 위');
   assert.equal($('rdLogState').textContent, '적은 것 없음');
   assert.equal($('rdChangeState').textContent, '적은 것 없음');
@@ -846,87 +843,209 @@ await ta('목록을 못 읽으면 버튼을 잠그고 까닭을 보인다', asyn
   $('rdSkillBox').open = false;
 });
 
-console.log('원노트 공유(선택) — 과제 정보만 원노트의 한 페이지에 두고 다른 기기와 맞춘다');
-const pageData = () => readBlock(findBlock(one.pages[0].body).inner);
+console.log('공유 (SharePoint, 2026-10-18) — 과제마다 OneDrive 공유 폴더의 연차 파일과 맞춘다(원노트·MCP 없이 브라우저 로그인만, 가짜 저장소)');
 const change = (node, value) => { if (value !== undefined) node.value = value; node.dispatchEvent(new window.Event('change', { bubbles: true })); };
 const pickChip = (label) => [...doc.querySelectorAll('#rdProjects [data-proj]')].find((b) => b.textContent === label).click();
-t('꺼져 있는 것이 기본 — 아무 데도 닿지 않는다. 칸은 YAML 넣는 곳 위에, 과제가 없어도 보인다(rdBody 밖)', () => {
-  assert.equal($('rdNoteState').textContent, '꺼짐');
-  assert.ok(!$('rdNoteOn').checked);
-  assert.ok($('rdNoteSync').disabled && $('rdNoteSection').disabled);
-  assert.deepEqual(one.calls, []);
-  assert.equal($('rdNoteBox').nextElementSibling.id, 'rdIntake');
-  assert.ok(!$('rdBody').contains($('rdNoteBox')));
-  assert.ok($('rdSetBox').contains($('rdNoteBox')), 'R&D 설정 칸 안');
+const bookProject = (alias) => panel.book().projects.find((x) => x.alias === alias);
+t('꺼져 있는 것이 기본 — 아무 데도 닿지 않는다. 카드는 R&D 설정 칸 안, YAML 넣는 곳 바로 위. 옛 원노트 카드는 없다', () => {
+  assert.equal($('rdShareState').textContent, '꺼짐');
+  assert.ok(!$('rdShareOn').checked);
+  assert.ok($('rdShareSync').disabled && $('rdShareLink').disabled);
+  assert.deepEqual(sp.calls, [], '꺼져 있으면 저장소에 닿지 않는다(탭을 열 때도)');
+  assert.equal($('rdShareBox').nextElementSibling.id, 'rdIntake');
+  assert.ok(!$('rdBody').contains($('rdShareBox')));
+  assert.ok($('rdSetBox').contains($('rdShareBox')), 'R&D 설정 칸 안');
+  assert.equal($('rdShareFolder').placeholder, '비우면 내 OneDrive 의 문서/업무/shared');
+  for (const id of ['rdNoteBox', 'rdNoteOn', 'rdPlusOn', 'rdResShare']) assert.equal($(id), null, `${id} 는 없다`);
 });
-await ta('켜면 섹션을 불러와 고르게 한다', async () => {
-  $('rdNoteOn').checked = true;
-  change($('rdNoteOn'));
-  await until(() => $('rdNoteSection').options.length === 2);
-  assert.deepEqual([...$('rdNoteSection').options].map((o) => o.textContent), ['섹션 고르기 — 1개', '연구 › R&D']);
-  assert.equal($('rdNoteState').textContent, '섹션을 고르세요');
-  assert.match($('rdNoteMsg').textContent, /다른 기기에서도 같은 노트북의 같은 섹션/);
-  assert.ok($('rdNoteSync').disabled, '섹션을 고르기 전에는 맞출 수 없다');
-  assert.ok(logs.some((l) => l.kind === 'rnd' && l.text === 'R&D 원노트 공유 켬'));
-});
-await ta('섹션을 고르면 페이지를 찾고(없으면 목록을 새로 받은 뒤) 만들어 과제 정보 넷을 표로 쓴다 — 차년도 내용은 올리지 않는다', async () => {
-  change($('rdNoteSection'), 's1');
-  await until(() => /^맞춤 /.test($('rdNoteState').textContent));
-  assert.deepEqual(one.calls, ['read_onenote:list_sections', 'read_onenote:list_pages', 'sync_onenote_db', 'read_onenote:list_pages', 'write_onenote:create_page']);
-  assert.equal(one.pages[0].title, PAGE_TITLE);
-  assert.deepEqual(pageData().projects.map((p) => p.alias || p.name), ['차단기 과제', '파일 과제', '수소전기추진 연구', 'TEST']);
-  assert.ok(!/인건비|시제품 설계 검토|참여연구자/.test(one.pages[0].body), '예산·기록·참여연구자는 원노트에 없다');
-  assert.equal($('rdNoteMsg').textContent, '맞췄습니다 — 원노트에 씀 (과제 4개)');
-  assert.ok(!hidden('rdNoteOpen'));
-  assert.equal($('rdNoteOpen').href, 'https://onenote.example/p1');
+await ta('켜면 바로 맞춘다 — 밑폴더(내 OneDrive 문서/업무/shared)를 만들고 과제마다 약칭 폴더에 연차 파일을 쓴다: 과제 정보·예산 계획·변경이력·연구내용, 집행·참여연구원 계획은 없다. 예상비용.json 은 만들지 않는다', async () => {
+  $('rdShareOn').checked = true;
+  change($('rdShareOn'));
+  await until(() => /^맞춤 /.test($('rdShareState').textContent));
+  assert.match($('rdShareState').textContent, /^맞춤 \d\d\.\d\d \d\d:\d\d · 과제 4개$/);
+  assert.ok(sp.calls[0].startsWith('resolve:'), '밑폴더를 풀고');
+  assert.ok(BASE in sp.tree, '업무/shared 를 만들었다');
+  assert.deepEqual(spFolders(), ['TEST', '수소전기추진 연구', '차단기 과제', '파일 과제'].sort(), '과제 폴더 이름은 별칭(없으면 과제명 — 이어지지 않은 과제는 별칭이 없어도 이 장부만의 과제라 폴더를 만든다)');
+  const p = bookProject('차단기 과제');
+  const y1 = spDoc('차단기 과제', '1차년도.json');
+  assert.deepEqual([y1.v, y1.kind, y1.year.n, y1.year.start, y1.year.end], [2, 'year', 1, '2026-04', '2027-03']);
+  assert.deepEqual([y1.project.prjNo, y1.project.alias, y1.project.prjNm, y1.project.rspr, y1.project.start, y1.project.end, y1.project.wsId, y1.project.code],
+    [p.id, '차단기 과제', 'MVDC 차단기 개발', p.lead, p.start, p.end, p.id, p.code], '이어지지 않은 과제의 열쇠는 장부 id — wsId·code 는 모르는 칸으로 보존');
+  assert.equal(spDoc('파일 과제', '1차년도.json').project.alias, '', '별칭이 없는 과제의 파일 alias 는 비어 있다(폴더 이름만 과제명)');
+  assert.ok(y1.project.aliasAt > 0 && p.aliasAt === y1.project.aliasAt, '별칭을 바꾼 시각이 파일과 장부에 같이');
+  assert.deepEqual(y1.budget.map((b) => [b.name, b.plan]), p.years[1].budget.filter((r) => r.plan != null).map((r) => [r.item, r.plan]), '예산은 계획이 적힌 줄만');
+  assert.ok(y1.budget.every((b) => !('used' in b) && b.by === '박기도'), '집행은 없고 by 는 내 이름');
+  assert.deepEqual(y1.changes.map((c) => c.id).sort(), p.years[1].changes.map((c) => c.id).sort(), '변경이력 그대로');
+  assert.ok(y1.changes.every((c) => 'by' in c && 'at' in c));
+  assert.deepEqual(y1.staff, { plans: [], del: {} }, '참여연구원 계획은 올리지 않는다');
+  assert.equal(y1.updatedBy, '박기도');
+  assert.ok(!('예상비용.json' in sp.tree[`${BASE}/차단기 과제`]), '예상 비용은 받기만 — 파일을 만들지 않는다');
+  const yt = spDoc('TEST', '1차년도.json');
+  assert.deepEqual(yt.research.map((r) => [r.id, r.rev, 'prjNo' in r]), [['시험용직류차단기개발#1', 'r2', false]], 'YAML 로 넣은 연구내용 기록은 연차 파일로(연결 칸은 빼고)');
+  assert.match($('rdShareMsg').textContent, /^맞췄습니다 — 과제 4개 · 파일 \d+개 · 씀 \d+/);
+  assert.ok(!$('rdShareMsg').classList.contains('error'));
+  assert.equal($('rdSetState').textContent, 'rERP 켬 · 공유 켬');
+  assert.match($('rdShareOpen').textContent, /^폴더 열기 — /, '보고 있는 과제의 폴더');
+  assert.match($('rdShareOpen').dataset.url, /^https:\/\/krclass-my\.sharepoint\.com\/personal\/me\//);
   await wait(10);
-  assert.deepEqual([store.rndNote.on, store.rndNote.sectionId, store.rndNote.sectionLabel, store.rndNote.pageId], [true, 's1', '연구 › R&D', 'p1']);
+  assert.deepEqual([store.rndShare.on, store.rndShare.folder], [true, '']);
+  assert.ok(store.planSyncState?.ok && store.shareState?.ok && store.shareIndex, 'rerp 와 같은 저장 키(planSyncState · shareState · shareIndex)에 결과를 남긴다');
+  assert.ok(logs.some((l) => l.text === 'R&D 공유 (SharePoint) 켬'));
+  assert.ok(logs.some((l) => l.kind === 'rnd' && /^R&D 공유 맞춤\(켬\): 과제 4개/.test(l.text)));
 });
-await ta('다른 기기에서 고친 것(별칭)과 더한 과제를 지금 맞추기로 받는다 — 달라진 것이 원노트 쪽뿐이면 페이지는 그대로', async () => {
-  const d = pageData();
-  const later = Date.now() + 1000;
-  const projects = d.projects.map((p) => (p.name === '파일 과제' ? { ...p, alias: '파일', ts: later } : p));
-  projects.push({ id: 'other1', name: '다른 기기 과제', alias: 'OTHER', code: '', lead: '', start: '', end: '', calendar: false, note: '', ts: later });
-  one.pages[0].body = blockHtml({ projects, del: d.del });
-  const n = one.calls.length;
-  $('rdNoteSync').click();
-  await until(() => chips().some((c) => c[0] === 'OTHER'));
-  await until(() => !$('rdNoteSync').disabled);
-  assert.deepEqual(chips().map((c) => c[0]), ['차단기 과제', '파일', '수소전기추진 연구', 'TEST', 'OTHER']);
-  assert.equal($('rdNoteMsg').textContent, '맞췄습니다 — 원노트에서 더함 1 · 받아 고침 1 (과제 5개)');
-  assert.deepEqual(one.calls.slice(n), ['read_onenote:get_content'], '기억해 둔 페이지를 바로 읽고, 쓸 것은 없다');
+await ta('다른 기기·동료가 고친 연차 파일을 지금 맞추기로 받는다 — 비고(WORKSPACE 몫)·별칭(늦게 바꾼 쪽)·변경이력(합집합)·예산 계획(파일이 더 늦으면 그 줄 전체), 달라진 것이 파일 쪽뿐이면 쓰지 않는다', async () => {
+  await wait(5);
+  const folder = `${BASE}/파일 과제`;
+  const d = JSON.parse(sp.tree[folder]['1차년도.json']);
+  const later = Date.now();
+  d.project.note = '동료가 적은 비고';
+  d.project.alias = '파일';
+  d.project.aliasAt = later;
+  d.changes.push({ id: 'c-remote', date: '2026-10-07', kind: '기타', item: '동료 변경', before: '', after: '', reason: '동료가 적음', by: '동료', at: later, auto: false });
+  d.budget = [{ name: '인건비', plan: 1234000, at: later, by: '동료' }];
+  d.updatedAt = new Date(later).toISOString();
+  d.updatedBy = '동료';
+  sp.tree[folder]['1차년도.json'] = JSON.stringify(d, null, 2);
+  const n = sp.puts.length;
+  $('rdShareSync').click();
+  await until(() => chips().some((c) => c[0] === '파일') && !$('rdShareSync').disabled);
+  const p = bookProject('파일');
+  assert.equal(p.note, '동료가 적은 비고');
+  assert.equal(p.aliasAt, later, '별칭의 시각은 파일 것');
+  assert.ok(p.years[1].changes.some((c) => c.id === 'c-remote' && c.by === '동료' && c.at === later), '변경이력은 합집합 — by·at 그대로');
+  assert.deepEqual(p.years[1].budget.filter((r) => r.plan != null).map((r) => [r.item, r.plan]), [['인건비', 1234000]], '예산 계획은 파일(더 늦음) 것 — 줄 전체가 한 덩이');
+  assert.match($('rdShareMsg').textContent, /받음 1/);
+  assert.equal(sp.puts.length, n, '달라진 것이 파일 쪽뿐이면 쓰지 않는다');
+  assert.equal(sp.tree[folder]['1차년도.json'], JSON.stringify(d, null, 2), '파일은 그대로');
+  assert.ok(logs.some((l) => /^R&D 공유 맞춤\(지금 맞추기\)/.test(l.text)));
 });
-await ta('이 기기에서 과제를 지우면 잠깐 뒤 저절로 맞춰 원노트에 묘비가 선다', async () => {
-  pickChip('OTHER');
-  $('rdEdit').click();
-  $('rdFDel').click();
-  $('rdFDel').click();
-  assert.ok(!chips().some((c) => c[0] === 'OTHER'));
-  await until(() => pageData().del.other1 > 0);
-  assert.ok(!pageData().projects.some((p) => p.id === 'other1'));
-  assert.ok(one.calls.at(-1) === 'write_onenote:replace', '있던 표를 생성 id 로 통째로 바꾼다');
-  assert.ok(logs.some((l) => l.kind === 'rnd' && /R&D 원노트 맞춤\(고침\)/.test(l.text)));
-});
-await ta('서버가 없으면 까닭을 보이고 장부는 그대로', async () => {
-  one.up = false;
-  $('rdNoteSync').click();
-  await until(() => $('rdNoteState').textContent === '못 맞춤');
-  assert.match($('rdNoteMsg').textContent, /^원노트와 맞추지 못했습니다 — 이 PC 의 OneNote MCP 서버/);
-  assert.ok($('rdNoteMsg').classList.contains('error'));
-  assert.equal(chips().length, 4);
-  one.up = true;
-});
-await ta('끄면 더는 닿지 않는다 — 과제 정보를 고쳐도', async () => {
-  $('rdNoteOn').checked = false;
-  change($('rdNoteOn'));
-  assert.equal($('rdNoteState').textContent, '꺼짐');
-  const n = one.calls.length;
+await ta('이 기기에서 과제 정보를 고치면 잠깐 뒤 저절로 맞춰 파일에 쓴다 — 별칭은 늦게 바꾼 쪽', async () => {
   pickChip('파일');
   $('rdEdit').click();
   type($('rdFAlias'), '파일 과제');
   $('rdFSave').click();
+  assert.ok(bookProject('파일 과제').aliasAt > 0);
+  await until(() => JSON.parse(sp.tree[`${BASE}/파일 과제`]['1차년도.json']).project.alias === '파일 과제');
+  const d = JSON.parse(sp.tree[`${BASE}/파일 과제`]['1차년도.json']);
+  assert.equal(d.project.aliasAt, bookProject('파일 과제').aliasAt);
+  assert.equal(d.project.note, '동료가 적은 비고', '받은 비고는 그대로');
+  assert.ok(logs.some((l) => /^R&D 공유 맞춤\(고침\)/.test(l.text)));
+});
+/** 새 과제를 폼으로 더한다(별칭 필수) — 공유가 켜져 있으면 잠깐 뒤 저절로 폴더·연차 파일이 생긴다. */
+const addProject = async (name, alias, extra = {}) => {
+  q('#rdProjects [data-add]').click();
+  type($('rdFName'), name);
+  type($('rdFAlias'), alias);
+  for (const [id, v] of Object.entries(extra)) type($(id), v);
+  $('rdFSave').click();
+  assert.ok(bookProject(alias), `${alias} 를 더했다`);
+};
+/** 보고 있는 과제를 지운다(두 번 누르기). */
+const delCurrent = () => { $('rdEdit').click(); $('rdFDel').click(); $('rdFDel').click(); };
+const syncNow = async () => { $('rdShareSync').click(); await untilLong(() => !$('rdShareSync').disabled); };
+await ta('지운 과제는 되살아나지 않는다(2026-10-19 검토) — 묘비(deletedAt)가 파일에 퍼진 뒤 두 번 맞춰도 과제 수·폴더가 그대로, 별칭만 든 payload 로 빈 과제를 만들지 않는다', async () => {
+  await addProject('ZZ 과제', 'ZZ');
+  await untilLong(() => !!sp.tree[`${BASE}/ZZ`]?.['1차년도.json'] && !$('rdShareSync').disabled);
+  const key = bookProject('ZZ').id;   // 이어지지 않은 과제의 열쇠는 장부 id
+  assert.equal(spDoc('ZZ', '1차년도.json').project.prjNo, key);
+  assert.equal(chips().length, 5);
+  pickChip('ZZ');
+  delCurrent();
+  assert.equal(chips().length, 4);
+  assert.ok(panel.share().del[key], '폴더를 아는 과제를 지우면 묘비가 남는다');
+  await untilLong(() => (spDoc('ZZ', '1차년도.json').project.deletedAt || 0) > 0 && !$('rdShareSync').disabled);
+  assert.equal(chips().length, 4, '지운 기기의 첫 맞춤에 빈 과제가 생기지 않는다');
+  await syncNow();
+  assert.equal(chips().length, 4, '다시 맞춰도 그대로');
+  assert.ok(!panel.book().projects.some((p) => p.alias === 'ZZ' || p.name === 'ZZ' || p.name === key), '열쇠·별칭 이름의 빈 과제가 없다');
+  assert.deepEqual(spFolders().filter((f) => f.startsWith('ZZ')), ['ZZ'], '"ZZ-<열쇠>" 같은 둘째 폴더도 없다');
+  assert.ok(!logs.some((l) => l.text.includes(`공유에서 받음 — 다른 기기가 지웠다): ${key}`)), '지운 기기에서는 받아 지울 것이 없다');
+  assert.match($('rdShareState').textContent, /· 과제 5개$/, '묘비는 퍼뜨리는 동안(90일) 대상에 든다');
+  panel.share().del = {};   // 검사 뒷정리 — 묘비는 퍼졌다
+});
+await ta('다른 기기가 지운 과제(파일 project.deletedAt)를 받으면 지우고, 그 열쇠에 이어 둔 연구내용 기록의 연결을 끊어 다음 맞춤에 다시 만들지 않는다', async () => {
+  await addProject('YY 과제', 'YY');
+  await untilLong(() => !!sp.tree[`${BASE}/YY`]?.['1차년도.json'] && !$('rdShareSync').disabled);
+  const key = bookProject('YY').id;
+  // 이 열쇠에 이어 둔 연구내용 기록(다른 기기에서 받은 꼴 — prjNo 가 열쇠)
+  store.researchPlans = { ...(store.researchPlans || {}), 'yy과제#1': { id: 'yy과제#1', name: 'YY 과제', code: '', n: 1, rev: 'r1', goals: ['목표'], prjNo: key, prjNm: 'YY 과제', linkBy: 'auto', src: 'x' } };
+  const folder = `${BASE}/YY`;
+  const d = JSON.parse(sp.tree[folder]['1차년도.json']);
+  const later = Date.now();
+  d.project.deletedAt = later;
+  d.updatedAt = new Date(later).toISOString();
+  d.updatedBy = '동료';
+  sp.tree[folder]['1차년도.json'] = JSON.stringify(d, null, 2);
+  await syncNow();
+  assert.ok(!bookProject('YY'), '받아서 지웠다');
+  assert.equal(chips().length, 4);
+  const gone = () => logs.filter((l) => l.text === `R&D 과제 지움(공유에서 받음 — 다른 기기가 지웠다): ${key}`).length;
+  assert.equal(gone(), 1);
+  assert.ok(store.researchPlans['yy과제#1'] && store.researchPlans['yy과제#1'].prjNo === undefined, '그 열쇠에 이어 둔 기록은 연결만 끊고 남긴다');
+  await syncNow();
+  assert.equal(chips().length, 4, '다시 맞춰도 과제가 생기지 않는다');
+  assert.equal(gone(), 1, '만들고 지우기를 되풀이하지 않는다');
+  assert.deepEqual(spFolders().filter((f) => f.startsWith('YY')), ['YY']);
+  assert.match($('rdShareState').textContent, /· 과제 4개$/, '받아 지운 과제는 더는 대상이 아니다');
+});
+await ta('공유 폴더 칸에 다른 밑폴더 주소를 넣으면 과제 → 폴더 캐시(shareIndex)를 버려 모든 과제가 새 자리에 맞춰진다(옛 자리에는 더 쓰지 않음) — 비우면 다시 내 OneDrive 의 폴더를 알아본다', async () => {
+  const OTHER = '/personal/other/Documents/업무/shared';
+  const n = sp.puts.length;
+  commit($('rdShareFolder'), `${ORIGIN}${OTHER.split('/').map(encodeURIComponent).join('/')}`);
+  // 칸을 고치면 캐시를 지운 뒤(await) 맞추기 시작 — 캐시가 새 자리로 다시 채워지고 맞추기가 끝날 때까지
+  //   (캐시에는 밑폴더에서 알아본 폴더가 다 든다 — 내 OneDrive 로 돌아오면 지운 ZZ·YY 의 폴더도 — 그래서 장부의 네 과제(열쇠 = 장부 id)가 다 그 자리인지 본다)
+  const under = (root) => { const v = Object.values(store.shareIndex || {}); return v.length >= 4 && v.every((e) => String(e.path || '').startsWith(`${root}/`)) && panel.book().projects.every((p) => store.shareIndex[p.id]); };
+  await untilLong(() => under(OTHER) && !$('rdShareSync').disabled);
+  assert.match($('rdShareState').textContent, /^맞춤 .* · 과제 4개$/);
+  const idx = store.shareIndex;
+  assert.equal(Object.keys(idx).length, 4);
+  assert.ok(Object.values(idx).every((e) => e.path.startsWith(`${OTHER}/`)), `캐시는 새 자리의 폴더만 — ${JSON.stringify(Object.values(idx).map((e) => e.path))}`);
+  assert.ok(sp.puts.length > n && sp.puts.slice(n).every((x) => x.startsWith(`${OTHER}/`)), '새 자리에 쓰고 옛 자리에는 더 쓰지 않는다');
+  assert.equal(store.shareFolder?.path, OTHER, '밑폴더 캐시도 새 주소');
+  assert.ok(logs.some((l) => /^R&D 공유 폴더: https:/.test(l.text)));
+  const n2 = sp.puts.length;
+  commit($('rdShareFolder'), '');
+  await untilLong(() => under(BASE) && !$('rdShareSync').disabled);
+  assert.ok(under(BASE), `내 OneDrive 의 과제 폴더를 다시 알아본다 — ${JSON.stringify(Object.values(store.shareIndex || {}).map((e) => e.path))}`);
+  assert.equal(store.shareIndex[bookProject('파일 과제').id]?.folder, '파일 과제');
+  assert.match($('rdShareState').textContent, /^맞춤 .* · 과제 4개$/);
+  assert.equal(sp.puts.length, n2, '파일이 장부와 같아 다시 쓰지 않는다');
+  pickChip('파일 과제');
+});
+await ta('[링크 복사] — 보고 있는 과제 폴더의 조직 내 편집 링크를 만들어 복사한다', async () => {
+  const n = copied.length;
+  $('rdShareLink').click();
+  await until(() => copied.length === n + 1);
+  assert.match(copied[n], /^https:\/\/krclass-my\.sharepoint\.com\/:f:\/g\/personal\/me\/.*%ED%8C%8C%EC%9D%BC%20%EA%B3%BC%EC%A0%9C\?e=w$/, '파일 과제 폴더의 편집 링크');
+  assert.match($('rdShareMsg').textContent, /^과제 폴더 파일 과제의 조직 내 편집 링크를 복사했습니다/);
+  assert.ok(flashed.some(([id, text]) => id === 'rdShareLink' && text === '복사함'));
+});
+await ta('로그인이 풀리면(auth) "OneDrive 에 로그인하세요" 와 OneDrive 열기 — 장부는 그대로', async () => {
+  sp.authList = true;
+  $('rdShareSync').click();
+  await until(() => $('rdShareState').textContent === 'OneDrive 에 로그인하세요');
+  assert.match($('rdShareMsg').textContent, /^OneDrive 에 로그인하세요 — 이 브라우저에서 SharePoint\(OneDrive\)에 로그인한 뒤/);
+  assert.ok($('rdShareMsg').classList.contains('error'));
+  assert.equal($('rdShareOpen').textContent, 'OneDrive 열기');
+  assert.ok($('rdShareOpen').dataset.url.startsWith('https://krclass-my.sharepoint.com'));
+  assert.equal(chips().length, 4);
+  assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /^R&D 공유 맞춤\(지금 맞추기\): OneDrive 에 로그인하세요/.test(l.text)));
+  sp.authList = false;
+});
+await ta('끄면 더는 닿지 않는다 — 과제 정보를 고쳐도', async () => {
+  $('rdShareOn').checked = false;
+  change($('rdShareOn'));
+  assert.equal($('rdShareState').textContent, '꺼짐');
+  assert.equal($('rdShareMsg').textContent, '');
+  assert.ok($('rdShareSync').disabled);
+  assert.equal($('rdSetState').textContent, 'rERP 켬 · 공유 꺼짐');
+  const n = sp.calls.length;
+  pickChip('파일 과제');
+  $('rdEdit').click();
+  type($('rdFAlias'), '파일 과제');
+  $('rdFSave').click();
   await wait(1500);
-  assert.equal(one.calls.length, n);
+  assert.equal(sp.calls.length, n);
   pickChip('TEST');
 });
 
@@ -1021,7 +1140,7 @@ await ta('R&D 설정의 "rERP 집행내역" 체크를 끄면 칸이 숨고 집�
   assert.equal(used('인건비').readOnly, false);
   assert.equal(used('인건비').value, '12,345', '값은 남는다');
   assert.equal($('rdBudgetState').textContent, '계획 1.1억 · 집행 3,206만 (30%)');
-  assert.equal($('rdSetState').textContent, 'rERP 끔 · 원노트 꺼짐');
+  assert.equal($('rdSetState').textContent, 'rERP 끔 · 공유 꺼짐');
   assert.ok($('rdIncUnbilled').disabled && $('rdIncPlan').disabled, '끄면 집행에 더할 것도 잠근다');
   assert.ok(hidden('rdIncRow'), '예산 칸 위의 집행에 더하기 줄도 숨는다');
   assert.ok(panel.erp(), '이어 둔 과제는 장부에 그대로');
@@ -1042,35 +1161,31 @@ t('예상 비용은 보기만(2026-10-11 사용자 지정) — 표에 ＋·저�
   for (const sel of ['[data-act="plan-open"]', '[data-act="plan-persist"]', '[data-act="plan-export"]', '[data-act="plan-qty"]', '.krext-plan-acts']) assert.equal(tbl.querySelector(sel), null, sel);
   assert.equal(store.plannedExpenses, undefined, '여기서 적은 예상 비용은 없다');
 });
-await ta('원노트 칸의 예상 비용 공유를 켜면 RERP 섹션을 찾아 맞춘다 — 페이지가 없는 과제는 만들지 않고 rerp 확장에서 만들라고 알린다', async () => {
-  $('rdPlusOn').checked = true;
-  change($('rdPlusOn'));
-  await until(() => /맞춤 |못 맞춤/.test($('rdPlusMsg').textContent));
-  assert.match($('rdPlusMsg').textContent, /^맞춤 \d\d\.\d\d \d\d:\d\d · 과제 0개 · 항목 0건 · 페이지 없음 1개\(rerp 확장에서 만듭니다\)$/);
-  assert.equal(mcp.pages.length, 0, '여기서는 만들지 않는다');
-  assert.match($('rdNoteState').textContent, /^예상 비용 맞춤 /);
-  assert.ok(!hidden('rdPlusRow') && $('rdPlusSection').value === 'RERP');
-  assert.ok(!$('rdNoteSync').disabled, '예상 비용만 켜도 지금 맞추기를 쓸 수 있다');
-  await wait(10);
-  assert.deepEqual([store.rndNote.plus.on, store.plusSection.id], [true, 'sec-rerp']);
-  const tbl = $('rdErpTable');
-  assert.ok(tbl.querySelector('[data-act="plan-import"]'), '켜면 가져오기(⬇)가 선다');
-  assert.equal(tbl.querySelector('[data-act="plan-export"]'), null, '내보내기(⬆)는 없다 — 페이지는 rerp 확장에서');
-});
-await ta('rerp 확장이 만든 페이지(동료가 적은 예상 비용)를 지금 맞추기로 받는다 — 표에 비목 → 비목 예상 반영 → 항목 줄(보기만), 저장소(plannedExpenses)에 과제번호로', async () => {
-  // rerp 확장(책임자)이 RERP 섹션에 만든 페이지 — 같은 제목·같은 블록(rerp/plansync.js serialize)
-  const k = ++mcp.n;
-  mcp.pages.push({
-    id: `1-${'b'.repeat(32)}!${k}-${mcpGuid(k)}`, section: 'sec-rerp', title: `[예상 비용] ${PRJ} MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발`,
-    url: `https://krclass-my.sharepoint.com/x?wd=target%28RERP.one%7C${mcpGuid(0)}%2Fp%7C${mcpGuid(k)}%2F%29`,
-    body: PLAN_SYNC.serialize({ items: [{ id: 'a1', prj: PRJ, key: '10|연구활동비', name: '회의비', qty: 3, unit: 50000, amt: 150000, ts: 1000, by: '동료' }], del: {}, at: 1000, by: '동료' }, { title: `MW급 (${PRJ})` }),
-  });
-  $('rdNoteSync').click();
+await ta('공유를 켜면 이어진 과제는 rERP 과제번호를 열쇠로 파일을 쓴다(폴더 이름은 약칭, 과제명·책임자는 rERP 값) — kr_ext_rerp 가 적은 예상비용.json 은 받아 보기만: 표에 비목 → 비목 예상 반영 → 항목 줄, 저장소(plannedExpenses)에 과제번호로, 파일은 그대로', async () => {
+  // rerp 확장(책임자)이 과제 폴더 TEST 에 적은 예상비용.json — 같은 모양(rerp/prjdoc.js kind 'plan'). 연차 파일은 아직 없다(폴더만 있으면 그 이름을 쓴다).
+  myName = '홍길동';   // 이 과제(TEST)의 rERP 책임자 — 책임자여도 예상비용.json 은 쓰지 않는다(아래 검사). 이름은 파일 줄의 by·updatedBy 가 되니 맞추기 전에 바꾼다
+  sp.reset();
+  const folder = `${BASE}/TEST`;
+  const planText = JSON.stringify({
+    v: 2, kind: 'plan', project: { prjNo: PRJ, prjNm: 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발' },
+    plan: { items: [{ id: 'a1', prj: PRJ, key: '10|연구활동비', name: '회의비', qty: 3, unit: 50000, amt: 150000, ts: 1000, by: '동료' }], del: {} },
+    updatedAt: '2026-10-01T00:00:00.000Z', updatedBy: '동료',
+  }, null, 2);
+  sp.tree[folder] = { '예상비용.json': planText };
+  $('rdShareOn').checked = true;
+  change($('rdShareOn'));
   await until(() => !!store.plannedExpenses?.[PRJ]);
-  await until(() => /과제 1개 · 항목 1건$/.test($('rdPlusMsg').textContent));
+  await until(() => /^맞춤 /.test($('rdShareState').textContent));
   const list = store.plannedExpenses[PRJ]['10|연구활동비'];
   assert.deepEqual([list.length, list[0].name, list[0].qty, list[0].unit, list[0].amt, list[0].by], [1, '회의비', 3, 50000, 150000, '동료']);
-  assert.equal(mcp.pages.length, 1, '페이지는 그대로');
+  assert.equal(sp.tree[folder]['예상비용.json'], planText, '예상비용.json 은 받기만 — 그대로');
+  const y1 = spDoc('TEST', '1차년도.json');
+  assert.deepEqual([y1.project.prjNo, y1.project.prjNm, y1.project.rspr, y1.project.alias], [PRJ, 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발', '홍길동', 'TEST'], '이어진 과제 — 열쇠·과제명·책임자는 rERP 값, 별칭은 장부');
+  assert.equal(y1.budget.find((b) => b.name === '인건비')?.plan, 30000000, '계획서의 예산 계획');
+  const snapDate = Date.parse(bookProject('TEST').years[1].snapshot?.date || '') || 0;
+  assert.ok(snapDate > 0 && y1.budget.every((b) => b.at === snapDate), `처음 올리는 예산 줄의 시각은 계획서 스냅샷 날짜 — ${snapDate} / ${y1.budget.map((b) => b.at).join(',')}`);
+  assert.deepEqual(y1.research.map((r) => [r.id, r.rev]), [['시험용직류차단기개발#1', 'r2']]);
+  assert.match($('rdShareState').textContent, /· 과제 4개$/);
   const tbl = $('rdErpTable');
   tbl.querySelector('[data-act="plan-hide"]').click();   // 항목이 있는 과제는 기본 감춤 — 눈으로 펼친다
   const text = tbl.textContent.replace(/\s+/g, ' ');
@@ -1082,7 +1197,33 @@ await ta('rerp 확장이 만든 페이지(동료가 적은 예상 비용)를 지
   assert.ok(/krext-bgt-plan/.test(proj.nextElementSibling.className), '바로 아래가 항목 줄');
   assert.match(text, /합계 \(미청구 · 승인전 반영\).*예상 반영 \(예상 1건 · 150,000원\).*31,465,661/, '합계와 그 아래 예상 반영은 그대로');
   for (const sel of ['[data-act="plan-open"]', '[data-act="plan-qty"]', '.krext-plan-acts', '[data-act="plan-persist"]', '[data-act="plan-export"]']) assert.equal(tbl.querySelector(sel), null, `${sel} 은 없다(보기만)`);
-  assert.ok(tbl.querySelector('a.krext-ico-btn')?.href.startsWith('https://krclass-my.sharepoint.com/'), '열기(↗) 링크');
+  assert.ok(tbl.querySelector('a.krext-ico-btn')?.href.startsWith('https://krclass-my.sharepoint.com/'), '열기(↗) 링크 — 예상비용.json');
+});
+await ta('이어지지 않은 채 공유하던 과제를 rERP 에 이으면 옛 폴더를 이어 쓴다(2026-10-19 검토) — 파일의 project.prjNo 가 과제번호로 바뀌고 색인·기억이 옮겨져 "<약칭>-<과제번호>" 폴더가 생기지 않는다', async () => {
+  pickChip('파일 과제');
+  const oldKey = bookProject('파일 과제').id;
+  assert.equal(spDoc('파일 과제', '1차년도.json').project.prjNo, oldKey, '이어지지 않은 과제의 파일은 장부 id 열쇠');
+  assert.equal(store.shareIndex[oldKey]?.folder, '파일 과제');
+  // 과제번호·이름이 rERP 목록에 없어 고르기 목록이 선다(탭을 열 때 저절로, 또는 잇기 단추) → 다른 과제(RS-2025-00000009)를 고른다
+  await until(() => !hidden('rdErpPick'));
+  if (hidden('rdErpPick')) { $('rdErpLink').click(); await until(() => !hidden('rdErpPick')); }
+  $('rdErpSelect').value = 'RS-2025-00000009';
+  $('rdErpPickOk').click();
+  await untilLong(() => spDoc('파일 과제', '1차년도.json').project.prjNo === 'RS-2025-00000009');
+  await until(() => panel.erp()?.prjNo === 'RS-2025-00000009' && !$('rdErpRefresh').disabled);
+  const y1 = spDoc('파일 과제', '1차년도.json');
+  assert.deepEqual([y1.project.prjNm, y1.project.rspr, y1.project.wsId, y1.project.alias], ['다른 과제', '김아무', oldKey, '파일 과제'], '과제명·책임자는 rERP 값, 나머지는 그대로');
+  assert.ok(store.shareIndex['RS-2025-00000009']?.folder === '파일 과제' && !store.shareIndex[oldKey], '색인은 새 열쇠로');
+  assert.ok(panel.share().memo['RS-2025-00000009'] && !panel.share().memo[oldKey], '맞춘 기억도 새 열쇠로');
+  assert.ok(logs.some((l) => /^R&D 공유 폴더 이어 쓰기: 파일 과제 \(.* → RS-2025-00000009, 파일 1개\)$/.test(l.text)));
+  // 다음 맞춤 — 같은 폴더를 쓰고 새 폴더를 만들지 않는다
+  await untilLong(() => !$('rdShareSync').disabled);
+  const before = spFolders();
+  await syncNow();
+  assert.deepEqual(spFolders(), before, '"파일 과제-RS-2025-00000009" 폴더가 생기지 않는다');
+  assert.match($('rdShareState').textContent, /^맞춤 .* · 과제 4개$/);
+  assert.equal(store.shareIndex['RS-2025-00000009']?.folder, '파일 과제');
+  pickChip('TEST');
 });
 await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그 비목의 예상 비용이, 미청구를 켜면 연구활동비 줄에 더해진다(2026-10-12 사용자 지정 — 보조 줄이 아니라 그 줄의 집행·잔액·막대·표 복사). 승인전 체크는 없다', async () => {
   const bars = (node) => [...node.querySelectorAll('.rd-bar')].map((b) => [b.className.replace('rd-bar ', ''), b.style.left, b.style.width]);
@@ -1090,7 +1231,7 @@ await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그
   $('rdIncPlan').checked = true;
   change($('rdIncPlan'));
   assert.equal(used('연구활동비').value, '19,863', '19,712,839 + 예상 150,000');
-  assert.equal($('rdSetState').textContent, 'rERP 켬 · 원노트 예상 비용', '설정 줄에는 집행에 더할 것이 안 보인다 — 예산 칸 위에 있다');
+  assert.equal($('rdSetState').textContent, 'rERP 켬 · 공유 켬', '설정 줄에는 집행에 더할 것이 안 보인다 — 예산 칸 위에 있다');
   assert.ok(logs.some((l) => /R&D 예산 집행에 더하기: 사용계획$/.test(l.text)));
   // 막대는 몫마다 다른 색(2026-10-11 사용자 지정) — 승인액(파랑) 뒤에 사용계획(주황)이 이어 붙는다. 150,000 ÷ 40,000,000 = 0.375%
   const seg = bars(row('연구활동비'));
@@ -1136,31 +1277,61 @@ await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그
   assert.equal(used('연구활동비').value, '19,713');
   assert.ok(!q('#rdBudget .rd-brow-extra'));
 });
-await ta('과제책임자가 내 이름이어도 여기서는 페이지를 만들지 않고 받기만 한다(보기만) — 다른 과제의 페이지가 없어도 그대로', async () => {
-  myName = '홍길동';   // 이 과제의 책임자
+await ta('과제책임자가 내 이름이어도 예상비용.json 은 쓰지 않는다(받기만) — 지금 맞추기에 쓸 것이 없으면 파일은 그대로', async () => {
   const before = store.planSyncState?.at;
-  const n = mcp.calls.length;
-  $('rdNoteSync').click();
+  const n = sp.puts.length;
+  $('rdShareSync').click();
   await until(() => store.planSyncState?.at !== before);
-  await wait(30);
-  assert.equal(mcp.pages.length, 1, '새 페이지 없음');
-  assert.ok(!mcp.calls.slice(n).includes('write_onenote:create_page'));
-  assert.match($('rdPlusMsg').textContent, /과제 1개 · 항목 1건$/);
-  assert.ok(logs.some((l) => /R&D 예상 비용 원노트 맞춤\(manual\)/.test(l.text)));
+  await until(() => !$('rdShareSync').disabled);
+  assert.equal(sp.puts.length, n, '쓴 것 없음 — 예상비용.json 도 연차 파일도');
+  assert.ok(!sp.puts.some((x) => x.endsWith('예상비용.json')), '예상비용.json 은 한 번도 쓰지 않았다');
+  assert.match($('rdShareState').textContent, /^맞춤 .* · 과제 4개$/);
+  assert.ok(logs.some((l) => /R&D 공유 맞춤\(지금 맞추기\): 과제 4개/.test(l.text)));
 });
-await ta('MCP 서버가 없으면 까닭을 보이고, 끄면 아이콘도 동기화도 없다', async () => {
-  mcp.up = false;
-  $('rdNoteSync').click();
-  await until(() => /못 맞춤/.test($('rdNoteState').textContent));
-  assert.match($('rdPlusMsg').textContent, /MCP 서버에 연결할 수 없습니다/);
-  assert.ok($('rdPlusMsg').classList.contains('error'));
-  mcp.up = true;
-  $('rdPlusOn').checked = false;
-  change($('rdPlusOn'));
-  assert.equal($('rdNoteState').textContent, '꺼짐');
-  assert.equal($('rdPlusMsg').textContent, '');
+await ta('rerp(책임자)가 먼저 만든 연차 파일(WORKSPACE 몫 칸이 모두 빈 것)을 처음 받아도 Job Id·I/O·연구기간·비고·과제번호는 지워지지 않고, 잠깐 뒤 한 번 더 맞춰 파일로 간다(2026-10-19 검토)', async () => {
+  // 공유를 잠깐 끄고(폴더가 먼저 생기지 않게) 과제 WW 를 더해 rERP 에 잇는다 — 열쇠가 rERP 과제번호가 되어 rerp 가 만든 파일을 만난다
+  $('rdShareOn').checked = false;
+  change($('rdShareOn'));
+  const PRJ2 = 'RS-2026-00000002';
+  erpFake.recs.push({ PRJ_NO: PRJ2, ANL: '1', PRJ_NM: 'WW 과제', PRJ_RSPR_EMP_NM: '홍길동', PROG_STS_NM: '진행', RCH_ST_DT: '20260401', RCH_END_DT: '20270331' });
+  await addProject('WW 과제', 'WW', { rdFCode: PRJ2, rdFJob: 'RND00412026', rdFIo: '2145nr0999', rdFLead: '홍길동', rdFStart: '2026-04-01', rdFEnd: '2027-03-31', rdFNote: '장부의 비고' });
+  $('rdErpLink').click();
+  await until(() => panel.erp()?.prjNo === PRJ2 && !$('rdErpRefresh').disabled);
+  const folder = `${BASE}/WW`;
+  sp.tree[folder] = { '1차년도.json': JSON.stringify({
+    v: 2, kind: 'year', project: { prjNo: PRJ2, prjNm: 'WW 과제', rspr: '홍길동', alias: '', aliasAt: 0, jobId: '', io: '', start: '', end: '', note: '' },
+    year: { n: 1, start: '2026-04', end: '2027-03' }, budget: [], staff: { plans: [], del: {} }, research: [], changes: [], updatedAt: '2026-10-01T00:00:00.000Z', updatedBy: '홍길동',
+  }, null, 2) };
+  const n = sp.puts.length;
+  $('rdShareOn').checked = true;
+  change($('rdShareOn'));
+  await untilLong(() => /^맞춤 /.test($('rdShareState').textContent) && !$('rdShareSync').disabled);
+  const p = bookProject('WW');
+  assert.deepEqual([p.job, p.io, p.start, p.end, p.note, p.code], ['RND00412026', '2145NR0999', '2026-04-01', '2027-03-31', '장부의 비고', PRJ2], '장부의 WORKSPACE 몫 칸은 그대로');
+  assert.deepEqual(years().length, 1, '연구기간이 남아 차년도 칩도 남는다');
+  assert.ok(logs.some((l) => /^R&D 공유 처음 받기\(RS-2026-00000002\): 파일에 비어 있는 칸 5개는 장부 값을 두고 다음 맞춤에 올린다$/.test(l.text)), `jobId·io·start·end·note 다섯(code 는 rerp 파일에 없는 칸이라 그대로) — ${JSON.stringify(logs.slice(-6).map((l) => l.text))}`);
+  await untilLong(() => spDoc('WW', '1차년도.json').project.jobId === 'RND00412026' && !$('rdShareSync').disabled);   // 잠깐 뒤(1.2초) 한 번 더 돌아 올린다
+  const y1 = spDoc('WW', '1차년도.json');
+  assert.deepEqual([y1.project.io, y1.project.start, y1.project.end, y1.project.note, y1.project.alias, y1.project.code, y1.project.prjNm, y1.project.rspr], ['2145NR0999', '2026-04-01', '2027-03-31', '장부의 비고', 'WW', PRJ2, 'WW 과제', '홍길동']);
+  assert.ok(sp.puts.slice(n).every((x) => x === `${folder}/1차년도.json`), '쓴 것은 WW 의 연차 파일뿐');
+  assert.match($('rdShareState').textContent, /· 과제 5개$/);
+  assert.ok(logs.some((l) => /^R&D 공유 맞춤\(고침\): 과제 5개/.test(l.text)), '올린 맞춤은 "고침" 으로 돈다');
+});
+await ta('끄면 아이콘도 동기화도 없다', async () => {
+  $('rdShareOn').checked = false;
+  change($('rdShareOn'));
+  assert.equal($('rdShareState').textContent, '꺼짐');
+  assert.equal($('rdShareMsg').textContent, '');
   assert.ok(!$('rdErpTable').querySelector('[data-act="plan-export"]'));
-  assert.ok($('rdNoteSync').disabled);
+  assert.ok($('rdShareSync').disabled);
+});
+t('(검사 뒷정리) WW 를 지운다 — 공유가 꺼져 있어 묘비는 남지 않는다. 그 뒤는 TEST 로', () => {
+  pickChip('WW');
+  delCurrent();
+  assert.equal(chips().length, 4);
+  assert.deepEqual(panel.share().del, {});
+  pickChip('TEST');
+  assert.equal(panel.erp()?.prjNo, PRJ);
 });
 t('끊기(두 번) — 표가 사라지고 집행 칸은 다시 손으로 적는다(값은 남는다)', () => {
   $('rdErpUnlink').click();
@@ -1211,51 +1382,14 @@ await ta('비목 체크를 끄면 그 줄만 숨고(합계·표 복사는 그대
   assert.ok(logs.some((l) => /^R&D 설정: 예산 칸에 숨긴 비목 — 없음\(모두 보임\)$/.test(l.text)));
 });
 
-console.log('연구내용 원노트 공유(2026-10-14) — YAML 로 넣은 연구개발계획서를 「[연구내용] 과제명」 페이지에 올려 링크로 kr_ext_rerp 에 보낸다');
-const RSY = (await import('../rerp/researchsync.js')).default;
-const ONENOTE = (await import('../rerp/onenote.js')).default;
-await ta('YAML 을 넣을 때 rerp 와 같은 기록(researchPlans — 과제명#차년도)으로도 남는다 — 오래된 판은 건너뛴다', async () => {
+console.log('연구내용 기록(2026-10-14 → 2026-10-18 연차 파일로) — YAML 로 넣은 연구개발계획서는 rerp 와 같은 기록으로 남고, 공유가 켜져 있으면 과제 폴더의 연차 파일 research 칸으로 간다(위 공유 검사)');
+await ta('YAML 을 넣을 때 rerp 와 같은 기록(researchPlans — 과제명#차년도)으로도 남는다 — 오래된 판은 건너뛴다. 원노트에 올리는 단추·링크 복사는 없다', async () => {
   const rec = store.researchPlans?.['시험용직류차단기개발#1'];
   assert.ok(rec, Object.keys(store.researchPlans || {}).join());
   assert.equal(rec.rev, 'r2', 'r2 뒤에 넣은 r0 는 기록도 건너뛰었다');
   assert.equal(rec.code, 'RS-2026-00000001');
   assert.ok(rec.goals.length > 0 && rec.contents.length > 0);
-  assert.equal($('rdResShare').textContent, '연구내용 올리기');
-  assert.ok($('rdResCopy').disabled);
-  assert.ok(hidden('rdResOpen'));
-});
-await ta('연구내용 올리기 — RERP 섹션에 페이지를 만들고 링크(웹 링크 + 페이지 ID)를 복사한다. rerp 의 받기(researchsync.parse)로 그대로 읽힌다', async () => {
-  const n = mcp.calls.length;
-  $('rdResShare').click();
-  await until(() => !$('rdResShare').disabled && /만들었습니다/.test($('rdResMsg').textContent));
-  const page = mcp.pages.find((p) => p.title === '[연구내용] 시험용 직류 차단기 개발');
-  assert.ok(page, mcp.pages.map((p) => p.title).join());
-  assert.equal(page.section, 'sec-rerp', '예상 비용과 같은 섹션');
-  assert.ok(mcp.calls.slice(n).includes('write_onenote:create_page'));
-  assert.equal(copied.at(-1), `${page.url}\n[연구내용 페이지 ID] ${page.id}`);
-  assert.match($('rdResMsg').textContent, /링크를 복사했습니다 — kr_ext_rerp 확장 설정의 연구개발계획서 칸에 붙여 넣으세요$/);
-  const back = RSY.parse(ONENOTE.findBlock(page.body, RSY.BLOCK).inner);
-  assert.equal(back.name, '시험용 직류 차단기 개발');
-  assert.equal(back.code, 'RS-2026-00000001');
-  assert.equal(back.by, myName);
-  assert.deepEqual(back.recs.map((r) => [r.n, r.rev]), [[1, 'r2']]);
-  assert.ok(page.body.includes('<td>개발목표</td>'), '사람이 읽는 표도 있다');
-  assert.equal($('rdResShare').textContent, '연구내용 다시 올리기');
-  assert.ok(!$('rdResCopy').disabled);
-  assert.ok(!hidden('rdResOpen'));
-  assert.equal(store.researchShare?.['시험용직류차단기개발']?.pageId, page.id);
-  assert.ok(logs.some((l) => /^R&D 연구내용 원노트 올림\(TEST\): \[연구내용\] 시험용 직류 차단기 개발 · 차년도 1개$/.test(l.text)));
-});
-await ta('계획서를 다시 넣으면 올린 페이지를 저절로 고친다(같은 페이지 · 클립보드는 그대로) — 링크 복사는 언제든', async () => {
-  const n = mcp.calls.length;
-  const before = copied.length;
-  dropFiles([new window.File([fx('snapshot_r2.yaml')], 'KR_test_r2.yaml')]);
-  await until(() => mcp.calls.slice(n).includes('write_onenote:replace') && /고쳤습니다/.test($('rdResMsg').textContent));
-  assert.equal(mcp.pages.filter((p) => p.title.startsWith('[연구내용]')).length, 1);
-  assert.equal(copied.length, before, '저절로 고칠 때는 클립보드를 건드리지 않는다');
-  $('rdResCopy').click();
-  await until(() => copied.length === before + 1);
-  assert.match(copied.at(-1), /^https:\/\/krclass-my\.sharepoint\.com\/.*\n\[연구내용 페이지 ID\] 1-b{32}!\d+-/);
+  for (const id of ['rdResShare', 'rdResCopy', 'rdResOpen', 'rdResMsg']) assert.equal($(id), null, `${id} 는 없다`);
 });
 
 await ta('행정지원 — 참여인력 칸 안에서 사람을 더하고 이름·맡은 일·공문 참조를 적으면 과제에 남고 머리 줄에 "행정 n명"으로 보인다(인건비·참조자 이름은 없다 — 2026-10-17 사용자 지정). 빈 줄은 저장소에서 다시 읽을 때 빠진다(2026-10-16)', async () => {
@@ -1769,11 +1903,10 @@ await ta('저장된 것으로 다시 선다 — 공문 탭에서 다시 가져�
   panel.hide();
   assert.ok(hidden('rnd'));
   panel = make();
-  $('rdNoteSection').innerHTML = '';   // 새로 연 화면에는 섹션 목록이 없다
   await panel.show();
   assert.ok(!hidden('rnd'));
-  assert.deepEqual([...$('rdNoteSection').options].map((o) => [o.value, o.textContent]), [['s1', '연구 › R&D']], '고른 섹션은 이름으로 다시 선다');
-  assert.equal($('rdNoteState').textContent, '꺼짐');
+  assert.equal($('rdShareState').textContent, '꺼짐', '공유는 꺼진 채 다시 선다');
+  assert.ok(!$('rdShareOn').checked);
   assert.deepEqual(chips().map((c) => c[0]), ['차단기 과제', '파일 과제', '수소전기추진 연구', 'TEST']);
   assert.equal(chips().at(-1)[1], true);
   assert.equal(logItems().length, 1);

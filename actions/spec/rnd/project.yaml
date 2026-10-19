@@ -31,4 +31,4 @@ uses:
   - { module: src/rnd.js, export: normalizeProject }
   - { module: src/rnd.js, export: projectChanges }
   - { module: src/rnd.js, export: aliasOwner }
-next: 장부(rndBook)에 넣고 저장한다(rndpanel.js save). 원노트 공유가 켜져 있으면 잠깐 뒤 rnd.note.sync 가 따라온다(noteSoon)
+next: 장부(rndBook)에 넣고 저장한다(rndpanel.js save). 공유 (SharePoint)가 켜져 있으면 잠깐 뒤 rnd.share.sync 가 따라온다(shareSoon — 공유로 가는 지문이 바뀌었을 때만)

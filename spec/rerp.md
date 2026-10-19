@@ -7,7 +7,11 @@ rERP(rnd.krs.co.kr) 집행내역·예상 비용·연구내용 공유, 그리고 
 - 2026-10-10 — 설계안은 공유 코드를 새 저장소에 두자고 했으나, 2026-10-11 "별도 폴더에 작성하고 CLAUDE.md/README.md 에 rerp 프로젝트에서 가져왔음을 명시" → `rerp/` 폴더로 가져오고 출처를 적는다. "가능하면 기존 코드를 그대로".
 - 2026-10-11 — rERP 표의 비목별 예상 반영 줄은 비목 줄 바로 아래(항목 줄보다 먼저). 합계 아래 예상 반영 줄은 그대로("총 지출은 메인에 이미 있어서").
 - 2026-10-11 — 예상 비용은 WORKSPACE 에서 보기만, 페이지 만들기는 rerp 확장에서 → [rnd.md](rnd.md).
-- 2026-10-14 — 연구내용 공유는 원노트 링크로 → [rnd.md](rnd.md).
+- 2026-10-14 — 연구내용 공유는 원노트 링크로 → [rnd.md](rnd.md). (철회 2026-10-18 저녁 — 아래)
+- 2026-10-18 (저녁, kr_ext_rerp 에서 먼저) — "mcp 없이 grph api 하지 않고 브라우저 토큰으로" · "workspace 에도 경로주면 알아서 동기화" · "거기도 이렇게 진행하도록 해줘" → 공유는 **SharePoint(OneDrive) 공유 폴더의 과제별 JSON**(연차 파일 `<n>차년도.json` · `예상비용.json` — 요구 원문과 몫 나눔은 [rnd.md](rnd.md) 「공유」).
+  kr_ext_rerp 의 `lib/sp-store.js`·`prjdoc.js`·`prjdoc-sync.js`·`staff-sync.js` 와 `background.js` 의 공유 배선을 `rerp/spstore.js`·`prjdoc.js`·`prjdocsync.js`·`staffsync.js`·`sharesync.js`(`createShareSync(deps)`)로 옮기고, 원노트·MCP 포팅(`rerp/onenote.js`·`plussync.js`)은 지웠다.
+  WORKSPACE 는 예상 비용을 **받기만** 하고 참여연구원 계획은 맞추지 않으므로(`want.staff:false`) 정본 `lib/prjdoc-sync.js run(deps)` 에 `pullOnly:{ plan, year }`(읽어 병합해 saveLocal 만 — 쓰지도 만들지도 않음)를 **먼저 더하고** 옮겼다(정본 규칙).
+  `rerp/mcp.js` 는 원본 `lib/mcp-client.js` 가 지워졌지만 메일 탭(`mailtrack/mcp/outlook.js`)이 import 하므로 이 저장소 몫으로 남긴다("src/teams.js·mailtrack 의 MCP 는 그대로" — MAP·origin.json 에서는 뺌).
 
 ## 참여연구원 인건비 — 참여율과 월별 지급 (2026-10-18)
 

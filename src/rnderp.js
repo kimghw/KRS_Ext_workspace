@@ -1,5 +1,5 @@
 // R&D 탭의 예산 칸에 rERP 집행내역을 잇는 **이 확장만의 풀**(2026-10-11 사용자 지정 — "rerp 의 지출조회와 원노트 동기화를 R&D 탭에").
-// rERP 를 부르는 코드·집행비율 셈·예상 비용·원노트 동기화는 kr_ext_rerp 에서 옮긴 rerp/ 폴더(rerp/erp.js · rerp/planui.js · rerp/plan.js · rerp/plussync.js)가 하고,
+// rERP 를 부르는 코드·집행비율 셈·예상 비용·공유 (SharePoint) 배선은 kr_ext_rerp 에서 옮긴 rerp/ 폴더(rerp/erp.js · rerp/planui.js · rerp/plan.js · rerp/sharesync.js — 2026-10-18 전은 원노트 rerp/plussync.js)가 하고,
 // 여기는 장부(src/rnd.js 의 rndBook)와 그것을 잇는 순수 로직만 둔다 — 차년도 ↔ rERP 과제 잇기(어느 연차 행인가), 받은 것(스냅샷)을 장부 줄에(집행 = 승인액), 비목 맞추기, 칸 머리 글.
 //
 // 장부에 남는 것: project.years[n].erp = { prjNo, anl, prjNm, rspr, stDt, endDt, auto, linkedAt, snap }

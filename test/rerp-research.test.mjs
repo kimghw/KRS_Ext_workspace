@@ -1,11 +1,10 @@
-// kr_ext_rerp `tests/research.test.js` 를 ESM 으로 옮긴 것 — rerp/research.js · rerp/researchsync.js · rerp/onenote.js 를 읽고, help-server/classify.js 검사는 뺐다(이 저장소에 없음). 출처·갱신 규칙은 rerp/README.md.
+// kr_ext_rerp `tests/research.test.js` 를 ESM 으로 옮긴 것 — rerp/research.js · rerp/researchsync.js 를 읽고, help-server/classify.js 검사는 뺐다(이 저장소에 없음). 원노트 표·올리기 검사는 2026-10-18 원본이 걷어 내어(SharePoint 폴더의 JSON 으로) 병합(merge)·clean 검사로 바뀌었다. 출처·갱신 규칙은 rerp/README.md.
 // 실행: node test/rerp-research.test.mjs (npm test 에 듦)
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import R from '../rerp/research.js';
 import RSY from '../rerp/researchsync.js';
-import O from '../rerp/onenote.js';
 import * as YAML from '../vendor/yaml/index.js';
 let n = 0, failed = 0;
 const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name); } catch (e) { failed++; console.log('FAIL', name, '\n   ', e.stack || e.message); process.exitCode = 1; } };
@@ -181,74 +180,22 @@ meta:
     assert.equal(R.refOf(null), null);
   });
 
-  /* ---------- 원노트 공유 (lib/research-sync.js) ---------- */
-  // tests/plan-sync.test.js 의 fakeOneNote 와 같은 모양 — 메모리 페이지 저장소, findBlock·pageTitle 은 진짜(lib/plus-onenote.js)
-  function fakeOneNote() {
-    const pages = {};
-    let seq = 0;
-    const calls = [];
-    return {
-      calls, pages,
-      listSectionPages: async (c, sectionId) => { calls.push('list'); return Object.entries(pages).filter(([, p]) => p.sectionId === sectionId).map(([pageId, p]) => ({ pageId, title: p.title, webUrl: `web:${pageId}`, sectionId })); },
-      syncDb: async () => { calls.push('syncDb'); },
-      createPage: async (c, sectionId, title, html) => { calls.push('create:' + title); const pageId = `pg${++seq}`; pages[pageId] = { title, sectionId, html: `<html><head><title>${title}</title></head><body>${html.replace('<table ', `<table id="table:{x}{${seq}}" `)}</body></html>` }; return { pageId, title, webUrl: `web:${pageId}` }; },
-      readPage: async (c, pageId) => { calls.push('read:' + pageId); if (!pages[pageId]) throw Object.assign(new Error('없는 페이지'), { kind: 'tool' }); return pages[pageId].html; },
-      pageTitle: O.pageTitle, findBlock: O.findBlock,
-      writeBlock: async (c, pageId, dataId, html, block) => { calls.push((block ? 'replace:' : 'append:') + pageId); const p = pages[pageId]; const withId = html.replace('<table ', `<table id="table:{x}{${++seq}}" `); p.html = block ? p.html.replace(block.html, withId) : p.html.replace('</body>', withId + '</body>'); },
-    };
-  }
+  /* ---------- 공유 (Plus) 병합 (lib/research-sync.js — 과제별 공유 파일의 research 칸, 0.8.7 에서 원노트 페이지 대신 SharePoint 폴더의 JSON 으로) ---------- */
   const linked = () => { const m = {}; R.put(m, read(SNAP)); R.put(m, read(SNAP.replace('차년도: 1차년도', '차년도: 2차년도'))); R.link(m, PROJECTS); return Object.values(m); };
 
-  await test('원노트 표: 차년도마다 절 줄 · 받는 쪽 칸은 빼고 · base64 로 되읽힘', () => {
+  await test('clean: 파일에 쓸 기록은 받는 쪽 연결 칸(prjNo · prjNm · linkBy · src)을 뺀다 — JSON 왕복에도 내용은 같다', () => {
     const recs = linked();
     assert.ok(recs.every((r) => r.prjNo));
-    const html = RSY.serialize({ name: recs[0].name, code: recs[0].code, recs, at: 5, by: '김거화' });
-    assert.ok(html.startsWith('<table data-id="krx-research"'));
-    assert.ok(!/<div/.test(html), 'div 없음 (Graph replace 제약)');
-    assert.ok(html.includes('<td><b>1차년도 r2</b></td>') && html.includes('<td><b>2차년도 r2</b></td>'));
-    assert.ok(html.includes('<td>연구활동비 세부사용계획</td><td>- 회의비 × 10 · 3,000,000원 · 26.4~12<br/>'));
-    assert.ok(html.includes('&nbsp;&nbsp;· SSCB 관련'), '세부 들여쓰기');
-    // OneNote 가 줄을 나누고 span 으로 감싸도 읽힌다
-    const inner = O.findBlock(html.replace(/(krxres1:[A-Za-z0-9+/=]{40})/, '$1<span>\n</span>'), RSY.BLOCK).inner;
-    const back = RSY.parse(inner);
-    assert.equal(back.at, 5);
-    assert.equal(back.by, '김거화');
-    assert.equal(back.recs.length, 2);
-    assert.deepEqual(back.recs[0].spend, recs.find((r) => r.n === 1).spend);
-    assert.ok(back.recs.every((r) => !('prjNo' in r) && !('linkBy' in r)));
-    assert.equal(RSY.parse('<td>그냥 표</td>'), null);
-    assert.equal(RSY.nameOfTitle(RSY.titleFor('  MW급 과제 ')), 'MW급 과제');
-    assert.equal(RSY.linkText({ webUrl: 'https://x', pageId: '1-ab' }), 'https://x\n[연구내용 페이지 ID] 1-ab');
-  });
-
-  await test('올리기: 없으면 만들고, 다음엔 그 표를 바꾸고, 지워졌으면 섹션에서 제목으로 다시 찾는다', async () => {
-    const fake = fakeOneNote();
-    const recs = linked();
-    const a = await RSY.publish({ client: {}, onenote: fake, sectionId: 'S', page: null, name: recs[0].name, code: recs[0].code, recs: recs.slice(0, 1), now: 1 });
-    assert.equal(a.created, true);
-    assert.equal(a.title, '[연구내용] MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발');
-    assert.ok(fake.calls.includes('syncDb'), '만들기 전에 목록을 새로 받음');
-    const b = await RSY.publish({ client: {}, onenote: fake, sectionId: 'S', page: a, name: recs[0].name, recs, now: 2 });
-    assert.equal(b.created, false);
-    assert.equal(b.pageId, a.pageId);
-    assert.ok(fake.calls.includes('replace:' + a.pageId));
-    assert.equal(Object.keys(fake.pages).length, 1);
-    const c = await RSY.publish({ client: {}, onenote: fake, sectionId: 'S', page: { pageId: 'gone' }, name: recs[0].name, recs, now: 3 });
-    assert.equal(c.pageId, a.pageId, '기억한 페이지가 없으면 제목으로 찾음');
-    await assert.rejects(RSY.publish({ client: {}, onenote: fake, sectionId: 'S', name: 'x', recs: [] }), (e) => e.kind === 'empty');
-    await assert.rejects(RSY.publish({ client: {}, onenote: fake, sectionId: '', name: '새 과제', recs }), (e) => e.kind === 'nosection');
-    await assert.rejects(RSY.publish({ client: {}, onenote: Object.assign({}, fake, { readPage: async () => { throw Object.assign(new Error('꺼짐'), { kind: 'offline' }); } }), sectionId: 'S', page: a, name: recs[0].name, recs }), (e) => e.kind === 'offline');
-
-    // 받기 — 받는 쪽은 put 으로 넣고 자기 과제에 잇는다(src = 페이지)
-    const got = await RSY.pull({ client: {}, onenote: fake, pageId: a.pageId });
-    assert.equal(got.title, a.title);
-    assert.equal(got.data.recs.length, 2);
+    const cleaned = recs.map(RSY.clean);
+    assert.ok(cleaned.every((r) => RSY.LOCAL.every((k) => !(k in r))));
+    const back = JSON.parse(JSON.stringify(cleaned));
+    assert.deepEqual(back[0].spend, recs[0].spend);
+    assert.deepEqual(back.map((r) => r.id), recs.map((r) => r.id));
+    // 받는 쪽은 put 으로 넣고 자기 과제에 잇는다(src = 파일 이름 등)
     const mine = {};
-    for (const rec of got.data.recs) R.put(mine, Object.assign(rec, { src: a.pageId }));
+    for (const rec of back) R.put(mine, Object.assign(rec, { src: '2026-0063-01.json' }));
     R.link(mine, PROJECTS);
-    assert.equal(R.forProject(mine, '2026-0063-01', '1').src, a.pageId);
-    fake.pages.empty = { title: '빈 페이지', sectionId: 'S', html: '<html><body><p>글</p></body></html>' };
-    await assert.rejects(RSY.pull({ client: {}, onenote: fake, pageId: 'empty' }), (e) => e.kind === 'noblock');
+    assert.equal(R.forProject(mine, '2026-0063-01', '1').src, '2026-0063-01.json');
   });
 
   // 실제 RND 폴더 — 있으면 모든 KR_*.yaml 스냅샷을 읽어 과제에 잇는다 (없는 PC 에서는 건너뜀)
@@ -274,6 +221,24 @@ meta:
       for (const p of PROJECTS) assert.ok(R.forProject(map, p.prjNo, p.anl), `${p.prjNm}: 계획서 없음`);
     });
   } else console.log('skip  실제 스냅샷 — RND 폴더 없음 (' + dir + ')');
+
+  await test('공유 (Plus) 병합 (0.8.7): 판 → 넣은 시각 → 로컬, 원격에만 있는 기록은 받고 로컬에만 있는 기록은 올린다', () => {
+    const recs = linked();
+    const a1 = recs.find((r) => r.n === 1), a2 = recs.find((r) => r.n === 2);
+    // 병합: 원격 판이 높으면 원격, 같은 판이면 at 큰 쪽, 같으면 로컬
+    const m = RSY.merge([a1, Object.assign({}, a2, { at: 5 })], [Object.assign({}, RSY.clean(a1), { rev: 'r3', at: 1 }), Object.assign({}, RSY.clean(a2), { at: 9, goals: ['원격'] })]);
+    assert.deepEqual([m.recs.map((r) => r.rev), m.fromRemote, m.localChanged, m.remoteChanged], [['r3', 'r2'], { [a1.id]: true, [a2.id]: true }, true, false]);
+    const m2 = RSY.merge([a1], [RSY.clean(a1)]);
+    assert.deepEqual([m2.localChanged, m2.remoteChanged, m2.recs[0].prjNo], [false, false, a1.prjNo], '같으면 로컬 것(연결 칸 그대로)');
+    const m3 = RSY.merge([a1], null);
+    assert.deepEqual([m3.localChanged, m3.remoteChanged], [false, true], '파일에 아직 없음 → 올린다');
+    const other = Object.assign({}, RSY.clean(a1), { id: '다른차년도#3', n: 3, at: 3 });
+    const m4 = RSY.merge([a1], [RSY.clean(a1), other]);
+    assert.deepEqual([m4.recs.map((r) => r.n), m4.fromRemote, m4.localChanged, m4.remoteChanged], [[1, 3], { '다른차년도#3': true }, true, false], '원격에만 있는 차년도는 받는다');
+    const m5 = RSY.merge([a1, a2], [RSY.clean(a1)]);
+    assert.deepEqual([m5.recs.map((r) => r.n), m5.localChanged, m5.remoteChanged], [[1, 2], false, true], '로컬에만 있는 차년도는 올린다');
+    assert.deepEqual(RSY.merge([], null).recs, []);
+  });
 
   console.log(`\n${n} passed${failed ? `, ${failed} failed` : ''}`);
 })();

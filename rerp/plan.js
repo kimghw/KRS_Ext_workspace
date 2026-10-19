@@ -1,7 +1,7 @@
-// kr_ext_rerp `lib/plan.js` 를 그대로 옮긴 것. 바꾼 곳은 셋뿐이다(rerp/README.md "옮기며 바꾼 것") —
+// kr_ext_rerp `lib/plan.js` 를 그대로 옮긴 것. 바꾼 곳은 둘뿐이다(rerp/README.md "옮기며 바꾼 것") —
 //   ① IIFE 머리·꼬리를 import/export 로 (`g.KRX_FMT` 는 아래 shim `g` 로 그대로 읽음)
-//   ② 백그라운드에 보내던 chrome.runtime.sendMessage(planExport · planBind · planSync · planSyncQueue) 네 곳을 `api.send(msg)` 로 — 기본은 그대로 sendMessage 이고,
-//      WORKSPACE 사이드패널은 rerp/plussync.js 의 send() 를 끼워 같은 창 안에서 돌린다
+//   ② 백그라운드에 보내던 chrome.runtime.sendMessage(planSyncQueue/planSync · shareFolderCopy · planSync manual) 세 곳을 `api.send(msg)` 로 — 기본은 그대로 sendMessage 이고,
+//      WORKSPACE 사이드패널은 rerp/sharesync.js 의 send() 를 끼워 같은 창 안에서 돌린다
 /* 과제집행비율 보기의 "예상 비용" (비목별 세목·수량·단가 계획) 저장소 + 입력 처리. eClass 콘텐츠스크립트 / 팝업 공용
  * storage.local.plannedExpenses = { [과제번호]: { [비목 키]: [ { id, name(세목), qty(수량), unit(단가), amt(금액), ts, sub?: { date: 'YYYY-MM-DD' } } ] } }
  *   sub 가 있으면 월간 구독: date(첫 결제일)의 "일"에 매월 결제로 보고, 수량 = 오늘(포함) 이후 올해 12월까지 남은 결제 횟수를 그릴 때마다 다시 센다 (날짜가 지나면 줄어듦).
@@ -10,12 +10,12 @@
  * 비목 키 = "재원코드|비목명" (재원이 여럿인 과제는 재원별로 같은 비목이 따로 나오므로 재원을 앞에 붙임)
  * R&D ERP 에는 저장하지 않고 이 브라우저(확장 저장소 storage.local)에만 남으며, 입력·수정·삭제 때마다 자동 저장되어 브라우저를 다시 시작해도 남는다.
  * 저장 아이콘은 지금 한 번 더 저장하고 "저장됨"을 잠깐 보여 준다. storage.local.plannedSavedAt = 마지막 저장 시각 (아이콘 툴팁)
- * 확장 Plus(설정 plus.sectionId)가 켜져 있으면 백그라운드가 같은 값을 과제별 원노트 페이지와 동기화한다(lib/plan-sync.js). 그때 필요한 것들:
- *   storage.local.plannedDeleted = { [id]: { ts(삭제 시각), prj(과제번호) } } 묘비 — 삭제를 다른 사람에게 전파 (90일 지나면 버림, 이전 형식 숫자도 읽음) · 항목의 ts(마지막 수정 시각, 수량 −/＋ 도 갱신)로 병합 · by(작성자 = R&D ERP 로그인 이름)
- *   storage.local.planSyncState = 마지막 동기화 결과 · storage.local.plusPlanPages = 과제별 페이지 캐시 (둘 다 백그라운드가 씀, 아이콘 툴팁·링크) · 저장 뒤 requestSync('edit') → 백그라운드가 4초 모아서 동기화, bind() 때 requestSync('load')
- *   저장 아이콘 옆의 원노트 아이콘(render.js): plan-export(내보내기 = 이 과제 페이지의 링크+ID 를 클립보드에 복사해 동료에게 전달. 페이지가 없으면 먼저 만듦(책임자) → 다시 누르면 복사) ·
- *   plan-import(가져오기 = 동료가 보낸 링크를 붙여 넣는 칸(state.planImport)을 열고, 적용하면 background planBind 로 이 과제를 그 페이지에 연결한 뒤 항목을 가져옴) · 열기(링크).
- *   Plus 가 꺼져 있으면 켜라는 안내. 저장 아이콘은 늘 로컬 저장 + "저장됨". 실제 병합은 양방향(id 별 더 최근 수정)이고 이후 동기화는 자동
+ * 공유 (Plus, 설정 plus.enabled)가 켜져 있으면 백그라운드가 같은 값을 SharePoint(OneDrive) 공유 폴더의 **과제 폴더 안 예상비용.json**(plan 칸 — 연차에 걸치는 항목이 두 연차 파일에 걸치지 않게 과제마다 한 파일)과 맞춘다(background.js shareSync — 0.8.7, 2026-10-18 부터 원노트 페이지 대신;
+ *   같은 날 저녁 사용자 "예상지출도 다 들어 가겠지? 이건 별도 파일에서 해도 되긴하는데 알아서 해줘"). 그때 필요한 것들:
+ *   storage.local.plannedDeleted = { [id]: { ts(삭제 시각), prj(과제번호) } } 묘비 — 삭제를 다른 사람에게 전파 (90일 지나면 버림, 이전 형식 숫자도 읽음) · 항목의 ts(마지막 수정 시각, 수량 −/＋ 도 갱신)로 병합(lib/plan-sync.js merge) · by(작성자 = R&D ERP 로그인 이름)
+ *   storage.local.planSyncState = 마지막 공유 결과(shareState 와 같은 내용 — 백그라운드가 씀, pages[과제번호] = { folder(과제 폴더 이름), folderUrl(폴더 보기 주소), planUrl(예상비용.json — 항목이 있을 때), webUrl(현재 연차 파일), at, pulled, pushed, error … } 아이콘 툴팁·링크) · 저장 뒤 requestSync('edit') → 백그라운드가 4초 모아서, bind() 때 requestSync('load')
+ *   저장 아이콘 옆의 공유 아이콘(render.js): plan-export(⬆ = 과제 폴더 주소 복사 — 백그라운드 shareFolderCopy(prjNo) 가 과제 폴더를 여는 주소를 클립보드에, 폴더를 아직 모르면 밑폴더 주소; 동료가 설정 › 공유 (Plus) 의 공유 폴더 칸에 붙여 넣으면 같은 파일을 쓴다 — 보통은 자동 공유되어 붙일 일이 없다) · 열기(↗ = 예상비용.json planUrl, 없으면 과제 폴더 folderUrl).
+ *   옛 원노트 가져오기(plan-import · planBind)는 없앴다 — 폴더가 같으면 과제번호로 같은 파일이라 잇기가 필요 없다. Plus 가 꺼져 있으면 켜라는 안내. 저장 아이콘은 늘 로컬 저장 + "저장됨". 실제 병합은 양방향(id 별 더 최근 수정)이고 이후 동기화는 자동
  * 렌더러(render.js)는 state.plans / state.planShown / state.planSavedAt / state.planSaved{prjNo,text,error,busy} / state.planSync / state.planEdit / state.planDraft / state.planError 를 읽는다 */
 import FMT from './fmt.js';
 const g = { KRX_FMT: FMT };
@@ -24,15 +24,14 @@ const KEY = 'plannedExpenses';
 const HKEY = 'plannedHidden';   // 이전 버전의 감춤 목록. 지금은 쓰지 않아 load() 가 지운다
 const TKEY = 'plannedSavedAt';
 const DKEY = 'plannedDeleted';  // 묘비 { [id]: { ts, prj } } (확장 Plus 동기화의 삭제 전파용. 이전 형식: 숫자)
-const SKEY = 'planSyncState';   // 마지막 동기화 상태 (background.js planSync 가 씀)
-const PKEY = 'plusPlanPages';   // 과제별 페이지 캐시 { [과제번호]: { pageId, title, webUrl, sectionId } } (링크 복사용)
+const SKEY = 'planSyncState';   // 마지막 공유 결과 (background.js shareSync 가 씀 — shareState 와 같은 내용)
 const TOMB_TTL = 90 * 24 * 3600 * 1000;
 const EMPTY = () => ({ name: '', qty: '1', unit: '', amt: '', sub: false, date: '' });
 let savedAtCache = 0;   // load() 가 읽어 둔 마지막 저장 시각. bind() 가 state.planSavedAt 의 초기값으로 씀
-let deletedCache = {}, syncCache = null, pagesCache = {}, whoCache = '';   // load() 가 읽어 둔 묘비 · 동기화 상태 · 페이지 캐시 · 작성자 이름(rndUser.userNm)
+let deletedCache = {}, syncCache = null, whoCache = '';   // load() 가 읽어 둔 묘비 · 공유 결과 · 작성자 이름(rndUser.userNm)
 const api = {};
 api._now = () => new Date();   // 테스트에서 바꿔 끼움
-/* [workspace] 백그라운드로 보내는 길. rerp 는 chrome.runtime.sendMessage(서비스워커의 planSync·planExport·planBind), WORKSPACE 는 rerp/plussync.js 의 send 를 끼운다 */
+/* [workspace] 백그라운드로 보내는 길. rerp 는 chrome.runtime.sendMessage(서비스워커의 planSync · planSyncQueue · shareFolderCopy), WORKSPACE 는 rerp/sharesync.js 의 send 를 끼운다 */
 api.send = (msg) => chrome.runtime.sendMessage(msg);
 
 const itemKey = (x) => `${(x && (x.resCd || x.res)) || ''}|${(x && (x.exp || x.item)) || ''}`;
@@ -85,12 +84,11 @@ const isoToday = () => { const t = api._now(); return `${t.getFullYear()}-${F.pa
 
 async function load() {
   try {
-    const r = await chrome.storage.local.get([KEY, HKEY, TKEY, DKEY, SKEY, PKEY, 'rndUser']);
+    const r = await chrome.storage.local.get([KEY, HKEY, TKEY, DKEY, SKEY, 'rndUser']);
     if (r[HKEY] !== undefined) { try { chrome.storage.local.remove(HKEY); } catch (e) {} }   // 이전 버전의 감춤 목록 정리
     savedAtCache = F.num(r[TKEY]) || 0;
     deletedCache = r[DKEY] || {};
     syncCache = r[SKEY] || null;
-    pagesCache = r[PKEY] || {};
     whoCache = String((r.rndUser && r.rndUser.userNm) || '');
     return r[KEY] || {};
   } catch (e) { return {}; }
@@ -112,26 +110,17 @@ async function save(plans, deleted, prjNo) {
   } else patch[KEY] = plans;
   await chrome.storage.local.set(patch);
 }
-/* 백그라운드에 동기화 요청 (확장 Plus 가 꺼져 있으면 백그라운드가 무시). edit 는 4초 모아서, 나머지는 바로. prjNo 를 주면 그 과제만 (view: 눈 아이콘으로 펼칠 때) */
+/* 백그라운드에 공유 요청 (공유 (Plus) 가 꺼져 있으면 백그라운드가 무시). edit 는 4초 모아서(planSyncQueue), 나머지는 바로(planSync). prjNo 를 주면 그 과제만 (view: 눈 아이콘으로 펼칠 때) */
 api.requestSync = (reason, prjNo) => {
   try { const r = api.send(Object.assign({ type: reason === 'edit' ? 'planSyncQueue' : 'planSync', reason }, prjNo ? { prjNo } : {})); if (r && r.catch) r.catch(() => {}); } catch (e) {}
 };
-/* 이 과제 원노트 페이지 { pageId, webUrl, title } (페이지 캐시 → 마지막 동기화 결과 순) · 웹 링크만 (render.js 의 열기(↗) 링크) */
+/* 이 과제의 예상 비용 공유 파일 { webUrl(브라우저로 열 주소 — 예상비용.json planUrl, 아직 없으면 과제 폴더 folderUrl), title, folder, isFile } — 마지막 공유 결과(planSyncState.pages[과제번호])에서 · 링크만 (render.js 의 열기(↗) 링크) */
 api.pageOf = (state, prjNo) => {
-  const a = state.planPages && state.planPages[prjNo];
-  const b = state.planSync && state.planSync.pages && state.planSync.pages[prjNo];
-  const p = (a && a.pageId && a) || (b && b.pageId && b) || null;
-  return p ? { pageId: p.pageId, webUrl: p.webUrl || '', title: p.title || '' } : null;
+  const p = state.planSync && state.planSync.pages && state.planSync.pages[prjNo];
+  const url = p ? (p.planUrl || p.folderUrl || '') : '';
+  return url ? { webUrl: url, title: p.title || '', folder: p.folder || '', isFile: !!p.planUrl } : null;
 };
 api.linkOf = (state, prjNo) => { const p = api.pageOf(state, prjNo); return p ? p.webUrl : ''; };
-/* 클립보드 복사 (사용자 클릭 안에서 불러야 함): navigator.clipboard → 안 되면 숨은 textarea + execCommand */
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
-  try {
-    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
-    document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return !!ok;
-  } catch (e) { return false; }
-}
 
 /* 패널(host)에 위임 리스너를 붙인다. draw() 는 렌더러 호출. state.plans 는 미리 load() 로 채워 둔다.
  * data-act: plan-open(＋ 버튼, data-prj/data-key) · plan-edit/plan-del(data-id) · plan-save · plan-cancel
@@ -145,49 +134,28 @@ function bind(host, state, draw) {
   if (!state.planSavedAt) state.planSavedAt = savedAtCache;
   if (!state.planDeleted) state.planDeleted = deletedCache;
   if (state.planSync === undefined) state.planSync = syncCache;
-  if (!state.planPages) state.planPages = pagesCache;
   if (!state.planWho) state.planWho = whoCache;
   let savedTimer = 0;
   const input = (f) => host.querySelector(`[data-plan="${f}"]`);
   const focus = (f) => { const el = input(f); if (el) { el.focus(); try { el.select(); } catch (e) {} } };
   const swallow = (r) => { if (r && r.catch) r.catch(() => {}); };
   const persist = (prjNo) => { try { const r = save(state.plans, state.planDeleted, prjNo); if (r && r.then) r.then(() => { state.planSavedAt = Date.now(); api.requestSync('edit'); }); swallow(r); } catch (e) {} };
-  /* 아이콘 옆 상태 글("저장됨" · "동기화 중…" · "원노트 링크 복사됨" · 실패 이유). busy 면 지우지 않고, 아니면 ms 뒤에 지움 */
+  /* 아이콘 옆 상태 글("저장됨" · "공유 파일과 맞추는 중…" · "공유 폴더 주소 복사됨" · 실패 이유). busy 면 지우지 않고, 아니면 ms 뒤에 지움 */
   const show = (prjNo, text, error, busy, ms) => {
     state.planSaved = { prjNo, text, error: !!error, busy: !!busy }; if (!error) state.planSavedAt = Date.now(); draw();
     clearTimeout(savedTimer); if (!busy) savedTimer = setTimeout(() => { state.planSaved = null; draw(); }, ms || 3000);
   };
   const plusOn = () => !!(state.data && state.data.settings && state.data.settings.planSync);
-  const OFF_MSG = '원노트 동기화(Plus)가 꺼져 있습니다 · 툴바 팝업 아래 줄에서 켜세요';
-  const clip = (pg) => `${pg.webUrl}\n[예상 비용 페이지 ID] ${pg.pageId}`;   // 내보내기가 복사하는 글: 링크 + ID (가져오기는 둘 중 아무거나 있으면 됨)
-  /* 내보내기(⬆)인데 페이지를 아직 모를 때: 백그라운드가 이 과제만 동기화해 페이지를 만들고(책임자) 링크+ID 를 클립보드에 복사한다(오프스크린 문서 — 몇 초 걸려도 됨) */
-  async function prepareExport(prjNo) {
-    try { await save(state.plans, state.planDeleted, prjNo); } catch (e) { show(prjNo, '저장 실패', true); return; }
-    show(prjNo, '원노트 페이지를 만들고 링크를 복사하는 중…', false, true);
+  const OFF_MSG = '공유 (Plus)가 꺼져 있습니다 · 툴바 팝업 아래 줄에서 켜세요';
+  /* 과제 폴더 주소 복사(⬆): 백그라운드 shareFolderCopy(prjNo) 가 이 과제 폴더(아직 모르면 밑폴더 — r.what 'base')를 여는 주소를 클립보드에 복사한다(오프스크린 문서 — 폴더를 푸는 데 몇 초 걸려도 됨). 동료는 설정 › 공유 (Plus) 의 공유 폴더 칸에 붙여 넣는다 */
+  async function copyFolder(prjNo) {
+    show(prjNo, '과제 폴더 주소를 복사하는 중…', false, true);
     let r = null;
-    try { r = await api.send({ type: 'planExport', prjNo }); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
-    const pg = r && r.pages ? r.pages[prjNo] : null;
-    if (!r || r.skipped) show(prjNo, `동기화 꺼짐: ${((r && r.missing) || []).join(' · ') || '설정을 확인하세요'}`, true, false, 6000);
-    else if (pg && pg.error) show(prjNo, `실패: ${pg.error}`, true, false, 8000);
-    else if (pg && pg.noPage) show(prjNo, r.sectionWarn ? 'RERP 섹션이 없음 · 툴바 팝업 아래 줄에서 노트북을 고르세요' : '페이지 없음 · 과제 책임자가 만들어야 합니다', true, false, 8000);
-    else if (r.ok && pg && pg.webUrl) show(prjNo, r.copied ? `${pg.created ? '페이지 만들고 ' : ''}원노트 링크 복사됨 · 동료에게 붙여 넣어 주세요` : `${pg.created ? '페이지 만듦' : '페이지 준비됨'} · 다시 누르면 링크 복사`, false, false, 6000);
-    else if (r.ok) show(prjNo, '내보낼 항목이 없음', false, false, 4000);
-    else show(prjNo, `실패: ${r.error || '응답 없음'}`, true, false, 8000);
-  }
-  /* 가져오기(⬇) 칸의 링크 적용: 이 과제를 그 페이지에 연결하고 항목을 가져온다 */
-  async function applyImport(prjNo) {
-    const d = state.planImport; if (!d || d.prjNo !== prjNo) return;
-    const text = String(d.value || '').trim();
-    if (!text) { d.error = '동료가 내보내기로 복사해 준 원노트 페이지 링크를 붙여 넣으세요'; draw(); const el = host.querySelector('[data-plan-import]'); if (el) el.focus(); return; }
-    state.planImport = null;
-    show(prjNo, '페이지를 찾아 가져오는 중…', false, true);
-    let r = null;
-    try { r = await api.send({ type: 'planBind', prjNo, text }); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
-    const pg = r && r.pages ? r.pages[prjNo] : null;
-    if (!r || r.skipped) show(prjNo, `동기화 꺼짐: ${((r && r.missing) || []).join(' · ') || '설정을 확인하세요'}`, true, false, 6000);
-    else if (pg && pg.error) show(prjNo, `가져오기 실패: ${pg.error}`, true, false, 8000);
-    else if (r.ok) show(prjNo, pg && pg.pulled ? `가져옴 · 항목 ${F.money(pg.count)}건 반영` : `페이지 연결됨 · 항목 ${F.money(pg ? pg.count : 0)}건 (내 목록과 같음)`, false, false, 5000);
-    else show(prjNo, `가져오기 실패: ${r.error || r.message || '응답 없음'}`, true, false, 8000);
+    try { r = await api.send({ type: 'shareFolderCopy', prjNo }); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
+    if (!r || r.skipped) show(prjNo, `공유 꺼짐: ${((r && r.missing) || []).join(' · ') || '설정을 확인하세요'}`, true, false, 6000);
+    else if (r.ok && r.copied) show(prjNo, r.what === 'project' ? '과제 폴더 주소 복사됨 · 동료가 설정 › 공유 (Plus) 의 공유 폴더 칸에 붙여 넣으면 같은 파일을 씁니다' : '과제 폴더를 아직 몰라 공유 폴더(밑폴더) 주소를 복사했습니다 · 동기화 뒤 다시', r.what !== 'project', false, 7000);
+    else if (r.ok) show(prjNo, `주소 복사 실패 (클립보드) · ${r.url || ''}`, true, false, 8000);
+    else show(prjNo, `실패: ${r.error || r.message || '응답 없음'}`, true, false, 8000);
   }
   const stamp = (e) => { e.ts = Date.now(); if (state.planWho) e.by = state.planWho; return e; };   // 마지막 수정 시각·작성자 (동기화 병합 기준)
   const close = () => { state.planEdit = null; state.planDraft = null; state.planError = ''; };
@@ -274,51 +242,36 @@ function bind(host, state, draw) {
       if (d.sub) { if (!d.date) d.date = isoToday(); recalc(d, 'date'); }
       else if (!(F.num(d.qty) > 0)) d.qty = '1';
       state.planError = ''; draw(); focus(d.sub ? 'date' : 'unit');
-    } else if (act === 'plan-hide') {   // 과제 단위 보이기/감추기 (저장하지 않음). 감출 때 열린 폼은 닫는다. 펼칠 때 Plus 가 켜져 있으면 그 과제를 원노트와 바로 맞춘다(view)
+    } else if (act === 'plan-hide') {   // 과제 단위 보이기/감추기 (저장하지 않음). 감출 때 열린 폼은 닫는다. 펼칠 때 Plus 가 켜져 있으면 그 과제를 공유 파일과 바로 맞춘다(view)
       if (state.planShown.has(prjNo)) { state.planShown.delete(prjNo); if (state.planEdit && state.planEdit.prjNo === prjNo) close(); }
       else { state.planShown.add(prjNo); if (plusOn()) api.requestSync('view', prjNo); }
       draw();
-    } else if (act === 'plan-persist') {   // 저장 아이콘: 지금 저장하고 "저장됨". Plus 가 켜져 있으면 저장 직후 그 과제를 원노트와 바로 맞추고 결과를 덧붙인다
+    } else if (act === 'plan-persist') {   // 저장 아이콘: 지금 저장하고 "저장됨". Plus 가 켜져 있으면 저장 직후 그 과제를 공유 파일과 바로 맞추고 결과를 덧붙인다
       (async () => {
         try { await save(state.plans, state.planDeleted, prjNo); } catch (e) { show(prjNo, '저장 실패', true); return; }
         if (!plusOn()) { show(prjNo, '저장됨'); return; }
-        show(prjNo, '저장됨 · 원노트와 맞추는 중…', false, true);
+        show(prjNo, '저장됨 · 공유 파일과 맞추는 중…', false, true);
         let r = null;
         try { r = await api.send({ type: 'planSync', reason: 'manual', prjNo }); } catch (e) { r = null; }
         const pg = r && r.pages ? r.pages[prjNo] : null;
         if (!r || r.skipped) show(prjNo, '저장됨');
-        else if (pg && pg.error) show(prjNo, `저장됨 · 원노트 실패: ${pg.error}`, true, false, 8000);
-        else if (pg && pg.noPage) show(prjNo, '저장됨 · 원노트 페이지 없음 (책임자가 만들어야 함)', false, false, 5000);
-        else if (r.ok) show(prjNo, pg && pg.pulled ? '저장됨 · 원노트 항목 반영' : pg && pg.pushed ? '저장됨 · 원노트에 씀' : '저장됨 · 원노트와 같음', false, false, 4000);
-        else show(prjNo, `저장됨 · 원노트 실패: ${r.error || '응답 없음'}`, true, false, 8000);
+        else if (pg && pg.error) show(prjNo, `저장됨 · 공유 실패: ${pg.error}`, true, false, 8000);
+        else if (r.ok) show(prjNo, pg && pg.pulled ? '저장됨 · 공유 파일의 항목 반영' : pg && pg.pushed ? '저장됨 · 공유 파일에 씀' : '저장됨 · 공유 파일과 같음', false, false, 4000);
+        else show(prjNo, `저장됨 · 공유 실패: ${r.error || '응답 없음'}`, true, false, 8000);
       })();
-    } else if (act === 'plan-export') {   // 원노트로 내보내기: 이 과제 페이지의 링크+ID 를 클립보드에 복사 (페이지가 없으면 먼저 만듦)
+    } else if (act === 'plan-export') {   // 공유 폴더 주소 복사: 동료가 설정의 공유 폴더 칸에 붙여 넣으면 같은 폴더의 같은 과제 파일을 쓴다
       if (!plusOn()) { show(prjNo, OFF_MSG, true, false, 6000); return; }
-      const pg = api.pageOf(state, prjNo);
-      if (pg && pg.webUrl) { (async () => { const ok = await copyText(clip(pg)); show(prjNo, ok ? '원노트 링크 복사됨 · 동료에게 붙여 넣어 주세요' : '링크 복사 실패 (클립보드 권한)', !ok, false, 5000); })(); api.requestSync('edit'); }
-      else prepareExport(prjNo);
-    } else if (act === 'plan-import') {   // 원노트에서 가져오기: 동료가 보낸 링크를 붙여 넣는 칸 열기/닫기
-      if (!plusOn()) { show(prjNo, OFF_MSG, true, false, 6000); return; }
-      state.planImport = state.planImport && state.planImport.prjNo === prjNo ? null : { prjNo, value: '', error: '' };
-      draw();
-      if (state.planImport) { const el = host.querySelector('[data-plan-import]'); if (el) el.focus(); }
-    } else if (act === 'plan-import-apply') { applyImport(prjNo); }
-    else if (act === 'plan-import-cancel') { state.planImport = null; draw(); }
+      copyFolder(prjNo);
+    }
   });
   host.addEventListener('input', (ev) => {
     const el = ev.target;
-    if (el && el.dataset && el.dataset.planImport !== undefined) { if (state.planImport) { state.planImport.value = el.value; state.planImport.error = ''; } return; }   // 가져오기 링크 칸
     const f = el && el.dataset ? el.dataset.plan : null; if (!f) return;
     const d = state.planDraft || (state.planDraft = EMPTY());
     d[f] = el.value; recalc(d, f);
   });
   host.addEventListener('keydown', (ev) => {
     const el = ev.target;
-    if (el && el.dataset && el.dataset.planImport !== undefined) {   // 가져오기 링크 칸: Enter 적용 · Esc 닫기
-      if (ev.key === 'Enter') { ev.preventDefault(); applyImport(state.planImport && state.planImport.prjNo); }
-      else if (ev.key === 'Escape') { ev.preventDefault(); state.planImport = null; draw(); }
-      return;
-    }
     if (!el || !el.dataset || !el.dataset.plan) return;
     if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
     else if (ev.key === 'Escape') { ev.preventDefault(); close(); draw(); }
@@ -336,7 +289,7 @@ function bind(host, state, draw) {
     const v = F.num(el.value); el.value = v ? F.money(v) : '';
     if (state.planDraft) state.planDraft[f] = el.value;
   });
-  // 다른 창(팝업 ↔ eClass)이나 백그라운드 동기화가 바꾼 값 반영
+  // 다른 창(팝업 ↔ eClass)이나 백그라운드 공유가 바꾼 값 반영
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
       try {
@@ -344,13 +297,13 @@ function bind(host, state, draw) {
         if (ch[TKEY]) state.planSavedAt = F.num(ch[TKEY].newValue) || state.planSavedAt;
         if (ch[DKEY]) state.planDeleted = ch[DKEY].newValue || {};
         if (ch[SKEY]) { state.planSync = ch[SKEY].newValue || null; if (!ch[KEY]) draw(); }
-        if (ch[PKEY]) { state.planPages = ch[PKEY].newValue || {}; if (!ch[KEY] && !ch[SKEY]) draw(); }
         if (ch[KEY]) { state.plans = ch[KEY].newValue || {}; draw(); }
       } catch (e) {}
     });
   } catch (e) {}
-  api.requestSync('load');   // 확장 Plus: 패널을 열 때 원노트 페이지와 한 번 맞춤 (꺼져 있으면 백그라운드가 무시)
+  api.requestSync('load');   // 공유 (Plus): 패널을 열 때 공유 파일과 한 번 맞춤 (꺼져 있으면 백그라운드가 무시)
 }
 
-Object.assign(api, { KEY, DKEY, SKEY, PKEY, itemKey, keyName, listOf, sumOf, projectTotal, find, load, save, gcTomb, bind, subRemaining, isSub, qtyOf, amtOf });
+Object.assign(api, { KEY, DKEY, SKEY, itemKey, keyName, listOf, sumOf, projectTotal, find, load, save, gcTomb, bind, subRemaining, isSub, qtyOf, amtOf });
+
 export default api;

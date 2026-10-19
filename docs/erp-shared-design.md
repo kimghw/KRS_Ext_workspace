@@ -16,6 +16,10 @@
 > R&D 설정에 **예산 칸에 보일 비목** 체크(`rndSettings.hide` — 끈 비목은 줄만 숨고 합계·표 복사·요약·rERP 표에는 그대로)를 더했다.
 > 2026-10-12 (kr_ext_rerp 세션에서 받은 요청): 미청구를 켜도 연구활동비 줄이 안 바뀐다는 지적("미청구 체크했는데도 -44가 반영이 안됨") — **미청구를 연구활동비 줄에**(`src/rnderp.js UNBILLED_ITEM`, `applySnapshot` 의 `unbilled` 옵션 → 그 줄의 `used` 와 `erpUnbilled`, 막대 보라). rERP 와 맞춰진 연구활동비 줄이 없을 때만 전처럼 합계 위 보조 줄(`rndpanel.js unbilledPlace` 의 loose).
 
+> **2026-10-18 메모** — 공유는 원노트(MCP → Graph)를 떠나 **SharePoint(OneDrive) 공유 폴더의 과제별 JSON**(과제 폴더 `<약칭 → Job Id → 과제번호>/` 안의 연차 파일 `<n>차년도.json` · `예상비용.json`, 전제는 이 브라우저의 Microsoft 로그인 쿠키 하나)으로 바뀌었다
+> (kr_ext_rerp 에서 먼저 — "mcp 없이 grph api 하지 않고 브라우저 토큰으로 하라고" · "workspace 에도 경로주면 알아서 동기화" · "거기도 이렇게 진행하도록 해줘"). 아래 1·3·4.5 장과 "원노트" 줄들은 그때(2026-10-10)의 설계다 —
+> 지금 규약은 `rerp/README.md` 「상호운용 규약」, 장부 ↔ 연차 파일 변환은 `src/rndshare.js`, 배선은 `rerp/sharesync.js`(`createShareSync(deps)` — `rndpanel.js` 가 deps 를 준다), 요구 원문은 `spec/rnd.md` 「공유」(2026-10-18 까지는 「원노트·공유」).
+
 ## 0. 한눈에
 
 - **무엇을**: R&D 탭의 예산 칸에 rERP 의 **집행내역**(비목별 예산액·승인액·승인전·잔액·집행비율 + 미청구·승인전 행 + 합계)을 kr_ext_rerp 의 과제집행비율과 **같은 규칙**으로 보이고,

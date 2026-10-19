@@ -1,5 +1,6 @@
 // kr_ext_rerp `lib/staff.js` 를 그대로 옮긴 것 — IIFE 머리와 꼬리의 `g.KRX_STAFF = …` 를 export 로만 바꿨다(load/save 의 chrome.storage 는 그대로 — 여기서는 쓰지 않는다). 출처·갱신 규칙은 rerp/README.md.
-/* 참여연구원 참여율·지급액 계산 (사업비 변경 메뉴의 머리 — 0.8.7, 2026-10-18). eClass 콘텐츠스크립트 / 팝업 / 테스트 공용, 순수 함수(DOM·chrome 없음 — load/save 만 storage).
+/* 참여연구원 참여율·지급액 계산 (사업비 › 사업비 변경 메뉴의 머리 — 0.8.7, 2026-10-18). eClass 콘텐츠스크립트 / 팝업 / 테스트 공용, 순수 함수(DOM·chrome 없음 — load/save 만 storage).
+ * 계획은 **과제마다 연차별로** 하나(2026-10-18 사용자 지정 "우선 각 과제별로 년차별로 수정할 수 있게") — 키 "과제번호@연차", 연차의 달 범위는 R&D ERP 가 주는 현재 연차 기간에서 셈한다(yearSpan).
  * KRS WORKSPACE(kr_ext_workspace)의 R&D 탭 참여인력 칸에서 하던 계산을 이쪽으로 옮긴 것이다(2026-10-18 사용자 지정: "참여연구원 계산하는거 관련해서는 kr_ext_rerp 로 넘기고 …
  * 참여연구원 참여율 및 지급액 월별 나누고 최대/전체 산정하는 기능들을 이관"). WORKSPACE 는 이 파일을 rerp/staff.js 로 그대로 옮겨(IIFE → export) rERP 에 등록된 값을 보이기만 한다.
  *
@@ -12,16 +13,23 @@
  *  - 참여자가 없는 기간은 **이전 기간 참여연구원의 지급 비율**로 인건비 예산을 나눠 초기화한다(합이 정확히 예산). 합이 예산을 넘는 편집은 막는다(overBudget — 줄이는 쪽은 둔다).
  *  - 균등 분할은 앞달 ceil천원(총 ÷ N)·마지막 달 잔액 — rERP 자료생성이 저장하는 행(1,165,000×8 + 1,159,000)과 같다.
  *
- * 저장(storage.local.staffPlans) = { [prjNo]: plan }  plan = { prjNo, prjNm, from, to('YYYY-MM' — 계획 기간), budgetPay(인건비 예산 원 | null), basis('rerp'|'plan'), src('erp'|'init'|'manual'),
- *   people[{ id, name, role, salary, pay, rate, months, manual, erp: { monthly, prjNo, at, req, seq, others[{ ym, rate, amt }] } | null, plan[{ ym, amt }] }], at, note }
+ * 저장(storage.local.staffPlans) = { ["과제번호@연차"]: plan }  plan = { prjNo, year(연차 1~), prjNm, from, to('YYYY-MM' — 계획 기간), budgetPay(인건비 예산 원 | null), basis('rerp'|'plan'), src('erp'|'init'|'manual'),
+ *   (연차를 두기 전(0.8.7 처음) 저장분은 키가 과제번호뿐이고 year 가 없다 — lib/staff-ui.js adopt 가 그 과제의 현재 연차 계획으로 옮긴다)
+ *   people[{ id, name, role, salary, pay, rate, months, manual, erp: { monthly, prjNo, at, req, seq, others[{ ym, rate, amt }] } | null, plan[{ ym, amt }] }], at(마지막 수정 시각), by(누가), note }
+ *   지운 연차 계획은 staffPlansDeleted 묘비(remove). 공유 (Plus) 가 켜져 있으면 백그라운드(background.js shareSync)가 과제 폴더의 연차 파일(<n>차년도.json 의 staff·budget 칸, SharePoint 폴더)과 연차별로 맞춘다(lib/staff-sync.js merge — at 이 큰 쪽이 이김)
  * 단위: 저장은 원, 화면·글은 천원. 달은 'YYYY-MM'. 렌더러(lib/staff-ui.js)가 이 API 로 표와 폼을 그린다 */
 const KEY = 'staffPlans';
+const DKEY = 'staffPlansDeleted';   // 지운 연차 계획의 묘비 { ["과제번호@연차"]: 지운 시각 } — 공유 (Plus) 의 병합(lib/staff-sync.js merge)이 삭제를 전파하는 데 씀. 90일 지나면 버림
+const TOMB_TTL = 90 * 24 * 3600 * 1000;
 const STAFF_MAX = 30;
 const BASES = Object.freeze(['plan', 'rerp']);
 const BASIS_LABEL = Object.freeze({ plan: '계획서 연봉', rerp: 'rERP 연봉' });
 const SOURCES = Object.freeze(['erp', 'init', 'manual', 'yaml', 'roster']);
 const MODES = Object.freeze(['rate', 'amt', 'exclude']);
 const PLAN_MAX = 240;
+const YEAR_MAX = 60;   // 연차 번호 상한
+const BUDGET_ITEMS = Object.freeze(['인건비', '연구시설·장비비', '연구재료비', '연구활동비', '연구수당', '간접비']);   // 예산 칸의 기본 비목 (연구개발계획서의 여섯 비목 — kr_ext_workspace src/rnd.js BUDGET_ITEMS 와 같음)
+const BUDGET_MAX = 30;
 
 const text = (v, max = 200) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 const num = (v) => { if (v === '' || v == null) return null; const n = Number(typeof v === 'string' ? v.replace(/[,\s%]/g, '') : v); return Number.isFinite(n) ? n : null; };
@@ -66,6 +74,55 @@ function ymText(from, to) {
 }
 /* 달 이름 — "4월". 앞 달과 해가 다르면 "'27 1월" */
 const monthLabel = (ym, prev = '') => `${prev && prev.slice(0, 4) !== ym.slice(0, 4) ? `'${ym.slice(2, 4)} ` : ''}${Number(ym.slice(5))}월`;
+
+/* ---------- 예산 칸 (연차마다 비목별 계획 — 0.8.7 사업비 변경 화면, kr_ext_workspace R&D 탭의 예산 칸과 같은 꼴) ---------- */
+/* 비목 이름 맞추기 — 띄어쓰기·가운뎃점·마침표 무시 */
+const itemKeyOf = (s) => String(s == null ? '' : s).replace(/[\s·.]/g, '').toLowerCase();
+const isPayItem = (s) => /인건비/.test(String(s || '')) && !/수당/.test(String(s || ''));
+/* 저장된 예산 줄 [{ name(비목), plan(계획 원 | null) }] — 배열이 아니면 null(= 아직 안 적음, 기본값을 쓴다). 이름도 금액도 없는 줄은 뺀다 */
+function normalizeBudget(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  for (const r of raw) {
+    if (out.length >= BUDGET_MAX) break;
+    const name = text(r && r.name, 40), plan = money(r && r.plan);
+    if (!name && plan == null) continue;
+    out.push({ name, plan });
+  }
+  return out;
+}
+/* 예산 줄들의 인건비(수당 아님) 계획 합 — 없으면 null */
+const budgetPayOf = (budget) => { const hit = (Array.isArray(budget) ? budget : []).filter((r) => isPayItem(r.name) && r.plan != null); return hit.length ? hit.reduce((s, r) => s + r.plan, 0) : null; };
+/* 예산 줄 요약 글(천원) — "인건비 35,900 · 연구활동비 66,300 · 합 136,000" */
+function budgetText(budget) {
+  const rows = (Array.isArray(budget) ? budget : []).filter((r) => r.plan != null);
+  if (!rows.length) return '';
+  return rows.map((r) => `${r.name || '비목'} ${thousand(r.plan)}`).concat([`합 ${thousand(rows.reduce((s, r) => s + r.plan, 0))}`]).join(' · ');
+}
+
+/* ---------- 연차 (과제마다 연차별 계획) ---------- */
+/* 계획 키 — "과제번호@연차". 연차가 없으면(연차를 두기 전 저장분) 과제번호만 */
+const planKey = (prjNo, year) => { const y = int(year, 1, YEAR_MAX); return y ? `${prjNo}@${y}` : String(prjNo == null ? '' : prjNo); };
+const yearLabel = (n) => `${n}차년도`;
+/* 과제의 현재 연차 번호(R&D ERP 과제 목록의 ANL) — 모르면 1 */
+const anlOf = (p) => int(p && p.anl, 1, YEAR_MAX) || 1;
+/* n차년도의 달 범위 — R&D ERP 가 주는 현재 연차 기간(RCH_ST_DT~RCH_END_DT)에서 셈한다: 현재 연차는 그대로, 다음 연차는 현재 연차 종료 다음 달부터 12달씩,
+ * 앞 연차는 현재 연차 시작 전 달까지 12달씩(첫 연차가 짧았으면 기간 칸에서 고친다). 기간을 모르면 { from: '', to: '' } */
+function yearSpan(p, n) {
+  const cur = { from: ymOf(p && p.stDt), to: ymOf(p && p.endDt) };
+  if (!isYm(cur.from) || !isYm(cur.to) || cur.to < cur.from) return { from: '', to: '' };
+  const a = anlOf(p), k = int(n, 1, YEAR_MAX) || a;
+  if (k === a) return cur;
+  if (k > a) { const from = addMonths(cur.to, 1 + 12 * (k - a - 1)); return { from, to: addMonths(from, 11) }; }
+  const to = addMonths(cur.from, -1 - 12 * (a - k - 1));
+  return { from: addMonths(to, -11), to };
+}
+/* 한 과제의 연차별 계획 — { [연차]: plan }. 연차 없는 옛 계획(키가 과제번호만)은 뺀다 */
+function plansOfProject(plans, prjNo) {
+  const out = {};
+  for (const e of Object.values(plans && typeof plans === 'object' ? plans : {})) if (e && e.prjNo === prjNo && e.year >= 1) out[e.year] = e;
+  return out;
+}
 
 /* ---------- rERP 식 ---------- */
 /* 월급여 — 급여총액(원) ÷ 12 를 천원 자리에서 절삭 */
@@ -421,29 +478,49 @@ function staffTsv(staff, basis) {
   return rows.map((r) => r.join('\t')).join('\n');
 }
 
-/* ---------- 저장 (storage.local.staffPlans — 과제마다 계획 하나) ---------- */
-function normalizePlanEntry(raw) {
+/* ---------- 저장 (storage.local.staffPlans — 과제 연차마다 계획 하나, 키 "과제번호@연차") ---------- */
+/* key 를 주면 과제번호·연차가 빠진 항목은 키("과제번호@연차")에서 읽는다 */
+function normalizePlanEntry(raw, key = '') {
   if (!raw || typeof raw !== 'object') return null;
   const staff = normalizeStaff(raw);
   const from = text(raw.from, 7), to = text(raw.to, 7);
+  const k = String(key || '').split('@');
   return {
-    prjNo: text(raw.prjNo, 40), prjNm: text(raw.prjNm, 200), from: isYm(from) ? from : '', to: isYm(to) ? to : '', budgetPay: money(raw.budgetPay),
+    prjNo: text(raw.prjNo, 40) || text(k[0] || '', 40), year: int(raw.year, 1, YEAR_MAX) || int(k[1] || '', 1, YEAR_MAX),
+    prjNm: text(raw.prjNm, 200), from: isYm(from) ? from : '', to: isYm(to) ? to : '', budgetPay: money(raw.budgetPay), budget: normalizeBudget(raw.budget),
     basis: staff ? staff.basis : (BASES.includes(raw.basis) ? raw.basis : 'rerp'), src: staff ? staff.src : 'erp', people: staff ? staff.people : [],
-    at: num(raw.at) || 0, note: text(raw.note, 300),
+    at: num(raw.at) || 0, by: text(raw.by, 40), note: text(raw.note, 300),
   };
 }
 function normalizePlans(raw) {
   const out = {};
-  for (const [k, v] of Object.entries(raw && typeof raw === 'object' ? raw : {})) { const e = normalizePlanEntry(v); if (e && (e.prjNo || k)) out[e.prjNo || k] = e; }
+  for (const [k, v] of Object.entries(raw && typeof raw === 'object' ? raw : {})) { const e = normalizePlanEntry(v, k); if (e && e.prjNo) out[planKey(e.prjNo, e.year)] = e; }
+  return out;
+}
+/* 묘비 — 90일 지난 것은 버린다 */
+function gcTomb(del, now) {
+  const out = {}; const t0 = (now || Date.now()) - TOMB_TTL;
+  for (const [k, v] of Object.entries(del && typeof del === 'object' ? del : {})) { const ts = num(v); if (ts > t0) out[k] = ts; }
   return out;
 }
 async function load() { try { const r = await chrome.storage.local.get(KEY); return normalizePlans(r[KEY]); } catch (e) { return {}; } }
+async function loadDeleted() { try { const r = await chrome.storage.local.get(DKEY); return gcTomb(r[DKEY]); } catch (e) { return {}; } }
 async function save(plans) { await chrome.storage.local.set({ [KEY]: plans }); }
+/* 연차 계획 하나를 지우고 묘비를 남긴다(공유 (Plus) 가 다른 사람의 사본도 지우도록). plans 는 호출한 쪽의 목록(거기서도 뺀다) */
+async function remove(plans, key, now) {
+  if (plans && typeof plans === 'object') delete plans[key];
+  const del = await loadDeleted();
+  del[key] = now || Date.now();
+  await chrome.storage.local.set({ [KEY]: plans || {}, [DKEY]: del });
+  return del;
+}
 
 const api = {
-  KEY, STAFF_MAX, BASES, BASIS_LABEL, MODES,
+  KEY, DKEY, STAFF_MAX, BASES, BASIS_LABEL, MODES, YEAR_MAX, BUDGET_ITEMS, gcTomb, loadDeleted, remove,
   money, thousand, thousandOf, nameKeyOf, sameName, comma,
   isYm, ymOf, addMonths, ymRange, spanMonths, ymText, monthLabel,
+  itemKeyOf, isPayItem, normalizeBudget, budgetPayOf, budgetText,
+  planKey, yearLabel, anlOf, yearSpan, plansOfProject,
   monthlyOfSalary, rerpRate, amountOfRate, splitEven,
   normalizePerson, normalizeStaff, normalizePlanEntry, normalizePlans, planMonthly, monthlyPay, personStats, staffTotal, overBudget, rateText, statsText, monthlyText,
   rowsOfErp, byName, peopleOfErp, othersOfErp, sharesOfErp, buildStaff, initFromShares, sharesOfStaff,
@@ -451,9 +528,11 @@ const api = {
 };
 export default api;
 export {
-  KEY, STAFF_MAX, BASES, BASIS_LABEL, MODES,
+  KEY, DKEY, STAFF_MAX, BASES, BASIS_LABEL, MODES, YEAR_MAX, BUDGET_ITEMS, gcTomb, loadDeleted, remove,
   money, thousand, thousandOf, nameKeyOf, sameName, comma,
   isYm, ymOf, addMonths, ymRange, spanMonths, ymText, monthLabel,
+  itemKeyOf, isPayItem, normalizeBudget, budgetPayOf, budgetText,
+  planKey, yearLabel, anlOf, yearSpan, plansOfProject,
   monthlyOfSalary, rerpRate, amountOfRate, splitEven,
   normalizePerson, normalizeStaff, normalizePlanEntry, normalizePlans, planMonthly, monthlyPay, personStats, staffTotal, overBudget, rateText, statsText, monthlyText,
   rowsOfErp, byName, peopleOfErp, othersOfErp, sharesOfErp, buildStaff, initFromShares, sharesOfStaff,

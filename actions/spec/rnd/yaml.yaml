@@ -27,4 +27,4 @@ runner: rnd.yaml
 uses:
   - { module: src/rndyaml.js, export: kindOf }
   - { module: src/rndyaml.js, export: applyYaml }
-next: 하나라도 들어갔으면 장부를 다시 그리고 저장한다. 스냅샷을 넣었고 그 과제의 연구내용 페이지가 원노트에 있으면 rnd.research.share(auto)가 따라온다(기다리지 않는다)
+next: 하나라도 들어갔으면 장부를 다시 그리고 저장한다. 스냅샷을 넣었으면 rerp 와 같은 연구내용 기록(researchPlans)도 남기고, 공유 (SharePoint)가 켜져 있으면 잠깐 뒤 rnd.share.sync 가 따라온다(shareSoon — 기다리지 않는다)

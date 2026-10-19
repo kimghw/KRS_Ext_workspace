@@ -1,12 +1,12 @@
-/* kr_ext_rerp `lib/panel.css`(0.8.3, 880a6bc) 가운데 과제집행비율 표(.krext-cards.krext-bgt)·집행비율 막대·예상 비용 줄과 폼·원노트 아이콘이 쓰는 규칙을 그대로 옮긴 것.
- * 패널 틀(.krext-panel)·카드미청구·참여율·급여 쪽 규칙은 옮기지 않았다. 클래스 이름(krext-*)도 그대로라 WORKSPACE 쪽(rd-*)과 겹치지 않는다.
+/* kr_ext_rerp `lib/panel.css`(0.8.6, dedbd24 + 2026-10-18 작업 트리) 가운데 과제집행비율 표(.krext-cards.krext-bgt)·집행비율 막대·예상 비용 줄과 폼·공유 아이콘이 쓰는 규칙을 그대로 옮긴 것.
+ * 패널 틀(.krext-panel)·카드미청구·참여율·급여·청구 준비·사업비 관리(.krext-ws-* · .krext-st-*) 쪽 규칙은 옮기지 않았다. 클래스 이름(krext-*)도 그대로라 WORKSPACE 쪽(rd-*)과 겹치지 않는다.
  * 어두운 화면용 덮어쓰기는 sidepanel.css 의 ".rnd .rd-erp" 절에 있다(여기는 rerp 와 같은 밝은 색 그대로). 출처·갱신 규칙은 rerp/README.md. */
 .krext-red { color: #d7263d; }
 .krext-blue { color: #1a5fb4; }
 .krext-sub { flex-basis: 100%; font-size: 11px; color: #4b5563; margin-top: 2px; }
 .krext-dim { color: #6b7480; }
 .krext-err { color: #b3261e; }
-.krext-cards { width: 100%; border-collapse: collapse; font-size: 12px; }
+.krext-cards { width: 100%; border-collapse: collapse; font-size: 13.2px; }   /* 0.8.5: 거래 표(거래 행·청구 준비 줄·참석자 카드)의 글자·칸 높이를 10% 키움 (12px → 13.2px, 준비 줄 11px → 12.1px) */
 .krext-cards th, .krext-cards td { padding: 4px 6px; border-bottom: 1px solid #eef1f5; text-align: left; vertical-align: top; }
 .krext-cards th { color: #6b7480; font-weight: 600; background: #f3f5f8; }
 .krext-cards tr:last-child td { border-bottom: 0; }
@@ -57,12 +57,7 @@
 .krext-plan-err { font-size: 11px; flex-basis: 100%; }
 /* 표 머리글 "비목" 옆 아이콘 (눈: 과제 단위 감추기/보이기, 저장: CSV) 과 수량 −/＋ 버튼 */
 .krext-plan-ico { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; position: relative; }
-a.krext-ico-btn { text-decoration: none; }   /* 원노트에서 열기(↗) 링크도 아이콘 버튼처럼 */
-/* 원노트에서 가져오기: 동료가 보낸 페이지 링크를 붙여 넣는 칸 (비목 머리글 아이콘 옆) */
-.krext-plan-import { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-weight: 400; }
-.krext-plan-import input { width: 280px; height: 22px; padding: 2px 6px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 12px; line-height: 1.2; margin: 0; }
-.krext-plan-import button { height: 22px; padding: 0 7px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1f4e9c; font: inherit; font-size: 12px; cursor: pointer; }
-.krext-plan-import button:hover { background: #eef3fa; }
+a.krext-ico-btn { text-decoration: none; }   /* 공유 파일 열기(↗) 링크도 아이콘 버튼처럼 (공유 (Plus) — 2026-10-18 부터 SharePoint 폴더의 과제별 JSON. 옛 원노트 가져오기 칸 .krext-plan-import 는 없앴다) */
 .krext-ico-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 18px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #6b5cc4; cursor: pointer; }
 .krext-ico-btn:hover { background: #e6e0fa; border-color: #d9d2f2; }
 .krext-ico-btn.krext-ico-off { color: #8a919c; }

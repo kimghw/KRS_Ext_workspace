@@ -8,6 +8,7 @@ import {
   STAFF_MAX, money, thousand, thousandOf, isYm, ymOf, addMonths, ymRange, spanMonths, ymText, monthLabel, monthlyOfSalary, rerpRate, amountOfRate, splitEven,
   normalizePerson, normalizeStaff, normalizePlans, planMonthly, monthlyPay, personStats, staffTotal, overBudget, rateText, statsText, monthlyText, buildStaff, initFromShares,
   sharesOfStaff, rowsOfErp, byName, peopleOfErp, othersOfErp, sharesOfErp, applyChange, setTotal, setRate, setManual, mergeOthers, checks, staffLines, staffTsv,
+  planKey, yearLabel, anlOf, yearSpan, plansOfProject,
 } from '../rerp/staff.js';
 
 let pass = 0;
@@ -173,7 +174,7 @@ t('normalizePlans — 저장 모양(staffPlans): 과제마다 계획 하나, 틀
   assert.deepEqual(Object.keys(plans), ['P1', 'P2']);
   const p1 = plans.P1;
   assert.deepEqual([p1.prjNo, p1.prjNm, p1.from, p1.to, p1.budgetPay, p1.basis, p1.src, p1.people.length, p1.at, p1.note], ['P1', 'x', '2026-04', '2026-12', 30000000, 'rerp', 'erp', 1, 7, 'n']);
-  assert.deepEqual([plans.P2.from, plans.P2.people, plans.P2.basis, plans.P2.src, plans.P2.prjNo], ['', [], 'rerp', 'erp', '']);
+  assert.deepEqual([plans.P2.from, plans.P2.people, plans.P2.basis, plans.P2.src, plans.P2.prjNo, plans.P2.year], ['', [], 'rerp', 'erp', 'P2', null], '과제번호가 빠지면 키에서(2026-10-18 연차 키 "과제번호@연차" — normalizePlanEntry(raw, key))');
   assert.deepEqual(normalizePlans(null), {});
 });
 
@@ -346,6 +347,22 @@ t('요약 줄과 탭으로 나눈 표', () => {
   assert.equal(staffLines(erp, 'rerp')[1], '- 문창재 — 참여연구원 · 월급여 5,823천원(rERP) · 4~12월 (9개월) · 계상인건비 10,479천원 · 참여율 20.00% (월 최대 20.01%) · 월별 4~11월 1,165 · 12월 1,159');
   assert.equal(staffTsv(erp, 'rerp').split('\n')[2], ['김거화', '과제책임자', '8,480', '4~11월', '8', '18,624', '27.46%', '27.46%', '4~11월 2,328'].join('\t'));
   assert.deepEqual([staffLines(null, 'rerp'), staffTsv(null, 'rerp')], [[], '']);
+});
+
+
+t('연차 — 계획 키 과제번호@연차, 현재 연차 번호, 연차의 달 범위(현재 그대로 · 다음은 종료 다음 달부터 12달 · 앞은 시작 전 달까지 12달), 과제의 연차별 계획', () => {
+  const P = { prjNo: 'P', anl: '2', stDt: '20270101', endDt: '20271231' };
+  assert.deepEqual([planKey('P', 1), planKey('P', '3'), planKey('P', null), planKey('P', 0), planKey('P', 999)], ['P@1', 'P@3', 'P', 'P', 'P']);
+  assert.deepEqual([yearLabel(2), anlOf(P), anlOf({ anl: '' }), anlOf(null), anlOf({ anl: '0' })], ['2차년도', 2, 1, 1, 1]);
+  assert.deepEqual([yearSpan(P, 2), yearSpan(P, 3), yearSpan(P, 4), yearSpan(P, 1), yearSpan(P, undefined)], [{ from: '2027-01', to: '2027-12' }, { from: '2028-01', to: '2028-12' }, { from: '2029-01', to: '2029-12' }, { from: '2026-01', to: '2026-12' }, { from: '2027-01', to: '2027-12' }]);
+  assert.deepEqual(yearSpan({ prjNo: 'Q', anl: '1', stDt: '20260401', endDt: '20261231' }, 2), { from: '2027-01', to: '2027-12' }, '첫 연차가 9달이어도 다음 연차는 종료 다음 달부터 12달');
+  assert.deepEqual([yearSpan({ anl: '1' }, 2), yearSpan({ anl: '1', stDt: '20261231', endDt: '20260101' }, 1)], [{ from: '', to: '' }, { from: '', to: '' }]);
+  const plans = { 'P@1': { prjNo: 'P', year: 1 }, 'P@2': { prjNo: 'P', year: 2 }, P: { prjNo: 'P' }, 'Q@1': { prjNo: 'Q', year: 1 } };
+  assert.deepEqual(Object.keys(plansOfProject(plans, 'P')), ['1', '2']);
+  assert.deepEqual(plansOfProject(null, 'P'), {});
+  const norm = normalizePlans({ 'P@2': { prjNm: 'x', people: [{ name: '홍길동', plan: [{ ym: '2027-01', amt: 1 }] }] }, 'P@1': { prjNo: 'P', year: '1' }, P: { prjNo: 'P' }, 'R@9': { prjNo: 'R', year: 3 } });
+  assert.deepEqual(Object.keys(norm).sort(), ['P', 'P@1', 'P@2', 'R@3'], '과제번호·연차가 빠지면 키에서, 있으면 값이 앞선다');
+  assert.deepEqual([norm['P@2'].prjNo, norm['P@2'].year, norm['P@2'].people.length, norm['P@1'].year, norm.P.year], ['P', 2, 1, 1, null]);
 });
 
 console.log(`\n${pass} passed`);

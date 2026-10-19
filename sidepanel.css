@@ -1817,16 +1817,24 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-staff-warn li.warn::before { background: var(--bar-plan, #f2ad3d); }
 .rnd .rd-staff-msg { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .rnd .rd-staff-msg.error { color: var(--danger); }
-/* 원노트 공유(선택) — 켜기 · 섹션 고르기 · 지금 맞추기 · 마지막 결과. */
-.rnd .rd-note-how { margin: 6px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; word-break: keep-all; }
-.rnd .rd-note-row { display: flex; gap: 6px; align-items: center; }
-.rnd .rd-note-row select { flex: 1; min-width: 0; }
-.rnd .rd-note-row button { flex: none; }
-.rnd .rd-note-open { align-self: center; color: var(--pick); font-size: 13px; font-weight: 600; text-decoration: none; }
-.rnd .rd-note-open:hover { text-decoration: underline; }
-.rnd .rd-note-msg { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.rnd .rd-note-msg:empty { display: none; }
-.rnd .rd-note-msg.error { color: var(--danger); }
+/* 공유 (SharePoint)(2026-10-18 — 원노트 공유 칸을 바꿈) — 켜기 · 공유 폴더 칸 · 지금 맞추기/폴더 열기/링크 복사 · 상태 글 · ⓘ 설명(접힌 한 줄). .rd-share-msg 는 rERP 칸의 알림 줄도 쓴다. */
+.rnd .rd-share-how { margin: 6px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; word-break: keep-all; }
+.rnd .rd-share-how code { font-family: ui-monospace, "D2Coding", monospace; font-size: 11.5px; color: var(--fg); }
+.rnd .rd-share-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.rnd .rd-share-row input[type="text"], .rnd .rd-share-row select { flex: 1; min-width: 0; }
+.rnd .rd-share-row button { flex: none; }
+.rnd .rd-share-open { align-self: center; color: var(--pick); font-size: 13px; font-weight: 600; text-decoration: none; }
+.rnd .rd-share-open:hover { text-decoration: underline; }
+.rnd .rd-share-msg { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.rnd .rd-share-msg:empty { display: none; }
+.rnd .rd-share-msg.error { color: var(--danger); }
+/* ⓘ 설명 — 작은 접힌 줄(카드 칸의 큼직한 summary·꺾쇠는 쓰지 않는다). */
+.rnd .rd-share-help { margin-top: 6px; }
+.rnd .rd-share-help > summary { min-height: 0; gap: 4px; padding: 2px 0; color: var(--faint); font-size: 11px; }
+.rnd .rd-share-help > summary::after { display: none; }
+.rnd .rd-share-help > summary:hover { color: var(--pick); }
+.rnd .rd-share-help[open] > summary { color: var(--muted); }
+.rnd .rd-share-help .rd-share-how { margin: 2px 0 4px; }
 /* rERP 로 이어진 비목의 집행 칸 — rERP 승인액이라 읽기 전용(흐리게). */
 .rnd .rd-brow input[data-k="used"][readonly] { background: var(--surface-soft); color: var(--muted); cursor: default; }
 /* 예산 칸 맨 위 줄의 "집행에 더하기" 체크 셋(2026-10-11 사용자 지정 — R&D 설정에서 옮김) — 복사 아이콘 왼쪽에, 좁으면 줄을 바꾼다. rERP 를 끄면 잠그고 숨긴다. */

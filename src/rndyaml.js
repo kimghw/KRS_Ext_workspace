@@ -514,6 +514,7 @@ export function applyYaml(book, obj, { text = '', file = '', current = null, n =
   let tail = '';
   if (project && project === named && !project.alias && abbr) {
     project.alias = abbr;
+    project.aliasAt = Date.now();   // 별칭을 바꾸는 모든 길에 시각 — 공유의 병합 기준(src/rnd.js 머리). 없으면 맞출 때마다 '지금' 으로 셈해 동료가 그 사이 바꾼 별칭을 되덮는다(2026-10-19 검토)
     tail = ` · 별칭 ${abbr} 붙임`;
   }
   const opts = { project, n, today };

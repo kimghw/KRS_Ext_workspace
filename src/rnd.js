@@ -16,6 +16,10 @@
 // 과제 목록은 공문 탭의 공문 설정(gongmunProjects — 과제명·별명·과제번호·책임자·연구기간 글)에서 가져올 수 있다.
 // 과제번호(없으면 과제명)가 같으면 같은 과제로 보고 빈 칸만 채운다(mergeProjects). 여기 담은 것은 이 브라우저에만 남으니
 // JSON 으로 내보내고(exportJson) 들여올(importJson) 수 있다.
+//
+// 공유 (SharePoint, 2026-10-18 사용자 지정 — kr_ext_rerp 에서 먼저 "onedrive 에 업무/shared 안에 과제별로 .. 년차별로 1개 파일이고 1개 파일에서 변경사항이랑 다 관리 … 과제 정보랑 등등" 뒤 "거기도 이렇게 진행하도록 해줘")를 위해
+// 과제에는 **aliasAt**(별칭을 마지막으로 바꾼 시각 ms — 연차 파일의 project.alias 와 늦은 쪽으로 맞춘다. 별칭을 바꾸는 모든 길: 패널의 setAlias·saveForm·setAliasOf 와 여기 mergeProjects), 변경이력 한 줄에는
+// **at**(적은 시각 ms)·**by**(적은 사람 — 연차 파일의 changes 칸과 같은 칸. 없던 줄은 0·'')가 있다(normalizeChange). 공유 쪽 변환은 src/rndshare.js, 배선은 rndpanel.js.
 
 import { normalizeErp, erpSummaryLines, clock as erpClock } from './rnderp.js';
 import { normalizeAcct, acctSummaryLines } from './eacct.js';
@@ -34,9 +38,12 @@ export const CHANGE_KINDS = Object.freeze(['예산', '연구내용', '연구기�
 // job 은 전자결재 과제 찾기의 Job Id(RND00202026 꼴 — 2026-10-16 사용자 지정으로 과제번호와 따로 둔다. 과제번호는 국가과제 번호일 수 있다 — rERP 잇기의 열쇠).
 // io 는 회계(e-accounting)의 과제 코드(I/O — 2145NR0124 꼴, 2026-10-17 사용자 지정) — 구매요청서 예산 내역의 I/O 코드이고, 과제의 회계 예산 스냅샷(acct — src/eacct.js normalizeAcct:
 // 그 해의 계정과목(보조세목)별 기초·전용·실적·가용)은 io 가 있을 때만 붙는다(없으면 칸 자체가 없다 — rERP 의 years[n].erp 와 같다).
-export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+// aliasAt 은 별칭을 마지막으로 바꾼 시각(ms, 공유의 병합 기준 — 2026-10-18). 별칭이 없으면 0.
+export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', aliasAt: 0, code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
 
 const text = (v, max = 2000) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').slice(0, max).trim() : '');
+/** 시각(ms) — 양의 정수만, 아니면 0. */
+const stamp = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n) : 0; };
 const pad = (n) => String(n).padStart(2, '0');
 const keyOf = (s) => String(s ?? '').replace(/\s/g, '').toLowerCase();
 
@@ -176,9 +183,10 @@ const normalizeRow = (r) => {
   return row;
 };
 const normalizeLog = (l) => withKey({ id: text(l?.id, 40) || newId(), date: isYmd(l?.date) ? l.date : '', title: text(l?.title, 200), text: text(l?.text, 4000) }, l);
+// at·by 는 공유(연차 파일의 changes 칸 — 2026-10-18)와 같은 칸: 적은 시각(ms)·적은 사람. 없던 줄(계획서 YAML 에서 온 것·옛 저장분)은 0·''.
 const normalizeChange = (c) => withKey({
   id: text(c?.id, 40) || newId(), date: isYmd(c?.date) ? c.date : '', kind: CHANGE_KINDS.includes(c?.kind) ? c.kind : '기타',
-  item: text(c?.item, 100), before: text(c?.before, 300), after: text(c?.after, 300), reason: text(c?.reason, 1000), auto: c?.auto === true,
+  item: text(c?.item, 100), before: text(c?.before, 300), after: text(c?.after, 300), reason: text(c?.reason, 1000), by: text(c?.by, 40), at: stamp(c?.at), auto: c?.auto === true,
 }, c);
 
 /**
@@ -262,6 +270,7 @@ export function normalizeProject(raw) {
   p.id = text(raw.id, 40) || newId();
   p.name = text(raw.name, 200);
   p.alias = text(raw.alias, 60);
+  p.aliasAt = p.alias ? stamp(raw.aliasAt) : 0;
   p.code = text(raw.code, 40);
   p.job = text(raw.job, 20).replace(/\s+/g, '');
   p.io = text(raw.io, 20).replace(/\s+/g, '').toUpperCase();
@@ -393,9 +402,10 @@ export function fromGongmun(list) {
 
 /**
  * 과제를 보탠다 — 과제번호(둘 다 있으면)나 과제명이 같으면 같은 과제로 보고 빈 칸만 채운다. 열 개를 넘는 것은 넣지 않는다(skipped).
+ * 별칭이 새로 서면(더한 과제·채운 칸) aliasAt 은 지금(들어온 것에 시각이 있으면 그것) — 공유의 병합 기준(2026-10-18).
  * @returns {{ book: object, added: string[], filled: string[], skipped: string[] }}
  */
-export function mergeProjects(book, incoming) {
+export function mergeProjects(book, incoming, now = Date.now()) {
   const projects = book.projects.map((p) => ({ ...p }));
   const added = [];
   const filled = [];
@@ -409,7 +419,8 @@ export function mergeProjects(book, incoming) {
         skipped.push(inc.name);
         continue;
       }
-      projects.push({ ...normalizeProject(inc), id: newId(), years: {} });
+      const fresh = normalizeProject(inc);
+      projects.push({ ...fresh, id: newId(), aliasAt: fresh.alias ? fresh.aliasAt || now : 0, years: {} });
       added.push(inc.name);
       continue;
     }
@@ -417,6 +428,7 @@ export function mergeProjects(book, incoming) {
     for (const k of ['alias', 'code', 'job', 'io', 'lead', 'start', 'end', 'calendar']) {
       if (!hit[k] && inc[k]) {
         hit[k] = inc[k];
+        if (k === 'alias') hit.aliasAt = stamp(inc.aliasAt) || now;
         touched = true;
       }
     }

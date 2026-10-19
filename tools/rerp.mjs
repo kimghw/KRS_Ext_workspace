@@ -17,26 +17,34 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = path.join(ROOT, 'rerp', 'origin.json');
 const DEFAULT_SOURCE = process.env.KR_EXT_RERP || 'E:/dev/kr_ext_rerp';
 
-/** 원본 파일 → rerp/ 의 파일. 한 원본이 여러 곳으로 가기도 한다(render.js → planui.js · background.js → plussync.js). */
+/** 원본 파일 → rerp/ 의 파일. 한 원본이 여러 곳으로 가기도 한다(render.js → planui.js · background.js → sharesync.js). 원노트·MCP(lib/mcp-client.js · lib/plus-onenote.js → rerp/mcp.js · onenote.js · plussync.js)는
+ *  2026-10-18 원본이 걷어 내어(사용자 "mcp 없이 … 브라우저 토큰으로") 여기서도 지웠다 — 그 자리는 SharePoint 폴더의 과제별 JSON(spstore · prjdoc · prjdocsync · staffsync · sharesync). */
 export const MAP = [
   { from: 'lib/format.js', to: 'rerp/fmt.js', how: '그대로 (IIFE → export)' },
-  { from: 'lib/mcp-client.js', to: 'rerp/mcp.js', how: '그대로 (g = globalThis, export)' },
-  { from: 'lib/plus-onenote.js', to: 'rerp/onenote.js', how: '그대로 (export)' },
   { from: 'lib/plan-sync.js', to: 'rerp/plansync.js', how: '그대로 (export)' },
-  { from: 'lib/plan.js', to: 'rerp/plan.js', how: '그대로 + chrome.runtime.sendMessage 네 곳 → api.send' },
+  { from: 'lib/plan.js', to: 'rerp/plan.js', how: '그대로 + chrome.runtime.sendMessage 세 곳 → api.send' },
   { from: 'lib/render.js', to: 'rerp/planui.js', how: '과제집행비율 표 부분만 (rateCell·pct·rateOf·아이콘·isProjectLead·planBtn·planRow·planForm·budgetTable·projectLink)' },
   { from: 'lib/rnd-api.js', to: 'rerp/erp.js', how: 'call·describe·pool·fetchProjectRecs·fetchProjects·dateRange·fetchCards·trunc·execRate·fetchBudget·ssoLogin + collect 의 미청구 합산(withPending) · settings.js 의 adv 기본값' },
-  { from: 'lib/settings.js', to: 'rerp/erp.js · rerp/plussync.js', how: 'DEFAULTS 의 adv·budgetExclude·plus 와 parseJson 만' },
-  { from: 'background.js', to: 'rerp/plussync.js', how: '확장 Plus 배선(planSync·queuePlanSync·plusProbe·plusNotebooks·planExport·planBind·plusResolveSection·onMessage 갈래) — 설정·과제 문맥·클립보드는 deps' },
-  { from: 'lib/panel.css', to: 'rerp/plan.css', how: '과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·원노트 아이콘 규칙만' },
-  { from: 'tests/plan-sync.test.js', to: 'test/rerp.test.mjs', how: 'ESM 으로 옮기고 erp.js·plussync.js 검사를 보탬' },
-  // 연구내용 원노트 공유(2026-10-14) — 연구개발계획서 기록과 「[연구내용] 과제명」 페이지(R&D 탭의 연구내용 올리기 → rerp 가 링크로 받음)
+  { from: 'lib/settings.js', to: 'rerp/erp.js · rerp/sharesync.js', how: 'DEFAULTS 의 adv·budgetExclude(erp.js)·plus(sharesync.js SHARE_DEFAULTS) 와 parseJson 만' },
+  { from: 'background.js', to: 'rerp/sharesync.js', how: '공유 (Plus) 배선(shareSync·queueShareSync·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps' },
+  { from: 'lib/panel.css', to: 'rerp/plan.css', how: '과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·공유 아이콘 규칙만' },
+  { from: 'tests/plan-sync.test.js', to: 'test/rerp.test.mjs', how: 'ESM 으로 옮기고 plan.js·erp.js 검사를 보탬' },
+  // 연구내용(2026-10-14 원노트 → 2026-10-18 과제 폴더의 연차 파일 research 칸) — 연구개발계획서 기록과 그 병합 규칙
   { from: 'lib/research.js', to: 'rerp/research.js', how: '그대로 (IIFE → export)' },
   { from: 'lib/research-sync.js', to: 'rerp/researchsync.js', how: '그대로 (IIFE → export, g.KRX_RESEARCH 는 shim)' },
   { from: 'tests/research.test.js', to: 'test/rerp-research.test.mjs', how: 'ESM 으로 (help-server/classify.js 검사는 뺌)' },
   // 참여연구원 참여율·지급액(2026-10-18) — 계산은 kr_ext_rerp 의 사업비 변경 메뉴로 넘기고(사용자 지정), WORKSPACE 의 참여인력 칸은 rERP 에 등록된 값을 보이기만 한다(rndpanel.js · src/rnderp.js)
   { from: 'lib/staff.js', to: 'rerp/staff.js', how: '그대로 (IIFE → export)' },
   { from: 'tests/staff.test.js', to: 'test/rerp-staff.test.mjs', how: 'ESM 으로' },
+  // 공유 (Plus) v2(2026-10-18 저녁 — "onedrive 에 업무/shared 안에 과제별로 … 년차별로 1개 파일" · "workspace 에도 경로주면 알아서 동기화"): SharePoint 저장소 · 문서 모양과 병합 · 과제별 차례 · 사업비 병합
+  { from: 'lib/staff-sync.js', to: 'rerp/staffsync.js', how: '그대로 (IIFE → export, g.KRX_STAFF 는 shim)' },
+  { from: 'lib/sp-store.js', to: 'rerp/spstore.js', how: '그대로 (g = globalThis, export)' },
+  { from: 'lib/prjdoc.js', to: 'rerp/prjdoc.js', how: '그대로 (IIFE → export, g.KRX_PLAN_SYNC·KRX_RESEARCH_SYNC·KRX_STAFF_SYNC·KRX_STAFF 는 shim)' },
+  { from: 'lib/prjdoc-sync.js', to: 'rerp/prjdocsync.js', how: '그대로 (IIFE → export, g.KRX_PRJDOC 는 shim)' },
+  { from: 'tests/staff-sync.test.js', to: 'test/rerp-share.test.mjs', how: 'ESM 으로 (한 파일에 넷 + sharesync 배선 검사)' },
+  { from: 'tests/sp-store.test.js', to: 'test/rerp-share.test.mjs', how: 'ESM 으로 (가짜 fetch·chrome — 실 SharePoint 에 쓰지 않음)' },
+  { from: 'tests/prjdoc.test.js', to: 'test/rerp-share.test.mjs', how: 'ESM 으로' },
+  { from: 'tests/prjdoc-sync.test.js', to: 'test/rerp-share.test.mjs', how: 'ESM 으로 (가짜 store)' },
 ];
 
 const sha1 = (file) => crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
