@@ -53,8 +53,12 @@ t('이어 둔 rERP 는 그 연차 것, 그 연차에 없으면 이어 둔 어느
 console.log('과제 → 연차 파일의 project 칸');
 t('정본 차례(prjNo … note) 뒤에 이 장부의 칸(wsId·code·calendar) — rERP 가 있으면 과제명은 rERP 것', () => {
   const pr = projectOf(linked(), 1);
-  assert.deepEqual(pr, { prjNo: 'P1', prjNm: 'ERP 과제명', rspr: '홍길동', alias: 'SSCB', aliasAt: 5, jobId: 'RND00202026', io: '2145NR0124', start: '2026-04-01', end: '2029-12-31', note: '산업부', wsId: 'a', code: 'RS-1', calendar: false });
-  assert.deepEqual(Object.keys(pr), ['prjNo', 'prjNm', 'rspr', 'alias', 'aliasAt', 'jobId', 'io', 'start', 'end', 'note', 'wsId', 'code', 'calendar']);
+  assert.deepEqual(pr, { prjNo: 'P1', prjNm: 'ERP 과제명', rspr: '홍길동', alias: 'SSCB', aliasAt: 5, jobId: 'RND00202026', io: '2145NR0124', start: '2026-04-01', end: '2029-12-31', note: '산업부', support: [], supportAt: 0, wsId: 'a', code: 'RS-1', calendar: false });
+  assert.deepEqual(Object.keys(pr), ['prjNo', 'prjNm', 'rspr', 'alias', 'aliasAt', 'jobId', 'io', 'start', 'end', 'note', 'support', 'supportAt', 'wsId', 'code', 'calendar']);
+  // 행정지원 — 장부의 support(이름 없는 줄·겹친 이름은 걷음)와 supportAt 이 project 칸으로(2026-10-19 "행정지원은 공유가 안되냐? 과제마다 동일해야지")
+  const sp = projectOf(P({ id: 's', name: '지원', support: [{ name: '조주희', role: '행정 담당' }, { name: '', role: 'x' }, { name: '조주희', ref: false }], supportAt: 77 }));
+  assert.deepEqual([sp.support, sp.supportAt], [[{ name: '조주희', role: '행정 담당', ref: true }], 77]);
+  assert.deepEqual([projectOf(P({ id: 's', name: '지원', support: [], supportAt: 99 })).support, projectOf(P({ id: 's', name: '지원', support: [], supportAt: 99 })).supportAt], [[], 99], '다 지워도 시각은 실린다 — 지움이 파일로 간다');
   const q = projectOf(plain());
   assert.deepEqual([q.prjNo, q.prjNm, q.aliasAt, q.calendar, q.rspr], ['', '수소 추진', 0, true, ''], '이어지지 않은 과제는 과제명·빈 과제번호');
 });
@@ -168,6 +172,25 @@ t('장부에 없는 과제는 만든다 — 과제명·책임자·기간·비고
   const full = { projects: Array.from({ length: MAX_PROJECTS }, (_, i) => P({ id: `f${i}`, name: `F${i}`, alias: `F${i}` })), current: { project: 'f0', year: {} } };
   const s = applyProject(full, 'P9', doc, {}, { now: NOW });
   assert.deepEqual([s.skipped, s.created, s.book.projects.length], [true, false, MAX_PROJECTS]);
+});
+t('행정지원 — support 칸이 오면 걷어서 들이고(바뀌면 changed support) supportAt 은 큰 쪽만, support·supportAt 만 온 payload 로는 과제를 만들지 않는다(별칭처럼)', () => {
+  const b = book();
+  const r = applyProject(b, 'P1', { support: [{ name: ' 조주희 ', role: '행정 담당' }, { name: '', role: 'x' }], supportAt: 500, at: 500 }, { P1: { id: 'a', at: 100 } }, { now: NOW });
+  const p = r.book.projects[0];
+  assert.deepEqual([r.created, r.id, r.changed, p.support, p.supportAt], [false, 'a', ['support'], [{ name: '조주희', role: '행정 담당', ref: true }], 500]);
+  assert.deepEqual(b.projects[0].support, [], '들어온 장부는 그대로');
+  // 같은 내용에 시각만 뒤 — supportAt 만 올리고 changed 는 supportAt
+  const q = applyProject(r.book, 'P1', { support: [{ name: '조주희', role: '행정 담당', ref: true }], supportAt: 900 }, r.memo, { now: NOW });
+  assert.deepEqual([q.changed, q.book.projects[0].supportAt], [['supportAt'], 900]);
+  // 비운 목록이 오면 지움(시각은 큰 쪽) — 정본 mergeProject 가 supportAt 큰 쪽으로 고른 결과가 온다
+  const e = applyProject(q.book, 'P1', { support: [], supportAt: 1000 }, q.memo, { now: NOW });
+  assert.deepEqual([e.changed, e.book.projects[0].support, e.book.projects[0].supportAt], [['support'], [], 1000]);
+  // 앞선 시각은 받지 않고, support 없이 supportAt 만 와도 큰 쪽만
+  assert.deepEqual(applyProject(e.book, 'P1', { supportAt: 5 }, e.memo, { now: NOW }).book.projects[0].supportAt, 1000);
+  assert.deepEqual(applyProject(e.book, 'P1', { supportAt: 2000 }, e.memo, { now: NOW }).changed, ['supportAt']);
+  // 장부에 없는 열쇠로 행정지원만 — 만들지 않는다
+  const none = applyProject(b, 'ZZ', { support: [{ name: '조주희' }], supportAt: 1 }, {}, { now: NOW });
+  assert.deepEqual([none.created, none.id, none.book.projects.length], [false, '', 3]);
 });
 t('있는 과제 — 온 칸만 바꾼다(정본 toLocalYear 의 project 는 ERP 칸·별칭이 없다): 이어진 과제의 과제명은 두고, 책임자·기간·비고·Job Id·I/O·code·calendar 를 받고, 받은 시각은 memo 에', () => {
   const b = book();
@@ -283,7 +306,7 @@ if (D && typeof D.mergeYear === 'function') {
       updatedAt: new Date(NOW + 10).toISOString(), updatedBy: '동료',
     });
     const m = D.mergeYear(L, remote, NOW + 20, WHO, { want: WANT, others: {}, localAt: D.localProjectAt(local, KEY) });
-    assert.deepEqual(m.localChanged, { budget: true, staff: false, research: false, changes: true, alias: true, project: true });
+    assert.deepEqual(m.localChanged, { budget: true, staff: false, research: false, changes: true, alias: true, support: false, project: true });
     const back = D.toLocalYear(KEY, N, local, m);
     let r = applyYear(p, N, 'budget', back.budget);
     assert.deepEqual(r.project.years[1].budget.map((x) => [x.item, x.plan, x.used]), [['인건비', 3000000, 5000], ['연구활동비', null, null], ['연구시설·장비비', null, null]], '계획만 — 집행은 그대로');

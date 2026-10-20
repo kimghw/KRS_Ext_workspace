@@ -189,7 +189,8 @@ t('normalizeProject — 날짜 칸이 비면 연구기간 글에서, 앞선 종�
   assert.equal(normalizeProject({ name: 'a', start: '2026-01-01', end: '2027-01-01', period: '2000.01.01 ~ 2001.01.01' }).start, '2026-01-01', '날짜 칸이 이긴다');
   assert.equal(normalizeProject({ name: 'a', start: '2027-01-01', end: '2026-01-01' }).end, '');
   assert.equal(normalizeProject({ name: 'a', end: '2026-01-01' }).end, '', '시작일 없이 종료일만은 버린다');
-  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', aliasAt: 0, code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+  assert.deepEqual(normalizeProject(null), { id: normalizeProject(null).id, name: '', alias: '', aliasAt: 0, code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], supportAt: 0, years: {} });
+  assert.deepEqual([normalizeProject({ name: 'a', support: [{ name: '조주희' }], supportAt: 77 }).supportAt, normalizeProject({ name: 'a', support: [], supportAt: 88 }).supportAt, normalizeProject({ name: 'a', supportAt: -1 }).supportAt], [77, 88, 0], 'supportAt 은 행정지원이 비어도 남긴다(지움이 공유로 가게)');
   // aliasAt(별칭을 바꾼 시각 — 공유의 병합 기준, 2026-10-18)은 별칭이 있을 때만 남고, 음수·글은 0.
   assert.equal(normalizeProject({ name: 'a', alias: 'A', aliasAt: 1760000000000 }).aliasAt, 1760000000000);
   assert.equal(normalizeProject({ name: 'a', alias: 'A', aliasAt: 'x' }).aliasAt, 0);

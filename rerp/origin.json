@@ -6,7 +6,7 @@
   "version": "0.8.6",
   "dirty": [],
   "portedAt": "2026-10-19",
-  "note": "2026-10-18 공유 (Plus) v2(SharePoint 폴더의 과제별 JSON) — 새로 옮김 sp-store · prjdoc · prjdoc-sync · staff-sync · background.js 공유 배선(sharesync.js), 다시 옮김 plan-sync · plan · panel.css · research · research-sync · staff 와 그 테스트. 지움 mcp-client · plus-onenote(원본이 걷어 냄). render.js · rnd-api.js · settings.js(erp.js 몫)는 옮기지 않아 옛 지문 그대로(드리프트가 check 에 보인다). 2026-10-19 sp-store(+테스트)에 permissions·findPeople·writer.unshare·이메일 공유를 정본에서 먼저 더하고 다시 옮김(참여인력 칸 읽기·편집 체크). 2026-10-19 background.js 의 onMessageExternal shareFolder 응답은 WORKSPACE 가 묻는 쪽이라 옮기지 않음 — rndpanel.js askPeer(지문만 갱신). 2026-10-19 지문 갱신(0afeedd): render.js 의 예상 비용 아이콘 부분(공유 (Plus) v2 — plan-import·isProjectLead 지움, plan-export 는 폴더 주소 복사, ↗ 는 pageOf)을 planui.js 에 다시 옮김. rnd-api.js(collect 캐시 칸 planSync·plusOn 만)·settings.js(plus 기본값은 sharesync.js SHARE_DEFAULTS 와 이미 같음, adv·budgetExcludeDefault 그대로)·panel.css(.krext-ws 사업비 관리 화면 규칙만 — plan.css 범위 밖)는 옮길 것이 없어 지문만.",
+  "note": "2026-10-18 공유 (Plus) v2(SharePoint 폴더의 과제별 JSON) — 새로 옮김 sp-store · prjdoc · prjdoc-sync · staff-sync · background.js 공유 배선(sharesync.js), 다시 옮김 plan-sync · plan · panel.css · research · research-sync · staff 와 그 테스트. 지움 mcp-client · plus-onenote(원본이 걷어 냄). render.js · rnd-api.js · settings.js(erp.js 몫)는 옮기지 않아 옛 지문 그대로(드리프트가 check 에 보인다). 2026-10-19 sp-store(+테스트)에 permissions·findPeople·writer.unshare·이메일 공유를 정본에서 먼저 더하고 다시 옮김(참여인력 칸 읽기·편집 체크). 2026-10-19 background.js 의 onMessageExternal shareFolder 응답은 WORKSPACE 가 묻는 쪽이라 옮기지 않음 — rndpanel.js askPeer(지문만 갱신). 2026-10-19 지문 갱신(0afeedd): render.js 의 예상 비용 아이콘 부분(공유 (Plus) v2 — plan-import·isProjectLead 지움, plan-export 는 폴더 주소 복사, ↗ 는 pageOf)을 planui.js 에 다시 옮김. rnd-api.js(collect 캐시 칸 planSync·plusOn 만)·settings.js(plus 기본값은 sharesync.js SHARE_DEFAULTS 와 이미 같음, adv·budgetExcludeDefault 그대로)·panel.css(.krext-ws 사업비 관리 화면 규칙만 — plan.css 범위 밖)는 옮길 것이 없어 지문만. 2026-10-19 저녁 행정지원 공유(사용자 \"행정지원은 공유가 안되냐? 과제마다 동일해야지\"): lib/prjdoc.js·prjdoc-sync.js·staff.js 와 tests/prjdoc·prjdoc-sync.test.js 를 원본 작업 트리(0afeedd + 미커밋)에서 다시 옮기고 지문 갱신. tests/staff.test.js 의 날짜 조각·기간 구간 검사는 test/rerp-staff.test.mjs 에 아직 옮기지 않아(행정지원 검사만 더함) 그 지문은 옛것 그대로(드리프트가 check 에 보인다). background.js 의 같은 날 변경은 행정지원 공유 배선(SHARE_SUPPORT_KEY·shareWant support·loadLocal/saveLocal support — 여기서는 sharesync.js shareWant 와 rndpanel.js shareLoadLocal/shareSaveLocal 로)과 openExtTab(사업비 관리 참여인력 변경 탭 — WORKSPACE 와 무관)뿐이라 지문만 갱신.",
   "files": [
     {
       "from": "lib/format.js",
@@ -54,8 +54,8 @@
       "from": "background.js",
       "to": "rerp/sharesync.js",
       "how": "공유 (Plus) 배선(shareSync·queueShareSync·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps",
-      "sha1": "96833682715ce37dbc9c22625da3753c489457db",
-      "bytes": 113095
+      "sha1": "d288cc4377387be57ca8a33aef1ddc368aedcca6",
+      "bytes": 116050
     },
     {
       "from": "lib/panel.css",
@@ -96,8 +96,8 @@
       "from": "lib/staff.js",
       "to": "rerp/staff.js",
       "how": "그대로 (IIFE → export)",
-      "sha1": "c9995b5085c41444ce7f24954136614cbd646c06",
-      "bytes": 38120
+      "sha1": "22a8d958016553b20e0d938ddc00b756604baf9e",
+      "bytes": 53556
     },
     {
       "from": "tests/staff.test.js",
@@ -124,15 +124,15 @@
       "from": "lib/prjdoc.js",
       "to": "rerp/prjdoc.js",
       "how": "그대로 (IIFE → export, g.KRX_PLAN_SYNC·KRX_RESEARCH_SYNC·KRX_STAFF_SYNC·KRX_STAFF 는 shim)",
-      "sha1": "8d787473da8637168c8aeb0a345555c1f6883bf8",
-      "bytes": 42527
+      "sha1": "037fb63afde8a76c5d933d2e1659b774d0c2f1c4",
+      "bytes": 45705
     },
     {
       "from": "lib/prjdoc-sync.js",
       "to": "rerp/prjdocsync.js",
       "how": "그대로 (IIFE → export, g.KRX_PRJDOC 는 shim)",
-      "sha1": "f7c664e91825331aa1f2ada3b60da9eff4c34357",
-      "bytes": 38223
+      "sha1": "7ba075341079a07a8f47e0472991dc27fc671b29",
+      "bytes": 38462
     },
     {
       "from": "tests/staff-sync.test.js",
@@ -152,15 +152,15 @@
       "from": "tests/prjdoc.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로",
-      "sha1": "c53fca57d67cfa91a3f6e7e728af8791fb422b18",
-      "bytes": 41535
+      "sha1": "3f4d5124107e7fa6259b0db4a8b165ec29fbe793",
+      "bytes": 46575
     },
     {
       "from": "tests/prjdoc-sync.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (가짜 store)",
-      "sha1": "2a10bf1eeaece499ee493e1020135300400430ce",
-      "bytes": 62403
+      "sha1": "a5bd58d08c2e842c4f446b3a010cae586c8da186",
+      "bytes": 62567
     }
   ]
 }

@@ -39,7 +39,8 @@ export const CHANGE_KINDS = Object.freeze(['예산', '연구내용', '연구기�
 // io 는 회계(e-accounting)의 과제 코드(I/O — 2145NR0124 꼴, 2026-10-17 사용자 지정) — 구매요청서 예산 내역의 I/O 코드이고, 과제의 회계 예산 스냅샷(acct — src/eacct.js normalizeAcct:
 // 그 해의 계정과목(보조세목)별 기초·전용·실적·가용)은 io 가 있을 때만 붙는다(없으면 칸 자체가 없다 — rERP 의 years[n].erp 와 같다).
 // aliasAt 은 별칭을 마지막으로 바꾼 시각(ms, 공유의 병합 기준 — 2026-10-18). 별칭이 없으면 0.
-export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', aliasAt: 0, code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], years: {} });
+// supportAt 은 행정지원을 마지막으로 바꾼 시각(ms — 연차 파일의 project.support·supportAt 과 늦은 쪽으로 맞춘다, 2026-10-19 사용자 "행정지원은 공유가 안되냐? 과제마다 동일해야지" — 공유 변환은 src/rndshare.js projectOf·applyProject, 배선은 rndpanel.js shareLoadLocal·shareSaveLocal). 다 지워도 그 시각은 남긴다(지움이 파일로 가게).
+export const EMPTY_PROJECT = Object.freeze({ id: '', name: '', alias: '', aliasAt: 0, code: '', job: '', io: '', lead: '', start: '', end: '', note: '', calendar: false, refs: {}, support: [], supportAt: 0, years: {} });
 
 const text = (v, max = 2000) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').slice(0, max).trim() : '');
 /** 시각(ms) — 양의 정수만, 아니면 0. */
@@ -293,6 +294,7 @@ export function normalizeProject(raw) {
   p.calendar = raw.calendar === true;
   p.refs = normalizeRefs(raw.refs);
   p.support = normalizeSupport(raw.support);
+  p.supportAt = stamp(raw.supportAt);
   const years = raw.years && typeof raw.years === 'object' ? raw.years : {};
   for (const [k, v] of Object.entries(years)) {
     const n = Number(k);

@@ -1364,6 +1364,89 @@ await ta('이어지지 않은 채 공유하던 과제를 rERP 에 이으면 옛 
   assert.equal(store.shareIndex['RS-2025-00000009']?.folder, '파일 과제');
   pickChip('TEST');
 });
+await ta('공유 폴더에 있는데 장부에 없는 내 rERP 참여 과제는 저절로 장부에 더한다(2026-10-19 "sharepoint 의 변경사항을 반영하지 않네?") — rerp 가 적은 연차 파일의 과제명·책임자·별칭·예산 계획·변경이력을 받고 그 연차를 rERP 에 잇는다, 참여 과제가 아닌 폴더는 두고, 더한 뒤 이 장부의 id 를 파일에 올린다', async () => {
+  const SOC = 'RS-2026-00000077', MMC = 'RS-2026-00000088';
+  erpFake.recs.push({ PRJ_NO: SOC, ANL: '1', PRJ_NM: '선박용 SOC 시스템 개발', PRJ_RSPR_EMP_NM: '김아무', PROG_STS_NM: '진행', RCH_ST_DT: '20260101', RCH_END_DT: '20261231' });
+  const later = Date.now() - 1000;
+  // rerp 가 만든 연차 파일(rerp/prjdoc.js kind 'year') — WORKSPACE 몫 칸은 비어 있고 별칭·예산 줄·변경이력은 동료(rerp)가 적었다
+  const yearFile = (prjNo, prjNm, alias) => JSON.stringify({
+    v: 2, kind: 'year', project: { prjNo, prjNm, rspr: '김아무', alias, aliasAt: later, jobId: '', io: '', start: '', end: '', note: '' }, year: { n: 1, start: '2026-01', end: '2026-12' },
+    budget: [{ name: '인건비', plan: 12340000, at: later, by: '동료' }, { name: '연구활동비', plan: 5000000, at: later, by: '동료' }], staff: { plans: {}, del: {} }, research: [],
+    changes: [{ id: 'c-soc', date: '2026-10-19', kind: '예산', item: '인건비', before: '10,000', after: '12,340', reason: '동료가 적음', by: '동료', at: later, auto: false }],
+    updatedAt: new Date(later).toISOString(), updatedBy: '동료',
+  }, null, 2);
+  sp.tree[`${BASE}/SOC`] = { '1차년도.json': yearFile(SOC, '선박용 SOC 시스템 개발', 'SOC') };
+  sp.tree[`${BASE}/MMC`] = { '1차년도.json': yearFile(MMC, '참여하지 않는 과제', 'MMC') };
+  const n0 = logs.length;
+  await syncNow();   // 이번 맞춤이 밑폴더를 훑어 두 폴더를 알아내고 → 바로 한 번 더 돌아(더하기) SOC 를 장부에 만든다
+  await untilLong(() => !!bookProject('SOC') && !$('rdShareSync').disabled);
+  const p = bookProject('SOC');
+  assert.ok(p, `더했다 — ${logs.slice(n0).map((l) => l.text).join(' / ')}`);
+  assert.deepEqual([p.name, p.lead, p.alias, p.aliasAt, p.years[1]?.erp?.prjNo], ['선박용 SOC 시스템 개발', '김아무', 'SOC', later, SOC], '과제명·책임자는 rERP 값, 별칭은 파일, 1차년도는 rERP 에 이어 열쇠가 과제번호');
+  assert.deepEqual(p.years[1].budget.filter((r) => r.plan != null).map((r) => [r.item, r.plan]), [['인건비', 12340000], ['연구활동비', 5000000]], '같은 파일에서 project 칸보다 먼저 온 예산 계획도 함께');
+  assert.ok(p.years[1].changes.some((c) => c.id === 'c-soc' && c.by === '동료'), '변경이력도');
+  assert.ok(!bookProject('MMC') && !panel.book().projects.some((q) => q.name === '참여하지 않는 과제'), '참여 과제가 아닌 폴더는 더하지 않는다');
+  assert.equal(chips().length, 5);
+  assert.ok(logs.slice(n0).some((l) => l.text === `R&D 과제 더함(공유 폴더에서 받음 — rERP 참여 과제): SOC (${SOC})`), logs.slice(n0).map((l) => l.text).join(' / '));
+  assert.ok(logs.slice(n0).some((l) => /^R&D 공유 맞춤\(더하기\): 과제 5개 .* · 더함 1$/.test(l.text)), logs.slice(n0).map((l) => l.text).join(' / '));
+  assert.match($('rdShareState').textContent, /· 과제 5개$/);
+  await untilLong(() => spDoc('SOC', '1차년도.json').project.wsId === p.id && !$('rdShareSync').disabled);
+  assert.equal(spDoc('SOC', '1차년도.json').project.wsId, p.id, '잠깐 뒤 한 번 더 돌아 이 장부의 id 를 파일에 올린다');
+  assert.equal(spDoc('SOC', '1차년도.json').project.alias, 'SOC', '별칭은 그대로');
+  assert.deepEqual(spFolders().filter((f) => f.startsWith('SOC')), ['SOC'], '둘째 폴더가 생기지 않는다');
+  assert.ok(!('wsId' in spDoc('MMC', '1차년도.json').project), '더하지 않은 폴더는 건드리지 않는다');
+  await syncNow();
+  assert.equal(chips().length, 5, '다시 맞춰도 그대로');
+  assert.ok(!/더함/.test($('rdShareMsg').textContent), '더한 것이 없는 맞춤에는 더함 표시가 없다');
+  // 지우면(묘비 → 파일 project.deletedAt) 묘비가 지난 뒤 폴더만 남아 있어도 다시 더하지 않는다 — deletedAt 은 project 칸에 오므로 받아 둔 칸을 버린다
+  pickChip('SOC');
+  delCurrent();
+  await untilLong(() => (spDoc('SOC', '1차년도.json').project.deletedAt || 0) > 0 && !$('rdShareSync').disabled);
+  panel.share().del = {};
+  const n1 = logs.length;
+  await syncNow();
+  await untilLong(() => !$('rdShareSync').disabled && logs.slice(n1).some((l) => /^R&D 공유 맞춤\(지금 맞추기\)/.test(l.text)));
+  assert.ok(!bookProject('SOC') && chips().length === 4, '지운 과제는 폴더가 남아 있어도 다시 더하지 않는다');
+  assert.ok(!logs.slice(n1).some((l) => /과제 더함/.test(l.text)), logs.slice(n1).map((l) => l.text).join(' / '));
+  // 뒷정리 — 폴더·색인·목록을 치운다
+  delete sp.tree[`${BASE}/SOC`];
+  delete sp.tree[`${BASE}/MMC`];
+  delete store.shareIndex[SOC];
+  delete store.shareIndex[MMC];
+  erpFake.recs = erpFake.recs.filter((r) => r.PRJ_NO !== SOC);
+  await syncNow();
+  assert.equal(chips().length, 4);
+  assert.match($('rdShareState').textContent, /· 과제 4개$/);
+  pickChip('TEST');
+});
+await ta('R&D 탭이 보이는 동안 5분마다 저절로 맞춘다(2026-10-19 — rerp 의 자동 갱신 알람에 해당) — 마지막 성공 1분 안이면 건너뛰고, 쓰거나 받은 것이 없으면 활동 로그에 남기지 않으며, 탭을 숨기거나 공유를 끄면 멈춘다', async () => {
+  assert.ok(panel.shareAuto(), '공유가 켜져 있고 탭이 보이면 주기 타이머가 돈다');
+  const at0 = panel.share().at;
+  const n = logs.length;
+  await panel.shareTick();
+  assert.equal(panel.share().at, at0, '1분 안이면 건너뛴다(sharesync 의 alarm 규칙)');
+  // 마지막 성공을 2분 전으로 돌리면 돈다
+  const old = Date.now() - 2 * 60 * 1000;
+  store.shareState = { ...store.shareState, at: old };
+  store.planSyncState = store.shareState;
+  await panel.shareTick();
+  assert.ok(panel.share().at > old, '돌았다');
+  assert.match($('rdShareState').textContent, /^맞춤 .* · 과제 4개$/);
+  assert.ok(!logs.slice(n).some((l) => /공유 맞춤\(주기\)/.test(l.text)), `달라진 것이 없으면 로그 없음 — ${logs.slice(n).map((l) => l.text).join(' / ')}`);
+  panel.hide();
+  assert.ok(!panel.shareAuto(), '탭을 숨기면 멈춘다');
+  await panel.show();
+  assert.ok(panel.shareAuto(), '다시 보이면 돈다');
+  await untilLong(() => !$('rdShareSync').disabled);
+  $('rdShareOn').checked = false;
+  change($('rdShareOn'));
+  assert.ok(!panel.shareAuto(), '공유를 끄면 멈춘다');
+  $('rdShareOn').checked = true;
+  change($('rdShareOn'));
+  await untilLong(() => /^맞춤 /.test($('rdShareState').textContent) && !$('rdShareSync').disabled);
+  assert.ok(panel.shareAuto(), '다시 켜면 돈다');
+  pickChip('TEST');
+});
 await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그 비목의 예상 비용이, 미청구를 켜면 연구활동비 줄에 더해진다(2026-10-12 사용자 지정 — 보조 줄이 아니라 그 줄의 집행·잔액·막대·표 복사). 승인전 체크는 없다', async () => {
   const bars = (node) => [...node.querySelectorAll('.rd-bar')].map((b) => [b.className.replace('rd-bar ', ''), b.style.left, b.style.width]);
   assert.deepEqual(bars(row('연구활동비')), [['base', '0%', '49.28%']], '승인액 19,712,839 ÷ 계획 40,000,000 — 파랑 하나');
@@ -1469,6 +1552,10 @@ t('(검사 뒷정리) WW 를 지운다 — 공유가 꺼져 있어 묘비는 남
   delCurrent();
   assert.equal(chips().length, 4);
   assert.deepEqual(panel.share().del, {});
+  // 폴더·색인·rERP 목록도 치운다 — 묘비 없이 지운 내 참여 과제의 폴더가 남아 있으면 공유를 다시 켤 때 저절로 장부에 더해진다(2026-10-19 — 설계: 공유 폴더가 기준)
+  delete sp.tree[`${BASE}/WW`];
+  delete store.shareIndex?.['RS-2026-00000002'];
+  erpFake.recs = erpFake.recs.filter((r) => r.PRJ_NO !== 'RS-2026-00000002');
   pickChip('TEST');
   assert.equal(panel.erp()?.prjNo, PRJ);
 });
@@ -1993,10 +2080,11 @@ await ta('복사 — 표 복사는 월급여·참여기간·지급 합·참여�
   const n = copied.length;
   $('rdRosterCopy').click();
   await until(() => copied.length === n + 1);
-  assert.equal(copied[n], ['성명\t직위\t월급여(천원)\t참여기간\t개월\t계상인건비(천원)\t참여율\t월 최대\t월별 지급(천원)', '홍길동\t과제책임자\t8,480\t4~11월\t8\t18,624\t27.46%\t27.46%\t4~11월 2,328 · 12월 제외', '성춘향\t참여연구원\t5,823\t4~12월\t9\t10,479\t20.00%\t20.01%\t4~11월 1,165 · 12월 1,159'].join('\n'));
+  // 0.8.7 staffTsv(2026-10-19 다시 옮김)는 기간 구간마다 한 줄 — 12월을 제외한 홍길동은 4~11월 줄과 12월 제외 줄
+  assert.equal(copied[n], ['성명\t직위\t월급여(천원)\t참여기간\t개월\t계상인건비(천원)\t참여율\t월 최대\t월별 지급(천원)', '홍길동\t과제책임자\t8,480\t4~11월\t8\t18,624\t27.46%\t27.46%\t4~11월 2,328 · 12월 제외', '홍길동\t과제책임자\t8,480\t12월\t1\t0\t제외\t\t', '성춘향\t참여연구원\t5,823\t4~12월\t9\t10,479\t20.00%\t20.01%\t4~11월 1,165 · 12월 1,159'].join('\n'));
   $('rdCopy').click();
   await until(() => copied.length === n + 2);
-  assert.match(copied[n + 1], /\n■ 참여연구자 \(2명\) — rERP P7 참여인력 · 조회 \d\d\.\d\d \d\d:\d\d\n- 홍길동 — 과제책임자 · 월급여 8,480천원\(rERP\) · 4~11월 \(8개월\) · 계상인건비 18,624천원 · 참여율 27\.46% \(월 최대 27\.46%\) · 월별 4~11월 2,328 · 12월 제외\n- 성춘향 — 참여연구원 · 월급여 5,823천원\(rERP\)/);
+  assert.match(copied[n + 1], /\n■ 참여연구자 \(2명\) — rERP P7 참여인력 · 조회 \d\d\.\d\d \d\d:\d\d\n- 홍길동 — 과제책임자 · 월급여 8,480천원\(rERP\) · 4~11월 \(8개월\) · 계상인건비 18,624천원 · 참여율 27\.46% \(월 최대 27\.46%\) · 구간 4~11월 18,624천원 27\.46% · 12월 제외 · 월별 4~11월 2,328 · 12월 제외\n- 성춘향 — 참여연구원 · 월급여 5,823천원\(rERP\)/);
   assert.doesNotMatch(copied[n + 1], /월급여 기준|홍길동 — 수석 · 27\.45%/, '월급여 기준·예산 줄은 없고 계획서 글도 아니다');
 });
 await ta('↻ — 다시 받는다(로그인이 풀렸으면 SSO 한 번). 지급계획이 없으면 받아 둔 것을 지우고 계획서 표와 안내로, 다시 생기면 돌아온다. eClass 도 풀렸으면 까닭을 말하고 받아 둔 것은 그대로', async () => {

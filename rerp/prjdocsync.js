@@ -10,11 +10,11 @@
  *            sharedWithMe?(io, { driveHost }) → [{ name, webUrl, folder, ownerName?, cfg? }], parseFolder?(url) → cfg, folderUrl?(cfg) → 주소, fileUrl?(cfg, name) }   (KRX_SP 를 감싼 것 — io = deps.io 를 그대로 넘긴다)
  *   base(cfg — 밑폴더, KRX_SP.parseFolder 결과: folderPath · siteUrl · viewUrl · fileUrl(name)), driveHost, names{ prjNo: 과제명 }, rsprs{ prjNo: 책임자 }, myPrjNos[](내 참여 과제), leadPrjNos[](내가 책임자), aliases{ prjNo: 약칭 },
  *   index(storage.local.shareIndex 캐시 — { [prjNo]: { base, folder, site, path, url, owner, at } }), discover(나와 공유 훑기 — 기본 true), only?(과제번호 하나만),
- *   want: { plan, research, staff, budget, changes, alias }(끈 칸은 받지도 올리지도 않음 — 파일의 그 칸은 그대로), who,
+ *   want: { plan, research, staff, budget, changes, alias, support }(끈 칸은 받지도 올리지도 않음 — 파일의 그 칸은 그대로. 2026-10-19 몫: staff·budget 은 rerp 만 고치고 WORKSPACE 는 받기만 — 그쪽은 pullOnly 나 자기 몫으로; 행정지원 support 는 양쪽), who,
  *   pullOnly?: { plan, year }(그 파일은 **읽어 받기만** — 병합해 saveLocal 은 하지만 writer 를 열지 않아 쓰지도 만들지도 않고, 로컬에만 있는 것은 올라가지 않는다. KRS WORKSPACE 가 예상비용.json 을 받기만 할 때 —
  *     2026-10-18 사용자 "예상지출도 … workspace 에도 경로주면 알아서 동기화" 의 몫 나눔: 예상 비용은 rerp 가 쓰고 WORKSPACE 는 본다. 기본 둘 다 false),
- *   loadLocal() → { plan:{ plans, del }, research(맵), staff:{ plans, del }, aliases, aliasesAt, changes(맵 '과제번호@연차' → []), projects:{ [prjNo]: { prjNm, rspr, anl, stDt, endDt(ERP 현재 연차 기간 — yearSpan 용), start?, end?, jobId?, io?, note?, at? } } },
- *   saveLocal(part, prj, data) — part 'plan'|'research'|'staff'|'budget'|'changes'|'alias'|'project', data 는 KRX_PRJDOC.toLocalYear · toLocalPlan 의 그 칸(머리 주석 참고), now? }
+ *   loadLocal() → { plan:{ plans, del }, research(맵), staff:{ plans, del }, aliases, aliasesAt, support(맵 prjNo → { people, at }), changes(맵 '과제번호@연차' → []), projects:{ [prjNo]: { prjNm, rspr, anl, stDt, endDt(ERP 현재 연차 기간 — yearSpan 용), start?, end?, jobId?, io?, note?, at? } } },
+ *   saveLocal(part, prj, data) — part 'plan'|'research'|'staff'|'budget'|'changes'|'alias'|'support'|'project', data 는 KRX_PRJDOC.toLocalYear · toLocalPlan 의 그 칸(머리 주석 참고), now? }
  * 차례:
  *   ① base 의 폴더 목록(listFolders — 없으면 kind 'nofolder' → 처음 쓸 때 만든다). 폴더마다 색인(index)의 경로가 맞으면 그 과제 폴더로 믿고(그 폴더의 첫 연차 파일을 읽을 때 project.prjNo 로 검증 — 다르면 색인이 틀린 것으로 보고 다시 고른다),
  *      색인에 없는 폴더는 **훑는다**(probe — 파일 목록 + 첫 연차 파일 한 장 → project.prjNo. 연차 파일이 없는 폴더는 '아직 못 알아본 폴더' — 그 이름으로 폴더를 만들 차례가 오면 그것을 쓴다). state.scanned = 훑은 폴더 수.
@@ -60,7 +60,7 @@ api.run = async function (deps) {
   const store = deps.store, io = deps.io || {};
   const base = deps.base || deps.cfg || {};
   const names = deps.names || {}, rsprs = deps.rsprs || {}, aliases0 = obj(deps.aliases) || {};
-  const want = Object.assign({ plan: true, research: true, staff: true, budget: true, changes: true, alias: true }, deps.want || {});
+  const want = Object.assign({ plan: true, research: true, staff: true, budget: true, changes: true, alias: true, support: true }, deps.want || {});
   const pullOnly = Object.assign({ plan: false, year: false }, obj(deps.pullOnly) || {});   // 받기만 하는 파일 — 읽어 병합해 saveLocal 은 하되 writer 는 열지 않는다(없으면 만들지도 않음)
   const only = deps.only ? str(deps.only) : '';
   const mine = Array.from(new Set((deps.myPrjNos || []).map(String).filter(Boolean)));
@@ -249,7 +249,7 @@ api.run = async function (deps) {
     const m2 = D().mergeYear(D().fromLocalYear(prj, n, local, meta), m.doc, now, who, { want, others: D().otherRecs(prj, local), localAt: D().localProjectAt(local, prj) });
     const back = D().toLocalYear(prj, n, local, m2, { src: `${rec.name}/${D().yearName(n)}` });
     let any = false;
-    for (const part of ['budget', 'staff', 'research', 'changes', 'alias', 'project']) if (m2.localChanged[part]) { await deps.saveLocal(part, prj, back[part]); any = true; }
+    for (const part of ['budget', 'staff', 'research', 'changes', 'alias', 'support', 'project']) if (m2.localChanged[part]) { await deps.saveLocal(part, prj, back[part]); any = true; }
     if (any) { r.pulled = true; local = await deps.loadLocal(); }
     return any;
   };

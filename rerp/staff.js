@@ -8,14 +8,19 @@
  *  - 관리 대상은 **월별 지급금액**(plan — 달마다 원)이다. 참여율은 100% 가 찼는지 보는 확인값: 연간 = Σ월별 ÷ (월급여 × 참여개월), 월 = 그 달 지급 ÷ 월급여.
  *    둘 다 rERP 가 보이는 올림(퍼센트 넷째 자리 반올림 뒤 셋째 자리 올림 — rtask_0013_12.js PAY_LIMT_AMT_change)으로 적는다. 월 최대 참여율은 연간과 같아도 늘 보인다.
  *  - 월급여 = rERP 참여인력의 지급한도액(PAY_LIMT_AMT). 직접 적은 값(manual)이 있으면 그것이 앞선다. 계획서 급여총액(salary)이 있으면 ÷12 천원 절삭이 대신이다(WORKSPACE 가 넣는 값).
- *  - 변경은 **적용월부터**(종료월까지) — 그 앞 달의 지급은 그대로. 0%(제외)·참여율·월 지급금액 가운데 하나로. 사람 더하기도 같은 길.
+ *  - 변경은 **적용일부터**(종료일까지 — 날짜까지, 2026-10-19 사용자 "참여인력을 날일까지 계산해서 수정할 수 있게") — 그 앞의 지급은 그대로. 0%(제외)·참여율·월 지급금액 가운데 하나로. 사람 더하기도 같은 길.
+ *    달 중간의 날이면 그 달은 **날 수 비율**(일할)로 나눈 조각 둘이 된다: 조각 금액 = round천원(월 금액 × 참여일 ÷ 그 달 일수). 참여개월도 날 수 비율의 합(8.53 처럼 소수)으로 센다.
+ *  - 사람마다 **기간 구간**(runs)을 보인다(2026-10-19 사용자 "참여 기간별로 표기 … 2줄로"): 적용일·종료일 경계(cuts)와 제외(0원) 전환·달이 끊기는 곳에서 구간이 갈리고, 구간마다 기간·계상인건비·참여율(= Σ지급 ÷ (월급여 × 개월)).
+ *    rERP 에서 받을 때(peopleOfErp)는 지급기간 행의 경계가 구간 경계인데, 자료생성의 마지막 달 잔액 행(한 달짜리 마지막 행이 앞 행과 (앞 행 달 수 + 1)천원 미만 차이)은 같은 구간으로 본다. 양쪽이 같은 금액의 온달인 경계는 지운다(pruneCuts).
  *  - 같은 사람의 과제 참여율 합이 100% 를 넘으면 **알림만**(막지 않는다). rERP 의 다른 과제 월별 합(rtask_0013_12_r003 ETC_PART_RT)을 쓴다.
- *  - 참여자가 없는 기간은 **이전 기간 참여연구원의 지급 비율**로 인건비 예산을 나눠 초기화한다(합이 정확히 예산). 합이 예산을 넘는 편집은 막는다(overBudget — 줄이는 쪽은 둔다).
- *  - 균등 분할은 앞달 ceil천원(총 ÷ N)·마지막 달 잔액 — rERP 자료생성이 저장하는 행(1,165,000×8 + 1,159,000)과 같다.
+ *  - 참여자가 없는 기간은 **이전 기간 참여연구원의 지급 비율**로 인건비 예산을 나눠 초기화한다(합이 정확히 예산). 합과 예산의 차는 **초과금·부족금**으로 보인다(budgetDiff — 2026-10-19 사용자 "참여율 변경하면 초과금, 부족금 이게 표시가 되어야지"; 0.8.7 의 "넘는 편집은 막는다"는 뺌).
+ *  - 균등 분할은 앞달 ceil천원(총 ÷ N)·마지막 달 잔액 — rERP 자료생성이 저장하는 행(1,165,000×8 + 1,159,000)과 같다. 일부 달 조각은 그 날 수 비율(splitByFrac).
  *
  * 저장(storage.local.staffPlans) = { ["과제번호@연차"]: plan }  plan = { prjNo, year(연차 1~), prjNm, from, to('YYYY-MM' — 계획 기간), budgetPay(인건비 예산 원 | null), basis('rerp'|'plan'), src('erp'|'init'|'manual'),
  *   (연차를 두기 전(0.8.7 처음) 저장분은 키가 과제번호뿐이고 year 가 없다 — lib/staff-ui.js adopt 가 그 과제의 현재 연차 계획으로 옮긴다)
- *   people[{ id, name, role, salary, pay, rate, months, manual, erp: { monthly, prjNo, at, req, seq, others[{ ym, rate, amt }] } | null, plan[{ ym, amt }] }], at(마지막 수정 시각), by(누가), note }
+ *   people[{ id, name, role, salary, pay, rate, months, manual, erp: { monthly, prjNo, at, req, seq, others[{ ym, rate, amt }] } | null,
+ *     plan[{ ym, amt, from?, to? }](지급 조각 — 달 하나 안, from·to 'YYYY-MM-DD' 는 그 달의 일부만 참여할 때의 첫날·마지막 날; 없으면 달 전체. 한 달에 조각이 여럿일 수 있다),
+ *     cuts['YYYY-MM-DD' …](기간 구간의 경계 — 이 날부터 새 구간) }], at(마지막 수정 시각), by(누가), note }
  *   지운 연차 계획은 staffPlansDeleted 묘비(remove). 공유 (Plus) 가 켜져 있으면 백그라운드(background.js shareSync)가 과제 폴더의 연차 파일(<n>차년도.json 의 staff·budget 칸, SharePoint 폴더)과 연차별로 맞춘다(lib/staff-sync.js merge — at 이 큰 쪽이 이김)
  * 단위: 저장은 원, 화면·글은 천원. 달은 'YYYY-MM'. 렌더러(lib/staff-ui.js)가 이 API 로 표와 폼을 그린다 */
 const KEY = 'staffPlans';
@@ -27,6 +32,7 @@ const BASIS_LABEL = Object.freeze({ plan: '계획서 연봉', rerp: 'rERP 연봉
 const SOURCES = Object.freeze(['erp', 'init', 'manual', 'yaml', 'roster']);
 const MODES = Object.freeze(['rate', 'amt', 'exclude']);
 const PLAN_MAX = 240;
+const CUTS_MAX = 120;   // 사람 하나의 기간 구간 경계 수 상한
 const YEAR_MAX = 60;   // 연차 번호 상한
 const BUDGET_ITEMS = Object.freeze(['인건비', '연구시설·장비비', '연구재료비', '연구활동비', '연구수당', '간접비']);   // 예산 칸의 기본 비목 (연구개발계획서의 여섯 비목 — kr_ext_workspace src/rnd.js BUDGET_ITEMS 와 같음)
 const BUDGET_MAX = 30;
@@ -75,6 +81,60 @@ function ymText(from, to) {
 /* 달 이름 — "4월". 앞 달과 해가 다르면 "'27 1월" */
 const monthLabel = (ym, prev = '') => `${prev && prev.slice(0, 4) !== ym.slice(0, 4) ? `'${ym.slice(2, 4)} ` : ''}${Number(ym.slice(5))}월`;
 
+/* ---------- 날 (일 단위 — 참여기간을 날짜까지, 2026-10-19) ---------- */
+/* 그 달의 일수 */
+const dim = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+const isYmd = (s) => typeof s === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s) && Number(s.slice(8)) <= dim(s.slice(0, 7));
+const monthStart = (ym) => `${ym}-01`;
+const monthEnd = (ym) => `${ym}-${pad2(dim(ym))}`;
+const utcOf = (ymd) => Date.UTC(Number(ymd.slice(0, 4)), Number(ymd.slice(5, 7)) - 1, Number(ymd.slice(8, 10)));
+const addDays = (ymd, k) => { const d = new Date(utcOf(ymd) + k * 86400000); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`; };
+/* a~b 의 날 수(둘 다 포함) */
+const dayCount = (a, b) => Math.round((utcOf(b) - utcOf(a)) / 86400000) + 1;
+/* 적용일·종료일 입력 → 'YYYY-MM-DD'. 달만 주면('YYYY-MM' · yyyyMM) edge 가 'end' 면 그 달 마지막 날, 아니면 1일. yyyyMMdd 도 받는다. 못 읽으면 '' */
+function dateOf(v, edge = 'start') {
+  const s = String(v == null ? '' : v).trim();
+  if (isYmd(s)) return s;
+  const d = s.replace(/\D/g, '');
+  if (d.length >= 8) { const t = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`; return isYmd(t) ? t : ''; }
+  const ym = ymOf(s);
+  return isYm(ym) ? (edge === 'end' ? monthEnd(ym) : monthStart(ym)) : '';
+}
+/* 지급 조각 { ym, amt, from?, to? } 의 첫날·마지막 날·날 수·달 대비 비율(온달이면 1)·온달인지 */
+const segStart = (x) => x.from || monthStart(x.ym);
+const segEnd = (x) => x.to || monthEnd(x.ym);
+const segDays = (x) => dayCount(segStart(x), segEnd(x));
+const segFrac = (x) => (x.from || x.to ? segDays(x) / dim(x.ym) : 1);
+const isFull = (x) => !x.from && !x.to;
+const round1000 = (n) => Math.round(n / 1000) * 1000;
+/* 조각 만들기 — s~e 가 달 전체면 { ym, amt: full }, 일부면 월 금액(full)을 날 수 비율로 나눈 round천원과 from·to */
+function makeSeg(ym, full, s, e) {
+  if (s <= monthStart(ym) && e >= monthEnd(ym)) return { ym, amt: full };
+  const out = { ym, amt: round1000((full * dayCount(s, e)) / dim(ym)) };
+  if (s > monthStart(ym)) out.from = s;
+  if (e < monthEnd(ym)) out.to = e;
+  return out;
+}
+/* 조각을 s~e 로 자른다 — 금액은 날 수 비율(round천원) */
+function clipSeg(x, s, e) {
+  const out = { ym: x.ym, amt: round1000((x.amt * dayCount(s, e)) / segDays(x)) };
+  if (s > monthStart(x.ym)) out.from = s;
+  if (e < monthEnd(x.ym)) out.to = e;
+  return out;
+}
+/* 날짜 기간 글 — 달 전체면 ymText("4~12월" · "12월"), 일부가 있으면 "4.15~12.31"(해가 다르면 "'26.4.15~'27.3.31"). 달('YYYY-MM')을 주면 ymText */
+function spanText(from, to) {
+  if (!isYmd(from)) return isYm(from) ? ymText(from, to) : '';
+  const t = isYmd(to) && to >= from ? to : from;
+  const fy = from.slice(0, 7), ty = t.slice(0, 7);
+  if (from === monthStart(fy) && t === monthEnd(ty)) return ymText(fy, ty);
+  const diffYear = fy.slice(0, 4) !== ty.slice(0, 4);
+  const md = (d) => `${diffYear ? `'${d.slice(2, 4)}.` : ''}${Number(d.slice(5, 7))}.${Number(d.slice(8, 10))}`;
+  return `${md(from)}~${md(t)}`;
+}
+/* 참여개월 글 — 온달이면 "9", 날 수 비율이 섞이면 "8.53"(둘째 자리) */
+const monthsText = (m) => (Number.isFinite(m) ? String(Math.round(m * 100) / 100) : '');
+
 /* ---------- 예산 칸 (연차마다 비목별 계획 — 0.8.7 사업비 변경 화면, kr_ext_workspace R&D 탭의 예산 칸과 같은 꼴) ---------- */
 /* 비목 이름 맞추기 — 띄어쓰기·가운뎃점·마침표 무시 */
 const itemKeyOf = (s) => String(s == null ? '' : s).replace(/[\s·.]/g, '').toLowerCase();
@@ -99,6 +159,25 @@ function budgetText(budget) {
   if (!rows.length) return '';
   return rows.map((r) => `${r.name || '비목'} ${thousand(r.plan)}`).concat([`합 ${thousand(rows.reduce((s, r) => s + r.plan, 0))}`]).join(' · ');
 }
+
+/* ---------- 행정지원 (과제마다 — 연차가 아니라, 2026-10-19 사용자 "행정지원은 서로 변경 가능하고": rerp 와 KRS WORKSPACE 양쪽이 고치고 연차 파일 project.support · supportAt 로 맞춤) ---------- */
+const SUPPORT_MAX = 10;   // kr_ext_workspace src/rnd.js SUPPORT_MAX 와 같음
+/* 행정지원 [{ name, role, ref }] — 이름(공문 결재선에서 조직도로 찾는 이름) · 맡은 일(행정 담당 …) · 공문 참조자로 넣는가(기본 참). 이름 없는 줄은 버리고 같은 이름은 한 번만(공백 무시) — WORKSPACE normalizeSupport 와 같은 규칙 */
+function normalizeSupport(raw) {
+  const seen = new Set();
+  const out = [];
+  for (const s of Array.isArray(raw) ? raw : []) {
+    if (out.length >= SUPPORT_MAX) break;
+    const name = text(s && s.name, 40);
+    const k = nameKeyOf(name);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push({ name, role: text(s && s.role, 40), ref: !(s && s.ref === false) });
+  }
+  return out;
+}
+/* 행정지원 한 줄 — "홍길동(행정 담당·참조), 이몽룡(연구지원)". 없으면 '' */
+const supportText = (support) => normalizeSupport(support).map((s) => `${s.name}${s.role || s.ref ? `(${[s.role, s.ref ? '참조' : ''].filter(Boolean).join('·')})` : ''}`).join(', ');
 
 /* ---------- 연차 (과제마다 연차별 계획) ---------- */
 /* 계획 키 — "과제번호@연차". 연차가 없으면(연차를 두기 전 저장분) 과제번호만 */
@@ -144,14 +223,40 @@ function splitEven(total, n) {
 }
 
 /* ---------- 모양 ---------- */
+/* 지급 조각들 — 달·첫날 차례, 같은 달·같은 첫날은 뒤 것이 이김, 겹치는 조각은 앞 것만. 달 전체를 덮는 from·to 는 지운다 */
 function normalizePlan(raw) {
   const map = new Map();
   for (const x of Array.isArray(raw) ? raw : []) {
     const ym = text(x && x.ym, 7);
     const amt = money(x && x.amt);
-    if (isYm(ym) && amt != null) map.set(ym, amt);
+    if (!isYm(ym) || amt == null) continue;
+    const seg = { ym, amt };
+    const from = text(x.from, 10), to = text(x.to, 10);
+    if (isYmd(from) && from.slice(0, 7) === ym && from > monthStart(ym)) seg.from = from;
+    if (isYmd(to) && to.slice(0, 7) === ym && to < monthEnd(ym)) seg.to = to;
+    if (seg.from && seg.to && seg.to < seg.from) continue;
+    map.set(`${ym}|${segStart(seg)}`, seg);
   }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(0, PLAN_MAX).map(([ym, amt]) => ({ ym, amt }));
+  const out = [];
+  for (const s of [...map.values()].sort((a, b) => segStart(a).localeCompare(segStart(b)))) {
+    const last = out[out.length - 1];
+    if (last && segEnd(last) >= segStart(s)) continue;
+    out.push(s);
+  }
+  return out.slice(0, PLAN_MAX);
+}
+/* 기간 구간의 경계 — 'YYYY-MM-DD' 차례, 중복 없이 */
+function normalizeCuts(raw) {
+  const set = new Set();
+  for (const c of Array.isArray(raw) ? raw : []) { const d = text(c, 10); if (isYmd(d)) set.add(d); }
+  return [...set].sort().slice(0, CUTS_MAX);
+}
+/* 경계 다듬기 — 조각이 양쪽에 붙어 있지 않은 경계, 양쪽이 같은 금액의 온달인 경계는 지운다 */
+function pruneCuts(plan, cuts) {
+  return cuts.filter((c) => {
+    const before = plan.find((x) => segEnd(x) === addDays(c, -1)), after = plan.find((x) => segStart(x) === c);
+    return !!before && !!after && !(isFull(before) && isFull(after) && before.amt === after.amt);
+  });
 }
 function normalizeErp(raw) {
   const monthly = money(raw && raw.monthly);
@@ -160,7 +265,7 @@ function normalizeErp(raw) {
   return { monthly, prjNo: text(raw.prjNo, 40), at: num(raw.at) ?? 0, req: text(raw.req, 10), seq: text(raw.seq, 10), others };
 }
 /* 참여연구원 한 사람 — name·role, 계획서 값(salary 급여총액·pay 계상인건비·rate 계상률·months 참여개월 — 참고), manual(직접 적은 월급여, 기준보다 앞선다),
- * erp(rERP 에서 받은 월급여·신청 번호·다른 과제 월별 참여율), plan(월별 지급금액 — 관리 대상). 모두 원 */
+ * erp(rERP 에서 받은 월급여·신청 번호·다른 과제 월별 참여율), plan(지급 조각 — 관리 대상), cuts(기간 구간의 경계). 모두 원 */
 function normalizePerson(raw) {
   raw = raw || {};
   const manual = money(raw.manual);
@@ -168,7 +273,7 @@ function normalizePerson(raw) {
   return {
     id: text(raw.id, 40) || newId(), name: text(raw.name, 40), role: text(raw.role, 40),
     salary: money(raw.salary), pay: money(raw.pay), rate: rate != null && rate >= 0 && rate <= 100 ? rate : null, months: int(raw.months, 1, PLAN_MAX),
-    manual: manual > 0 ? manual : null, erp: normalizeErp(raw.erp), plan: normalizePlan(raw.plan),
+    manual: manual > 0 ? manual : null, erp: normalizeErp(raw.erp), plan: normalizePlan(raw.plan), cuts: normalizeCuts(raw.cuts),
   };
 }
 /* 사람들 묶음 — { basis, src, people }. 이름 없는 사람은 버린다. 없거나 비었으면 null */
@@ -205,19 +310,40 @@ function monthlyPay(person, basis) {
   if (person.erp && person.erp.monthly > 0) return { amt: person.erp.monthly, src: 'rerp', fallback: false };
   return { amt: null, src: 'none', fallback: false };
 }
-/* 한 사람의 형편 — total(Σ월별, 월별이 없으면 계획서 계상인건비) · months(지급이 있는 달 수) · from·to · rate(연간) · maxRate·maxYm(월 최대) · limit(월급여)·src · rates(달마다) · planned */
+/* 기간 구간 — 조각들을 날이 이어지고(앞 조각 마지막 날 + 1 = 첫날) 경계(cuts)가 없고 제외(0원) 여부가 같고 온달 금액이 그대로인 한 묶는다.
+ * 온달 금액이 바뀌는 곳도 구간이 갈린다(경계를 두기 전 0.8.7 저장분처럼 cuts 가 없어도 "4~11월 2,328 · 12월 1,696" 은 두 구간) — 다만 자료생성·균등 분할의 **마지막 달 잔액**(계획의 마지막 온달 하나가 앞 온달과
+ * (앞 조각 수 + 1)천원 미만 차이 — 1,165×8 + 1,159)은 같은 구간. 일부 달 조각은 금액으로 가르지 않는다(경계로만).
+ * [{ from, to('YYYY-MM-DD'), amt(Σ지급), months(날 수 비율 합), rate(Σ지급 ÷ (월급여 × months) 올림 | null), off(제외 구간), segs }] */
+function runsOf(person, limit) {
+  const runs = [];
+  const cuts = person.cuts || [];
+  const plan = person.plan;
+  plan.forEach((s, i) => {
+    const a = segStart(s), b = segEnd(s), f = segFrac(s), full = isFull(s);
+    const last = runs[runs.length - 1];
+    let joined = !!last && addDays(last.to, 1) === a && (last.amt > 0) === (s.amt > 0) && !cuts.some((c) => c > last.from && c <= a);
+    if (joined && full && last.lastFull != null && last.lastFull !== s.amt && !(i === plan.length - 1 && Math.abs(s.amt - last.lastFull) < (last.segs.length + 1) * 1000)) joined = false;
+    if (joined) { last.to = b; last.amt += s.amt; last.months += f; last.segs.push(s); if (full) last.lastFull = s.amt; }
+    else runs.push({ from: a, to: b, amt: s.amt, months: f, segs: [s], lastFull: full ? s.amt : null });
+  });
+  for (const r of runs) { delete r.lastFull; r.off = !(r.amt > 0); r.rate = limit > 0 && r.amt > 0 ? rerpRate(r.amt, limit * r.months) : null; }
+  return runs;
+}
+/* 한 사람의 형편 — total(Σ조각, 조각이 없으면 계획서 계상인건비) · months(지급이 있는 조각의 날 수 비율 합 — 온달은 1) · from·to('YYYY-MM-DD') · rate(연간) · maxRate·maxYm(조각 최대)
+ * · limit(월급여)·src · rates(조각마다 — ym·from·to·full·amt·rate(조각 금액 ÷ (월급여 × 비율))) · runs(기간 구간) · planned */
 function personStats(person, basis) {
   const limit = monthlyPay(person, basis);
   const planned = person.plan.length > 0;
   const active = person.plan.filter((x) => x.amt > 0);
   const total = planned ? person.plan.reduce((s, x) => s + x.amt, 0) : (person.pay == null ? 0 : person.pay);
-  const months = planned ? active.length : (person.months == null ? 0 : person.months);
+  const months = planned ? active.reduce((s, x) => s + segFrac(x), 0) : (person.months == null ? 0 : person.months);
   const cap = limit.amt > 0 && months > 0 ? limit.amt * months : 0;
-  const rates = planned ? person.plan.map((x) => ({ ym: x.ym, amt: x.amt, rate: limit.amt > 0 ? rerpRate(x.amt, limit.amt) : null })) : [];
+  const rates = planned ? person.plan.map((x) => ({ ym: x.ym, from: segStart(x), to: segEnd(x), full: isFull(x), amt: x.amt, rate: limit.amt > 0 ? rerpRate(x.amt, limit.amt * segFrac(x)) : null })) : [];
   let maxRate = null, maxYm = '';
-  for (const r of rates) if (r.rate != null && (maxRate == null || r.rate > maxRate)) { maxRate = r.rate; maxYm = r.ym; }
+  for (const r of rates) if (r.amt > 0 && r.rate != null && (maxRate == null || r.rate > maxRate)) { maxRate = r.rate; maxYm = r.ym; }
   const last = active[active.length - 1];
-  return { total, months, from: active[0] ? active[0].ym : '', to: last ? last.ym : '', rate: cap > 0 ? rerpRate(total, cap) : null, maxRate, maxYm, limit: limit.amt, src: limit.src, fallback: limit.fallback, rates, planned };
+  return { total, months, from: active[0] ? segStart(active[0]) : '', to: last ? segEnd(last) : '', rate: cap > 0 ? rerpRate(total, cap) : null, maxRate, maxYm, limit: limit.amt, src: limit.src, fallback: limit.fallback, rates,
+    runs: planned ? runsOf(person, limit.amt) : [], planned };
 }
 const staffTotal = (staff, basis) => ((staff && staff.people) || []).reduce((s, p) => s + personStats(p, basis).total, 0);
 /* 인건비 예산(원)과 견준다 — 예산을 모르면 over 는 false */
@@ -225,22 +351,34 @@ function overBudget(staff, basis, budgetPay) {
   const total = staffTotal(staff, basis);
   return { total, budget: budgetPay == null ? null : budgetPay, over: budgetPay != null && total > budgetPay, left: budgetPay != null ? budgetPay - total : null };
 }
+/* 예산 대비(overBudget 결과나 { total, budget }) — { diff(합 − 예산 | null), kind: 'over' | 'short' | 'even' | '', text: "초과금 266천원" | "부족금 626천원" | "예산과 같음" | '' } */
+function budgetDiff(ob) {
+  if (!ob || ob.budget == null || !Number.isFinite(ob.total)) return { diff: null, kind: '', text: '' };
+  const diff = ob.total - ob.budget;
+  if (diff > 0) return { diff, kind: 'over', text: `초과금 ${thousand(diff)}천원` };
+  if (diff < 0) return { diff, kind: 'short', text: `부족금 ${thousand(-diff)}천원` };
+  return { diff: 0, kind: 'even', text: '예산과 같음' };
+}
 const rateText = (r) => (r == null ? '' : `${r.toFixed(2)}%`);
-/* 형편 한 줄(변경이력의 전·후): "20.00% · 10,479천원 · 4~12월". 없으면 "(없음)" */
+/* 형편 한 줄(변경이력의 전·후): "20.00% · 10,479천원 · 4~12월". 구간이 둘 이상이면 뒤에 "(4~11월 27.46% · 12월 20.00%)". 없으면 "(없음)" */
 function statsText(s) {
   if (!s || (!s.total && !s.months)) return '(없음)';
-  return [rateText(s.rate) || '참여율 —', `${thousand(s.total)}천원`, s.from ? ymText(s.from, s.to) : s.months ? `${s.months}개월` : ''].filter(Boolean).join(' · ');
+  const runs = s.runs && s.runs.length > 1 ? ` (${s.runs.map((r) => `${spanText(r.from, r.to)} ${r.off ? '제외' : rateText(r.rate) || `${thousand(r.amt)}천원`}`).join(' · ')})` : '';
+  return [rateText(s.rate) || '참여율 —', `${thousand(s.total)}천원`, s.from ? spanText(s.from, s.to) : s.months ? `${monthsText(s.months)}개월` : ''].filter(Boolean).join(' · ') + runs;
 }
-/* 월별 지급을 짧게 — 같은 금액이 이어지는 달을 묶어 "4~11월 1,165 · 12월 1,159"(천원). 0원 달은 "제외" */
+/* 조각별 지급을 짧게 — 같은 금액이 이어지는 온달을 묶어 "4~11월 1,165 · 12월 1,159"(천원), 일부 달 조각은 따로 "12.15~12.31 930". 0원은 "제외" */
 function monthlyText(plan) {
   const runs = [];
   for (const x of plan) {
     const last = runs[runs.length - 1];
-    if (last && last.amt === x.amt && addMonths(last.to, 1) === x.ym) last.to = x.ym;
-    else runs.push({ from: x.ym, to: x.ym, amt: x.amt });
+    if (last && last.full && isFull(x) && last.amt === x.amt && addMonths(last.to.slice(0, 7), 1) === x.ym) last.to = monthEnd(x.ym);
+    else runs.push({ from: segStart(x), to: segEnd(x), amt: x.amt, full: isFull(x) });
   }
-  return runs.map((r) => `${ymText(r.from, r.to)} ${r.amt > 0 ? thousand(r.amt) : '제외'}`).join(' · ');
+  return runs.map((r) => `${spanText(r.from, r.to)} ${r.amt > 0 ? thousand(r.amt) : '제외'}`).join(' · ');
 }
+/* 달마다의 지급 합 [[ym, amt] …] — 조각을 달로 합친다. rERP 등록(달 단위)과 견줄 때 */
+const monthSums = (plan) => { const m = new Map(); for (const x of plan || []) m.set(x.ym, (m.get(x.ym) || 0) + x.amt); return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])); };
+const sameMonthly = (a, b) => JSON.stringify(monthSums(a)) === JSON.stringify(monthSums(b));
 
 /* ---------- rERP 참여인력 행 → 사람 ---------- */
 /* 참여인력 조회(rtask_0008_t03_01_r001)의 INFO_REC 한 행 → { name, role, limit(지급한도액 원), amt(월 지급), rate(계상률 표시값), from, to('YYYY-MM' 지급기간), count(달 수), req, seq, excluded, term }.
@@ -270,7 +408,8 @@ function byName(rows) {
   for (const h of Object.values(out)) delete h.pick;
   return out;
 }
-/* rERP 행들 → 사람들(지급기간을 달마다 펼친 월별 지급·월급여) — { basis: 'rerp', src: 'erp', people }. months 를 주면 그 달들만(계획 기간). 행이 없으면 null */
+/* rERP 행들 → 사람들(지급기간을 달마다 펼친 월별 지급·월급여) — { basis: 'rerp', src: 'erp', people }. months 를 주면 그 달들만(계획 기간). 행이 없으면 null.
+ * 기간 구간 경계(cuts)는 이어지는 지급기간 행의 시작월 — 다만 자료생성의 마지막 달 잔액 행(마지막 한 달짜리 행이 앞 행과 (앞 행 달 수 + 1)천원 미만 차이)은 같은 구간 */
 function peopleOfErp(rows, { prjNo = '', now = Date.now(), months = null } = {}) {
   const people = [];
   for (const h of Object.values(byName(rows))) {
@@ -280,7 +419,15 @@ function peopleOfErp(rows, { prjNo = '', now = Date.now(), months = null } = {})
     }
     const plan = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ym, amt]) => ({ ym, amt }));
     if (months && !plan.length) continue;
-    people.push(normalizePerson({ name: h.name, role: h.role, erp: h.monthly > 0 ? { monthly: h.monthly, prjNo, at: now, req: h.req, seq: h.seq, others: [] } : null, plan }));
+    const ranges = h.ranges.filter((r) => r.from).sort((a, b) => a.from.localeCompare(b.from));
+    const cuts = [];
+    for (let i = 1; i < ranges.length; i++) {
+      const p = ranges[i - 1], r = ranges[i];
+      if (addMonths(p.to || p.from, 1) !== r.from) continue;
+      const tail = i === ranges.length - 1 && (r.count || 1) === 1 && Math.abs((r.amt || 0) - (p.amt || 0)) < ((p.count || 1) + 1) * 1000;
+      if (!tail) cuts.push(monthStart(r.from));
+    }
+    people.push(normalizePerson({ name: h.name, role: h.role, erp: h.monthly > 0 ? { monthly: h.monthly, prjNo, at: now, req: h.req, seq: h.seq, others: [] } : null, plan, cuts: pruneCuts(normalizePlan(plan), cuts) }));
   }
   return people.length ? { basis: 'rerp', src: 'erp', people } : null;
 }
@@ -351,48 +498,74 @@ function initFromShares(sources, { budgetPay, span }) {
 const sharesOfStaff = (staff) => ((staff && staff.people) || []).map((p) => ({ name: p.name, role: p.role, total: personStats(p, staff.basis).total, salary: p.salary, manual: p.manual, erp: p.erp }));
 
 /* ---------- 바꾸기 (원본은 안 건드리고 새 사람을 돌려준다) ---------- */
-/* 적용월부터(종료월까지, 비우면 끝까지) — rate: round천원(월급여 × %) · amt: value(원) · exclude: 0원. 범위에 없던 달은 새로 생긴다. months 는 계획 기간의 달들(없으면 그 사람의 달들) */
+/* 적용일부터(종료일까지, 비우면 끝까지 — 날짜 'YYYY-MM-DD' 또는 달 'YYYY-MM') — rate: round천원(월급여 × %) · amt: value(원, 한 달 치) · exclude: 0원.
+ * 범위 밖 조각은 그대로, 걸치는 조각은 날 수 비율로 잘라 남기고, 범위 안은 달마다 조각 하나(달 중간이면 날 수 비율의 금액). 범위에 없던 달은 새로 생긴다.
+ * 적용일·종료일 다음 날이 기간 구간의 경계(cuts)가 된다(양쪽이 같은 금액의 온달이면 지움). months 는 계획 기간의 달들(없으면 그 사람의 달들) */
 function applyChange(person, basis, { from, to = '', mode, value }, months = []) {
-  if (!isYm(from)) throw new Error('적용월을 고르세요.');
-  const all = months.length ? months : person.plan.map((x) => x.ym);
+  const fromD = dateOf(from, 'start');
+  if (!fromD) throw new Error('적용일을 고르세요.');
+  const all = months.length ? months : [...new Set(person.plan.map((x) => x.ym))];
   if (!all.length) throw new Error('계획 기간이 없어 달을 정할 수 없습니다 — 기간을 먼저 정하세요.');
-  const end = isYm(to) && to >= from ? to : all[all.length - 1];
-  const range = all.filter((ym) => ym >= from && ym <= end);
-  if (!range.length) throw new Error('적용월이 계획 기간 밖입니다.');
-  let amt;
-  if (mode === 'exclude') amt = 0;
+  const toD = dateOf(to, 'end');
+  const endD = toD && toD >= fromD ? toD : monthEnd(all[all.length - 1]);
+  const range = all.filter((ym) => ym >= fromD.slice(0, 7) && ym <= endD.slice(0, 7));
+  if (!range.length) throw new Error('적용일이 계획 기간 밖입니다.');
+  let full;
+  if (mode === 'exclude') full = 0;
   else if (mode === 'rate') {
     const r = num(value);
     if (r == null || r < 0 || r > 100) throw new Error('참여율은 0~100 사이의 수입니다.');
     const limit = monthlyPay(person, basis);
     if (!(limit.amt > 0)) throw new Error('월급여가 없어 참여율로 금액을 셈할 수 없습니다 — 월급여를 적으세요.');
-    amt = amountOfRate(limit.amt, r);
+    full = amountOfRate(limit.amt, r);
   } else if (mode === 'amt') {
-    amt = money(value);
-    if (amt == null) throw new Error('월 지급금액은 0 이상의 금액입니다.');
+    full = money(value);
+    if (full == null) throw new Error('월 지급금액은 0 이상의 금액입니다.');
   } else throw new Error('모르는 변경 구분입니다.');
-  const map = new Map(person.plan.map((x) => [x.ym, x.amt]));
-  for (const ym of range) map.set(ym, amt);
-  return Object.assign({}, person, { plan: normalizePlan([...map.entries()].map(([ym, a]) => ({ ym, amt: a }))) });
+  const keep = [];
+  for (const x of person.plan) {
+    const s = segStart(x), e = segEnd(x);
+    if (e < fromD || s > endD) { keep.push(x); continue; }
+    if (s < fromD) keep.push(clipSeg(x, s, addDays(fromD, -1)));
+    if (e > endD) keep.push(clipSeg(x, addDays(endD, 1), e));
+  }
+  for (const ym of range) keep.push(makeSeg(ym, full, fromD > monthStart(ym) ? fromD : monthStart(ym), endD < monthEnd(ym) ? endD : monthEnd(ym)));
+  const plan = normalizePlan(keep);
+  return Object.assign({}, person, { plan, cuts: pruneCuts(plan, normalizeCuts((person.cuts || []).concat([fromD, addDays(endD, 1)]))) });
 }
-/* 계상인건비 총액 — 지급이 있는 달(없으면 모든 달)에 균등 */
-function setTotal(person, total, months = []) {
+/* 총액을 조각들에 — 온달은 ceil천원(총 ÷ 개월), 일부 달 조각은 그 날 수 비율(round천원), 마지막 조각은 잔액. 모두 온달이면 splitEven 과 같다 */
+function splitByFrac(total, fracs) {
+  const n = fracs.length;
+  if (!n || !(total >= 0)) return [];
+  if (n === 1) return [Math.round(total)];
+  const sum = fracs.reduce((a, b) => a + b, 0);
+  const headOf = (unit) => fracs.slice(0, -1).map((f) => round1000(unit * f));
+  let head = headOf(Math.ceil(total / sum / 1000) * 1000);
+  if (head.reduce((a, b) => a + b, 0) > total) head = headOf(Math.floor(total / sum / 1000) * 1000);
+  return head.concat([Math.round(total - head.reduce((a, b) => a + b, 0))]);
+}
+/* 계상인건비 총액 — 지급이 있는 조각(없으면 모든 조각, 그것도 없으면 months 의 달)에 나눈다. range({ from, to } 날짜)를 주면 그 구간의 조각에만 */
+function setTotal(person, total, months = [], range = null) {
   const t = money(total);
   if (t == null) throw new Error('계상인건비는 0 이상의 금액입니다.');
-  const active = person.plan.filter((x) => x.amt > 0).map((x) => x.ym);
-  const ms = active.length ? active : person.plan.length ? person.plan.map((x) => x.ym) : months;
-  if (!ms.length) throw new Error('계획 기간이 없어 달을 정할 수 없습니다 — 기간을 먼저 정하세요.');
-  const amts = splitEven(t, ms.length);
-  const map = new Map(person.plan.map((x) => [x.ym, x.amt]));
-  ms.forEach((ym, i) => map.set(ym, amts[i]));
-  return Object.assign({}, person, { plan: normalizePlan([...map.entries()].map(([ym, a]) => ({ ym, amt: a }))) });
+  const inRange = (x) => !range || (segStart(x) >= range.from && segEnd(x) <= range.to);
+  let segs = person.plan.filter((x) => x.amt > 0 && inRange(x));
+  if (!segs.length) segs = person.plan.filter(inRange);
+  if (!segs.length && !range) segs = months.map((ym) => ({ ym, amt: 0 }));
+  if (!segs.length) throw new Error('계획 기간이 없어 달을 정할 수 없습니다 — 기간을 먼저 정하세요.');
+  const amts = splitByFrac(t, segs.map(segFrac));
+  const key = (x) => `${x.ym}|${segStart(x)}`;
+  const map = new Map(person.plan.map((x) => [key(x), x]));
+  segs.forEach((x, i) => map.set(key(x), Object.assign({}, x, { amt: amts[i] })));
+  return Object.assign({}, person, { plan: normalizePlan([...map.values()]) });
 }
-/* 참여율 통째로 — 지급이 있는 달(없으면 기간 전체)에 round천원(월급여 × %) */
-function setRate(person, basis, rate, months = []) {
+/* 참여율 통째로 — 지급이 있는 조각의 첫날부터 마지막 날까지(없으면 기간 전체)에 round천원(월급여 × %). range 를 주면 그 구간만 */
+function setRate(person, basis, rate, months = [], range = null) {
+  if (range) return applyChange(person, basis, { from: range.from, to: range.to, mode: 'rate', value: rate }, months);
   const active = person.plan.filter((x) => x.amt > 0);
-  const from = (active[0] && active[0].ym) || (person.plan[0] && person.plan[0].ym) || months[0];
-  const last = active[active.length - 1] || person.plan[person.plan.length - 1];
-  const to = (last && last.ym) || months[months.length - 1] || '';
+  const first = active[0] || person.plan[0], last = active[active.length - 1] || person.plan[person.plan.length - 1];
+  const from = first ? segStart(first) : months[0] || '';
+  const to = last ? segEnd(last) : months.length ? monthEnd(months[months.length - 1]) : '';
   return applyChange(person, basis, { from, to, mode: 'rate', value: rate }, months);
 }
 /* 월급여를 손으로 — 비우거나 기준값과 같으면 손으로 적은 것을 지운다 */
@@ -426,7 +599,7 @@ function checks(staff, basis, { others = {}, budgetPay = null } = {}) {
     const mine = others[nameKeyOf(p.name)] || [];
     const hits = [];
     for (const r of s.rates) {
-      if (!(r.amt > 0) || r.rate == null) continue;
+      if (!(r.amt > 0) || r.rate == null || hits.some((h) => h.ym === r.ym)) continue;   // 조각 참여율(일부 달은 날 수 비율로 되짚은 값) + 다른 과제 — 같은 달은 한 번만
       const theirs = mine.filter((o) => o.ym === r.ym);
       const sum = Math.round((r.rate + theirs.reduce((a, o) => a + o.rate, 0)) * 100) / 100;
       if (sum > 100) hits.push({ ym: r.ym, sum, mine: r.rate, theirs });
@@ -441,9 +614,10 @@ function checks(staff, basis, { others = {}, budgetPay = null } = {}) {
   if (noLimit.length) out.push({ kind: 'salary', level: 'warn', text: `월급여 없음: ${noLimit.join(', ')} — 참여율을 셈할 수 없습니다. 월급여를 적으세요.` });
   const fb = staff.people.filter((p) => monthlyPay(p, basis).fallback).map((p) => p.name);
   if (fb.length) out.push({ kind: 'fallback', level: 'info', text: `rERP 월급여 없음: ${fb.join(', ')} — 계획서 값으로 셈합니다.` });
-  const ob = overBudget(staff, basis, budgetPay);
-  if (ob.budget != null && ob.over) out.push({ kind: 'budget', level: 'error', text: `인건비 합 ${thousand(ob.total)}천원이 예산 ${thousand(ob.budget)}천원을 넘습니다 (+${thousand(ob.total - ob.budget)}천원).` });
-  else if (ob.budget != null && ob.left > 0) out.push({ kind: 'left', level: 'info', text: `인건비 합 ${thousand(ob.total)}천원 · 예산 ${thousand(ob.budget)}천원 (남음 ${thousand(ob.left)}천원).` });
+  const ob = overBudget(staff, basis, budgetPay), bd = budgetDiff(ob);
+  if (bd.kind === 'over') out.push({ kind: 'budget', level: 'error', text: `인건비 합 ${thousand(ob.total)}천원이 예산 ${thousand(ob.budget)}천원을 넘습니다 — ${bd.text}.` });
+  else if (bd.kind === 'short') out.push({ kind: 'left', level: 'info', text: `인건비 합 ${thousand(ob.total)}천원 · 예산 ${thousand(ob.budget)}천원 — ${bd.text} (예산보다 적게 잡음).` });
+  else if (bd.kind === 'even') out.push({ kind: 'even', level: 'info', text: `인건비 합 ${thousand(ob.total)}천원 — 예산과 같습니다.` });
   return out;
 }
 
@@ -459,21 +633,25 @@ function staffLines(staff, basis, { budgetPay = null } = {}) {
   for (const p of staff.people) {
     const s = personStats(p, b);
     const bits = [p.role, s.limit ? `월급여 ${thousand(s.limit)}천원(${srcLabel[s.src]})` : '월급여 없음',
-      s.from ? `${ymText(s.from, s.to)} (${s.months}개월)` : s.months ? `${s.months}개월` : '', `계상인건비 ${thousand(s.total)}천원`,
+      s.from ? `${spanText(s.from, s.to)} (${monthsText(s.months)}개월)` : s.months ? `${monthsText(s.months)}개월` : '', `계상인건비 ${thousand(s.total)}천원`,
       s.rate != null ? `참여율 ${rateText(s.rate)}${s.maxRate != null ? ` (월 최대 ${rateText(s.maxRate)})` : ''}` : '',
+      s.runs.length > 1 ? `구간 ${s.runs.map((r) => `${spanText(r.from, r.to)} ${r.off ? '제외' : `${thousand(r.amt)}천원 ${rateText(r.rate)}`}`).join(' · ')}` : '',
       s.planned ? `월별 ${monthlyText(p.plan)}` : ''].filter(Boolean);
     lines.push(`- ${p.name} — ${bits.join(' · ')}`);
   }
   return lines;
 }
-/* 탭으로 나눈 표(천원) — 엑셀·한글에 붙인다 */
+/* 탭으로 나눈 표(천원) — 엑셀·한글에 붙인다. 기간 구간마다 한 줄(rERP 참여인력 목록처럼), 월 최대·월별 지급은 사람의 첫 줄에만 */
 function staffTsv(staff, basis) {
   if (!staff) return '';
   const b = basis || staff.basis;
   const rows = [['성명', '직위', '월급여(천원)', '참여기간', '개월', '계상인건비(천원)', '참여율', '월 최대', '월별 지급(천원)']];
   for (const p of staff.people) {
     const s = personStats(p, b);
-    rows.push([p.name, p.role, thousand(s.limit), s.from ? ymText(s.from, s.to) : '', String(s.months || ''), thousand(s.total), rateText(s.rate), rateText(s.maxRate), s.planned ? monthlyText(p.plan) : '']);
+    const runs = s.runs.length ? s.runs : [null];
+    runs.forEach((r, i) => rows.push([p.name, p.role, thousand(s.limit),
+      r ? spanText(r.from, r.to) : s.from ? spanText(s.from, s.to) : '', r ? monthsText(r.months) : (s.months ? monthsText(s.months) : ''), thousand(r ? r.amt : s.total), r ? (r.off ? '제외' : rateText(r.rate)) : rateText(s.rate),
+      i ? '' : rateText(s.maxRate), i || !s.planned ? '' : monthlyText(p.plan)]));
   }
   return rows.map((r) => r.join('\t')).join('\n');
 }
@@ -519,10 +697,12 @@ const api = {
   KEY, DKEY, STAFF_MAX, BASES, BASIS_LABEL, MODES, YEAR_MAX, BUDGET_ITEMS, gcTomb, loadDeleted, remove,
   money, thousand, thousandOf, nameKeyOf, sameName, comma,
   isYm, ymOf, addMonths, ymRange, spanMonths, ymText, monthLabel,
+  dim, isYmd, monthStart, monthEnd, addDays, dayCount, dateOf, segStart, segEnd, segDays, segFrac, isFull, spanText, monthsText,
   itemKeyOf, isPayItem, normalizeBudget, budgetPayOf, budgetText,
+  SUPPORT_MAX, normalizeSupport, supportText,
   planKey, yearLabel, anlOf, yearSpan, plansOfProject,
-  monthlyOfSalary, rerpRate, amountOfRate, splitEven,
-  normalizePerson, normalizeStaff, normalizePlanEntry, normalizePlans, planMonthly, monthlyPay, personStats, staffTotal, overBudget, rateText, statsText, monthlyText,
+  monthlyOfSalary, rerpRate, amountOfRate, splitEven, splitByFrac,
+  normalizePlan, normalizeCuts, pruneCuts, normalizePerson, normalizeStaff, normalizePlanEntry, normalizePlans, planMonthly, monthlyPay, runsOf, personStats, staffTotal, overBudget, budgetDiff, rateText, statsText, monthlyText, monthSums, sameMonthly,
   rowsOfErp, byName, peopleOfErp, othersOfErp, sharesOfErp, buildStaff, initFromShares, sharesOfStaff,
   applyChange, setTotal, setRate, setManual, mergeOthers, checks, staffLines, staffTsv, load, save,
 };
@@ -531,10 +711,12 @@ export {
   KEY, DKEY, STAFF_MAX, BASES, BASIS_LABEL, MODES, YEAR_MAX, BUDGET_ITEMS, gcTomb, loadDeleted, remove,
   money, thousand, thousandOf, nameKeyOf, sameName, comma,
   isYm, ymOf, addMonths, ymRange, spanMonths, ymText, monthLabel,
+  dim, isYmd, monthStart, monthEnd, addDays, dayCount, dateOf, segStart, segEnd, segDays, segFrac, isFull, spanText, monthsText,
   itemKeyOf, isPayItem, normalizeBudget, budgetPayOf, budgetText,
+  SUPPORT_MAX, normalizeSupport, supportText,
   planKey, yearLabel, anlOf, yearSpan, plansOfProject,
-  monthlyOfSalary, rerpRate, amountOfRate, splitEven,
-  normalizePerson, normalizeStaff, normalizePlanEntry, normalizePlans, planMonthly, monthlyPay, personStats, staffTotal, overBudget, rateText, statsText, monthlyText,
+  monthlyOfSalary, rerpRate, amountOfRate, splitEven, splitByFrac,
+  normalizePlan, normalizeCuts, pruneCuts, normalizePerson, normalizeStaff, normalizePlanEntry, normalizePlans, planMonthly, monthlyPay, runsOf, personStats, staffTotal, overBudget, budgetDiff, rateText, statsText, monthlyText, monthSums, sameMonthly,
   rowsOfErp, byName, peopleOfErp, othersOfErp, sharesOfErp, buildStaff, initFromShares, sharesOfStaff,
   applyChange, setTotal, setRate, setManual, mergeOthers, checks, staffLines, staffTsv, load, save,
 };

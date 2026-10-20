@@ -31,7 +31,7 @@
 //   받은 연구내용은 saveLocal('research').map 을 rerp/research.js save 로(기록의 prjNo 가 열쇠로 채워져 있다 — 이 저장소는 그 칸을 rERP 잇기에 쓰지 않는다).
 //   지운 과제: 배선이 그 과제의 파일 project 칸에 deletedAt(ms)을 적어 퍼뜨리면 applyProject 가 받아 장부에서 지운다(모르는 칸이라 파일 updatedAt 규칙으로 퍼진다).
 
-import { normalizeProject, newId, yearsOf, currentYear, aliasOwner, isYmd, yearBook, blankYear, MAX_PROJECTS, MAX_YEARS, CHANGE_KINDS } from './rnd.js';
+import { normalizeProject, normalizeSupport, newId, yearsOf, currentYear, aliasOwner, isYmd, yearBook, blankYear, MAX_PROJECTS, MAX_YEARS, CHANGE_KINDS } from './rnd.js';
 import { linkOf } from './rnderp.js';
 import RS from '../rerp/research.js';
 
@@ -88,6 +88,7 @@ export function projectOf(p, n = 0) {
   return {
     prjNo: str(erp?.prjNo, 40), prjNm: str(erp?.prjNm) || str(p?.name), rspr: str(p?.lead), alias: str(p?.alias), aliasAt: num(p?.aliasAt),
     jobId: str(p?.job), io: str(p?.io), start: isYmd(p?.start) ? p.start : '', end: isYmd(p?.end) ? p.end : '', note: str(p?.note, 1000),
+    support: normalizeSupport(p?.support), supportAt: num(p?.supportAt),   // 행정지원 — 양쪽이 고치는 칸(정본 BOTH_FIELDS, supportAt 큰 쪽) — 2026-10-19
     wsId: str(p?.id, 40), code: str(p?.code), calendar: p?.calendar === true,
   };
 }
@@ -180,8 +181,8 @@ export function matchProject(book, doc) {
   return null;
 }
 
-/** 별칭 칸(정본 toLocalYear 의 alias)에만 있는 칸 — 이것뿐인 payload 로는 과제를 만들지 않는다(applyProject). */
-const ALIAS_ONLY = new Set(['alias', 'aliasAt', 'at']);
+/** 별칭·행정지원 칸(정본 toLocalYear 의 alias · support)에만 있는 칸 — 이것뿐인 payload 로는 과제를 만들지 않는다(applyProject). */
+const ALIAS_ONLY = new Set(['alias', 'aliasAt', 'support', 'supportAt', 'at']);
 
 /** 열쇠로 과제 찾기 — 장부 id → Job Id → 이어 둔 rERP 과제번호 → memo 에 적어 둔 id. */
 function byKey(book, key, memo) {
@@ -210,7 +211,7 @@ function settleAlias(book, p, alias, aliasAt, now) {
  * 파일의 project 칸(병합 결과 — 정본 toLocalYear 의 project·alias 처럼 **일부 칸만** 올 수도 있다: undefined 인 칸은 건드리지 않는다)을 장부에 들인다.
  * @param {object} book 장부(바꾸지 않는다 — 새 장부를 돌려준다)
  * @param {string} key 공유 열쇠(rERP 과제번호 · Job Id · 장부 id) — 칸으로 못 찾을 때의 열쇠
- * @param {object} project { prjNo?, prjNm?, rspr?, alias?, aliasAt?, jobId?, io?, start?, end?, note?, wsId?, code?, calendar?, deletedAt?, at? }
+ * @param {object} project { prjNo?, prjNm?, rspr?, alias?, aliasAt?, jobId?, io?, start?, end?, note?, support?, supportAt?, wsId?, code?, calendar?, deletedAt?, at? }
  * @param {object} memo st.share.memo — 열쇠마다 { at(받은 시각), id(장부 id) }
  * @param {{ now?: number, n?: number }} opts n 은 파일의 연차(새 과제를 만들 때 prjNo 가 있으면 그 연차에 rERP 를 잇는다 — 다음 맞춤의 열쇠가 같게)
  * @returns {{ book, memo, id, created, removed, skipped, renamed: [string,string]|null, changed: string[], alias, aliasFixed }}
@@ -291,6 +292,13 @@ export function applyProject(book, key, project, memo = {}, { now = Date.now(), 
     p.aliasAt = a.aliasAt;
     res.aliasFixed = a.fixed;
   } else if (has('aliasAt') && num(src.aliasAt) > num(p.aliasAt)) p.aliasAt = num(src.aliasAt);
+  // 행정지원(양쪽이 고침 — supportAt 큰 쪽은 정본 mergeProject 가 이미 골랐다, 2026-10-19): 온 그대로 두되 이름 없는 줄·겹친 이름은 걷고, 시각은 큰 쪽만
+  if (has('support')) {
+    const sup = normalizeSupport(src.support), at = num(src.supportAt);
+    if (JSON.stringify(sup) !== JSON.stringify(normalizeSupport(p.support))) res.changed.push('support');
+    p.support = sup;
+    if (at > num(p.supportAt)) { p.supportAt = at; if (!res.changed.includes('support')) res.changed.push('supportAt'); }
+  } else if (has('supportAt') && num(src.supportAt) > num(p.supportAt)) { p.supportAt = num(src.supportAt); res.changed.push('supportAt'); }
   const prev = obj(nextMemo[k]) || {};
   nextMemo[k] = { ...prev, id: p.id, at: Math.max(num(src.at), num(prev.at)) };
   res.id = p.id;

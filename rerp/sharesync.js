@@ -70,7 +70,7 @@ export function createShareSync(deps) {
   let shareInflight = null, shareNext = null, shareNextOpts = null, shareTimer = 0;
   const loadPlus = async () => Object.assign({}, SHARE_DEFAULTS, (await deps.settings()) || {});
   /* 무엇을 맞출지 — 설정의 체크. budget(예산 줄)은 사업비 체크와 함께, alias 는 늘 (prjdoc-sync 의 want). [workspace] deps.want(객체 또는 함수)가 있으면 그것으로 덧씀 — WORKSPACE 는 plan 받기만 · staff 안 함 · budget 은 계획만 */
-  const shareWant = (p) => ({ plan: p.planSync !== false, research: p.researchSync !== false, staff: p.staffSync !== false, budget: p.staffSync !== false, changes: p.changesSync !== false, alias: true });
+  const shareWant = (p) => ({ plan: p.planSync !== false, research: p.researchSync !== false, staff: p.staffSync !== false, budget: p.staffSync !== false, changes: p.changesSync !== false, alias: true, support: true });   // 행정지원도 별칭처럼 늘
   const wantOf = (p) => (deps.want ? Object.assign(shareWant(p), (typeof deps.want === 'function' ? deps.want(p) : deps.want) || {}) : shareWant(p));
   const pullOnlyOf = () => ((typeof deps.pullOnly === 'function' ? deps.pullOnly() : deps.pullOnly) || {});   // [workspace] 받기만 하는 파일(prjdoc-sync 의 pullOnly — WORKSPACE 는 { plan: true })
   const shareDriveHost = (p) => String((p && p.driveHost) || '').trim() || SHARE_DEFAULTS.driveHost;

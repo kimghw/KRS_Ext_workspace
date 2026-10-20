@@ -9,6 +9,7 @@ import {
   normalizePerson, normalizeStaff, normalizePlans, planMonthly, monthlyPay, personStats, staffTotal, overBudget, rateText, statsText, monthlyText, buildStaff, initFromShares,
   sharesOfStaff, rowsOfErp, byName, peopleOfErp, othersOfErp, sharesOfErp, applyChange, setTotal, setRate, setManual, mergeOthers, checks, staffLines, staffTsv,
   planKey, yearLabel, anlOf, yearSpan, plansOfProject,
+  SUPPORT_MAX, normalizeSupport, supportText,
 } from '../rerp/staff.js';
 
 let pass = 0;
@@ -94,7 +95,7 @@ t('peopleOfErp — 지급기간을 달마다 펼친 월별 지급·월급여 →
   assert.deepEqual(moon.erp, { monthly: 5823000, prjNo: '2026-0063-01', at: 5, req: '9', seq: '2', others: [] });
   assert.deepEqual([moon.salary, moon.pay, moon.rate, moon.months, moon.manual], [null, null, null, null, null], '계획서 값은 없다');
   const s = personStats(moon, 'rerp');
-  assert.deepEqual([s.total, s.months, s.from, s.to, s.rate, s.maxRate, s.maxYm, s.limit, s.src, s.planned], [10479000, 9, '2026-04', '2026-12', 20, 20.01, '2026-04', 5823000, 'rerp', true]);
+  assert.deepEqual([s.total, s.months, s.from, s.to, s.rate, s.maxRate, s.maxYm, s.limit, s.src, s.planned], [10479000, 9, '2026-04-01', '2026-12-31', 20, 20.01, '2026-04', 5823000, 'rerp', true], '0.8.7 부터 from·to 는 날짜(날짜 조각)');
   assert.equal(monthlyText(moon.plan), '4~11월 1,165 · 12월 1,159');
   assert.deepEqual([personStats(staff.people[1], 'rerp').rate, personStats(staff.people[1], 'rerp').months], [27.46, 8]);
   const only = peopleOfErp(rowsOfErp(REC), { months: ['2026-12'] });
@@ -124,7 +125,7 @@ t('계획서 사람들 → 월별 지급(계획 기간 첫 달부터 참여개�
   assert.deepEqual(kim.plan.map((x) => x.ym), ymRange('2026-04', '2026-12'));
   assert.deepEqual(kim.plan.map((x) => x.amt), [...Array(8).fill(2328000), 2322000], 'rERP 저장 행과 원 단위까지 같다');
   const st = personStats(kim, 'plan');
-  assert.deepEqual([st.limit, st.src, st.total, st.months, st.from, st.to, st.rate, st.maxRate, st.maxYm], [8480000, 'plan', 20946000, 9, '2026-04', '2026-12', 27.45, 27.46, '2026-04']);
+  assert.deepEqual([st.limit, st.src, st.total, st.months, st.from, st.to, st.rate, st.maxRate, st.maxYm], [8480000, 'plan', 20946000, 9, '2026-04-01', '2026-12-31', 27.45, 27.46, '2026-04']);
   const moon = personStats(s.people[1], 'plan');
   assert.deepEqual([moon.limit, moon.rate, moon.maxRate, moon.rates.map((r) => r.rate)], [5823000, 20, 20.01, [...Array(8).fill(20.01), 19.91]]);
 });
@@ -219,7 +220,7 @@ t('제외(0%) — 12월부터 빼면 참여개월이 줄고 참여율은 남은 
   const s = buildStaff(PERSONS, YEAR);
   const moon = applyChange(s.people[1], 'plan', { from: '2026-12', mode: 'exclude' }, spanMonths(YEAR));
   const st = personStats(moon, 'plan');
-  assert.deepEqual([st.total, st.months, st.from, st.to, st.rate, st.maxRate], [9320000, 8, '2026-04', '2026-11', 20.01, 20.01]);
+  assert.deepEqual([st.total, st.months, st.from, st.to, st.rate, st.maxRate], [9320000, 8, '2026-04-01', '2026-11-30', 20.01, 20.01]);
   assert.equal(moon.plan[8].amt, 0, '0원 달은 남아 있다');
   assert.equal(monthlyText(moon.plan), '4~11월 1,165 · 12월 제외');
 });
@@ -234,12 +235,12 @@ t('더하기 — 달이 없던 사람은 범위의 달만 생긴다(5월부터 1
   assert.deepEqual(q.plan.map((x) => [x.ym, x.amt])[0], ['2026-05', 750000]);
   assert.equal(q.plan.length, 8);
   const st = personStats(q, 'plan');
-  assert.deepEqual([st.total, st.months, st.from, st.rate], [6000000, 8, '2026-05', 15]);
+  assert.deepEqual([st.total, st.months, st.from, st.rate], [6000000, 8, '2026-05-01', 15]);
 });
 t('틀린 값·달은 사람 말로 막는다', () => {
   const s = buildStaff(PERSONS, YEAR);
   const months = spanMonths(YEAR);
-  assert.throws(() => applyChange(s.people[1], 'plan', { from: '', mode: 'rate', value: 10 }, months), /적용월을 고르세요/);
+  assert.throws(() => applyChange(s.people[1], 'plan', { from: '', mode: 'rate', value: 10 }, months), /적용일을 고르세요/);   // 0.8.7 부터 적용일(날짜)
   assert.throws(() => applyChange(s.people[1], 'plan', { from: '2027-01', mode: 'rate', value: 10 }, months), /계획 기간 밖/);
   assert.throws(() => applyChange(s.people[1], 'plan', { from: '2026-12', mode: 'rate', value: 101 }, months), /0~100/);
   assert.throws(() => applyChange(s.people[1], 'plan', { from: '2026-12', mode: 'amt', value: null }, months), /0 이상의 금액/);
@@ -313,13 +314,13 @@ t('100% 는 넘어야 알림 — 정확히 100 은 아니다', () => {
   assert.equal(w.length, 0);
   assert.equal(checks(s, 'plan', { others: { 김거화: [{ ym: '2026-04', rate: 72.55, label: 'x' }] } })[0].kind, 'over');
 });
-t('예산 — 넘으면 error, 남으면 info, 같으면 조용 · 월급여 없음·rERP 없음 알림', () => {
+t('예산 — 넘으면 error, 남으면 info, 같으면 info(예산과 같습니다 — 0.8.7) · 월급여 없음·rERP 없음 알림', () => {
   const s = buildStaff(PERSONS, YEAR);
   assert.deepEqual(overBudget(s, 'plan', 31425000), { total: 31425000, budget: 31425000, over: false, left: 0 });
-  assert.equal(checks(s, 'plan', { budgetPay: 31425000 }).length, 0);
+  assert.deepEqual(checks(s, 'plan', { budgetPay: 31425000 }).map((w) => [w.kind, w.level, /예산과 같습니다/.test(w.text)]), [['even', 'info', true]]);
   assert.deepEqual(checks(s, 'plan', { budgetPay: 31000000 }).map((w) => [w.kind, w.level]), [['budget', 'error']]);
-  assert.match(checks(s, 'plan', { budgetPay: 31000000 })[0].text, /인건비 합 31,425천원이 예산 31,000천원을 넘습니다 \(\+425천원\)/);
-  assert.match(checks(s, 'plan', { budgetPay: 32000000 })[0].text, /남음 575천원/);
+  assert.match(checks(s, 'plan', { budgetPay: 31000000 })[0].text, /인건비 합 31,425천원이 예산 31,000천원을 넘습니다 — 초과금 425천원/);   // 0.8.7: 초과금·부족금 글
+  assert.match(checks(s, 'plan', { budgetPay: 32000000 })[0].text, /부족금 575천원/);
   assert.deepEqual(overBudget(s, 'plan', null), { total: 31425000, budget: null, over: false, left: null });
   const w = checks(s, 'rerp', {});
   assert.deepEqual(w.map((x) => x.kind), ['fallback']);
@@ -363,6 +364,17 @@ t('연차 — 계획 키 과제번호@연차, 현재 연차 번호, 연차의 �
   const norm = normalizePlans({ 'P@2': { prjNm: 'x', people: [{ name: '홍길동', plan: [{ ym: '2027-01', amt: 1 }] }] }, 'P@1': { prjNo: 'P', year: '1' }, P: { prjNo: 'P' }, 'R@9': { prjNo: 'R', year: 3 } });
   assert.deepEqual(Object.keys(norm).sort(), ['P', 'P@1', 'P@2', 'R@3'], '과제번호·연차가 빠지면 키에서, 있으면 값이 앞선다');
   assert.deepEqual([norm['P@2'].prjNo, norm['P@2'].year, norm['P@2'].people.length, norm['P@1'].year, norm.P.year], ['P', 2, 1, 1, null]);
+});
+
+console.log('행정지원 — 2026-10-19 (연차 파일 project.support·supportAt, 양쪽이 고침)');
+t('normalizeSupport — 이름 없는 줄 버림 · 같은 이름(공백 무시) 한 번 · 열 명 · 참조 기본 참 · supportText 한 줄', () => {
+  assert.equal(SUPPORT_MAX, 10, 'src/rnd.js SUPPORT_MAX 와 같음');
+  assert.deepEqual(normalizeSupport([{ name: ' 조주희 ', role: '행정 담당' }, { name: '', role: 'x' }, { name: '조 주희', ref: false }, { name: '이몽룡', role: '', ref: false }]),
+    [{ name: '조주희', role: '행정 담당', ref: true }, { name: '이몽룡', role: '', ref: false }]);
+  assert.equal(normalizeSupport(Array.from({ length: 12 }, (_, i) => ({ name: `n${i}` }))).length, SUPPORT_MAX);
+  assert.deepEqual([normalizeSupport(null), normalizeSupport('x')], [[], []]);
+  assert.equal(supportText([{ name: '조주희', role: '행정 담당', ref: true }, { name: '이몽룡', ref: false }]), '조주희(행정 담당·참조), 이몽룡');
+  assert.equal(supportText([]), '');
 });
 
 console.log(`\n${pass} passed`);

@@ -6,7 +6,10 @@
  *    v1(<과제번호>.json 한 장, 2026-10-18 낮)은 지웠다 — v1 파일은 parse 가 null 을 주어 그 파일만 건너뛴다.)
  *
  * 연차 파일(kind 'year') = { v:2, kind:'year',
- *   project: { prjNo, prjNm, rspr(과제책임자), alias(약칭), aliasAt(ms), jobId(전자결재 Job Id — WORKSPACE 몫), io(회계 I/O 코드 — WORKSPACE 몫), start, end(과제 **전체** 연구기간 'YYYY-MM-DD' — WORKSPACE 몫; rERP 의 과제 목록이 주는 RCH_ST_DT/RCH_END_DT 는 현재 **연차** 기간이라 여기에 넣지 않고 year.start/end 의 바탕(yearSpan)으로만 쓴다), note, …(모르는 칸 보존) },   — 연차 파일마다 같은 내용
+ *   project: { prjNo, prjNm, rspr(과제책임자), alias(약칭), aliasAt(ms), jobId(전자결재 Job Id — WORKSPACE 몫), io(회계 I/O 코드 — WORKSPACE 몫), start, end(과제 **전체** 연구기간 'YYYY-MM-DD' — WORKSPACE 몫; rERP 의 과제 목록이 주는 RCH_ST_DT/RCH_END_DT 는 현재 **연차** 기간이라 여기에 넣지 않고 year.start/end 의 바탕(yearSpan)으로만 쓴다), note,
+ *              support([{ name, role, ref }] — 행정지원, 양쪽이 고침), supportAt(ms — 행정지원을 고친 시각), …(모르는 칸 보존) },   — 연차 파일마다 같은 내용
+ *   몫(2026-10-19 사용자 "참여인력 변경, 예산 변경등은 rerp 에서만 할게. 이 부분은 동기화할 필요 없어 결과만 동기화 하면됨. 행정지원은 서로 변경 가능하고"): budget · staff 는 **rerp 만** 고치고 WORKSPACE 는 결과를 받아 보이기만(그쪽은 쓰지 않음 — rerp 사용자끼리는 아래 at 규칙),
+ *     행정지원(project.support)은 **양쪽**이 고치며 supportAt 큰 쪽(별칭과 같은 규칙), jobId · io · start · end · note 는 WORKSPACE 몫.
  *   year: { n(연차 1·2·3…), start, end('YYYY-MM' — 그 연차 계획 기간, 사업비 계획의 from/to) },
  *   budget: [ { name(비목), plan(계획 원 | null), at(ms), by } … ],   — 사업비 관리의 예산 줄(lib/staff.js normalizeBudget 모양 + at·by). 사업비 계획(staff.plans[].budget)에도 같은 줄이 비친다(아래 병합)
  *   staff: { plans: [ 그 연차의 계획 — lib/staff.js normalizePlanEntry 모양, 보통 1개 ], del: { ["과제번호@연차"]: 지운 시각 } },
@@ -16,7 +19,7 @@
  * 예상 비용 파일(kind 'plan') = { v:2, kind:'plan', project: { prjNo, prjNm, …보존 }, plan: { items: [ 평면 항목 — lib/plan-sync.js flatten 모양 { id, prj, key, name, qty, unit, amt, sub?, ts, by? } ], del: { [항목 id]: 지운 시각 } }, updatedAt, updatedBy, …보존 }
  *
  * 병합(같은 파일을 여러 사람·두 확장이 쓰므로):
- *   - project: rERP 가 아는 칸(prjNo·prjNm·rspr)은 **R&D ERP 값(로컬)이 늘 이김**(비어 있으면 파일 것). alias 는 aliasAt 큰 쪽(같으면 파일 — 로컬에 시각이 없으면 지금). jobId·io·start·end·note·모르는 칸은 WORKSPACE 몫 —
+ *   - project: rERP 가 아는 칸(prjNo·prjNm·rspr)은 **R&D ERP 값(로컬)이 늘 이김**(비어 있으면 파일 것). alias 는 aliasAt 큰 쪽(같으면 파일 — 로컬에 시각이 없으면 지금), support 는 supportAt 큰 쪽(같은 규칙 — 내용이 같으면 시각만 큰 쪽). jobId·io·start·end·note·모르는 칸은 WORKSPACE 몫 —
  *     파일의 updatedAt 이 로컬이 그 칸을 받은 시각(opts.localAt — loadLocal 의 projects[prjNo].at)보다 뒤면 파일 것, 아니면 로컬 것(연차 파일 여럿에 같은 내용을 퍼뜨리고 되치기를 막는 규칙).
  *     start·end 를 ERP 칸에서 뺀 까닭(2026-10-18 검토): rerp 가 아는 날짜(projectList 의 stDt/endDt)는 현재 연차 기간이어서 연차가 바뀔 때마다 모든 연차 파일의 '연구기간' 을 덮고, 두 rerp 사용자의 캐시 연차가 다르면 서로 번갈아 고쳤다.
  *   - budget: 줄 전체를 한 덩이로 — 내용(name·plan)이 다르면 at 가 큰 쪽(같으면 로컬), 빈 쪽은 이기지 못함(rerp 로컬의 budget 이 null 이면 기본값 상태라 파일 것을 받는다). 이긴 줄은 사업비 계획(staff.plans[].budget)에도 비치고(mirror)
@@ -26,7 +29,7 @@
  *   - changes: **덧붙이기만** — id 로 합집합(같은 id 가 둘이면 파일 것), (date, at, id) 차례, 500 개를 넘으면 오래된 것부터 버림.
  *   - want 로 끈 칸(설정의 동기화 항목 체크)은 받지도 올리지도 않고 파일에 있던 그대로 둔다. remote 가 없으면(파일 없음) 로컬로 문서를 만든다.
  * 로컬 ↔ 문서: fromLocalYear(과제, 연차, loadLocal 결과, meta) · fromLocalPlan(과제, loadLocal 결과, meta) 가 그 몫을 떼어 내고, toLocalYear · toLocalPlan 이 병합 결과를 로컬 전체 구조에 되돌려 넣는다 — KRX_PRJDOC_SYNC.run 의 saveLocal(part, prj, data) 의 data.
- *   loadLocal() = { plan:{ plans(맵), del }, research(맵), staff:{ plans(맵), del }, aliases, aliasesAt, changes(맵 '과제번호@연차' → [ … ]), projects:{ [prjNo]: { prjNm, rspr, anl, stDt, endDt(ERP 현재 연차 기간 YYYYMMDD — yearSpan 용, 문서로는 안 감), start?, end?, jobId?, io?, note?, at?(WORKSPACE 몫을 받은 시각) } } }.
+ *   loadLocal() = { plan:{ plans(맵), del }, research(맵), staff:{ plans(맵), del }, aliases, aliasesAt, support(맵 prjNo → { people, at } — storage.local.projectSupport), changes(맵 '과제번호@연차' → [ … ]), projects:{ [prjNo]: { prjNm, rspr, anl, stDt, endDt(ERP 현재 연차 기간 YYYYMMDD — yearSpan 용, 문서로는 안 감), start?, end?, jobId?, io?, note?, at?(WORKSPACE 몫을 받은 시각) } } }.
  *   같은 연구내용 기록(같은 id)이 두 과제 파일에 들어 있을 수 있다 — otherRecs → merge 의 opts.others 로 견주고, toLocal 은 다른 과제에 이어 둔 기록은 글만 받고 연결은 그대로 둔다(v1 과 같음) — 그런 기록은 research.others 로 따로 돌려 배선이 그 과제 몫과 함께 저장한다(안 저장하면 매 동기화마다 다시 받은 것으로 센다).
  * 폴더 이름(folderNameFor): 약칭(projectAliases) → 없으면 Job Id → 없으면 rERP 과제번호. 파일 이름에 못 쓰는 글자를 걷고 60자. 이름은 표시용 — 과제 식별은 파일 안의 project.prjNo(없으면 jobId)로 한다(prjdoc-sync).
  * 필요한 전역: KRX_PLAN_SYNC(flatten·unflatten·merge·tombTs·tombPrj) · KRX_RESEARCH_SYNC(merge) + KRX_RESEARCH(revNo) · KRX_STAFF_SYNC(merge·plansOf) + KRX_STAFF(planKey·normalizePlanEntry·yearSpan) */
@@ -40,9 +43,10 @@ const KINDS = Object.freeze(['year', 'plan']);
 const PLAN_NAME = '예상비용.json';
 const YEAR_ORDER = ['v', 'kind', 'project', 'year', 'budget', 'staff', 'research', 'changes', 'updatedAt', 'updatedBy'];
 const PLAN_ORDER = ['v', 'kind', 'project', 'plan', 'updatedAt', 'updatedBy'];
-const PROJECT_ORDER = ['prjNo', 'prjNm', 'rspr', 'alias', 'aliasAt', 'jobId', 'io', 'start', 'end', 'note'];
+const PROJECT_ORDER = ['prjNo', 'prjNm', 'rspr', 'alias', 'aliasAt', 'jobId', 'io', 'start', 'end', 'note', 'support', 'supportAt'];
 const ERP_FIELDS = ['prjNo', 'prjNm', 'rspr'];                    // R&D ERP 값(로컬)이 늘 이김
 const WS_FIELDS = ['jobId', 'io', 'start', 'end', 'note'];        // WORKSPACE 몫 — rerp 는 보존·표시만(시각 규칙으로 받음). start·end 는 과제 전체 연구기간(rerp 가 아는 날짜는 현재 연차 기간이라 여기에 넣지 않음)
+const BOTH_FIELDS = ['alias', 'aliasAt', 'support', 'supportAt'];   // 양쪽이 고치는 칸 — 고친 시각(aliasAt · supportAt)이 큰 쪽(2026-10-19 사용자 "행정지원은 서로 변경 가능하고"). 예산 줄·참여연구원 계획은 rerp 만 고치고 WORKSPACE 는 결과를 받기만
 const CHANGE_KINDS = Object.freeze(['예산', '연구내용', '연구기간', '연구진', '기타']);   // kr_ext_workspace src/rnd.js CHANGE_KINDS 와 같은 이름
 const CHANGE_ORDER = ['id', 'date', 'kind', 'item', 'before', 'after', 'reason', 'by', 'at', 'auto'];
 const CHANGES_MAX = 500;
@@ -51,7 +55,7 @@ const FOLDER_NAME_MAX = 60;
 const LOCAL_REC = ['prjNo', 'prjNm', 'linkBy', 'src'];   // 연구내용 기록에서 받는 쪽에만 뜻이 있는 칸 — 문서에는 싣지 않는다
 const YEAR_KNOWN = new Set(YEAR_ORDER), PLAN_KNOWN = new Set(PLAN_ORDER), PROJECT_KNOWN = new Set(PROJECT_ORDER), CHANGE_KNOWN = new Set(CHANGE_ORDER);
 const LOCAL_PROJECT = new Set(['anl', 'at', 'stDt', 'endDt']);   // loadLocal 의 projects[prjNo] 에만 있는 칸 — 문서의 project 로 가지 않는다(stDt·endDt 는 ERP 현재 연차 기간 — yearSpan 에만)
-const api = { VERSION, KINDS, PLAN_NAME, YEAR_ORDER, PLAN_ORDER, PROJECT_ORDER, ERP_FIELDS, WS_FIELDS, CHANGE_KINDS, CHANGES_MAX, FOLDER_NAME_MAX };
+const api = { VERSION, KINDS, PLAN_NAME, YEAR_ORDER, PLAN_ORDER, PROJECT_ORDER, ERP_FIELDS, WS_FIELDS, BOTH_FIELDS, CHANGE_KINDS, CHANGES_MAX, FOLDER_NAME_MAX };
 const PS = () => g.KRX_PLAN_SYNC, RS = () => g.KRX_RESEARCH_SYNC, SS = () => g.KRX_STAFF_SYNC, ST = () => g.KRX_STAFF;
 const str = (v) => (v == null ? '' : String(v));
 const text = (v, max) => str(v).replace(/\r\n?/g, '\n').trim().slice(0, max || 200);
@@ -87,11 +91,14 @@ api.cleanRec = (rec) => { const o = Object.assign({}, rec); for (const k of LOCA
 function normalizeProject(o) {
   o = obj(o) || {};
   const p = {};
-  for (const k of PROJECT_ORDER) p[k] = k === 'aliasAt' ? num(o.aliasAt) : text(o[k], k === 'note' ? 1000 : 200);
+  for (const k of PROJECT_ORDER) p[k] = k === 'aliasAt' || k === 'supportAt' ? num(o[k]) : k === 'support' ? ST().normalizeSupport(o.support) : text(o[k], k === 'note' ? 1000 : 200);
   for (const k of Object.keys(o)) if (!PROJECT_KNOWN.has(k)) p[k] = o[k];
   return p;
 }
 api.normalizeProject = normalizeProject;
+/* 행정지원 [{ name, role, ref }] — lib/staff.js normalizeSupport(WORKSPACE 와 같은 규칙: 열 명, 이름 없는 줄 버림, 같은 이름 한 번) */
+api.normalizeSupport = (raw) => ST().normalizeSupport(raw);
+api.supportText = (raw) => ST().supportText(raw);
 /* 예상 비용 파일의 project — prjNo·prjNm 만(그 밖은 모르는 칸으로 보존) */
 function planProject(o) {
   o = obj(o) || {};
@@ -215,7 +222,9 @@ api.fromLocalYear = function (prjNo, n, local, meta) {
   const key = ST().planKey(prj, n);
   const plan = SS().plansOf(staff.plans || {}, prj).find((p) => p.year === n) || null;
   const span = plan && plan.from && plan.to ? { from: plan.from, to: plan.to } : ST().yearSpan({ stDt: str(m.stDt || pr.stDt), endDt: str(m.endDt || pr.endDt), anl: pr.anl }, n);
-  const project = { prjNo: prj, prjNm: m.prjNm || pr.prjNm, rspr: m.rspr || pr.rspr, start: pr.start, end: pr.end, alias: (l.aliases || {})[prj] || '', aliasAt: (l.aliasesAt || {})[prj] || 0, jobId: pr.jobId, io: pr.io, note: pr.note };
+  const sup = obj(obj(l.support) && l.support[prj]) || {};   // 행정지원(storage.local.projectSupport[prj] = { people, at })
+  const project = { prjNo: prj, prjNm: m.prjNm || pr.prjNm, rspr: m.rspr || pr.rspr, start: pr.start, end: pr.end, alias: (l.aliases || {})[prj] || '', aliasAt: (l.aliasesAt || {})[prj] || 0, jobId: pr.jobId, io: pr.io, note: pr.note,
+    support: Array.isArray(sup.people) ? sup.people : [], supportAt: num(sup.at) };
   for (const k of Object.keys(pr)) if (!PROJECT_KNOWN.has(k) && !LOCAL_PROJECT.has(k)) project[k] = pr[k];   // 받아 둔 모르는 project 칸(toLocalYear 가 projects 에 넣은 것)도 되돌려 — 매번 '받았다' 고 하지 않게
   const d = normalizeYear({
     project,
@@ -242,25 +251,27 @@ api.otherRecs = function (prjNo, local) {
 };
 
 /* ---------- 병합 ---------- */
-/* project 칸 병합. opts = { localAt(로컬이 WORKSPACE 칸을 받은 시각 ms), remoteAt(파일 updatedAt ms), alias(별칭도 맞추나 — want.alias), now }
- *   → { project, localChanged:{ alias, project }, remoteChanged, at(= max(localAt, remoteAt) — 로컬 project 에 적어 둘 시각) } */
+/* project 칸 병합. opts = { localAt(로컬이 WORKSPACE 칸을 받은 시각 ms), remoteAt(파일 updatedAt ms), alias(별칭도 맞추나 — want.alias), support(행정지원도 — want.support), now }
+ *   → { project, localChanged:{ alias, support, project }, remoteChanged, at(= max(localAt, remoteAt) — 로컬 project 에 적어 둘 시각) } */
 function mergeProject(Lp, Rp, now, opts) {
   const L = normalizeProject(Lp), R = Rp ? normalizeProject(Rp) : null;
   const o = opts || {}, localAt = num(o.localAt), remoteAt = num(o.remoteAt);
   const out = {};
   let remoteChanged = !R, projectChanged = false;
   for (const k of ERP_FIELDS) out[k] = L[k] || (R ? R[k] : '');   // R&D ERP 값이 늘 이김(비어 있으면 파일 것)
-  // 별칭 — aliasAt 큰 쪽(같으면 파일). 로컬 별칭이 다른데 시각이 없으면 지금으로
-  let aliasChanged = false;
-  if (o.alias === false) { out.alias = R ? R.alias : ''; out.aliasAt = R ? R.aliasAt : 0; }
-  else {
-    const lA = L.alias, lT = L.aliasAt, rA = R ? R.alias : '', rT = R ? R.aliasAt : 0;
+  /* 양쪽이 고치는 칸(별칭 · 행정지원) — 고친 시각이 큰 쪽(같으면 파일). 로컬 값이 다른데 시각이 없으면 지금으로. 값이 같으면 시각은 큰 쪽 */
+  const both = (key, atKey, empty, on) => {
+    if (on === false) { out[key] = R ? R[key] : empty; out[atKey] = R ? R[atKey] : 0; return false; }
+    const lA = L[key], lT = L[atKey], rA = R ? R[key] : empty, rT = R ? R[atKey] : 0;
+    const has = (v) => (Array.isArray(v) ? v.length > 0 : !!v);
     let a, t;
-    if (lA === rA) { a = lA; t = Math.max(lT, rT); }
-    else { const lt = lA && !lT ? now : lT; if (lt > rT) { a = lA; t = lt; } else { a = rA; t = rT; } }
-    out.alias = a; out.aliasAt = t;
-    aliasChanged = a !== lA || t !== lT;
-  }
+    if (canonJ(lA) === canonJ(rA)) { a = lA; t = Math.max(lT, rT); }
+    else { const lt = has(lA) && !lT ? now : lT; if (lt > rT) { a = lA; t = lt; } else { a = rA; t = rT; } }
+    out[key] = a; out[atKey] = t;
+    return canonJ(a) !== canonJ(lA) || t !== lT;
+  };
+  const aliasChanged = both('alias', 'aliasAt', '', o.alias);
+  const supportChanged = both('support', 'supportAt', [], o.support);
   // WORKSPACE 몫·모르는 칸 — 파일이 로컬이 받은 시각보다 뒤면 파일 것(빈 값이라도), 아니면 로컬 것
   const wsKeys = WS_FIELDS.concat(Object.keys(L).filter((k) => !PROJECT_KNOWN.has(k)), R ? Object.keys(R).filter((k) => !PROJECT_KNOWN.has(k)) : []);
   for (const k of new Set(wsKeys)) {
@@ -275,7 +286,7 @@ function mergeProject(Lp, Rp, now, opts) {
   }
   const project = normalizeProject(out);
   if (R) for (const k of new Set(Object.keys(project).concat(Object.keys(R)))) if (canonJ(project[k]) !== canonJ(R[k])) remoteChanged = true;
-  return { project, localChanged: { alias: aliasChanged, project: projectChanged }, remoteChanged, at: Math.max(localAt, remoteAt) };
+  return { project, localChanged: { alias: aliasChanged, support: supportChanged, project: projectChanged }, remoteChanged, at: Math.max(localAt, remoteAt) };
 }
 api.mergeProject = mergeProject;
 /* 예산 줄 병합 — 내용(name·plan)이 같으면 at 가 큰 쪽의 at·by, 다르면 at 가 큰 쪽(같으면 로컬), 빈 쪽은 이기지 못함 → { rows, localChanged(내용), remoteChanged(내용·at·by) } */
@@ -308,18 +319,19 @@ api.mergeYear = function (local, remote, now, who, opts) {
   now = now || Date.now(); opts = opts || {};
   const L = normalizeYear(local), R = remote ? normalizeYear(remote, L.year.n) : null;
   who = str(who || L.updatedBy);
-  const want = Object.assign({ budget: true, staff: true, research: true, changes: true, alias: true }, opts.want || {});
+  const want = Object.assign({ budget: true, staff: true, research: true, changes: true, alias: true, support: true }, opts.want || {});
   const n = L.year.n || (R && R.year.n) || 0;
-  const localChanged = { budget: false, staff: false, research: false, changes: false, alias: false, project: false };
-  const parts = { budget: null, staff: null, research: null, changes: null, project: null };
+  const localChanged = { budget: false, staff: false, research: false, changes: false, alias: false, support: false, project: false };
+  const parts = { budget: null, staff: null, research: null, changes: null, support: null, project: null };
   const doc = { v: VERSION, kind: 'year' };
   let remoteChanged = !R;
   // project
-  const pm = mergeProject(L.project, R && R.project, now, { localAt: num(opts.localAt), remoteAt: R ? Date.parse(R.updatedAt) || 0 : 0, alias: want.alias });
+  const pm = mergeProject(L.project, R && R.project, now, { localAt: num(opts.localAt), remoteAt: R ? Date.parse(R.updatedAt) || 0 : 0, alias: want.alias, support: want.support });
   doc.project = pm.project;
-  localChanged.alias = pm.localChanged.alias; localChanged.project = pm.localChanged.project;
+  localChanged.alias = pm.localChanged.alias; localChanged.support = pm.localChanged.support; localChanged.project = pm.localChanged.project;
   if (pm.remoteChanged) remoteChanged = true;
   parts.project = Object.assign({}, pm.project, { at: pm.at });
+  parts.support = { people: clone(pm.project.support), at: pm.project.supportAt };
   doc.year = { n, start: '', end: '' };
   // 사업비 — 연차별 at
   let plans, del;
@@ -416,7 +428,8 @@ api.mergePlan = function (local, remote, now, who, opts) {
  *                  others({ id: rec } — 로컬에서 **다른 과제**에 이어 둔 기록인데 이 파일에서 새 글을 받은 것: 연결은 그대로, 글만 새것) }   ⇒ KRX_RESEARCH.save(map) (recs 로 과제 몫을 갈아 넣을 때는 others 도 같이 — 아니면 그 기록은 매 동기화마다 다시 "받은 것" 이 된다)
  *      changes: { key("과제번호@연차"), year, list, all(전체 맵 — 이 키만 바뀜) }                                          ⇒ shareChanges[key] (list 는 이미 합집합)
  *      alias:   { alias, aliasAt, aliases(전체), aliasesAt(전체) }                                                        ⇒ projectAliases[prj] · projectAliasesAt[prj]
- *      project: { jobId, io, start, end, note, …(모르는 project 칸), at(ms — 받은 시각) }   ⇒ 로컬 projects[prj](shareProjects) 에 겹침. ERP 칸(prjNo·prjNm·rspr)·별칭은 넣지 않는다 }
+ *      support: { people([{ name, role, ref }]), at(ms), all(전체 맵 — 이 과제만 바뀜, 비면 지움) }                           ⇒ projectSupport[prj] = { people, at }
+ *      project: { jobId, io, start, end, note, …(모르는 project 칸), at(ms — 받은 시각) }   ⇒ 로컬 projects[prj](shareProjects) 에 겹침. ERP 칸(prjNo·prjNm·rspr)·별칭·행정지원은 넣지 않는다 }
  *   받은 연구내용 기록(fromRemote)은 이 과제에 잇는다(prjNo·prjNm, linkBy 'auto' — 같은 과제에 손으로 이어 둔 것이면 'user' 유지, src). 로컬에서 **다른 과제**에 이어 둔 기록이면 글만 받고 연결은 그대로(v1 과 같음). 끈 칸(parts.* 가 null)은 로컬 그대로
  */
 api.toLocalYear = function (prjNo, n, local, merged, opts) {
@@ -479,11 +492,18 @@ api.toLocalYear = function (prjNo, n, local, merged, opts) {
     if (aliasAt) aliasesAt[prj] = aliasAt; else delete aliasesAt[prj];
     out.alias = { alias, aliasAt, aliases, aliasesAt };
   }
-  // project — WORKSPACE 몫(jobId·io·note·모르는 칸)과 받은 시각만(ERP 칸·별칭은 각자의 자리에 — 배선이 이 객체를 그대로 로컬 projects[prj] 에 겹친다)
+  // 행정지원 — 과제마다(연차 아님) { people, at } + 전체 맵(이 과제만 바뀜)
+  {
+    const all = Object.assign({}, obj(l.support) || {});
+    const p = parts.support || { people: ST().normalizeSupport(doc.project && doc.project.support), at: num(doc.project && doc.project.supportAt) };
+    if (p.people.length || p.at) all[prj] = { people: clone(p.people), at: p.at }; else delete all[prj];
+    out.support = { people: clone(p.people), at: p.at, all };
+  }
+  // project — WORKSPACE 몫(jobId·io·note·모르는 칸)과 받은 시각만(ERP 칸·별칭·행정지원은 각자의 자리에 — 배선이 이 객체를 그대로 로컬 projects[prj] 에 겹친다)
   {
     const p = parts.project || Object.assign({}, normalizeProject(doc.project), { at: 0 });
     const o = {};
-    for (const k of Object.keys(p)) if (!ERP_FIELDS.includes(k) && k !== 'alias' && k !== 'aliasAt') o[k] = p[k];
+    for (const k of Object.keys(p)) if (!ERP_FIELDS.includes(k) && !BOTH_FIELDS.includes(k)) o[k] = p[k];
     out.project = o;
   }
   return out;
@@ -511,6 +531,7 @@ api.localPrjNos = function (local) {
   for (const r of Object.values(obj(l.research) || {})) if (validRec(r) && r.prjNo) out.add(String(r.prjNo));
   for (const p of SS().plansOf((l.staff && l.staff.plans) || {})) out.add(p.prjNo);
   for (const [prj, a] of Object.entries(l.aliases || {})) if (a) out.add(prj);
+  for (const [prj, s] of Object.entries(obj(l.support) || {})) if (obj(s) && Array.isArray(s.people) && s.people.length) out.add(prj);
   for (const [k, list] of Object.entries(obj(l.changes) || {})) if (Array.isArray(list) && list.length && k.includes('@')) out.add(k.split('@')[0]);
   return Array.from(out).filter(Boolean);
 };
