@@ -18,7 +18,7 @@ registries/                 모든 목적에 같이 가는 것
     attach_rules.yaml       첨부 문서(doc·ask·more·need·parts·who)
 ```
 
-유닛은 `research-form`(연구업무추진품의 KR_EA_Research_Task — 구매·교육·출장) · `purchase-order`(구매요청서 KR_Purchase_Order — 구매의뢰, 총무팀 수신, 칸이 정해진 폼에 표 둘 — 2026-10-17) ·
+유닛은 `research-form`(연구업무추진품의 KR_EA_Research_Task — 구매·교육·출장·수당·자문. 수당·자문은 2026-10-21 사용자 지정 "공문 작성에 수당, 자문 탭만 우선 추가해줘" — 실물 공문을 보기 전의 첫 판) · `purchase-order`(구매요청서 KR_Purchase_Order — 구매의뢰, 총무팀 수신, 칸이 정해진 폼에 표 둘 — 2026-10-17) ·
 `outside-report`(외부강의등 신고서 KR_Outside_Lecture_Report — 외부활동, 칸이 정해진 폼) · `draft-form`(기안문 KR_EA_Form2 — 목적 없음, 본문 틀만 넣는 양식).
 유닛 폴더는 생성기가 훑어 찾는다 — 따로 등록표는 없다. 갈래 차례는 manifest 의 `order`(research-form 1 · purchase-order 2 · outside-report 3), 폼 안에서는 `purposes` 차례다.
 

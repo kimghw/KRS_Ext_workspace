@@ -1235,7 +1235,7 @@ button.danger:hover { filter: brightness(1.08); }
 
 .gongmun { margin-bottom: 18px; }
 .gongmun .gm-kinds { margin-bottom: 12px; }
-/* 다섯 단추(구매·교육·출장·외부활동·공문검색)가 같은 폭으로 줄을 나눈다(2026-10-12 사용자 지정: "메뉴 사이즈 동일하게") — flex-basis 0 이라 글자 길이에 따르지 않는다. */
+/* 갈래 단추(구매·교육·출장·수당·자문·의뢰·외부·검색 — 글자는 두 글자, 2026-10-21 사용자 지정 "지금 4글자인걸 2글자로 줄이면 될듯")가 같은 폭으로 줄을 나눈다(2026-10-12 사용자 지정: "메뉴 사이즈 동일하게") — flex-basis 0 이라 글자 길이에 따르지 않는다. */
 .gongmun .gm-kind-row { display: flex; gap: 3px; }
 .gongmun .gm-kind {
   flex: 1 1 0; min-width: 0; gap: 4px; min-height: 32px; padding: 4px 2px; border: 1px solid var(--line); border-radius: 9px;
@@ -1247,7 +1247,8 @@ button.danger:hover { filter: brightness(1.08); }
 .gongmun .gm-kind.active small { color: rgb(255 255 255 / 75%); }
 /* 에이전트 갈래(2026-10-12 사용자 지정: "구매/교육/출장/외부활동 옆에 '에이전트' 하나 추가해서 공문검색") — 켜면 갈래 줄과 검색 카드(gmSearch)만 남고
    작성 쪽(과제 줄·참고 문서·작업 카드·공문 이력·양식·공문 설정)은 숨는다. 다른 갈래를 누르면 돌아온다. 단추에는 에이전트 칸과 같은 반짝임이 붙는다. */
-.gongmun .gm-kind-agent svg { width: 13px; height: 13px; }
+.gongmun .gm-kind-agent { gap: 2px; }   /* 여덟 단추가 같은 폭일 때(400px 패널에서 45px, 안쪽 39px) 아이콘 10px + 2px + 두 글자 26px 가 넘치지 않게 — 2026-10-21 */
+.gongmun .gm-kind-agent svg { width: 10px; height: 10px; }
 .gongmun.agent > :not(.gm-kinds):not(.gm-search) { display: none; }
 .gongmun .gm-search { padding: 12px 14px 14px; }
 .gongmun .gm-search .gm-agent { margin: 0; }

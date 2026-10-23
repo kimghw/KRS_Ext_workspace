@@ -451,11 +451,11 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /* ---------------------------------------------------------- 갈래 */
 
-  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(공문 검색 — 비교작성 탭에는 없다). 단추 글자는 공문검색(2026-10-16 사용자 지정: "일단 공문 안에 있는 건
+  /** 갈래 단추 — 레시피의 갈래(구매·교육·출장·외부활동)와 맨 끝의 에이전트(공문 검색 — 비교작성 탭에는 없다). 단추 글자는 검색(2026-10-21 부터 두 글자 — "지금 4글자인걸 2글자로 줄이면 될듯". 2026-10-16 ~ 10-20 은 공문검색: "일단 공문 안에 있는 건
    *  공문검색 넣어줘" — 10-12 부터 HELP 였다. 사용법 도움말은 따로 만든다). 에이전트가 켜져 있으면 갈래에는 불이 없다. */
   function paintKinds() {
     const agent = st.compareTab ? '' : `<button type="button" class="gm-kind gm-kind-agent${agentOn() ? ' active' : ''}" data-kind="${AGENT_KIND}" aria-pressed="${agentOn()}"`
-      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>공문검색</button>';
+      + ' title="공문 검색 — 받은 공문(결재함)·보낸 공문(기안함)을 말로 찾습니다"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>검색</button>';
     el.kinds.innerHTML = `<div class="gm-kind-row">${KIND_ORDER.map((k) => {
       const on = k === st.kind && !agentOn();
       return `<button type="button" class="gm-kind${on ? ' active' : ''}" data-kind="${k}" aria-pressed="${on}" title="${escapeHtml(KINDS[k].title)}">${escapeHtml(KINDS[k].label)}</button>`;

@@ -1,0 +1,115 @@
+# 자문 품의 — 과제 수행을 위해 외부 전문가에게 자문(대면·서면·온라인)을 받고 자문료를 지급하는 품의.
+# 2026-10-21 사용자 지정("공문 작성에 수당, 자문 탭만 우선 추가해줘") — 실물 자문 공문을 보기 전의 첫 판이라 칸·첨부는 자문 의뢰서·자문위원 이력을 읽는 꼴로 두었다.
+# 칸의 꼴과 from 의 뜻은 purchase/purpose.yaml 머리말과 같다. read·write·rules·example·context 는 그대로 Claude 에게 가는 지시문이다(# 주석은 사람만 본다).
+# Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt consult`(사유 쓰기는 --prompt consult reason).
+purpose_id: consult
+label: 자문                  # 갈래 단추 글자 — 두 글자(2026-10-21 사용자 지정 "지금 4글자인걸 2글자로 줄이면 될듯")
+title: 자문품의
+rule_key: 연구비집행         # 자문료를 과제 예산(전문가활용비)으로 쓴다 — 2천만원 이하 팀장·초과 소장
+amount_field: fee
+document_setting: 연구품의
+limit: null
+account: 연구활동비(전문가활용비)
+
+reading:
+  docs: 자문 의뢰서·자문위원 이력(프로필)·자문 일정 안내·자문료 산정 기준
+  rules:
+    - 자문위원이 여러 명이면 성명을 " · " 로 나열하고 소속·직위도 같은 차례로 나열합니다. 자문료는 문서의 총액(원천징수 전 금액)입니다.
+
+fields:
+  - key: subject
+    label: 자문 주제
+    wide: true
+    from: document
+    need: 자문 주제
+    read: 무엇에 대해 자문을 받는지 — 의뢰서·안내문의 자문 주제(제목) 그대로.
+    example: MVDC 반도체 차단기 절연 설계 검토
+
+  - key: expert
+    label: 자문위원
+    from: document
+    need: 자문위원
+    read: 자문하는 전문가의 성명. 여럿이면 " · " 로 나열합니다.
+    example: 홍길동
+
+  - key: affiliation
+    label: 소속·직위
+    from: document
+    read: 자문위원의 소속 기관과 직위 — "기관 직위" 꼴. 여럿이면 자문위원과 같은 차례로 " · " 로 나열합니다.
+    example: 부산대학교 전기공학과 교수
+
+  # 본문의 {자문기간} 은 시작일·종료일로 "2026. 11. 12. (1일)", 여러 날이면 "2026. 11. 12. ~ 2026. 11. 13. (2일)" 이 된다(body_spec.yaml).
+  - key: from
+    label: 자문 일자
+    type: date
+    from: document
+    need: 자문 일자
+    read: >-
+      자문을 받는 날(자문회의·방문 날). 서면 자문이면 의견서 제출 기한입니다. 연도가 적혀 있지 않으면 문서 발행일(없으면 오늘)의
+      연도를 붙입니다.
+    example: 2026-11-12
+
+  - key: to
+    label: 종료일
+    type: date
+    from: document
+    not_before: from
+    read: 자문이 여러 날이면 마지막 날. 하루면 자문 일자와 같은 날입니다.
+    example: 2026-11-12
+
+  - key: method
+    label: 자문 방식
+    type: choice
+    options: [대면, 서면, 온라인]
+    from: document
+    read: 대면(방문·회의)·서면(의견서)·온라인(화상) 가운데 하나 — 문서에 적힌 대로. 적혀 있지 않으면 null.
+    example: 대면
+
+  - key: place
+    label: 자문 장소
+    from: document
+    read: 자문회의가 열리는 곳 — 도시와 기관·회의실. 서면 자문이면 "서면", 화상이면 "온라인(Zoom)" 처럼 적습니다.
+    example: 부산 KR 본사 회의실
+
+  - key: fee
+    label: '자문료 (원)'
+    type: money
+    from: document
+    need: 자문료
+    read: 자문료 총액(원) — 원천징수 전 금액. 여러 명이면 합계입니다. 문서에 없으면 null 로 둡니다 — 셈해 넣지 않습니다.
+    example: 500000
+
+  - key: purpose
+    label: 자문 목적
+    wide: true
+    open: true
+    from: document
+    need: 자문 목적
+    read: 자문으로 무엇을 얻으려는지 짧은 구절로. 문서에 적혀 있으면 그대로, 없으면 자문 주제로 보아 적습니다(사용자가 고칩니다).
+    write: 자문으로 무엇을 얻으려는지 짧은 구절로(끝에 마침표 없이). 지금 적힌 자문 목적이 있으면 그것을 다듬어 씁니다.
+    example: 차단기 절연 설계의 타당성 검증
+
+  - key: reason
+    label: 자문 사유
+    wide: true
+    area: true
+    open: true
+    placeholder: 과제와 이어지는 필요성 — 비워 두지 않습니다
+    from: write
+    need: 자문 사유
+    write: 이 자문이 과제 수행에 왜 필요한지 — 과제 내용과 이어지는 필요성을 1~2문장으로, "…필요함" 처럼 명사형으로 끝맺습니다.
+    example: 과제의 MVDC 차단기 절연 설계에 외부 전문가의 검토가 필요함
+
+  - key: account
+    label: 예산계정
+    wide: true
+    from: setup               # 비워 두면 과제의 계정, 그것도 없으면 위의 account
+
+# 사유 쓰기 — 꼴은 purchase/purpose.yaml 의 writing 과 같다. 자문료는 넣지 않는다.
+writing:
+  context: |-
+    자문 주제: {자문주제}
+    자문위원: {자문위원?}
+    소속·직위: {소속직위?}
+    지금 적힌 자문 목적: {자문목적?}
+  rules: []

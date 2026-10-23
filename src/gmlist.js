@@ -232,13 +232,13 @@ export async function readOutsideReport(row, { fetch = siteFetch } = {}) {
 
 /**
  * 갈래 — 양식과 제목으로 가른다. 한 갈래에서만 고르는 폼(레시피 manifest 의 only 가 하나 — 외부강의등 신고서 → 외부활동, 구매요청서 → 구매의뢰)은 폼으로 바로 가르고,
- * 여러 갈래가 같이 쓰는 연구업무추진품의는 제목의 말로 가른다 — KIND_RE 의 차례(구매의뢰 → 외부활동 → 출장 → 교육 → 구매)가 우선순위다(화면의 갈래 차례 KIND_ORDER 와
+ * 여러 갈래가 같이 쓰는 연구업무추진품의는 제목의 말로 가른다 — KIND_RE 의 차례(구매의뢰 → 외부활동 → 출장 → 수당 → 자문 → 교육 → 구매)가 우선순위다(화면의 갈래 차례 KIND_ORDER 와
  * 다르다 — 구매의뢰의 "구매 요청·구매 의뢰" 는 구매의 말보다 좁아 맨 앞, 구매의 말이 가장 넓어 맨 뒤).
  * 레시피에 목적을 더하면 여기 말도 더한다(recipes/gongmun/README.md). 모르면 ''.
  */
 const FORM_KIND = Object.fromEntries(Object.values(RECIPE.forms).filter((f) => f.only?.length === 1).map((f) => [f.id, f.only[0]]));
 const KIND_RE = {
-  order: /구매\s*(요청|의뢰)/, outside: /외부활동|외부강의/, trip: /출장|여비/, edu: /교육|수강|세미나|워크숍|학회|연수|강좌/,
+  order: /구매\s*(요청|의뢰)/, outside: /외부활동|외부강의/, trip: /출장|여비/, allowance: /수당/, consult: /자문/, edu: /교육|수강|세미나|워크숍|학회|연수|강좌/,
   purchase: /구매|구입|구독|대여|임차|회의비|사용 품의|사용료/,
 };
 export function kindOf(row) {

@@ -1429,16 +1429,17 @@ console.log('공문 탭');
     assert.ok(doc.getElementById('attend').classList.contains('hidden'));
     for (const sel of ['.controls', '.schedule', '.ask']) assert.ok(doc.querySelector(sel).hasAttribute('hidden'), sel);
   });
-  t('갈래는 구매·교육·출장·구매의뢰(2026-10-17)·외부활동이고 맨 끝이 에이전트(공문 검색 — 단추 글자는 공문검색, 2026-10-16 사용자 지정), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
+  t('갈래는 구매·교육·출장·수당·자문(2026-10-21)·구매의뢰(2026-10-17)·외부활동(단추 글자는 두 글자 — 의뢰·외부)이고 맨 끝이 에이전트(공문 검색 — 단추 글자는 검색, 2026-10-21 부터 두 글자. 10-16 ~ 10-20 은 공문검색), 처음에는 구매다 — 셋 다 같은 문서 넣는 곳이고, 상자의 안내는 한 줄뿐이다(2026-10-08 사용자 지정)', () => {
     const kinds = [...doc.querySelectorAll('#gmKinds .gm-kind')].map((b) => b.dataset.kind);
-    assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'order', 'outside', 'agent']);
-    assert.equal(doc.querySelector('#gmKinds [data-kind="order"]').textContent, '구매의뢰');
+    assert.deepEqual(kinds, ['purchase', 'edu', 'trip', 'allowance', 'consult', 'order', 'outside', 'agent']);
+    assert.equal(doc.querySelector('#gmKinds [data-kind="order"]').textContent, '의뢰');
     assert.equal(doc.querySelector('#gmKinds [data-kind="order"]').title, '구매요청서');
-    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').textContent, '공문검색');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').textContent, '검색', '2026-10-21 부터 두 글자(그 전엔 공문검색)');
     assert.equal(doc.querySelector('#gmKinds [data-kind="agent"]').getAttribute('aria-pressed'), 'false');
     assert.ok(doc.getElementById('gmSearch').hidden, '검색 카드는 에이전트를 누르기 전에는 숨어 있다');
     assert.ok(!doc.getElementById('gongmun').classList.contains('agent'));
-    assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').textContent, '외부활동');
+    assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').textContent, '외부');
+    assert.deepEqual(['allowance', 'consult'].map((k) => [doc.querySelector(`#gmKinds [data-kind="${k}"]`).textContent, doc.querySelector(`#gmKinds [data-kind="${k}"]`).title]), [['수당', '연구수당품의'], ['자문', '자문품의']]);
     assert.equal(doc.querySelector('#gmKinds [data-kind="outside"]').title, '외부강의등 신고서');
     assert.ok(!doc.querySelector('#gmKinds [data-kind="trip"]').textContent.includes('준비 중'));
     assert.equal(doc.querySelector('#gmKinds .gm-kind.active').dataset.kind, 'purchase');
@@ -4431,7 +4432,7 @@ console.log('공문 탭 — 공문 이력(eclass 기안함을 읽어 카드로 �
   for (let i = 0; i < 100 && !/건 · |읽지 못했습니다/.test(stateText()); i++) await settle(50);
   await settle(480);   // 저장 타이머
   t('외부활동 초안이 서면 공문 이력을 저절로 읽는다 — 기본은 최근 3개월(읽어 오는 것은 올해 1월 1일 이상), 네 함을 검색 포스트백(숨은 칸을 돌려보냄), 외부강의등 신고서는 본문까지', () => {
-    assert.equal(stateText(), `외부활동 ${visible('3m', 'outside').length}건 · 최근 3개월`, doc.getElementById('gmHistNote').textContent);
+    assert.equal(stateText(), `외부 ${visible('3m', 'outside').length}건 · 최근 3개월`, doc.getElementById('gmHistNote').textContent);
     assert.deepEqual(posts.map((p) => p.box), ['Finished', 'Requested', 'Rejected', 'Temp']);
     assert.ok(posts.every((p) => p.target === 'ctl00$ContentPlaceHolder1$SearchBar$btnSearch' && p.from === fetchFrom('3m') && p.to === TODAY && p.state === 'persist-1' && p.keyword === ''), JSON.stringify(posts[0]));
     assert.equal(bodies.length, 1, '신고서 본문은 한 번');

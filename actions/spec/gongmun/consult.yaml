@@ -1,0 +1,36 @@
+# 자문품의(연구업무추진품의) 작성 — 자문 의뢰서·자문위원 이력을 읽어(gongmun.consult) 초안을 만들고 과제 내용으로 자문 사유를 쓴(gongmunReason.consult) 뒤,
+# 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc). 2026-10-21 사용자 지정("공문 작성에 수당, 자문 탭만 우선 추가해줘"). 제목은 "[과제 별명] 수행을 위한 전문가 자문 품의".
+# 어댑터(gongmun.write): writePlan('consult', { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me, preset: setup, project, today } = rec.preset) → writeGongmun(plan, { files: ctx.files, … }).
+# 공통 칸과 공문 설정(setup)은 _domain.yaml 에 있다 — `{ from: domain }` 이 같은 자리에 가져온다. 이 종류만의 것은 초안(draft)이다.
+id: gongmun.consult
+title: 자문품의 작성
+summary: '{preset.kindTitle} · {title}'
+preset:
+  project:   { from: ctx:project, type: object, desc: 고른 과제(이름·별명·번호·Job Id(과제 찾기)·책임자·연구기간·개요·내용·계정·공문 참조자 refs·rnd.year). 별명이 제목에 들어간다. 과제 내용 3000자가 들어 있어 로그에서 뺀다, log: false }
+  kindTitle: { from: recipe:purposes.consult.title, desc: 갈래 이름(레시피 purpose.yaml 의 title — 자문품의) — 활동 로그 한 줄에 쓴다 }
+fields:
+  form:    { from: domain }
+  title:   { from: domain }
+  body:    { from: domain }
+  # 초안 — 레시피 consult/purpose.yaml 의 fields(subject·expert·affiliation·from·to·method·place·fee·purpose·reason·account)를 생성기가 펼치고 currency·attach 를 더한다.
+  # 위임전결(자문료 2천만원 이하 팀장·초과 소장 — 연구비집행)은 writePlan 이 draft.fee 로 정한다.
+  draft:
+    type: object
+    from: recipe
+    label: 초안
+    desc: 초안 칸(레시피 purpose.yaml 의 fields — 생성기가 펼친다). 읽은 문서(gongmun.consult)와 과제 내용으로 쓴 사유(gongmunReason.consult)가 채우고 사람이 고친다
+    read: 읽은 문서와 과제 내용으로 채운 초안
+  rank:    { from: domain }
+  lead:    { from: domain }
+  refs:    { from: domain }
+  setting: { from: domain }
+  attach:  { from: domain }
+llm:
+  tasks:
+    - { task: gongmun.consult, fills: draft }
+    - { task: gongmunReason.consult, fills: draft }
+runner: gongmun.write
+uses:
+  - { module: src/gongmun.js, export: writePlan }
+  - { module: src/gmwrite.js, export: writeGongmun }
+next: 뒤 탭에 공문을 쓴다(과제·제목·차수·본문·문서설정·결재선·첨부). ok 는 steps 에 ok false 가 없을 때다. 임시저장·상신은 사람이 창에서 한다

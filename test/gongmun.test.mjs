@@ -58,9 +58,9 @@ const PROJECT = {
 const CTX = { me: '김거화', preset: PRESET, project: PROJECT, today: '2026-10-07' };
 
 console.log('갈래와 양식');
-t('갈래는 구매·교육·출장·구매의뢰·외부활동 다섯이고 다섯 다 문서를 넣어 읽는다(2026-10-08 사용자 지정, 구매의뢰는 2026-10-17)', () => {
-  assert.deepEqual(KIND_ORDER, ['purchase', 'edu', 'trip', 'order', 'outside']);
-  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].label), ['구매', '교육', '출장', '구매의뢰', '외부활동']);
+t('갈래는 구매·교육·출장·수당·자문·구매의뢰·외부활동 일곱이고 일곱 다 문서를 넣어 읽는다(2026-10-08 사용자 지정, 구매의뢰는 2026-10-17, 수당·자문은 2026-10-21 — 단추 글자는 두 글자)', () => {
+  assert.deepEqual(KIND_ORDER, ['purchase', 'edu', 'trip', 'allowance', 'consult', 'order', 'outside']);
+  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].label), ['구매', '교육', '출장', '수당', '자문', '의뢰', '외부'], '단추 글자는 두 글자(2026-10-21 사용자 지정 "지금 4글자인걸 2글자로 줄이면 될듯")');
   for (const k of KIND_ORDER) assert.ok(KINDS[k].doc && KINDS[k].ask && KINDS[k].more, `${k} 에 문서 넣는 곳의 말`);
   assert.equal(KINDS.trip.ask, '행사·회의 안내문이나 초청장을 넣으세요');
   assert.deepEqual(FIELDS.trip.map((f) => f.key), ['place', 'from', 'to', 'who', 'cost', 'division', 'purpose', 'reason', 'account'], '출장 구분(국내·해외)은 위임전결을 가른다');
@@ -70,11 +70,11 @@ t('갈래는 구매·교육·출장·구매의뢰·외부활동 다섯이고 다
   assert.deepEqual(FIELDS.outside.map((f) => f.key), ['org', 'representative', 'contact', 'contactTel', 'subject', 'place', 'from', 'to', 'start', 'end', 'hours', 'mins',
     'fee', 'expenses', 'rank', 'monthCount', 'yearTotal', 'note']);
   assert.deepEqual(FIELDS.outside.filter((f) => f.open).map((f) => f.key), ['rank', 'monthCount', 'yearTotal', 'note'], '펼쳐 두는 칸은 직급·당월 누적·당해 연도 누적·비고');
-  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].project), [true, true, true, true, false], '구매의뢰도 과제를 고른다(과제 예산)');
+  assert.deepEqual(KIND_ORDER.map((k) => KINDS[k].project), [true, true, true, true, true, true, false], '수당·자문·구매의뢰도 과제를 고른다(과제 예산)');
 });
 t('외부활동의 양식은 외부강의등 신고서, 구매의뢰는 구매요청서(둘 다 칸이 정해진 폼) — 그 폼은 그 갈래에서만 고르고, 다른 갈래의 기본 양식은 그대로 연구업무추진품의', () => {
   assert.deepEqual(KIND_ORDER.map((k) => DEFAULT_TEMPLATES[k].form),
-    ['KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_Outside_Lecture_Report']);
+    ['KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_Outside_Lecture_Report']);
   assert.deepEqual(formsFor('outside').map((f) => f.id), ['KR_EA_Research_Task', 'KR_Outside_Lecture_Report', 'KR_EA_Form2']);
   assert.deepEqual(formsFor('order').map((f) => f.id), ['KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_EA_Form2']);
   assert.deepEqual(formsFor('purchase').map((f) => f.id), ['KR_EA_Research_Task', 'KR_EA_Form2'], '신고서·구매요청서는 그 갈래 초안의 칸이라 다른 갈래에는 없다');
@@ -293,6 +293,34 @@ t('교육 — 온라인이면 "… 수행을 위한 온라인교육 품의", 고
   assert.equal(eduModeOf({ place: '서울 본사 교육장', provider: '한국전력기술교육원' }), '교육');
   assert.equal(eduModeOf({ place: '', provider: 'Udemy' }), '온라인교육', '온라인 강의 사이트면 장소가 비어도 온라인');
   assert.equal(eduModeOf({ place: '실시간 비대면(Zoom)' }), '온라인교육');
+});
+t('수당 — 제목은 "[과제 별명] 연구수당 지급 품의", 본문은 가. 과제 개요 · 나. 지급 내용(대상 기간은 날수까지), 위임전결은 지급 총액으로 연구비 집행(2026-10-21 사용자 지정)', () => {
+  const { draft, notes } = fromRecord('allowance', { who: '김거화 · 홍길동', from: '2026-01-01', to: '2026-06-30', basis: '참여율 차등', total: 3000000, purpose: '상반기 연구 수행에 따른 연구수당 지급' }, { me: '김거화' });
+  assert.deepEqual(notes, []);
+  assert.deepEqual(Object.keys(draft), ['who', 'from', 'to', 'basis', 'total', 'purpose', 'reason', 'account', 'currency', 'attach']);
+  const c = compose('allowance', draft, { ...CTX, project: FULL });
+  assert.equal(c.title, '차단기 과제 연구수당 지급 품의');
+  assert.match(c.body, /^1\. 연구본부 수소전기추진연구팀은 「.+」 과제를 수행하고 있습니다\.\n2\. 이와 관련하여 아래와 같이 과제 참여연구원에게 연구수당을 지급하고자/);
+  assert.match(c.body, /나\. 지급 내용\n {4}\(1\) 지급대상 : 김거화 · 홍길동\n {4}\(2\) 대상기간 : 2026\. 1\. 1\. ~ 2026\. 6\. 30\. \(181일\)\n {4}\(3\) 지급기준 : 참여율 차등\n {4}\(4\) 지급총액 : 3,000,000원\n {4}\(5\) 예산계정 : 연구수당\n {4}\(6\) 지급목적 : 상반기 연구 수행에 따른 연구수당 지급\n {4}\(7\) 지급사유 : \[지급사유\]/);
+  assert.deepEqual(c.missing, ['지급사유']);
+  assert.match(c.body, /※ 첨 부\n {4}1\. 연구수당 지급 내역표 1부\.  끝\.$/, '문서 없이 써도 지급 내역표 한 줄');
+  assert.equal(delegationOf('allowance', draft).rank, '팀장');
+  assert.equal(delegationOf('allowance', { ...draft, total: 25000000 }).rank, '소장');
+  assert.deepEqual(needs('allowance', blankDraft('allowance'), { preset: PRESET, project: FULL, projects: [FULL] }), ['지급 대상', '대상 기간', '지급 총액', '지급 목적', '지급 사유']);
+  assert.deepEqual(REASON_KEYS.allowance, { reason: 'reason', use: 'purpose' });
+});
+t('자문 — 제목은 "[과제 별명] 수행을 위한 전문가 자문 품의", 본문은 가. 과제 개요 · 나. 자문 내용, 소속·방식·장소는 비면 그 줄이 빠진다(2026-10-21 사용자 지정)', () => {
+  const rec = { subject: 'MVDC 차단기 절연 설계 검토', expert: '홍길동', affiliation: '부산대학교 교수', from: '2026-11-12', to: '2026-11-12', method: '대면', place: '부산 KR 본사', fee: 500000, purpose: '절연 설계 타당성 검증' };
+  const { draft } = fromRecord('consult', rec, { me: '김거화' });
+  const c = compose('consult', draft, { ...CTX, project: FULL });
+  assert.equal(c.title, '차단기 과제 수행을 위한 전문가 자문 품의');
+  assert.match(c.body, /2\. 이와 관련하여 절연 설계 타당성 검증을 위하여 아래와 같이 전문가 자문을 받고자/);
+  assert.match(c.body, /나\. 자문 내용\n {4}\(1\) 자문주제 : MVDC 차단기 절연 설계 검토\n {4}\(2\) 자문위원 : 홍길동\n {4}\(3\) 소속·직위 : 부산대학교 교수\n {4}\(4\) 자문일자 : 2026\. 11\. 12\. \(1일\)\n {4}\(5\) 자문방식 : 대면\n {4}\(6\) 자문장소 : 부산 KR 본사\n {4}\(7\) 자 문 료 : 500,000원\n {4}\(8\) 예산계정 : 연구활동비\(전문가활용비\)\n {4}\(9\) 자문사유 : \[자문사유\]/);
+  const lean = compose('consult', { ...draft, affiliation: '', method: '', place: '' }, { ...CTX, project: FULL });
+  assert.match(lean.body, /\(2\) 자문위원 : 홍길동\n {4}\(3\) 자문일자 : 2026\. 11\. 12\. \(1일\)\n {4}\(4\) 자 문 료 : 500,000원/, '소속·방식·장소가 비면 그 줄이 빠지고 번호는 이어진다');
+  assert.equal(delegationOf('consult', { ...draft, fee: 25000000 }).rank, '소장', '자문료가 위임전결의 기준');
+  assert.equal(attachName('consult', draft, '2026-10-21'), '자문의뢰서_홍길동_2026-10-21.pdf');
+  assert.deepEqual(REASON_KEYS.consult, { reason: 'reason', use: 'purpose' });
 });
 t('교육 — 별명이 없으면 제목에 과제명, 번호·기간이 없으면 과제 개요의 그 줄이 빠지고 (1)(2)… 는 이어진다', () => {
   const c = compose('edu', fromRecord('edu', EDU_REC).draft, { ...CTX, project: { ...PROJECT, code: '' } });
@@ -715,12 +743,12 @@ t('더 넣어 다시 읽으면 — 고친 칸과 새로 읽지 못한 칸은 두
 });
 
 console.log('과제 내용으로 사유 쓰기');
-t('사유 칸 — 구매는 구매사유·용도, 교육은 교육사유·교육목적, 출장은 출장사유·출장목적, 구매의뢰는 사업내용 하나. 외부활동(외부강의등 신고서)은 사유 칸이 없다', () => {
+t('사유 칸 — 구매는 구매사유·용도, 교육은 교육사유·교육목적, 출장은 출장사유·출장목적, 수당은 지급 사유·지급 목적, 자문은 자문 사유·자문 목적, 구매의뢰는 사업내용 하나. 외부활동(외부강의등 신고서)은 사유 칸이 없다', () => {
   assert.deepEqual(REASON_KEYS, {
     purchase: { reason: 'reason', use: 'use' }, edu: { reason: 'reason', use: 'purpose' }, trip: { reason: 'reason', use: 'purpose' },
-    order: { reason: 'business', use: undefined },
+    allowance: { reason: 'reason', use: 'purpose' }, consult: { reason: 'reason', use: 'purpose' }, order: { reason: 'business', use: undefined },
   });
-  assert.deepEqual(REASON_LABEL, { purchase: '구매사유', edu: '교육사유', trip: '출장사유', order: '사업내용 (목적 포함)' });
+  assert.deepEqual(REASON_LABEL, { purchase: '구매사유', edu: '교육사유', trip: '출장사유', allowance: '지급 사유', consult: '자문 사유', order: '사업내용 (목적 포함)' });
 });
 t('Claude 에 주는 글에 과제 내용과 품의할 것이 들어가고, 금액·업체는 없다', () => {
   const text = reasonInput('purchase', { items: [{ name: '34인치 모니터', spec: 'WQHD', qty: 1, unit: '대', amount: 890000 }], vendor: 'OO상사', use: '회의용' },
@@ -1239,7 +1267,7 @@ console.log('레시피 — 칸마다 읽는 법과 틀의 자리(인라인 프�
   });
   t('읽은 문서의 이름·누구의 것·온라인으로 보는 말도 레시피에서', () => {
     assert.deepEqual([DOC_NAMES.quote, DOC_NAMES.request, DOC_NAMES.unknown], ['견적서', '요청 공문', '문서']);
-    assert.deepEqual(KIND_ORDER.map((k) => whoOf(k, { vendor: 'V', provider: 'P', place: 'L', org: 'O' })), ['V', 'P', 'L', 'V', 'O'], '구매의뢰도 구매처');
+    assert.deepEqual(KIND_ORDER.map((k) => whoOf(k, { vendor: 'V', provider: 'P', place: 'L', who: 'W', expert: 'E', org: 'O' })), ['V', 'P', 'L', 'W', 'E', 'V', 'O'], '구매의뢰도 구매처, 수당은 지급 대상, 자문은 자문위원');
     assert.equal(eduModeOf({ provider: 'Coursera' }), '온라인교육', 'mode 칸의 online 에 있는 말(대소문자 무시)');
     assert.equal(eduModeOf({ place: '인터넷 강의' }), '온라인교육', '띄어쓰기는 보지 않는다');
   });

@@ -1,0 +1,95 @@
+# 연구수당 품의 — 과제 참여연구원에게 연구수당(연구개발계획서의 비목 — src/rnd.js BUDGET_ITEMS)을 지급하는 품의.
+# 2026-10-21 사용자 지정("공문 작성에 수당, 자문 탭만 우선 추가해줘") — 실물 연구수당 공문을 보기 전의 첫 판이라 칸·첨부는 지급 내역표 하나를 읽는 꼴로 두었다.
+# 칸의 꼴과 from 의 뜻은 purchase/purpose.yaml 머리말과 같다. read·write·rules·example·context 는 그대로 Claude 에게 가는 지시문이다(# 주석은 사람만 본다).
+# Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt allowance`(사유 쓰기는 --prompt allowance reason).
+purpose_id: allowance
+label: 수당                  # 갈래 단추 글자 — 두 글자(2026-10-21 사용자 지정 "지금 4글자인걸 2글자로 줄이면 될듯")
+title: 연구수당품의
+rule_key: 연구비집행         # 과제 예산(연구수당)으로 지급한다 — 2천만원 이하 팀장·초과 소장
+amount_field: total
+document_setting: 연구품의
+limit: null
+account: 연구수당            # 계정의 기본값 — 과제에 계정을 적어 두면 그것이 이긴다(다른 갈래와 같다. 수당은 늘 연구수당이라 예산계정 칸에서 고친다)
+
+reading:
+  docs: 연구수당 지급 내역표·참여연구원 명단·지급 기준(평가) 자료
+  rules:
+    - 지급 대상이 여러 명이면 성명을 " · " 로 나열하고, 지급 총액은 문서의 합계 줄을 그대로 적습니다 — 사람마다의 금액을 더해 넣지 않습니다.
+
+fields:
+  - key: who
+    label: 지급 대상
+    wide: true
+    from: document
+    need: 지급 대상
+    read: 연구수당을 받는 참여연구원 — 성명을 " · " 로 나열합니다. 명단·내역표에 적힌 그대로(직급은 빼도 됩니다).
+    example: 김거화 · 홍길동 · 이몽룡
+
+  # 본문의 {지급기간} 은 시작일·종료일로 "2026. 1. 1. ~ 2026. 6. 30. (181일)" 이 된다(body_spec.yaml).
+  - key: from
+    label: 대상 기간 시작
+    type: date
+    from: document
+    need: 대상 기간
+    read: >-
+      수당의 대상 기간(연구를 수행한 기간 — 평가 대상 기간)의 첫날. 지급일·결재일과 헷갈리지 않습니다. 연도가 적혀 있지 않으면
+      문서 발행일(없으면 오늘)의 연도를 붙입니다.
+    example: 2026-01-01
+
+  - key: to
+    label: 대상 기간 끝
+    type: date
+    from: document
+    not_before: from
+    read: 대상 기간의 마지막 날.
+    example: 2026-06-30
+
+  - key: basis
+    label: 지급 기준
+    wide: true
+    from: document
+    read: 어떻게 나누어 지급하는지 — 참여율·기여도 평가 등 문서에 적힌 기준을 한 구절로. 적혀 있지 않으면 null.
+    example: 참여율과 연구 기여도 평가에 따른 차등 지급
+
+  - key: total
+    label: '지급 총액 (원)'
+    type: money
+    from: document
+    need: 지급 총액
+    read: 이번에 지급하는 연구수당의 합계(원). 문서에 합계가 없으면 null 로 둡니다 — 셈해 넣지 않습니다.
+    example: 3000000
+
+  - key: purpose
+    label: 지급 목적
+    wide: true
+    open: true
+    from: document
+    need: 지급 목적
+    read: 무엇에 대한 수당인지 짧은 구절로 — 문서에 적혀 있으면 그대로, 없으면 "○차년도 상반기 연구 수행에 따른 연구수당 지급" 처럼 적습니다(사용자가 고칩니다).
+    write: 무엇에 대한 수당인지 짧은 구절로(끝에 마침표 없이). 지금 적힌 지급 목적이 있으면 그것을 다듬어 씁니다.
+    example: 1차년도 상반기 연구 수행에 따른 연구수당 지급
+
+  - key: reason
+    label: 지급 사유
+    wide: true
+    area: true
+    open: true
+    placeholder: 과제와 이어지는 필요성 — 비워 두지 않습니다
+    from: write
+    need: 지급 사유
+    write: 이 연구수당을 왜 지급하는지 — 대상 기간에 수행한 과제 내용(목표·결과물)과 참여연구원의 기여를 1~2문장으로, "…지급하고자 함" 처럼 명사형으로 끝맺습니다.
+    example: 1차년도 MVDC 차단기 설계·시험 수행에 참여한 연구원의 기여에 따라 계획된 연구수당을 지급하고자 함
+
+  - key: account
+    label: 예산계정
+    wide: true
+    from: setup               # 비워 두면 과제의 계정, 그것도 없으면 위의 account
+
+# 사유 쓰기 — 꼴은 purchase/purpose.yaml 의 writing 과 같다. 금액은 넣지 않는다.
+writing:
+  context: |-
+    지급 대상: {지급대상}
+    대상 기간: {지급기간?}
+    지급 기준: {지급기준?}
+    지금 적힌 지급 목적: {지급목적?}
+  rules: []

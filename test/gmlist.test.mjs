@@ -193,7 +193,7 @@ t('문서 보기 주소 — loginbyname 을 거쳐 DocumentView 로(새 공문 �
 });
 
 console.log('갈래·상태·누계');
-t('갈래 — 외부강의등 신고서와 "외부활동" 은 외부활동, 구매요청서와 "구매 요청·구매 의뢰" 는 구매의뢰(2026-10-17), 출장 → 교육 → 구매 차례로 제목의 말, 모르면 빈 것', () => {
+t('갈래 — 외부강의등 신고서와 "외부활동" 은 외부활동, 구매요청서와 "구매 요청·구매 의뢰" 는 구매의뢰(2026-10-17), 출장 → 수당 → 자문 → 교육 → 구매 차례로 제목의 말, 모르면 빈 것', () => {
   assert.equal(kindOf(R1), 'outside');
   assert.equal(kindOf(R3), 'outside');
   assert.equal(kindOf(R2), 'purchase');
@@ -205,6 +205,7 @@ t('갈래 — 외부강의등 신고서와 "외부활동" 은 외부활동, 구�
   assert.equal(kindOf({ form: RESEARCH_FORM, title: '회의비 사용 품의 (스마트항만)' }), 'purchase');
   assert.equal(kindOf({ form: RESEARCH_FORM, title: '[SSCB] 수행을 위한 대전 출장 품의' }), 'trip');
   assert.equal(kindOf({ form: RESEARCH_FORM, title: '[SSCB] 수행을 위한 MVDC 세미나 교육 품의' }), 'edu');
+assert.equal(kindOf({ form: RESEARCH_FORM, title: '[SSCB] 연구수당 지급 품의' }), 'allowance', '수당·자문은 2026-10-21 — 출장 뒤, 교육 앞');  assert.equal(kindOf({ form: RESEARCH_FORM, title: '[SSCB] 수행을 위한 전문가 자문 품의' }), 'consult');  assert.equal(kindOf({ form: RESEARCH_FORM, title: '자문회의 참석 출장 품의' }), 'trip', '출장의 말이 먼저');
   assert.equal(kindOf({ form: 'KR_EA_Form2', title: '개념승인(AIP) 기술검토 요청' }), '');
   assert.equal(kindOf(null), '');
 });

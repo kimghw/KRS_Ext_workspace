@@ -1,0 +1,16 @@
+# 자문 품의의 첨부 — 자문 의뢰서(요청 공문·메일)에 자문위원 이력·자문료 산정 기준을 더 넣는다.
+doc: 자문 의뢰서
+ask: 자문 의뢰서·자문위원 이력을 넣으세요
+more: 자문위원 이력·자문료 산정 기준 더 넣기
+need: []
+parts:
+  request: 자문 의뢰서
+  course: 자문위원 이력
+  content: 자문위원 이력
+  event: 자문 일정 안내
+  quote: 자문료 산정 내역
+  statement: 자문료 청구서
+  order: 자문료 산정 내역
+  other: 참고 자료
+# 첨부 파일 이름(자문의뢰서_<이 칸의 값>_날짜.pdf)과 읽은 문서의 머리에 붙일 초안 칸 — purpose.yaml 의 fields key
+who: expert

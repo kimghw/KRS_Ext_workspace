@@ -6,7 +6,7 @@
 # from: auto 칸은 패널이 공문 이력(eclass 에서 읽은 지난 신고서)과 다른 칸으로 셈한다(src/gongmun.js outsideAuto) — 사용자가 고치면 그 값이 남는다.
 # Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt outside`.
 purpose_id: outside
-label: 외부활동
+label: 외부                 # 갈래 단추 글자 — 두 글자(2026-10-21 사용자 지정 "지금 4글자인걸 2글자로 줄이면 될듯"). 전체 이름은 외부활동(README)
 title: 외부강의등 신고서
 rule_key: 외부활동
 amount_field: null

@@ -10,7 +10,7 @@
 # 이 파일의 값 가운데 read·write·rules·example·context 는 그대로 Claude 에게 가는 지시문이다(# 주석은 사람만 본다).
 # Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt order`(사업내용 쓰기는 `--prompt order reason`).
 purpose_id: order
-label: 구매의뢰
+label: 의뢰                 # 갈래 단추 글자 — 두 글자(2026-10-21 사용자 지정 "지금 4글자인걸 2글자로 줄이면 될듯"). 전체 이름은 title(구매요청서)·README 의 구매의뢰
 title: 구매요청서
 # 위임전결 — 구매 품의와 같은 연구비집행(2천만원 이하 팀장 · 초과 소장)을 준용한다. QI-01K Rev164 45절에서 구매요청서만의 규정 행을 찾지 못했고, 원본(krs-web-agents)도
 # 구매 구간을 준용했다(purposes/purchase_request/context.md "구매요청은 구매 구간 준용"). 규정 행을 찾으면 registries/delegation.yaml 에 더하고 여기를 고친다.

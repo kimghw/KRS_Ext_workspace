@@ -79,15 +79,15 @@ console.log('등록');
 t('gongmun.write 를 등록한다 — 같은 디스패처에 두 번은 throw. 공문 갈래는 다섯 종류뿐(구매의뢰 order 는 출장과 외부활동 사이 — 레시피 RECIPE.order 의 차례)이고 모두 gongmun.write 로 돈다', () => {
   const { d } = make();
   assert.throws(() => registerGongmun(d), /gongmun\.prior 는 이미 등록/, '둘(prior·write)을 등록하고 prior 가 먼저다');
-  const ids = ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.order', 'gongmun.outside'];
+  const ids = ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.allowance', 'gongmun.consult', 'gongmun.order', 'gongmun.outside'];
   // 선행 품의 읽기(prior — 조회, 2026-10-17 "이것도 명세서를 만든 다음에 러너로")는 레시피의 목적이 아니라 목적들 뒤에 서고 실행기가 다르다(gongmun.prior).
-  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'order', 'outside', 'prior']);
+  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'allowance', 'consult', 'order', 'outside', 'prior']);
   assert.deepEqual(Object.keys(ACTIONS.actions).filter((id) => id.startsWith('gongmun.')), [...ids, 'gongmun.prior']);
   for (const id of ids) assert.equal(ACTIONS.actions[id].runner, 'gongmun.write', id);
   assert.deepEqual([ACTIONS.actions['gongmun.prior'].runner, ACTIONS.actions['gongmun.prior'].confirm, ACTIONS.actions['gongmun.prior'].llm], ['gongmun.prior', false, false]);
 });
 t('공문 설정은 따로 된 행위가 아니라 종류마다의 사전설정 setup 이다(저장소 gongmunPreset, 없으면 관문이 막는다 — 채우던 채팅 칸은 2026-10-09 에 뺐다)', () => {
-  for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.order', 'gongmun.outside']) {
+  for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.allowance', 'gongmun.consult', 'gongmun.order', 'gongmun.outside']) {
     const { from, type, required } = ACTIONS.actions[id].preset.setup;
     assert.deepEqual({ from, type, required }, { from: 'storage:gongmunPreset', type: 'object', required: true }, id);
   }
