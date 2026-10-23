@@ -69,6 +69,10 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .app-header .git-sync[hidden] { display: none; }
 .app-header .git-sync[data-mode="new"], .app-header .git-sync[data-mode="reload"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 .app-header .git-sync[data-mode="error"] svg { opacity: .45; }
+/* 연결 지침 복사(머리, 2026-10-23 사용자 지정) — Claude 에 닿을 길이 하나도 없을 때만 보이는 글자 알약(sidepanel.js paintAskReady). hidden 은 button 의 display 가 UA 의 [hidden] 을 이기므로 따로. */
+.app-header .cli-guide-head[hidden] { display: none; }
+.app-header button.icon.cli-guide-head { width: auto; gap: 6px; padding: 7px 11px; font-size: 12.5px; font-weight: 600; color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); white-space: nowrap; }
+.app-header .cli-guide-head svg { flex: none; }
 /* 패널 캡처(src/panelcap.js — 2026-10-17 사용자 지정). 머리의 단추는 설정이 끄면 숨고(hidden — button 의 display 가 UA 의 [hidden] 을 이기므로 따로),
    막이 씌워진 동안은 켜진 모양(aria-pressed). 막(.pcap)은 body 끝에 붙는 고정 겹이다 — 투명한 막(.pcap-veil) 위에 고른 칸의 파란 테두리와 번호(.pcap-box),
    가리키는 칸의 점선(.pcap-hover)과 이름표(.pcap-tag), 맨 아래 가운데의 띠(.pcap-bar — 고른 수·코드 복사·이미지 복사·끝). 모양은 웹페이지 캡처의 막(pagePick)과

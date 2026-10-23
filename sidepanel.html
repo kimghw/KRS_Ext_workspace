@@ -28,6 +28,13 @@
           <span class="home-toggle-text">홈에 WORKSPACE</span>
           <input type="checkbox" id="homeCard" checked />
         </label>
+        <!-- 연결 지침 복사(2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 LLM 설정 프롬프트 복사하기 버튼을 넣어줘. workspace 도 동일하게"): Claude 에 닿을 길(로컬 CLI·API 키)이
+             하나도 없을 때만 머리에 보인다(sidepanel.js paintAskReady — 말 칸 아래 .cli-help 줄과 같은 조건, 확인이 끝나기 전에는 숨김). 누르면 말 칸·설정의 같은 단추와 같은 글(src/bridgeguide.js)을
+             클립보드에 담는다(.cli-guide-copy 배선 → copyCliGuide). 어느 탭에 있든 바로 복사할 수 있게 머리에 둔다. 그림(svg)은 두고 글자만 "복사됨 ✓" 로 잠깐 바뀐다. -->
+        <button id="cliGuideHead" class="icon cli-guide-copy cli-guide-head" type="button" hidden title="Claude 가 연결되지 않았습니다 — 이 PC 의 Claude Code·Codex 에 붙여 넣을 연결 지침(확장 폴더 · 확장 ID · 브라우저가 댄 까닭 · 조건 · 돌릴 명령)을 복사합니다. 붙여 넣으면 로컬 Claude CLI 다리를 연결해 줍니다" aria-label="연결 지침 복사">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span class="cli-guide-head-text">연결 지침 복사</span>
+        </button>
         <!-- GitHub 새 커밋 — 확장 폴더가 GitHub 보다 뒤졌으면 귀퉁이에 그 수를 띄우고, 누르면 받는다(git pull --ff-only — 다리가 돌린다, gitsync.js).
              다리가 없으면 숨는다. -->
         <button id="gitSync" class="icon git-sync" type="button" hidden title="GitHub 새 커밋 확인" aria-label="GitHub 새 커밋 확인">

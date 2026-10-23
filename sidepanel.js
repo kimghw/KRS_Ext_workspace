@@ -62,7 +62,7 @@ const el = {
   passenger: $('fPassenger'), carWho: $('carWho'), modify: $('modify'), editNote: $('editNote'),
   stamp: $('stamp'), pickList: $('pickList'),
   ask: $('askInput'), askGo: $('askGo'), askNote: $('askNote'), askList: $('askList'),
-  apiKey: $('apiKey'), apiKeyState: $('apiKeyState'), cliState: $('cliState'), cliCheck: $('cliCheck'), cliGuide: $('cliGuide'), bridgeUses: $('bridgeUses'),
+  apiKey: $('apiKey'), apiKeyState: $('apiKeyState'), cliState: $('cliState'), cliCheck: $('cliCheck'), cliGuide: $('cliGuide'), cliGuideHead: $('cliGuideHead'), bridgeUses: $('bridgeUses'),
   tabAttend: $('tabAttend'), tabGongmun: $('tabGongmun'), tabRnd: $('tabRnd'), tabMail: $('tabMail'), tabRoom: $('tabRoom'), tabCar: $('tabCar'), tabMine: $('tabMine'), appTitle: $('appTitle'),
   openPageInline: $('openPageInline'), scheduleTitle: $('scheduleTitle'), scheduleDate: $('scheduleDate'),
   capture: $('capture'), diagOut: $('diagOut'),
@@ -1799,6 +1799,8 @@ function paintAskReady() {
   // 확인이 끝나기 전에는 내지 않는다 — 패널을 열 때마다 잠깐 떴다 사라진다.
   const helpless = state.cliChecked && !ready;
   for (const p of document.querySelectorAll('.cli-help')) p.hidden = !helpless;
+  // 머리(새로고침·설정 왼쪽)의 연결 지침 복사 단추도 같은 조건 — 닿을 길이 하나도 없을 때만, 어느 탭에서든 (2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 … 복사하기 버튼을 넣어줘").
+  if (el.cliGuideHead) el.cliGuideHead.hidden = !helpless;
   // 근태의 말로 채우기 칸은 규칙으로도 읽히니 잠그지 않되, 연결된 것으로 오인하지 않게 회색으로 내린다.
   attend.paintReady(!helpless);
   // 공문의 문서 넣는 곳도 같다 — 읽는 일은 Claude 만 하니, 닿지 않으면 회색으로 내리고 문서 없이 쓰기만 남긴다.
@@ -1844,7 +1846,7 @@ async function copyCliGuide(btn) {
       version: chrome.runtime.getManifest?.()?.version, userAgent: navigator.userAgent,
     });
     const ok = await copyText(text);
-    flash(btn, ok ? '복사됨 ✓' : '복사 실패', ok ? 1800 : 4000);
+    flash(btn.querySelector('.cli-guide-head-text') || btn, ok ? '복사됨 ✓' : '복사 실패', ok ? 1800 : 4000);   // 머리의 단추는 그림(svg)을 두고 글자 칸만 바꾼다
     logEvent('cli-guide', ok, ok ? '연결 지침 복사' : '연결 지침 복사 실패');
   } finally {
     btn.disabled = false;

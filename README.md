@@ -1740,6 +1740,9 @@ PC 에 claude 가 깔려 있는가가 아닙니다. 아래 `로컬 CLI 연결` �
 누르면 이 PC 의 Claude Code·Codex 같은 코딩 에이전트에 그대로 붙여 넣을 글이 클립보드에 담깁니다 —
 확장 폴더, 확장 ID, 브라우저가 댄 까닭, 여섯 조건, 돌릴 명령이 들어 있습니다(`src/bridgeguide.js`).
 같은 버튼이 `설정 → LLM → 로컬 Claude CLI` 에도 있고, 이쪽은 API 키로 쓰는 중에도 CLI 가 없으면 남습니다.
+패널 머리(새로고침·설정 단추 왼쪽)에도 Claude 에 닿을 길이 하나도 없을 때만 같은 **연결 지침 복사** 단추가 보입니다(2026-10-23 사용자 지정:
+"LLM 연결이 안되어 있으면 이쪽에 LLM 설정 프롬프트 복사하기 버튼을 넣어줘. workspace 도 동일하게") — 어느 탭에 있든 바로 복사할 수 있게.
+누르면 같은 글이 담기고 글자만 잠깐 `복사됨 ✓` 로 바뀝니다(`#cliGuideHead`, `sidepanel.js paintAskReady`). 연결되면 사라집니다.
 확장은 자기 폴더의 경로를 알 수 없어서 `install.ps1` 이 써 둔 `native\com.krs.meetingroom.json` 에서 읽습니다.
 한 번도 등록한 적이 없는 PC 에서는 경로 대신 찾는 법(`chrome://extensions` 의 "로드 위치")을 적어 줍니다.
 

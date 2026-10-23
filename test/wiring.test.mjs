@@ -909,6 +909,7 @@ console.log('Claude 가 안 붙어 있으면 말로 찾기 칸이 잠긴다');
     assert.deepEqual(helps.map((p) => p.parentElement.className), ['at-chat card off', 'gm-intake off', 'ask card off']);
     assert.ok(helps.every((p) => !p.hidden && p.querySelector('button.cli-guide-copy')));
     assert.equal(doc.getElementById('cliGuide').hidden, false);
+    assert.equal(doc.getElementById('cliGuideHead').hidden, false, '머리의 연결 지침 복사 단추도 나온다 (2026-10-23)');
   });
   t('근태의 말로 채우기 칸은 규칙으로 읽히니 열려 있되, 연결된 것으로 오인하지 않게 회색(off)이고 플레이스홀더에 까닭이 적힌다', () => {
     const input = doc.getElementById('atChatInput');
@@ -926,6 +927,14 @@ console.log('Claude 가 안 붙어 있으면 말로 찾기 칸이 잠긴다');
     assert.match(text, /bridge_ops\.ps1" install/);
     assert.match(doc.querySelector('section.ask .cli-guide-copy').textContent, /복사됨/);
   });
+  doc.getElementById('cliGuideHead').click();
+  await new Promise((r) => setTimeout(r, 30));
+  t('머리의 연결 지침 복사도 같은 글을 담고, 그림(svg)은 두고 글자만 "복사됨" 으로 바뀐다 (2026-10-23)', () => {
+    assert.match(calls.clipboard.at(-1) || '', /Claude Code CLI 를 연결해 주세요/);
+    const head = doc.getElementById('cliGuideHead');
+    assert.ok(head.querySelector('svg'), '그림이 사라졌다');
+    assert.match(head.querySelector('.cli-guide-head-text').textContent, /복사됨/);
+  });
 }
 
 console.log('API 키가 있으면 말로 찾기 칸이 열린다');
@@ -940,6 +949,7 @@ console.log('API 키가 있으면 말로 찾기 칸이 열린다');
   t('말 칸의 연결 지침 줄은 숨고, 설정의 버튼은 CLI 가 없으니 남는다', () => {
     assert.ok([...doc.querySelectorAll('.cli-help')].every((p) => p.hidden));
     assert.equal(doc.getElementById('cliGuide').hidden, false);
+    assert.equal(doc.getElementById('cliGuideHead').hidden, true, '머리의 단추는 API 키로 닿으니 숨는다');
   });
   t('근태의 말로 채우기 칸도 제 낯으로 돌아온다 — 회색이 걷히고 예시 플레이스홀더', () => {
     assert.ok(!doc.querySelector('.at-chat').classList.contains('off'));
