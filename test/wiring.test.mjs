@@ -1755,12 +1755,18 @@ console.log('공문 탭');
     name.dispatchEvent(new Event('change', { bubbles: true }));
     doc.getElementById('gmWrite').click();
     await settle(80);
-    t('관문이 막으면 상태줄에 빈 곳으로 가는 단추가 선다 — 내 이름 채우기 → 설정 → 일반의 내 이름 칸', () => {
+    t('관문이 막으면 상태줄에 빈 곳으로 가는 단추가 선다 — 내 이름 채우기 → 설정 → 일반의 내 이름 칸(공문 작성 단추 아래 상태 줄에도 같은 까닭과 단추 — 2026-10-23)', () => {
       const status = doc.getElementById('gmStatus');
       assert.match(status.textContent, /^공문을 쓸 수 없습니다 — .*me 가 없습니다/);
       const jump = status.querySelector('button.jump[data-jump="preset:me"]');
       assert.ok(jump, '내 이름 단추가 선다');
       assert.equal(jump.textContent, '내 이름 채우기 →');
+      // 같은 까닭과 단추가 공문 작성 단추 아래 상태 줄에도 선다(2026-10-23) — 탭 위 상태줄만으로는 단추 근처를 보는 사람이 막힌 줄 몰랐다. 접두("작성 실패 —") 없이 까닭 그대로.
+      const under = doc.getElementById('gmWriteState');
+      assert.ok(under.classList.contains('bad') && !under.classList.contains('hidden'), '단추 아래 줄이 붉게 보인다');
+      assert.match(under.textContent, /^공문을 쓸 수 없습니다 — .*me 가 없습니다/);
+      assert.ok(under.querySelector('button.jump[data-jump="preset:me"]'), '단추 아래 줄에도 내 이름 단추가 선다');
+      assert.ok(doc.getElementById('gmWrite').classList.contains('primary'), '공문 작성이 으뜸 단추로 남는다 — 고치고 다시 누르는 것이 다음 일');
       assert.equal(doc.getElementById('settingsBox').hidden, true, '누르기 전에는 설정이 닫혀 있다');
       jump.click();
       assert.equal(doc.getElementById('settingsBox').hidden, false, '설정이 열린다');

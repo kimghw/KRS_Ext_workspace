@@ -2100,9 +2100,10 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-import input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .rnd .rd-import:has(input:focus-visible) { outline: 3px solid var(--pick); outline-offset: 3px; }
 
-/* 관문이 막은 빈 곳으로 가는 단추(src/jump.js) — 상태줄 글 뒤에 선다. 누르면 그 칸으로 옮기고 윤곽선(jump-flash)을 잠깐 켠다. */
-.status .jumps { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: baseline; }
-.status .jump { min-height: 22px; padding: 1px 9px; border: 1px solid color-mix(in srgb, var(--pick) 55%, var(--line)); border-radius: 999px; background: var(--surface); color: var(--pick); font: inherit; font-size: 12px; line-height: 1.4; cursor: pointer; }
-.status .jump:hover { background: color-mix(in srgb, var(--pick) 12%, var(--surface)); }
-.status .jump:focus-visible { outline: 3px solid var(--pick); outline-offset: 2px; }
+/* 관문이 막은 빈 곳으로 가는 단추(src/jump.js) — 상태줄 글 뒤에 선다. 누르면 그 칸으로 옮기고 윤곽선(jump-flash)을 잠깐 켠다.
+   공문 탭은 공문 작성 단추 아래 상태 줄(gm-write-state)에도 같은 단추를 세우니(gongmunpanel.js writeFail, 2026-10-23) 거기서도 같은 모양. */
+.status .jumps, .gongmun .gm-write-state .jumps { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: baseline; }
+.status .jump, .gongmun .gm-write-state .jump { min-height: 22px; padding: 1px 9px; border: 1px solid color-mix(in srgb, var(--pick) 55%, var(--line)); border-radius: 999px; background: var(--surface); color: var(--pick); font: inherit; font-size: 12px; line-height: 1.4; cursor: pointer; }
+.status .jump:hover, .gongmun .gm-write-state .jump:hover { background: color-mix(in srgb, var(--pick) 12%, var(--surface)); }
+.status .jump:focus-visible, .gongmun .gm-write-state .jump:focus-visible { outline: 3px solid var(--pick); outline-offset: 2px; }
 .jump-flash { outline: 3px solid var(--pick) !important; outline-offset: 3px; border-radius: 6px; }

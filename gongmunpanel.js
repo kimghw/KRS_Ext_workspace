@@ -2194,7 +2194,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const busy = st.writing;
     const has = st.lastTab != null;
     const done = busy ? null : st.writeDone;
-    const next = !!(done && has && !done.closed);
+    const next = !!(done && has && !done.closed && !done.before);   // 쓰기 전에 막힌 것(before)은 고치고 다시 누르는 것이 다음 일 — 공문 작성이 으뜸 단추로 남는다.
     el.write.disabled = busy;
     el.write.textContent = busy ? '공문 작성 중…' : '공문 작성';
     el.write.classList.toggle('primary', !next);
@@ -2208,11 +2208,29 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (busy) [text, cls] = [`작성 중 — ${now || '뒤 탭에서 쓰고 있습니다'}`, 'busy'];
     else if (!done) [text, cls] = ['', ''];
     else if (done.closed) [text, cls] = ['공문 창이 닫혔습니다 — 다시 작성하세요', 'bad'];
-    else if (done.why) [text, cls] = [`작성 실패 — ${done.why}`, 'bad'];
+    // 쓰기 전에 막힌 것(before — writeFail)은 접두 없이 까닭 그대로, 쓰다가 실패한 것은 "작성 실패 — 까닭".
+    else if (done.why) [text, cls] = [done.before ? done.why : `작성 실패 — ${done.why}`, 'bad'];
     else if (done.ok) [text, cls] = [`작성 완료${done.docId ? ` — 문서 ${done.docId}` : ''} · 공문 보기로 창을 열어 임시저장 뒤 상신하세요`, 'ok'];
     else [text, cls] = [`작성 끝 — 안 된 것: ${done.bad.join(' · ')} · 공문 보기로 창을 열어 확인하세요`, 'bad'];
     el.writeState.className = `gm-write-state${cls ? ` ${cls}` : ''}${text ? '' : ' hidden'}`;
-    el.writeState.textContent = text;
+    // 글이 같으면 다시 쓰지 않는다 — writeFail 이 글 뒤에 세운 빈 곳으로 가는 단추(.jumps)가 같은 상태의 다시 그리기에 걷히지 않게. 글이 바뀌면 단추도 같이 사라진다.
+    if (el.writeState.firstChild?.nodeValue !== text) el.writeState.textContent = text;
+  }
+
+  /**
+   * 쓰기 전에 막힌 까닭(빈 제목 · 사이드패널에만 있는 첨부 · 관문이 막은 빈 곳) — 탭 위 상태줄(gmStatus)에만 적으면 공문 작성 단추 근처를 보는 사람은 막힌 줄 모른다.
+   * 단추 아래 상태 줄(gmWriteState)에도 같은 까닭을 붉게 적고, 빈 곳으로 가는 단추(src/jump.js)가 있으면 둘 다의 끝에 세운다(2026-10-23).
+   * @returns {undefined} writeDoc 이 그대로 돌려주기 좋게
+   */
+  function writeFail(why, jumps = []) {
+    st.writing = false;
+    st.writeDone = { ok: false, docId: '', bad: [], why, before: true };
+    el.writeLog.classList.add('hidden');
+    paintWrite();
+    setStatus(why, 'error');
+    paintJumps(el.status, jumps);
+    paintJumps(el.writeState, jumps);
+    return undefined;
   }
 
   /**
@@ -2233,12 +2251,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const body = String(el.body.value ?? '');
     const form = tplOf().form;
     const p = projectOf(w);
-    if (!title.trim()) return setStatus('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.', 'error');
+    if (!title.trim()) return writeFail('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.');
     // 비교작성 탭은 읽은 파일의 바이트를 들고 있지 않다(저장소에는 이름만 — 사이드패널이 든다). 읽은 문서가 있는 초안을 여기서 쓰면 첨부가 조용히 빠지므로 사이드패널로 보낸다.
     if (st.compareTab) {
       const have = new Set([...attachFiles(w).map((f) => f.name), ...originalFiles(w).map((f) => f.name)]);
       const missing = (w.draft.attach || []).flatMap((a) => a.files || []).filter((n) => !have.has(n));
-      if (missing.length) return setStatus(`첨부할 문서 ${missing.length}개는 사이드패널에만 있습니다 — 사이드패널의 공문 작성을 누르면 첨부까지 넣습니다.`, 'error');
+      if (missing.length) return writeFail(`첨부할 문서 ${missing.length}개는 사이드패널에만 있습니다 — 사이드패널의 공문 작성을 누르면 첨부까지 넣습니다.`);
     }
     st.writing = true;
     st.lastTab = null;
@@ -2284,13 +2302,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         preset: await presetFor(id, { project: p }),
       }));
     } catch (err) {
-      st.writing = false;
-      el.writeLog.classList.add('hidden');
-      paintWrite();
-      setStatus(`공문을 쓸 수 없습니다 — ${err instanceof ActionError ? err.problems.join(' · ') : err.message}`, 'error');
-      // 어디가 비었는지 아는 것(관문의 missing)은 그 자리로 가는 단추를 상태줄 끝에 세운다 — 내 이름·공문 설정·초안의 칸.
-      paintJumps(el.status, jumpsOf(err, err instanceof ActionError && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
-      return undefined;
+      // 어디가 비었는지 아는 것(관문의 missing)은 그 자리로 가는 단추를 두 상태 줄(탭 위 · 단추 아래)의 끝에 세운다 — 내 이름·공문 설정·초안의 칸.
+      return writeFail(`공문을 쓸 수 없습니다 — ${err instanceof ActionError ? err.problems.join(' · ') : err.message}`,
+        jumpsOf(err, err instanceof ActionError && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
     }
     const head = `공문 작성 · ${KINDS[kind].title} · ${record.input.title}`;
     try {
