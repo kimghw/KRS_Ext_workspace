@@ -535,7 +535,8 @@ export async function fillAttendSmart(text, opts)   // 그대로(작업 이름 '
 
 R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출 … 변경사항의 내용을 임의 형식으로 제공 하면 yaml 로 수정해서 업데이트")도 planned 로 더했다 — `rnd/_domain.yaml` 의 `llm` 이 `per-kind`(consumer `rndgen/llm.js askRndTask`)가 되고 두 종류만 `llm: { task }` 를 갖는다(나머지 R&D 종류는 `llm: false`).
 - `rnd.extract` — 사업계획서(PDF·HWPX·DOCX·XLSX·TXT) → 그 차년도의 KR 스냅샷 YAML. 답 칸 `yaml`(필수, 120,000자)·`alias`·`stage`·`warnings`, 화면 칸 `file`·`stageWanted`·`projectId`(llm: false). 지시문은 스킬 `rnd-kr-extract` 의 references 두 문서(extract_fields.yaml·structured_output.md)를 입력 글에 실어 따른다.
-- `rnd.revise` — 기준 YAML + 아무 꼴의 변경 글(붙인 문서의 글자) → 고친 YAML 전문. 답 칸 `yaml`·`summary`(필수)·`changes`(list ≤ 50)·`warnings`, 화면 칸 `projectId`·`n`·`text`·`files`.
+  문서는 크기 제한 없이 부분으로 나뉘어 오고(2026-10-23 사용자 지정 "크기 제한없이 분할해서 처리") 패널이 부분마다 이 작업을 차례로 부르며 `[앞 부분까지 뽑은 YAML]` 을 이어 준다 — 규칙은 YAML 에, 입력 글은 `rndgen/llm.js extractInput` 의 `ctx.prior`.
+- `rnd.revise` — 기준 YAML + 아무 꼴의 변경 글(붙인 문서의 글자) → 고친 YAML 전문. 답 칸 `yaml`·`summary`(필수)·`changes`(list ≤ 50)·`warnings`, 화면 칸 `projectId`·`n`·`text`·`files`. 붙인 문서가 부분으로 나뉘면 부분마다 차례로(기준은 앞 부분까지 고친 YAML).
 - 두 작업만 `src/tasktune.js` 로 effort medium · max_tokens 32000 · 입력 15만 자 · CLI 10분이고, API 길은 스트리밍(SSE — 몇 분 걸리는 답에서 사내망 프록시가 조용한 연결을 끊지 않게)이다. 다른 작업은 바이트까지 그대로.
 - 지금은 디스패처를 거치지 않는다 — 화면(`rndgen/panel.js`)이 `rndgen/llm.js` 로 askClaude 를 바로 부르고(src/llm.js 의 fillAction·INPUTS 는 이 갈래를 쓰지 않는다), 판(rev)·머리 주석은 LLM 이 아니라 `rndgen/yaml.js` 가 적으며, 사람이 "넣기"·"반영" 을 눌러야 `rnd.intake`(장부 — `rnd.yaml` 과 같은 길)와 원문 저장(`rndYamlText`)이 뒤따른다. 2단계에 `runner: rnd.extract|rnd.revise` 로 잇는다. 자세히: `rndgen/README.md`.
 

@@ -4,6 +4,7 @@
 //   머리 줄의 차년도 아이콘(2026-10-19 — 그 과제가 대상) · 빈 차년도 카드의 단추 · 과제 없음 카드의 과제 더하기 → rnd.onAdd → openAdd(대상) — 덮개(rnd.setOverlay('add'))라 머리·몸통은 숨는다
 //     제목 옆의 과제 배지(장부의 과제들 · 새 과제 — 2026-10-19 사용자 "sscb 옆에 더하기 취소하고, 과제 더하기 옆에 과제 뱃지를 선택할 수 있게": 칩 줄의 ＋ 는 없앰)로 대상을 바꾼다(retarget)
 //     → YAML 파일은 rnd.intake 로 바로 넣고, 문서는 source.readDocument → llm.askExtract → yaml.checkExtracted → finalizeExtracted
+//       (문서는 크기 제한 없이 부분으로 나뉘어 온다 — 2026-10-23 사용자 "크기 제한없이 분할해서 처리": 부분마다 askExtract 를 차례로 부르고 앞 부분까지 뽑은 YAML 을 prior 로 이어 준다 — askOne)
 //     → 미리보기(과제·차년도·비목별 예산·참여연구자·경고 · 별칭 · YAML 원문) → 넣기(rnd.intake · setAlias · pick) / YAML 파일로 저장 / 다시 뽑기
 //     차년도 고르기의 "모든 차년도"(2026-10-16 사용자 지정)는 같은 재료로 1차년도부터 차년도마다 한 번씩 차례로 묻고(몇 차년도까지는 대상 과제의 연구기간,
 //     그리고 처음 읽힌 답의 meta.연차범위 — yaml.stageCount) 차년도별 줄(합계·참여연구자·경고 · YAML · 다시 뽑기)로 보인 뒤 한 번에 넣는다 / 차년도 폴더 zip 으로 저장
@@ -42,6 +43,8 @@ const PICK_HINT = '차년도를 고르고 사업계획서(또는 YAML)를 넣으
 const STAGE_UNKNOWN = 10;
 /** 변경사항 카드에 붙일 문서 수(actions/spec/rnd/revise.yaml 의 files max 와 같다). */
 const MAX_CHANGE_FILES = 6;
+/** 고치기에 붙인 문서의 부분 크기(글자) — 기준 YAML·변경 글과 함께 다리의 입력 한도 안에 들게(rndgen/llm.js INPUT_BUDGET.reviseMaterial 과 같다). 문서 전체의 한도는 없다(2026-10-23). */
+const REVISE_PART_CHARS = 40_000;
 /** 뽑기·붙이기 재료가 되는 문서 갈래(source.docKind). yaml 은 그대로 넣는 파일, hwp·'' 는 못 받는다. */
 const DOC_KINDS = new Set(['pdf', 'office', 'text']);
 const VIA_LABEL = { cli: '로컬 CLI', api: 'API 키' };
@@ -133,11 +136,21 @@ const elapsedText = (ms) => {
 const splitWarn = (w) => (Array.isArray(w) ? w : String(w ?? '').split(/\s+\/\s+|\n+/)).map(str).filter(Boolean);
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
 /** "로컬 CLI · $0.0421" — 활동 로그·알림 줄. */
-const viaText = (out) => [VIA_LABEL[out?.via] || out?.via || '', Number.isFinite(out?.costUsd) ? `$${Number(out.costUsd).toFixed(4)}` : ''].filter(Boolean).join(' · ');
+const viaText = (out) => [String(out?.via || '').split(',').filter(Boolean).map((v) => VIA_LABEL[v] || v).join('·'), Number.isFinite(out?.costUsd) ? `$${Number(out.costUsd).toFixed(4)}` : ''].filter(Boolean).join(' · ');
 const withName = (name, msg) => (String(msg).includes(name) ? String(msg) : `${name}: ${msg}`);
 const defaultToday = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
-/** Claude 에게 줄 것이 있는 재료인가 — 글자도 붙일 PDF 도 없으면(글자 층 없는 스캔본이 8MB 를 넘음 등) 묻지 않는다(rndgen/source.js). */
-const usable = (m) => !!(m && (m.chars || m.file));
+/** 재료의 부분들 — source.js 가 크기 제한 없이 나눈 parts(2026-10-23). 부분이 없는 재료(옛 꼴·검사)는 그것 하나. */
+const partsOf = (m) => (Array.isArray(m?.parts) && m.parts.length ? m.parts : m ? [m] : []);
+/** Claude 에게 줄 것이 있는 재료인가 — 어느 부분에도 글자도 붙일 PDF 도 없으면(쪽 수를 모르는 큰 스캔본·암호 걸린 스캔본) 묻지 않는다(rndgen/source.js). */
+const usable = (m) => partsOf(m).some((p) => p.chars || p.file);
+/** 여러 부분을 물은 것의 길·비용·알림을 한 답처럼 — 하나면 빈 객체(그 답 그대로). */
+const sumOf = (outs) => {
+  if (outs.length <= 1) return {};
+  const v = viaOfAll(outs);
+  return { via: v.via, ...(v.costUsd != null ? { costUsd: v.costUsd } : {}), note: uniq(outs.map((o) => str(o?.note))).join(', ') };
+};
+/** 진행 줄에 붙일 부분 표시 — " · 3/9부분(71-106쪽 · 글자 78,123자 · 작은 PDF 1.3MB)". */
+const partSuffix = (p) => ` · ${p.no}/${p.count}부분${p.read ? `(${String(p.read).replace(/^\d+\/\d+부분 — /, '')})` : ''}`;
 const projectIn = (book, id) => (id ? (book?.projects || []).find((p) => p.id === id) || null : null);
 /**
  * 과제의 차년도 중 예산 정보가 아직 없는 첫 차년도 — 연구기간 안(과 그 밖에 이미 들어 있는 차년도 — 뒤 차년도 계획서를 넣었는데 종료일이 안 늘어난 과제, 실물 SSCB 2026-10-19)이
@@ -721,7 +734,7 @@ export function createRndGenPanel({
     A.yaml.value = '';
     paintAddPreview();
     setBusy('add', true);
-    say('add', `${f.name} 읽는 중 — 사업계획서에서 KR 블록이 든 쪽을 고릅니다`);
+    say('add', `${f.name} 읽는 중 — 글자를 읽고 크기에 맞춰 부분으로 나눕니다(문서 크기 제한 없음)`);
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
       const material = await source.readDocument({ name: f.name, type: f.type || '', bytes }, { engines });
@@ -758,22 +771,45 @@ export function createRndGenPanel({
   }
 
   /**
-   * 한 차년도 묻기 — askExtract → checkExtracted → (스냅샷 꼴이면) finalizeExtracted · summarizeSnapshot. 그사이 닫히거나 새 일이 시작되면(live() 가 거짓) null.
-   * stage 가 null(자동)이면 답의 stage 로 검사한다. 꼴이 아닌 답은 ok:false 로 돌려주고, 던지는 것은 묻기·마무리의 실패뿐이다.
+   * 한 차년도 묻기 — 재료의 부분마다 차례로 askExtract(둘째 부분부터는 앞 부분까지 뽑은 YAML 을 ctx.prior 로) → checkExtracted → 마지막으로 스냅샷 꼴이었던 답을
+   * finalizeExtracted · summarizeSnapshot. 꼴이 아닌 부분의 답은 버리고 앞 부분까지의 것으로 이어 간다(까닭은 warnings 에). 그사이 닫히거나 새 일이 시작되면(live() 가 거짓) null.
+   * stage 가 null(자동)이면 답의 stage 로 검사한다. 어느 부분도 꼴이 아니면 ok:false(마지막 답의 원문과 함께), 던지는 것은 묻기·마무리의 실패뿐이다.
+   * tick(suffix) 는 부분이 여럿일 때 진행 줄에 몇째 부분인지 붙인다.
    */
-  async function askOne(material, { stage, t, target, docs, a, live }) {
+  async function askOne(material, { stage, t, target, docs, a, live, tick = null }) {
     const project = target ? { name: target.name, code: target.code, alias: target.alias, start: target.start, end: target.end, calendar: !!target.calendar } : null;
-    const out = await llm.askExtract(material, { today: t, stage, project, currentStage: target ? currentYear(target, t) : null, docs }, { ai: a });
-    if (!live()) return null;
-    const data = out?.data || {};
-    const raw = str(data.yaml);
-    // 차년도 — 고른 것, 없으면 LLM 이 적은 stage. 둘 다 없고 meta.차년도 도 없으면 checkExtracted 가 문제로 친다.
-    const want = stage || (Number.isInteger(Number(data.stage)) && Number(data.stage) >= 1 ? Number(data.stage) : null);
-    const chk = await yaml.checkExtracted(raw, { stage: want });
-    if (!live()) return null;
-    const warnings = uniq([...(chk.warnings || []), ...splitWarn(data.warnings)]);
-    if (!chk.ok) return { ok: false, out, data, raw, chk, warnings };
-    const n = want || chk.snap?.n || 1;
+    const ctx = { today: t, stage, project, currentStage: target ? currentYear(target, t) : null, docs };
+    const parts = partsOf(material);
+    const outs = [];
+    const notes = [];
+    let prior = '';      // 앞 부분까지 뽑은 YAML
+    let last = null;     // 마지막으로 스냅샷 꼴이었던 답
+    let bad = null;      // 마지막으로 꼴이 아니었던 답
+    for (const part of parts) {
+      if (parts.length > 1) tick?.(partSuffix(part));
+      const out = await llm.askExtract(part, parts.length > 1 ? { ...ctx, prior } : ctx, { ai: a });
+      if (!live()) return null;
+      outs.push(out);
+      const data = out?.data || {};
+      const raw = str(data.yaml);
+      // 차년도 — 고른 것, 없으면 LLM 이 적은 stage. 둘 다 없고 meta.차년도 도 없으면 checkExtracted 가 문제로 친다.
+      const want = stage || (Number.isInteger(Number(data.stage)) && Number(data.stage) >= 1 ? Number(data.stage) : null);
+      const chk = await yaml.checkExtracted(raw, { stage: want });
+      if (!live()) return null;
+      if (chk.ok) {
+        prior = raw;
+        last = { out, data, raw, chk, want };
+      } else {
+        bad = { out, data, raw, chk, want };
+        if (parts.length > 1) notes.push(`${part.no}/${part.count}부분의 답이 스냅샷 꼴이 아니라 앞 부분까지의 것으로 이어 갔습니다 — ${(chk.problems || []).join(' / ') || '까닭 모름'}`);
+      }
+    }
+    const got = last || bad;
+    const out = { ...got.out, ...sumOf(outs) };
+    const { data, raw, chk } = got;
+    const warnings = uniq([...(chk.warnings || []), ...splitWarn(data.warnings), ...notes]);
+    if (!last) return { ok: false, out, data, raw, chk, warnings };
+    const n = got.want || chk.snap?.n || 1;
     const fin = await yaml.finalizeExtracted(raw, { stage: n, today: t, source: material.name });
     if (!live()) return null;
     return { ok: true, out, data, raw, chk, warnings, n, fin, sum: yaml.summarizeSnapshot(fin.obj) };
@@ -802,7 +838,7 @@ export function createRndGenPanel({
     try {
       const docs = await llm.loadSkillDocs(readAssetFn);
       if (!live()) return;
-      const r = await askOne(material, { stage, t, target, docs, a, live });
+      const r = await askOne(material, { stage, t, target, docs, a, live, tick: (suffix) => startTick('add', `${ASKING_EXTRACT}${suffix}`) });
       if (!r) return;
       const { out, data, raw, chk } = r;
       const warnings = uniq([...r.warnings, ...(material.warnings || [])]);
@@ -905,10 +941,11 @@ export function createRndGenPanel({
         }
         Object.assign(y, { state: 'asking', error: '' });
         paintAddPreview();
-        startTick('add', `${ASKING_ALL} · ${yearLabel(k)}${fresh ? ` (${picked ? i + 1 : k}/${picked ? picked.length : all.total || '?'})` : ''}`);
+        const label = `${ASKING_ALL} · ${yearLabel(k)}${fresh ? ` (${picked ? i + 1 : k}/${picked ? picked.length : all.total || '?'})` : ''}`;
+        startTick('add', label);
         let r = null;
         try {
-          r = await askOne(material, { stage: k, t, target, docs, a, live });
+          r = await askOne(material, { stage: k, t, target, docs, a, live, tick: (suffix) => startTick('add', `${label}${suffix}`) });
           if (!r) return;
         } catch (err) {
           if (!live()) return;
@@ -1348,20 +1385,41 @@ export function createRndGenPanel({
       const materials = [];
       for (const f of files) {
         const bytes = new Uint8Array(await f.arrayBuffer());
-        const m = await source.readDocument({ name: f.name, type: f.type || '', bytes }, { engines });
-        materials.push({ ...m, file: null });   // 글자만 — 붙인 문서는 PDF 로 보내지 않는다
+        materials.push(await source.readDocument({ name: f.name, type: f.type || '', bytes }, { engines, limits: { partChars: REVISE_PART_CHARS } }));
       }
       if (run !== st.rev.run) return;
-      const out = await llm.askRevise({
-        baseYaml: baseText, text, materials, today: t, project: { name: project.name, code: project.code, alias: project.alias }, n, rev: baseRev,
-      }, { ai: a });
-      if (run !== st.rev.run) return;
-      const data = out?.data || {};
-      const raw = str(data.yaml);
-      const got = await yaml.parseYaml(raw);
-      if (!got?.ok) throw new Error(`고친 YAML 을 읽지 못했습니다 — ${got?.error || ''}`);
+      // 붙인 문서는 글자로만(PDF 로 보내지 않는다). 크기 제한 없이 부분으로 나뉘어 오니(2026-10-23) 부분마다 차례로 묻고, 앞 부분까지 고친 YAML 을 다음 부분의 기준으로 준다 —
+      // summary·changes·warnings 는 모으고, 판·머리 주석·차이·미리보기는 마지막 답으로 한 번.
+      const steps = materials.flatMap((m) => partsOf(m).map((p) => ({ ...p, name: m.name, file: null })));
+      const rounds = steps.length ? steps.map((p) => [p]) : [[]];
+      const who = { name: project.name, code: project.code, alias: project.alias };
+      const outs = [];
+      const summaries = [];
+      const changes = [];
+      const warns = [];
+      let raw = '';
+      let got = null;
+      let last = {};
+      for (let i = 0; i < rounds.length; i++) {
+        if (rounds.length > 1) startTick('rev', `${ASKING_REVISE}${partSuffix({ no: i + 1, count: rounds.length, read: rounds[i][0]?.read })}`);
+        const one = await llm.askRevise({
+          baseYaml: i ? raw : baseText, text, materials: rounds[i], today: t, project: who, n, rev: baseRev, ...(rounds.length > 1 ? { part: { no: i + 1, count: rounds.length } } : {}),
+        }, { ai: a });
+        if (run !== st.rev.run) return;
+        outs.push(one);
+        last = one?.data || {};
+        raw = str(last.yaml);
+        got = await yaml.parseYaml(raw);
+        if (!got?.ok) throw new Error(`${rounds.length > 1 ? `${i + 1}/${rounds.length}부분의 ` : ''}고친 YAML 을 읽지 못했습니다 — ${got?.error || ''}`);
+        const s = str(last.summary);
+        if (s && s !== '변경 없음') summaries.push(s);
+        if (Array.isArray(last.changes)) changes.push(...last.changes);
+        warns.push(...splitWarn(last.warnings));
+      }
+      const out = { ...outs.at(-1), ...sumOf(outs) };
+      const data = { ...last, yaml: raw, summary: uniq(summaries).join(' · '), changes, warnings: uniq(warns) };
       const rev = yaml.nextRev(saved?.rev, v.snapshot?.rev, baseRev, got.obj?.meta?.rev);
-      const summary = str(data.summary) || '변경사항 반영';
+      const summary = (str(data.summary) || '변경사항 반영').slice(0, 300);
       const fin = await yaml.finalizeRevised(raw, { rev, today: t, summary });
       // meta.rev 는 코드가 적는 판 번호라 늘 바뀐다 — 차이 목록에서는 빼고 요약 줄의 "다음 판" 으로 보인다.
       const diff = (await yaml.diffYaml(base.obj, fin.obj)).filter((d) => d.path !== 'meta.rev');
@@ -1443,7 +1501,8 @@ export function createRndGenPanel({
     return {
       wired: st.wired, loaded: st.loaded,
       add: {
-        open: s.open, busy: s.busy, target: s.target ? { ...s.target } : null, material: s.material ? { name: s.material.name, kind: s.material.kind, read: s.material.read } : null,
+        open: s.open, busy: s.busy, target: s.target ? { ...s.target } : null,
+        material: s.material ? { name: s.material.name, kind: s.material.kind, read: s.material.read, parts: partsOf(s.material).length } : null,
         text: s.text, file: s.file, warnings: [...s.warnings], known: s.known ? s.known.id : '', alias: A?.alias.value || '',
         all: s.all ? {
           mode: s.all.mode, total: s.all.total, counted: s.all.counted, at: s.all.at,

@@ -303,7 +303,7 @@ export async function withText(input, files, engines = {}) {
 /**
  * PDF 의 글자 층을 **모든 쪽**(maxPages 까지) 뽑는다 — pdfText(6쪽 한도)와 달리 사업계획서 전체를 본다(rndgen/source.js). 줄 바꿈은 hasEOL.
  * 100~300쪽짜리를 한 쪽씩 읽고 그 쪽의 자원은 바로 놓는다(page.cleanup) — 그림이 많은 계획서도 메모리를 쌓지 않게.
- * 어느 쪽을 LLM 에 줄지(점수·한도)는 여기서 가리지 않는다 — rndgen/source.js 의 pickPages 가 한다.
+ * 쪽을 어떻게 부분으로 나눠 LLM 에 줄지는 여기서 하지 않는다 — rndgen/source.js 의 splitPages 가 한다(크기 제한 없이, maxPages: Infinity 로 다 읽는다 — 2026-10-23).
  * @param {Uint8Array} bytes
  * @param {{ maxPages?: number, open?: (bytes) => Promise<{doc, close}> }} [opts]  open 은 검사가 끼운다(기본 openPdf)
  * @returns {Promise<{pages: string[], total: number}>} pages 는 앞에서 maxPages 쪽까지, total 은 문서의 쪽 수

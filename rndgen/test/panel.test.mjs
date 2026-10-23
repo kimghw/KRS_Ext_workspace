@@ -1308,3 +1308,119 @@ test('LLM·사람의 글은 글자로만 — 태그가 DOM 이 되지 않는다'
   assert.equal(globalThis.__pwned, undefined);
   assert.equal(s.window.__pwned, undefined);
 });
+
+/* ---------------------------------------------------------- 부분(크기 제한 없이 나눈 문서 — 2026-10-23) */
+
+/** source.js 가 나눈 부분 셋 — 100쪽씩, 부분마다 작은 PDF. */
+const pdfParts = (name) => [1, 2, 3].map((no) => ({
+  name, kind: 'pdf', total: 300, no, count: 3, pages: [(no - 1) * 100 + 1, no * 100], picked: [(no - 1) * 100 + 1], chunks: null,
+  text: `— ${(no - 1) * 100 + 1}쪽 —\n${no}부분`, chars: 10, file: { name: `${name}_${no}.pdf`, type: 'application/pdf', dataUrl: 'data:application/pdf;base64,AAAA' }, attach: 'slice',
+  read: `${no}/3부분 — ${(no - 1) * 100 + 1}-${no * 100}쪽 · 글자 10자 · 작은 PDF 1KB`,
+}));
+
+test('문서가 여러 부분이면(2026-10-23 "크기 제한없이 분할해서 처리") 부분마다 차례로 묻고 앞 부분까지 뽑은 YAML 을 prior 로 이어 준다 — 꼴이 아닌 부분은 건너뛰고 경고, 마지막 답이 뽑은 것, 길·비용은 합치고, 진행 줄에 몇째 부분인지', async () => {
+  const answers = [];
+  let s = null;
+  s = setup({
+    readDocument: async (file) => material(file.name, { parts: pdfParts(file.name), file: null, attach: 'parts', read: `${file.name}: 300쪽 · 글자 30자 · 3부분으로 나눠 차례로 보냄(부분마다 그 쪽만 담은 PDF)` }),
+    extract: async (mat, ctx) => {
+      answers.push({ no: mat.no, prior: ctx.prior, tick: s.msg() });
+      if (mat.no === 2) return { data: { yaml: 'garbage: true', stage: 2, warnings: '' }, via: 'api', costUsd: 0.2, note: '로컬 CLI 실패 → API 키', input: '입력' };
+      return {
+        data: { yaml: snapText({ 과제명: `시험용 신규 과제 ${mat.no}부분`, 연구개발과제번호: 'RS-2026-00000009', 차년도: '2차년도' }), alias: 'NEWP', stage: 2, warnings: `${mat.no}부분 경고` },
+        via: 'cli', costUsd: 0.1, note: '', input: '입력',
+      };
+    },
+  });
+  await extracted(s);
+  const asked = s.named('askExtract');
+  assert.deepEqual(asked.map((c) => [c[1].no, c[2].prior === undefined ? '-' : c[2].prior.slice(0, 7)]), [[1, ''], [2, '{"meta"'], [3, '{"meta"']], '1부분은 빈 prior, 2부분부터 앞 YAML');
+  assert.equal(asked[2][2].prior, asked[1][2].prior, '2부분의 답은 꼴이 아니라 1부분의 YAML 이 그대로 3부분으로 간다');
+  assert.deepEqual(asked.map((c) => c[1].file.name), ['사업계획서.pdf_1.pdf', '사업계획서.pdf_2.pdf', '사업계획서.pdf_3.pdf'], '부분마다 그 부분의 작은 PDF');
+  assert.deepEqual(asked.map((c) => c[2].stage), [null, null, null]);
+  assert.equal(s.named('checkExtracted').length, 3);
+  assert.equal(s.named('finalizeExtracted').length, 1, '마무리는 마지막으로 꼴이었던 답 한 번');
+  assert.match(answers[1].tick, /^Claude 에게 묻는 중 — 큰 문서는 몇 분 걸릴 수 있습니다\(최대 10분\) · 2\/3부분\(101-200쪽 · 글자 10자 · 작은 PDF 1KB\) · \d+초$/, '진행 줄에 몇째 부분인지');
+  const meta = Object.fromEntries([...s.doc.querySelectorAll('.rdg-meta > div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd')]));
+  assert.equal(meta['과제명'].textContent, '시험용 신규 과제 3부분', '마지막 부분의 답이 뽑은 것');
+  const warns = [...meta['경고'].querySelectorAll('li')].map((li) => li.textContent);
+  assert.ok(warns.includes('3부분 경고'), warns.join(' | '));
+  assert.ok(!warns.includes('1부분 경고'), '앞 부분의 경고는 마지막 답이 이어 적는다(명세의 규칙) — 코드가 되풀이하지 않는다');
+  assert.ok(warns.some((w) => w.startsWith('2/3부분의 답이 스냅샷 꼴이 아니라 앞 부분까지의 것으로 이어 갔습니다 — ')), warns.join(' | '));
+  assert.match(s.msg(), /^뽑았습니다 — 시험용 신규 과제 3부분 2차년도 · 로컬 CLI·API 키 · \$0\.4000\. 확인하고 넣기를 누르세요 \(로컬 CLI 실패 → API 키\)$/, '길은 겹치지 않게, 비용은 합쳐');
+  assert.equal(s.logs.length, 1);
+  assert.equal(s.logs[0][3].via, 'cli,api');
+  assert.ok(Math.abs(s.logs[0][3].costUsd - 0.4) < 1e-9);
+  assert.equal(s.panel.state().add.material.parts, 3);
+  assert.match(s.doc.querySelector('.rdg-read').textContent, /3부분으로 나눠 차례로 보냄/);
+});
+
+test('부분 가운데 어느 답도 꼴이 아니면 실패 — 마지막 답의 원문을 YAML 칸에, 부분마다의 까닭은 경고로. 모든 차년도도 차년도마다 부분을 차례로 돈다', async () => {
+  const s = setup({
+    readDocument: async (file) => material(file.name, { parts: pdfParts(file.name), file: null, attach: 'parts' }),
+    extract: async (mat) => ({ data: { yaml: `bad: ${mat.no}`, stage: 2 }, via: 'cli', costUsd: 0.1, note: '', input: '입력' }),
+  });
+  s.panel.wire();
+  s.hooks.add({});
+  s.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s.msg().includes('뽑은 YAML 이 스냅샷 꼴이 아닙니다') && !s.panel.state().add.busy, '실패 알림');
+  assert.equal(s.named('askExtract').length, 3, '꼴이 아니어도 다음 부분을 묻는다(뒤 부분에서 바로잡힐 수 있다)');
+  assert.equal(s.$('rdgYaml').value, 'bad: 3', '마지막 답의 원문');
+  assert.ok(s.panel.state().add.warnings.some((w) => w.startsWith('2/3부분의 답이 스냅샷 꼴이 아니라')));
+  assert.ok(s.panel.state().add.warnings.some((w) => w.startsWith('3/3부분의 답이 스냅샷 꼴이 아니라')));
+
+  // 모든 차년도 — 차년도마다 부분 셋을 차례로(prior 는 차년도마다 처음부터)
+  const s2 = setup({
+    readDocument: async (file) => material(file.name, { parts: pdfParts(file.name), file: null, attach: 'parts' }),
+    extract: async (mat, ctx) => ({
+      data: { yaml: snapText({ 과제명: '시험용 신규 과제', 연구개발과제번호: 'RS-2026-00000009', 차년도: `${ctx.stage}차년도`, 연차범위: ['1차년도', '2차년도'] }), alias: 'NEWP', stage: ctx.stage, warnings: '' },
+      via: 'cli', costUsd: 0.01, note: '', input: '입력',
+    }),
+  });
+  s2.panel.wire();
+  s2.hooks.add({});
+  pickStage(s2, 'all');
+  s2.pickFiles('rdgFile', [fakeFile('사업계획서.pdf', { type: 'application/pdf' })]);
+  await until(() => s2.named('askExtract').length >= 6 && !s2.panel.state().add.busy && s2.logs.length > 0, '모든 차년도 끝');
+  assert.deepEqual(s2.named('askExtract').map((c) => [c[2].stage, c[1].no, c[2].prior === '']), [[1, 1, true], [1, 2, false], [1, 3, false], [2, 1, true], [2, 2, false], [2, 3, false]]);
+  assert.deepEqual(s2.panel.state().add.all.years.map((y) => [y.n, y.state]), [[1, 'ok'], [2, 'ok']]);
+});
+
+test('고치기에 붙인 문서가 여러 부분이면 부분마다 차례로 묻고(기준은 앞 부분까지 고친 YAML, part 로 몇째인지) summary·changes·경고를 모은다 — 읽을 때 부분 크기는 40,000자', async () => {
+  const docParts = (name) => [1, 2].map((no) => ({
+    name, kind: 'office', total: 20, no, count: 2, pages: null, picked: null, chunks: [(no - 1) * 10 + 1, no * 10], text: `${no}부분 글`, chars: 5, file: null, attach: 'none',
+    read: `${no}/2부분 — 구역 ${(no - 1) * 10 + 1}-${no * 10} · 글자 5자 · 글자만`,
+  }));
+  const seen = [];
+  let s = null;
+  s = setup({
+    readDocument: async (file) => material(file.name, { kind: 'office', parts: docParts(file.name), file: null, attach: 'parts' }),
+    revise: async (args) => {
+      seen.push({ base: args.baseYaml.slice(0, 12), part: args.part, mats: args.materials.map((m) => `${m.name}:${m.no}/${m.count}:${m.file}`), msg: s.msg('rdgReviseMsg') });
+      const base = parse(args.baseYaml).obj;
+      const after = { ...base, 예산: { ...base.예산, [`칸${args.part.no}`]: args.part.no } };
+      return {
+        data: { yaml: JSON.stringify(after), summary: `칸${args.part.no} 추가`, changes: [{ path: `예산.칸${args.part.no}`, before: null, after: String(args.part.no) }], warnings: `${args.part.no}부분 경고` },
+        via: 'cli', costUsd: 0.05, note: '', input: '입력',
+      };
+    },
+  });
+  s.panel.wire();
+  s.view();
+  await until(() => s.panel.state().loaded, '저장소');
+  s.pickFiles('rdgChangeFile', [fakeFile('개정계획서.docx')]);
+  s.click('rdgReviseGo');
+  await until(() => s.panel.state().revise.result, '미리보기');
+  assert.deepEqual(s.named('readDocument')[0][2].limits, { partChars: 40_000 });
+  assert.deepEqual(seen.map((x) => [x.part, x.mats]), [[{ no: 1, count: 2 }, ['개정계획서.docx:1/2:null']], [{ no: 2, count: 2 }, ['개정계획서.docx:2/2:null']]]);
+  assert.ok(seen[0].base.startsWith('# [장부에서'), '첫 부분의 기준은 원래 기준');
+  assert.ok(seen[1].base.startsWith('{"meta"'), '둘째 부분의 기준은 첫 부분의 답');
+  assert.match(seen[1].msg, /^Claude 에게 묻는 중 — 기준 YAML 을 고치고 있습니다\. 몇 분 걸릴 수 있습니다\(최대 10분\) · 2\/2부분\(구역 11-20 · 글자 5자 · 글자만\) · \d+초$/);
+  const r = s.panel.state().revise.result;
+  assert.equal(r.summary, '칸1 추가 · 칸2 추가');
+  assert.ok(r.warnings.includes('1부분 경고') && r.warnings.includes('2부분 경고'), r.warnings.join(' | '));
+  assert.deepEqual([parse(r.text).obj.예산.칸1, parse(r.text).obj.예산.칸2], [1, 2], '두 부분의 고침이 다 든다');
+  assert.equal(s.named('finalizeRevised').length, 1);
+  assert.equal(s.named('nextRev').length, 1);
+  assert.match(s.msg('rdgReviseMsg'), /^고쳤습니다 — 칸1 추가 · 칸2 추가 \(다음 판 r\d+\) · 로컬 CLI · \$0\.1000\. /);
+});

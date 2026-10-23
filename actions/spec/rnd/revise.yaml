@@ -2,6 +2,8 @@
 # 기준 YAML(저장된 원문 rndYamlText — 없으면 장부로 지은 것, 손실 있음)과 사람이 붙여 넣은 변경 글(메일·공문·메모·표)·붙인 문서의 글자를 rndgen/llm.js 가 이어
 # rnd.revise 작업으로 묻는다. 답의 YAML 전문은 rndgen/yaml.js 가 마무리한다 — 다음 판(meta.rev rN+1)과 파일 머리 주석(# [재생성 rN] … · # 변경분: …)은 코드가 적는다.
 # 구조 차이(diffYaml)·새로 생길 변경이력 줄(previewApply) 미리보기 뒤 사람이 "반영" 을 누르면 rnd.intake 로 장부에 들어가고 원문은 rndYamlText 에 남는다.
+# 붙인 문서가 커서 여러 부분이면(2026-10-23 사용자 지정: "크기 제한없이 분할해서 처리") 패널이 부분마다 이 작업을 차례로 부르며 앞 부분까지 고친 YAML 을 [기준 YAML] 로 준다 —
+# summary·changes 는 부분마다의 것을 패널이 모은다(rndgen/panel.js revise).
 id: rnd.revise
 title: 변경사항으로 YAML 고치기
 status: planned
@@ -82,7 +84,7 @@ fields:
     max: 6
     llm: false
     label: 붙인 문서
-    desc: 변경 내용으로 붙인 문서(이름·형식만 — 글자는 rndgen/source.js 가 뽑아 입력 글에 싣는다)
+    desc: 변경 내용으로 붙인 문서(이름·형식만 — 글자는 rndgen/source.js 가 뽑아 크기 제한 없이 부분으로 나눠 차례로 입력 글에 싣는다)
     read: 이 칸은 사용자의 말로 채우지 않습니다 — 사용자가 붙인 문서 그대로입니다
     item:
       name:
@@ -102,6 +104,7 @@ rules:
   - 'meta.rev 와 파일 머리 주석(# [재생성 rN] … · # 변경분: …)은 코드가 적으니 바꾸지 않습니다.'
   - '참여연구자가 바뀌면 예산.참여연구자인건비 의 참여자 줄과 소계, 비목별의 인건비를 함께 고칩니다.'
   - '변경사항이 모호하거나 기준 YAML 에 해당 칸이 없으면 바꾸지 말고 warnings 에 적습니다. 변경사항에 없는 값을 지어내지 않습니다.'
+  - '붙인 문서가 여러 부분으로 나뉘어 차례로 올 때(입력의 머리에 "이번은 k/N부분")는 [기준 YAML] 이 앞 부분까지 반영한 것입니다 — 이번 부분이 말하는 곳만 더 고치고, summary·changes 에는 이번 부분에서 바꾼 것만 적습니다(앞 부분의 것은 되풀이하지 않습니다). 이번 부분에 바꿀 것이 없으면 yaml 은 기준 그대로, summary 는 "변경 없음" 입니다.'
   - 'summary 는 "예산.비목별[2차년도].연구재료비 12,000 → 15,000 · 참여연구자 홍길동 추가" 꼴의 한 줄입니다.'
   - 'changes 는 바꾼 곳마다 한 줄 — path(목록은 [연차] · [성명] 처럼 그 줄의 열쇠로) · before · after(글로) 입니다. 새로 넣은 칸의 before, 뺀 칸의 after 는 null 입니다.'
 llm: { task: rnd.revise }      # per-kind 작업의 이름 — rndgen/llm.js askRevise 가 부른다(src/llm.js fillAction 은 쓰지 않는다)

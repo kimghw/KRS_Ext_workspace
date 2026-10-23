@@ -28,8 +28,9 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
    │
    ├─ YAML 파일 ─────────────────────────────▶ rnd.intake(texts, { source: 'file' }) ─▶ (들어가면) 카드 닫고 rnd.pick(과제, 차년도)
    │
-   └─ 문서 하나 ─▶ source.readDocument  (PDF: doctext/browser.js pdfAllText 로 모든 쪽 글자 → scorePages·pickPages 로 ≤24쪽·≤9만 자 → pdf-lib 로 그 쪽만 작은 PDF,
-                  │                       스캔본은 원본째 ≤8MB · HWPX/DOCX/XLSX/PPTX: src/officetext.js → pickChunks · TXT/MD 그대로) → 재료(Material)
+   └─ 문서 하나 ─▶ source.readDocument  (크기 제한 없이 — 2026-10-23 사용자 "크기 제한없이 분할해서 처리". PDF: doctext/browser.js pdfAllText 로 모든 쪽 글자 → splitPages 로 글자 8만 자 안의 이어진 쪽 묶음
+                  │                       → pdf-lib 로 묶음마다 그 쪽만 담은 작은 PDF(8MB 를 넘으면 쪽을 반으로) · 스캔본은 쪽 수로 묶음(원본이 8MB 안이면 통째) · HWPX/DOCX/XLSX/PPTX: src/officetext.js → splitChunks
+                  │                       · TXT/MD 그대로) → 재료(Material — parts[] 가 문서 차례대로의 부분, text 는 다 이은 것)
                   │  재료가 비면(글자도 PDF 도 없음) 묻지 않고 까닭을 알린다
                   ▼
                llm.loadSkillDocs(rnd/skills/rnd-kr-extract/references/{extract_fields.yaml, structured_output.md})
@@ -66,7 +67,7 @@ rnd.intake 를 지나면(어느 길이든 — rndpanel 의 끌어 놓기·붙여
 |---|---|
 | `index.js` | 조립. `createRndGen({ rnd, $, escapeHtml, logEvent, flash, ai, today, now?, readAsset?, download?, storage?, engines? })` → `{ wire, panel, store, saved }`. `wire()` 가 카드를 그리고 rnd 의 `onIntake`(원문 저장)·`onDelete`(지우기) 훅을 단다. `pairResults(results, texts)` — 정렬된 intake 결과와 넣은 글을 이름으로 짝짓기 |
 | `panel.js` · `panel.css` | 더하기 카드(`#rdgAdd` 안)와 YAML 고치기 몫(`#rdgRevise` 안 — 카드 틀은 바깥 `#rdChangeBox`). id 는 `rdg` 접두. 의존은 모두 주입(모든 차년도 zip 의 `../src/zip.js buildZip` 만 바로 import). 바쁠 때 host 에 `aria-busy` 와 지난 초, 늦게 온 답은 버림 |
-| `source.js` | `LIMITS`·`KEYWORDS`·`docKind`·`unsupportedDocNote`·`scorePage`·`scorePages`·`pickPages`·`pickChunks`·`pagesText`·`toDataUrl`·`dataUrlBytes`·`readDocument`·`defaultEngines` |
+| `source.js` | `LIMITS`(부분 하나의 크기)·`docKind`·`unsupportedDocNote`·`splitPages`·`splitChunks`·`pagesText`·`toDataUrl`·`dataUrlBytes`·`readDocument`(→ Material — `parts[]`)·`defaultEngines`(pdfText·pdfSlice·pdfCount·officeText). 2026-10-16 ~ 10-22 의 쪽 점수·고르기(`scorePages`·`pickPages`·`pickChunks`)는 2026-10-23 에 걷어 냈다 — 크기로 거르지 않는다 |
 | `llm.js` | `SKILL_DOCS`·`INPUT_BUDGET`·`loadSkillDocs`·`resetSkillDocs`·`pageRanges`·`extractInput`·`reviseInput`·`askRndTask`(갈래 consumer)·`askExtract`·`askRevise` |
 | `yaml.js` | `parseYaml`·`checkExtracted`·`finalizeExtracted`·`finalizeRevised`·`nextRev`·`stageCount`(모든 차년도의 차년도 수)·`summarizeSnapshot`·`diffYaml`·`diffLines`·`previewApply`·`bookToSnapshot`·`fileName` |
 | `store.js` | `YAML_KEY`(`rndYamlText`)·`HISTORY_MAX`(5)·`normalizeYamlStore`·`createYamlStore({ storage, now })` → `load`·`get`·`history`·`put`·`remove`·`all` |
@@ -90,12 +91,11 @@ rnd.intake 를 지나면(어느 길이든 — rndpanel 의 끌어 놓기·붙여
 
 | 무엇 | 값 | 어디 |
 |---|---|---|
-| 원본 PDF | 20MB 넘으면 거절 | `source.js LIMITS.pdfBytesMax` |
-| 작은 PDF 의 쪽 | 24쪽(앞 3쪽은 늘) | `LIMITS.pdfPages`·`alwaysPages` |
-| 재료 글자 | 9만 자(쪽·구역 고르기 예산) — 입력 글에서는 10만 자, 전체 15만 자 안 | `LIMITS.textChars` · `llm.js INPUT_BUDGET` |
-| 글자 층 없는 스캔본 | 원본째 8MB 까지 붙임, 넘으면 묻지 않음 | `LIMITS.attachBytesMax` |
-| HWPX·DOCX·XLSX·PPTX 글자 | 15만 자까지 읽고 3천 자 구역으로 골라 9만 자 | `LIMITS.officeChars`·`chunkChars` |
-| 고치기 | 기준 YAML 9만 자(넘으면 던짐) · 변경 글 2만 자 · 붙인 문서 글자 합 4만 자 · 문서 6개 | `INPUT_BUDGET` · `panel.js MAX_CHANGE_FILES` |
+| 문서 전체 | **한도 없음** — 쪽 수·글자·MB 로 거절하거나 잘라 내지 않는다(2026-10-23 사용자 지정 "사업계획서 첨부할때.. 크기 제한없이 분할해서 처리 하도록 해줘"). 문서 차례대로 부분으로 나눠 부분마다 한 번씩 차례로 묻고, 앞 부분까지 뽑은(고친) YAML 을 다음 부분에 이어 준다. 그 전(10-16 ~ 10-22)에는 원본 20MB 거절·스캔본 8MB·24쪽 9만 자 고르기였다 | `source.js readDocument` · `panel.js askOne`·`revise` |
+| 부분 하나의 글자 | 8만 자(쪽·구역 경계에서 끊음) — 입력 글에서는 10만 자, 전체 15만 자 안(머리말·스킬 문서 약 3만 자·앞 부분까지의 YAML 이 함께 든다) | `LIMITS.partChars` · `llm.js INPUT_BUDGET` |
+| 부분 하나에 붙이는 PDF | 100쪽(Claude API 가 문서 하나에 받는 쪽 수)·8MB — 넘으면 쪽을 반으로 갈라 다시(한 쪽이 혼자 넘으면 그 부분은 글자만). 글자 층 없는 스캔본도 같은 식으로 나눠 붙인다 | `LIMITS.partPages`·`attachBytesMax` |
+| HWPX·DOCX·XLSX·PPTX 글자 | 한도 없이 읽고 3천 자 구역으로 나눠 부분에 담는다 | `LIMITS.chunkChars` |
+| 고치기 | 기준 YAML 9만 자(넘으면 던짐) · 변경 글 2만 자 · 붙인 문서는 4만 자 부분으로 나눠 부분마다 한 번(문서 6개) | `INPUT_BUDGET` · `panel.js REVISE_PART_CHARS`·`MAX_CHANGE_FILES` |
 | LLM | effort medium · max_tokens 32000 · 입력 15만 자 · CLI 10분 · API 스트리밍 | `src/tasktune.js` |
 | 답의 YAML 칸 | 12만 자(관문 초안 모드는 넘는 글을 말없이 자른다) | `actions/spec/rnd/*.yaml` 의 `max` |
 | 원문 저장 | 과제·차년도마다 지금 판 1 + 지난 판 5 | `store.js HISTORY_MAX` |
@@ -113,15 +113,19 @@ rnd.intake 를 지나면(어느 길이든 — rndpanel 의 끌어 놓기·붙여
 
 ## LLM 작업
 
-- `rnd.extract` — 답 `{ yaml(필수), alias, stage, warnings }`. 입력은 오늘 · 뽑을 차년도(고른 것 또는 "오늘이 든 차년도") · 장부 기준 오늘이 든 차년도 · 장부의 과제 · 원본 문서(고른 쪽 범위와 무엇을 붙였나) →
-  `[스킬 규칙 1 — extract_fields.yaml]` · `[스킬 규칙 2 — structured_output.md]` → `[문서 글자]`(`— N쪽 —` 표시). 스킬 문서의 절차(폴더·스크립트·에이전트·이력 init·JSON 사본)는 무시하라고 적는다.
-- `rnd.revise` — 답 `{ yaml(필수), summary(필수), changes[≤50]{path, before, after}, warnings }`. 입력은 오늘 · 과제·차년도·지금 판 → `[기준 YAML]` → `[변경사항]` → `[붙인 문서 글자 — 이름]`.
+- `rnd.extract` — 답 `{ yaml(필수), alias, stage, warnings }`. 입력은 오늘 · 뽑을 차년도(고른 것 또는 "오늘이 든 차년도") · 장부 기준 오늘이 든 차년도 · 장부의 과제 · 원본 문서(몇째 부분인지 · 쪽 범위 · 무엇을 붙였나) →
+  `[스킬 규칙 1 — extract_fields.yaml]` · `[스킬 규칙 2 — structured_output.md]` → (둘째 부분부터) `[앞 부분까지 뽑은 YAML]` → `[문서 글자]`(`— N쪽 —` 표시). 스킬 문서의 절차(폴더·스크립트·에이전트·이력 init·JSON 사본)는 무시하라고 적는다.
+  부분이 여럿이면 패널(`askOne`)이 부분마다 차례로 묻고 앞 부분까지 뽑은 YAML 을 `ctx.prior` 로 준다 — 꼴이 아닌 부분의 답은 버리고 앞 것으로 이어 가며(경고), 마지막으로 꼴이었던 답이 뽑은 것이다. 길·비용은 합친다.
+- `rnd.revise` — 답 `{ yaml(필수), summary(필수), changes[≤50]{path, before, after}, warnings }`. 입력은 오늘 · 과제·차년도·지금 판 · (붙인 문서가 부분이면) 몇째 부분인지 → `[기준 YAML]` → `[변경사항]` → `[붙인 문서 글자 — 이름 (k/N부분 · 쪽/구역)]`.
+  붙인 문서의 부분마다 차례로 묻고(기준은 앞 부분까지 고친 YAML) summary(` · ` 로)·changes·warnings 를 모은다 — 판·머리 주석·차이·미리보기는 마지막 답으로 한 번.
 - 울타리 `<<<`·`>>>` 안의 글에 든 `>>>` 는 `> > >` 로 바꾼다. 지시문(rules)과 답 칸은 `actions/spec/rnd/*.yaml` 이 정본이다(`node tools/gen-actions.mjs --prompt rnd.extract` 로 본다).
 
 ## 한계
 
 - 옛 한글(`.hwp`)은 못 읽는다 — 한글에서 PDF 로 저장해 넣는다(`.hwpx` 는 된다).
-- 글자 층 없는 스캔본은 Claude 가 그림으로 읽어 느리고 표의 값을 틀릴 수 있다. 8MB 를 넘으면 붙이지도 못한다(글자 층이 있는 PDF 로 다시 저장하거나 KR 부분만 따로 저장).
+- 글자 층 없는 스캔본은 Claude 가 그림으로 읽어 느리고 표의 값을 틀릴 수 있다. 커도 쪽을 나눠 부분마다 PDF 로 붙인다(2026-10-23) — 암호가 걸려 자르지 못하고 8MB 를 넘는 것, 쪽 수조차 모르는 깨진 것만 붙이지 못한다(글자 층이 있는 PDF 로 다시 저장).
+- 부분이 여럿이면 부분 수만큼 Claude 를 부른다(부분마다 몇 분 — 300쪽 계획서는 4~9부분, 모든 차년도면 차년도마다 그만큼). 앞 부분까지의 YAML 을 이어 주니 뒤 부분이 앞 값을 지우지 않도록 명세의 규칙이 막지만,
+  **실제 Claude 로 여러 부분을 끝까지 돌려 보지는 않았다**(2026-10-23 — 검사는 흉내). 처음 쓸 때 볼 것: 둘째 부분부터의 답이 앞 YAML 의 값을 그대로 두는가 · 부분 수와 걸린 시간.
 - 장부로 지은 기준(저장된 원문이 없을 때)은 성과지표·외주용역 같은 장부에 없는 블록이 빠진다 — 원문 YAML 을 한 번 넣어 두면 정확하다.
 - pdf.js 는 사이드 패널에서만 돈다(서비스 워커 불가). 이 폴더는 패널에서만 쓴다.
 - 2026-10-16 에는 실물 사업계획서 다섯 개로 재료 고르기(1~2.5초, 작은 PDF 0.4~1.4MB, 글자 2.4~2.7만 자)만 재 보았고, **실제 Claude 로 뽑기·고치기를 끝까지 돌려 보지는 않았다**(검사는 모두 흉내).
@@ -135,8 +139,8 @@ node --test "rndgen/test/*.test.mjs"
 
 | 파일 | 본다 |
 |---|---|
-| `source.test.mjs` | 갈래 가리기·hwp 안내, 쪽 점수·고르기(앞 3쪽·예산·오름차순)·구역 고르기, 가짜 엔진으로 pdf(글자 층 있음/없음/자르기 실패)·office·text·yaml 거절·20MB 거절, pdf-lib 로 지은 PDF 자르기, `pdfAllText` |
-| `llm.test.mjs` | 입력 글 배치·자르기·울타리, 스킬 문서 외우기, `askRndTask` 의 던짐과 `ask` 끼우기 |
+| `source.test.mjs` | 갈래 가리기·hwp 안내, 쪽·구역 나누기(크기 제한 없이 이어진 묶음·빠짐없음), 가짜 엔진으로 pdf(글자 층 있음 — 한 부분·여러 부분·큰 작은 PDF 의 반 가르기·한 쪽이 넘침·자르기 실패 / 글자 층 없음 — 원본째·쪽 가르기·암호·쪽 수 모름)·office(한도 없음·부분)·text·yaml 거절, pdf-lib 로 지은 PDF 자르기·쪽 수, `pdfAllText` |
+| `llm.test.mjs` | 입력 글 배치·자르기·울타리, 부분 문장과 `[앞 부분까지 뽑은 YAML]`·고치기의 부분 머리, 스킬 문서 외우기, `askRndTask` 의 던짐과 `ask` 끼우기 |
 | `yaml.test.mjs` | 검사·마무리(머리 주석을 `headerOf` 가 되읽음)·다음 판·차년도 수(연차범위 목록·글 · 연차별기간 · 기간)·구조 차이(열쇠로 짝짓기)·미리 넣기(장부 원본 불변)·장부로 기준 짓기·파일 이름 |
 | `store.test.mjs` | put·history 5개·같은 글·remove·normalize·쓰기 실패 되돌림(가짜 저장소) |
 | `panel.test.mjs` | jsdom 의 host 둘 — 뽑기·넣기·다시 뽑기·모든 차년도(차례로 묻기·몇 번·그 차년도만 다시·한 번의 intake·고친 칸·zip·과제가 다른 차년도·닫으면 멈춤)·없는 차년도만(있는 차년도는 건너뜀 줄·대상 없으면 재료 글의 과제번호로 짚기·연구기간 밖을 물어 연차범위까지·문서 범위 밖 답은 버림)·고른 차년도들(숫자 둘 이상 — 그것만 차례로·연차범위를 안 봄·zip 이름 `_3-4차년도`·한 번의 intake)·차년도 단추 줄(숫자는 여러 개 켜고 끄기·자동/모두/없는 것만은 하나·점선·머리 줄 아이콘이면 없는 첫 차년도·바쁠 때 잠김)·과제 배지(대상 바꾸기 — 단추 줄·별칭 따라감·재료와 미리보기는 둠·과제 없으면 숨김·열 개면 새 과제 잠김)·직접 적기·닫기·재료가 비면 묻지 않음·고치기·반영·로그·aria-busy·늦은 답 버림·글은 textContent 로만 |

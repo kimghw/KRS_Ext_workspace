@@ -3,7 +3,8 @@
 // 작업(지시문·답 칸)은 행위 명세가 만든다 — actions/spec/rnd/extract.yaml·revise.yaml → tools/gen-actions.mjs → actions/spec.js 의 tasks → src/input.js 의 TASKS.
 // 여기서 하는 것은 **입력 글**(머리말 · 스킬 문서 두 벌 · 재료 글)을 짓는 것과 askClaude(로컬 CLI → API 키, 답은 관문 structure 를 지난 것)를 바로 부르는 것뿐이다.
 // src/llm.js 의 fillAction·INPUTS 는 이 갈래를 쓰지 않는다(_domain.yaml 의 llm.input: rnd 는 이름만).
-// 재료(Material — 사업계획서에서 고른 쪽의 글자와 작은 PDF)는 rndgen/source.js 가 만들고, 답의 검사·마무리(판·머리 주석)는 rndgen/yaml.js 가 한다.
+// 재료(Material — 사업계획서를 크기 제한 없이 문서 차례대로 나눈 부분(Part)마다의 글자와 그 쪽만 담은 작은 PDF, 2026-10-23)는 rndgen/source.js 가 만들고, 답의 검사·마무리(판·머리 주석)는 rndgen/yaml.js 가 한다.
+// 부분이 여럿이면 패널이 부분마다 묻는다 — extractInput 은 ctx.prior(앞 부분까지 뽑은 YAML)를 [앞 부분까지 뽑은 YAML] 로, reviseInput 은 앞 부분까지 고친 YAML 을 [기준 YAML] 로 싣고 몇째 부분인지 머리에 적는다.
 // 한도(effort medium · max_tokens 32000 · 입력 15만 자 · 10분)는 src/tasktune.js — 다리(native/host.mjs)가 입력을 그 한도에서 자르므로 여기서 미리 맞춘다.
 //
 // import 만으로는 아무것도 부르지 않는다 — 스킬 문서는 loadSkillDocs(readAsset) 를 부를 때, chrome 은 askClaude 를 부를 때 처음 본다.
@@ -16,7 +17,8 @@ export const SKILL_DOCS = Object.freeze({
   fields: 'rnd/skills/rnd-kr-extract/references/extract_fields.yaml',
   output: 'rnd/skills/rnd-kr-extract/references/structured_output.md',
 });
-/** 입력 글 한도(글자) — 머리말·스킬 문서를 뺀 재료 글에 쓴다. tasktune inputMax(150,000) 안에 들게. */
+/** 입력 글 한도(글자) — 머리말·스킬 문서를 뺀 재료 글에 쓴다. tasktune inputMax(150,000) 안에 들게. 재료는 source.js 가 부분(partChars 8만 자)으로 나눠 오므로 보통 자르지 않는다 —
+ *  넘치면(앞 부분까지의 YAML 이 클 때) 뒤를 자르고 몇 자 더 있었는지 적는다. */
 export const INPUT_BUDGET = Object.freeze({ extractMaterial: 100_000, reviseBase: 90_000, reviseText: 20_000, reviseMaterial: 40_000 });
 
 const TASKS = ['rnd.extract', 'rnd.revise'];
@@ -81,36 +83,55 @@ export function pageRanges(pages) {
   return out.join(', ');
 }
 
-/** 머리말의 "원본 문서:" 한 문장 — 무엇을 글자로 실었고 무엇을 PDF 로 붙였는지(material.read 를 LLM 에게 풀어 쓴 것). */
+/** 재료가 여러 부분 가운데 하나인가 — { no, count }(부분이 아니면 1/1). */
+const partOf = (m) => ({ no: Number(m?.no) || 1, count: Number(m?.count) || 1 });
+
+/**
+ * 머리말의 "원본 문서:" 한 문장 — 무엇을 글자로 실었고 무엇을 PDF 로 붙였는지(material.read 를 LLM 에게 풀어 쓴 것).
+ * 재료가 여러 부분 가운데 하나면(source.js 가 크기 제한 없이 나눈 것 — 2026-10-23) 몇째 부분이고 어느 쪽·구역인지도 적는다.
+ */
 function sourceSentence(m) {
   const name = str(m?.name) || '(이름 없는 문서)';
+  const { no, count } = partOf(m);
+  const lead = count > 1 ? `${name} — ${num(count)}부분으로 나뉘어 차례로 옵니다. 이번은 ${no}/${count}부분: ` : `${name} — `;
   if (m?.kind !== 'pdf') {
-    return `${name} — 글자만 실었습니다(${num(m?.chars ?? String(m?.text || '').length)}자 · 구역 ${num(m?.total)}개에서 고름 — 건너뛴 곳은 "(… 생략 …)").`;
+    const chars = num(m?.chars ?? String(m?.text || '').length);
+    const where = count > 1 && Array.isArray(m?.chunks) ? `구역 ${num(m.chunks[0])}-${num(m.chunks[1])}(전체 ${num(m.total)}개)` : `구역 ${num(m?.total)}개 전부`;
+    return `${lead}글자만 실었습니다(${chars}자 · ${where} — 빠짐없이).`;
   }
   const picked = Array.isArray(m.picked) ? m.picked : [];
-  const pages = `${num(m.total)}쪽 가운데 ${num(picked.length)}쪽(${pageRanges(picked)})`;
+  // pages([from, to]) 는 그 부분이 담은 쪽 범위(source.js 의 Part). 없으면(옛 꼴의 재료) 글로 실은 쪽 번호들로만 말한다.
+  const range = Array.isArray(m.pages) && m.pages.length === 2 ? m.pages : null;
+  const total = Number(m.total) || 0;
+  const scope = !total ? '쪽 수를 모르는 PDF' : range && (count > 1 || range[1] - range[0] + 1 < total) ? `${num(total)}쪽 가운데 ${range[0]}-${range[1]}쪽` : `${num(total)}쪽`;
+  const span = range ? range[1] - range[0] + 1 : 0;
+  const texted = picked.length
+    ? (range ? (picked.length === span ? `${scope}의 글자를 모두 실었고` : `${scope} — 글자가 든 ${num(picked.length)}쪽(${pageRanges(picked)})의 글자를 실었고`)
+      : `${num(total)}쪽 가운데 ${num(picked.length)}쪽(${pageRanges(picked)})의 글자를 실었고`)
+    : `${scope} — 글자 층이 없어 실은 글자가 없고`;
   if (m.attach === 'slice') {
-    return `${name} — ${pages}을 골라 글자로 실었고, 같은 쪽을 그 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 k번째 쪽이 고른 k번째 쪽입니다).`;
+    return range
+      ? `${lead}${texted}, 같은 쪽(${range[0]}-${range[1]}쪽)을 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 1쪽이 원본 ${range[0]}쪽입니다).`
+      : `${lead}${texted}, 같은 쪽을 그 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 k번째 쪽이 글로 실은 k번째 쪽입니다).`;
   }
-  if (m.attach === 'original') {
-    return picked.length
-      ? `${name} — ${pages}의 글자를 실었고, 원본 PDF 를 통째로 붙였습니다(PDF 의 쪽 번호가 원본 쪽 번호입니다 — 글자 층이 없는 쪽은 PDF 에서 봅니다).`
-      : `${name} — ${num(m.total)}쪽, 글자 층이 없어 원본 PDF 를 통째로 붙였습니다(PDF 의 쪽 번호가 원본 쪽 번호입니다).`;
-  }
-  return picked.length ? `${name} — ${pages}을 골라 글자만 실었습니다.` : `${name} — ${num(m.total)}쪽, 글자를 뽑지 못해 실은 글자가 없습니다.`;
+  if (m.attach === 'original') return `${lead}${texted}, 원본 PDF 를 통째로 붙였습니다(PDF 의 쪽 번호가 원본 쪽 번호입니다 — 글자 층이 없는 쪽은 PDF 에서 봅니다).`;
+  return `${lead}${texted}, PDF 는 붙이지 않았습니다(글자만).`;
 }
 
 /**
- * rnd.extract 입력 글. 머리말(오늘 · 뽑을 차년도 · 장부의 과제 · 원본 파일과 고른 쪽) → 스킬 문서 두 벌 → 재료 글(쪽 표시 그대로).
- * material.text 가 INPUT_BUDGET.extractMaterial 을 넘으면 뒤를 잘라 "…(N자 더 있음 — 잘림)" 을 적는다.
- * @param {object} material  (U2 source.js readDocument 의 결과 — Material)
+ * rnd.extract 입력 글. 머리말(오늘 · 뽑을 차년도 · 장부의 과제 · 원본 파일과 이번 부분 · 이어 뽑기) → 스킬 문서 두 벌 → [앞 부분까지 뽑은 YAML](둘째 부분부터) → 재료 글(쪽 표시 그대로).
+ * material 은 Material 또는 그 parts 의 하나(Part — no·count 가 있다). ctx.prior 는 앞 부분까지 뽑은 YAML 전문(첫 부분이면 ''). 앞 YAML 은 자르지 않는다.
+ * material.text 가 INPUT_BUDGET.extractMaterial(또는 남은 입력 한도)을 넘으면 뒤를 잘라 "…(N자 더 있음 — 잘림)" 을 적는다.
+ * @param {object} material  (source.js readDocument 의 결과 — Material, 또는 material.parts[k])
  * @param {{ today: string, stage: number|null, project: {name:string, code:string, alias:string, start:string, end:string, calendar:boolean}|null,
- *           currentStage: number|null, docs: {fields:string, output:string} }} ctx   currentStage 는 장부 기준 오늘이 든 차년도(과제를 알 때)
+ *           currentStage: number|null, docs: {fields:string, output:string}, prior?: string }} ctx   currentStage 는 장부 기준 오늘이 든 차년도(과제를 알 때)
  * @returns {string}
  */
 export function extractInput(material, ctx = {}) {
-  const { today = '', stage = null, project = null, currentStage = null, docs } = ctx;
+  const { today = '', stage = null, project = null, currentStage = null, docs, prior = '' } = ctx;
   if (!docs || typeof docs.fields !== 'string' || typeof docs.output !== 'string') throw new Error('스킬 문서가 없습니다 — loadSkillDocs 를 먼저 부르세요');
+  const { no, count } = partOf(material);
+  const priorText = fenceSafe(str(prior));
   const head = [
     `오늘은 ${str(today)} 입니다.`,
     stageOk(stage) ? `뽑을 차년도: ${stage}차년도` : '뽑을 차년도: 오늘이 든 차년도(표지의 연차별 연구개발기간 표로 셈)',
@@ -122,13 +143,14 @@ export function extractInput(material, ctx = {}) {
       (str(project.start) || str(project.end)) && `연구기간 ${str(project.start)} ~ ${str(project.end)}`,
     ].filter(Boolean).join(' · ')}`] : []),
     `원본 문서: ${sourceSentence(material)}`,
+    ...(priorText ? [`이어 뽑기: 앞 ${Math.max(1, no - 1)}부분까지 뽑은 YAML 이 아래 [앞 부분까지 뽑은 YAML] 에 있습니다 — 이번 부분의 글자로 더하고 고쳐 스냅샷 전문을 다시 냅니다(이번 부분에 없는 값은 그대로 둡니다).`] : []),
   ].join('\n');
   const rules = [
     fenced('스킬 규칙 1 — rnd-kr-extract/references/extract_fields.yaml — 무엇을 넣고 빼는가', fenceSafe(docs.fields)),
     fenced('스킬 규칙 2 — rnd-kr-extract/references/structured_output.md — 값의 모양', fenceSafe(docs.output)),
     '위 두 문서의 폴더·스크립트·에이전트·이력(init)·JSON 사본 절차는 무시합니다 — 여기서는 YAML 글 하나만 냅니다.',
   ].join('\n');
-  const before = `${head}\n\n${rules}\n\n`;
+  const before = `${head}\n\n${rules}\n\n${priorText ? `${fenced(`앞 부분까지 뽑은 YAML — ${count}부분 가운데 ${Math.max(1, no - 1)}부분까지`, priorText)}\n\n` : ''}`;
   const budget = Math.min(INPUT_BUDGET.extractMaterial, INPUT_MAX - before.length - SLACK);
   const body = clip(fenceSafe(str(material?.text)), budget);
   return `${before}${fenced('문서 글자', body)}`;
@@ -148,12 +170,13 @@ function shareBudget(lengths, budget) {
 }
 
 /**
- * rnd.revise 입력 글. 머리말(오늘 · 과제 · 차년도 · 지금 판 rK — "다음 판 번호와 머리 주석은 코드가 적는다") → [기준 YAML] <<< >>> → [변경사항] <<< >>> → [붙인 문서 글자] 마다 <<< >>>.
+ * rnd.revise 입력 글. 머리말(오늘 · 과제 · 차년도 · 지금 판 rK — "다음 판 번호와 머리 주석은 코드가 적는다" · 몇째 부분) → [기준 YAML] <<< >>> → [변경사항] <<< >>> → [붙인 문서 글자] 마다 <<< >>>.
  * 각 조각은 INPUT_BUDGET 의 한도에서 자르고 잘렸음을 적는다. 기준 YAML 은 자르지 않는다(넘으면 던진다 — '기준 YAML 이 너무 깁니다(N자)').
- * @param {{ baseYaml: string, text: string, materials?: object[], today: string, project: {name,code,alias}|null, n: number, rev: string }} args
+ * 붙인 문서가 커서 부분으로 나뉘면(2026-10-23) 패널이 부분마다 부른다 — part 는 그 차례 { no, count }(기준 YAML 은 앞 부분까지 고친 것), materials 는 그 부분 하나(Part — 쪽·구역 범위를 머리에 적는다).
+ * @param {{ baseYaml: string, text: string, materials?: object[], today: string, project: {name,code,alias}|null, n: number, rev: string, part?: {no:number, count:number}|null }} args
  * @returns {string}
  */
-export function reviseInput({ baseYaml = '', text = '', materials = [], today = '', project = null, n = 0, rev = '' } = {}) {
+export function reviseInput({ baseYaml = '', text = '', materials = [], today = '', project = null, n = 0, rev = '', part = null } = {}) {
   const base = fenceSafe(String(baseYaml ?? '').trim());
   if (!base) throw new Error('기준 YAML 이 비어 있습니다');
   if (base.length > INPUT_BUDGET.reviseBase) throw new Error(`기준 YAML 이 너무 깁니다(${num(base.length)}자)`);
@@ -165,14 +188,22 @@ export function reviseInput({ baseYaml = '', text = '', materials = [], today = 
     `지금 판 ${str(rev) || '(판 없음)'}`,
   ].filter(Boolean).join(' · ');
   const said = str(text);
+  const seq = partOf(part);
   const parts = [
     `오늘은 ${str(today)} 입니다.`,
     `과제: ${who} (다음 판 번호와 파일 머리 주석은 코드가 적습니다 — 바꾸지 마세요)`,
+    ...(seq.count > 1 ? [`붙인 문서는 ${num(seq.count)}부분으로 나뉘어 차례로 옵니다 — 이번은 ${seq.no}/${seq.count}부분이고 [기준 YAML] 은 앞 부분까지 반영한 것입니다.`] : []),
     '',
     fenced('기준 YAML', base),
     fenced('변경사항', said ? clip(fenceSafe(said), INPUT_BUDGET.reviseText) : '(글 없음 — 아래 붙인 문서의 글자를 보세요)'),
   ];
-  const docs = (Array.isArray(materials) ? materials : []).filter(Boolean).map((m) => ({ name: str(m.name) || '(이름 없는 문서)', text: fenceSafe(str(m.text)) }));
+  const whereOf = (m) => {
+    const { no, count } = partOf(m);
+    if (count <= 1) return '';
+    const at = Array.isArray(m.pages) && m.pages.length === 2 ? ` · ${m.pages[0]}-${m.pages[1]}쪽` : Array.isArray(m.chunks) && m.chunks.length === 2 ? ` · 구역 ${m.chunks[0]}-${m.chunks[1]}` : '';
+    return ` (${no}/${count}부분${at})`;
+  };
+  const docs = (Array.isArray(materials) ? materials : []).filter(Boolean).map((m) => ({ name: `${str(m.name) || '(이름 없는 문서)'}${whereOf(m)}`, text: fenceSafe(str(m.text)) }));
   if (docs.length) {
     const fixed = parts.join('\n').length + docs.reduce((a, d) => a + `\n[붙인 문서 글자 — ${d.name}]\n<<<\n\n>>>`.length + 40, 0);
     const budgets = shareBudget(docs.map((d) => d.text.length), Math.min(INPUT_BUDGET.reviseMaterial, INPUT_MAX - fixed - SLACK));

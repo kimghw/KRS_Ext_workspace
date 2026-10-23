@@ -71,7 +71,7 @@ t('머리말: 오늘 · 뽑을 차년도 · 장부 기준 차년도 · 장부의
     '장부 기준 오늘이 든 차년도: 2차년도',
     '장부의 과제: 시험용 직류 차단기 개발 · 과제번호 RS-2026-00000001 · 별칭 SSCB · 연구기간 2026-04-01 ~ 2029-12-31',
   ]);
-  assert.equal(ls[4], '원본 문서: 사업계획서.pdf — 312쪽 가운데 24쪽(1-3, 45-52, 118-130)을 골라 글자로 실었고, 같은 쪽을 그 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 k번째 쪽이 고른 k번째 쪽입니다).');
+  assert.equal(ls[4], '원본 문서: 사업계획서.pdf — 312쪽 가운데 24쪽(1-3, 45-52, 118-130)의 글자를 실었고, 같은 쪽을 그 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 k번째 쪽이 글로 실은 k번째 쪽입니다).');
   assert.deepEqual(ls.slice(5), [
     '',
     '[스킬 규칙 1 — rnd-kr-extract/references/extract_fields.yaml — 무엇을 넣고 빼는가]', '<<<', 'FIELDS 문서', '>>>',
@@ -92,12 +92,40 @@ t('차년도를 고르지 않았으면 "오늘이 든 차년도" — 장부를 �
 });
 t('원본 문서 문장 — 글자만(attach none)·원본째(original)·스캔본·문서(office/text)', () => {
   const head = (m) => lines(extractInput(m, { today: TODAY, docs: DOCS })).find((l) => l.startsWith('원본 문서: '));
-  assert.equal(head(material({ attach: 'none', file: null })), '원본 문서: 사업계획서.pdf — 312쪽 가운데 24쪽(1-3, 45-52, 118-130)을 골라 글자만 실었습니다.');
+  assert.equal(head(material({ attach: 'none', file: null })), '원본 문서: 사업계획서.pdf — 312쪽 가운데 24쪽(1-3, 45-52, 118-130)의 글자를 실었고, PDF 는 붙이지 않았습니다(글자만).');
   assert.match(head(material({ attach: 'original', total: 12, picked: [1, 2, 5] })), /12쪽 가운데 3쪽\(1-2, 5\)의 글자를 실었고, 원본 PDF 를 통째로 붙였습니다\(PDF 의 쪽 번호가 원본 쪽 번호입니다/);
-  assert.match(head(material({ attach: 'original', total: 12, picked: [], text: '' })), /12쪽, 글자 층이 없어 원본 PDF 를 통째로 붙였습니다/);
+  assert.match(head(material({ attach: 'original', total: 12, picked: [], text: '' })), /12쪽 — 글자 층이 없어 실은 글자가 없고, 원본 PDF 를 통째로 붙였습니다/);
   assert.equal(head(material({ name: '계획서.hwpx', kind: 'office', total: 40, picked: null, text: '가'.repeat(1234), chars: 1234, file: null, attach: 'none' })),
-    '원본 문서: 계획서.hwpx — 글자만 실었습니다(1,234자 · 구역 40개에서 고름 — 건너뛴 곳은 "(… 생략 …)").');
+    '원본 문서: 계획서.hwpx — 글자만 실었습니다(1,234자 · 구역 40개 전부 — 빠짐없이).');
   assert.deepEqual([pageRanges([3, 1, 2, 2, 9, 10, 7]), pageRanges([]), pageRanges([5])], ['1-3, 7, 9-10', '', '5']);
+});
+t('부분(source.js 가 크기 제한 없이 나눈 것 — 2026-10-23): 몇째 부분인지와 쪽·구역 범위를 적고, 둘째 부분부터는 [앞 부분까지 뽑은 YAML] 을 스킬 문서 뒤·재료 앞에 싣는다', () => {
+  const part = (no, over = {}) => material({ no, count: 3, pages: [71, 106], picked: range(71, 106), total: 312, ...over });
+  const first = lines(extractInput(part(1), { today: TODAY, docs: DOCS }));
+  assert.equal(first[2], '원본 문서: 사업계획서.pdf — 3부분으로 나뉘어 차례로 옵니다. 이번은 1/3부분: 312쪽 가운데 71-106쪽의 글자를 모두 실었고, 같은 쪽(71-106쪽)을 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 1쪽이 원본 71쪽입니다).');
+  assert.ok(!first.some((l) => l.startsWith('이어 뽑기') || l.startsWith('[앞 부분까지 뽑은 YAML')), '첫 부분에는 앞 YAML 이 없다');
+  const ls = lines(extractInput(part(2), { today: TODAY, docs: DOCS, prior: 'meta:\n  과제명: 시험용\n>>>' }));
+  assert.equal(ls[3], '이어 뽑기: 앞 1부분까지 뽑은 YAML 이 아래 [앞 부분까지 뽑은 YAML] 에 있습니다 — 이번 부분의 글자로 더하고 고쳐 스냅샷 전문을 다시 냅니다(이번 부분에 없는 값은 그대로 둡니다).');
+  const at = ls.indexOf('[앞 부분까지 뽑은 YAML — 3부분 가운데 1부분까지]');
+  assert.ok(at > ls.indexOf('[스킬 규칙 2 — rnd-kr-extract/references/structured_output.md — 값의 모양]') && at < ls.indexOf('[문서 글자]'), '스킬 문서 뒤, 재료 앞');
+  assert.deepEqual(ls.slice(at + 1, at + 6), ['<<<', 'meta:', '  과제명: 시험용', '> > >', '>>>'], '앞 YAML 도 울타리 안, >>> 는 > > >');
+  const some = lines(extractInput(part(3, { picked: [71, 72, 100] }), { today: TODAY, docs: DOCS })).find((l) => l.startsWith('원본 문서'));
+  assert.match(some, /이번은 3\/3부분: 312쪽 가운데 71-106쪽 — 글자가 든 3쪽\(71-72, 100\)의 글자를 실었고, 같은 쪽\(71-106쪽\)을/);
+  const none = lines(extractInput(part(2, { attach: 'none', file: null }), { today: TODAY, docs: DOCS })).find((l) => l.startsWith('원본 문서'));
+  assert.match(none, /글자를 모두 실었고, PDF 는 붙이지 않았습니다\(글자만\)\.$/);
+  const scan = lines(extractInput(part(2, { picked: [], text: '' }), { today: TODAY, docs: DOCS })).find((l) => l.startsWith('원본 문서'));
+  assert.match(scan, /312쪽 가운데 71-106쪽 — 글자 층이 없어 실은 글자가 없고, 같은 쪽\(71-106쪽\)을 차례대로 담은 작은 PDF/);
+  const office = lines(extractInput(material({ name: '계획서.hwpx', kind: 'office', total: 40, no: 2, count: 4, chunks: [13, 24], picked: null, file: null, attach: 'none', text: '가'.repeat(100), chars: 100 }), { today: TODAY, docs: DOCS }))
+    .find((l) => l.startsWith('원본 문서'));
+  assert.equal(office, '원본 문서: 계획서.hwpx — 4부분으로 나뉘어 차례로 옵니다. 이번은 2/4부분: 글자만 실었습니다(100자 · 구역 13-24(전체 40개) — 빠짐없이).');
+  const whole = lines(extractInput(material({ pages: [1, 312], picked: range(1, 312) }), { today: TODAY, docs: DOCS })).find((l) => l.startsWith('원본 문서'));
+  assert.equal(whole, '원본 문서: 사업계획서.pdf — 312쪽의 글자를 모두 실었고, 같은 쪽(1-312쪽)을 차례대로 담은 작은 PDF 를 붙였습니다(PDF 의 1쪽이 원본 1쪽입니다).', '한 부분뿐이면 부분 말이 없다');
+});
+t('앞 부분까지의 YAML 은 자르지 않고 재료 예산을 그만큼 줄인다 — 전체는 다리의 입력 한도 안', () => {
+  const input = extractInput(material({ no: 2, count: 2, text: 'ㄴ'.repeat(120_000) }), { today: TODAY, docs: DOCS, prior: 'y: 1\n'.repeat(8_000) });
+  assert.ok(input.length <= INPUT_MAX, input.length);
+  assert.equal(input.split('y: 1').length - 1, 8_000, '앞 YAML 은 그대로');
+  assert.match(input, /…\([\d,]+자 더 있음 — 잘림\)\n>>>$/);
 });
 t('재료 글이 예산(100,000자)을 넘으면 뒤를 자르고 몇 자 더 있었는지 적는다 — 전체는 다리의 입력 한도(150,000자) 안', () => {
   const input = extractInput(material({ text: 'ㄱ'.repeat(INPUT_BUDGET.extractMaterial + 5) }), { today: TODAY, docs: DOCS });
@@ -158,6 +186,20 @@ t('기준 YAML 은 자르지 않는다 — 90,000자를 넘거나 비면 던진�
     materials: [{ name: '하나.pdf', text: 'ㄴ'.repeat(60_000) }, { name: '둘.pdf', text: 'ㄷ'.repeat(60_000) }],
   });
   assert.ok(full.length <= INPUT_MAX, full.length);
+});
+
+t('붙인 문서가 부분으로 나뉘어 차례로 오면(2026-10-23) 머리에 몇째 부분인지, 붙인 문서 머리에 그 부분의 쪽·구역 범위를 적는다 — 부분이 아니면 전과 같다', () => {
+  const ls = lines(reviseInput({
+    baseYaml: 'meta:\n  과제명: x', text: '변경', today: TODAY, project: PROJECT, n: 2, rev: 'r2', part: { no: 2, count: 3 },
+    materials: [{ name: '계획서.pdf', no: 2, count: 3, pages: [37, 72], text: '글' }],
+  }));
+  assert.equal(ls[2], '붙인 문서는 3부분으로 나뉘어 차례로 옵니다 — 이번은 2/3부분이고 [기준 YAML] 은 앞 부분까지 반영한 것입니다.');
+  assert.ok(ls.includes('[붙인 문서 글자 — 계획서.pdf (2/3부분 · 37-72쪽)]'), ls.join('\n'));
+  const office = lines(reviseInput({ baseYaml: 'a: 1', text: '', today: TODAY, n: 2, materials: [{ name: '메모.docx', no: 1, count: 2, chunks: [1, 9], text: '글' }] }));
+  assert.ok(office.includes('[붙인 문서 글자 — 메모.docx (1/2부분 · 구역 1-9)]'));
+  assert.ok(!office.some((l) => l.startsWith('붙인 문서는')), 'part 를 주지 않으면 머리에 부분 줄이 없다');
+  const one = lines(reviseInput({ baseYaml: 'a: 1', text: '', today: TODAY, n: 2, materials: [{ name: '메모.txt', text: '글' }] }));
+  assert.ok(one.includes('[붙인 문서 글자 — 메모.txt]'), '부분이 아니면 그대로');
 });
 
 console.log('묻기 — askRndTask(공용 consumer)·askExtract·askRevise');
