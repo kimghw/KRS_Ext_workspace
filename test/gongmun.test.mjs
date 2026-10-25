@@ -12,7 +12,7 @@ import { injected as page, STEPS } from '../src/gmwrite.js';
 import { readRecipe, checkRecipe, render as renderRecipe, build as buildRecipe } from '../tools/gen-gongmun.mjs';
 import {
   KINDS, KIND_ORDER, FORMS, DEFAULT_TEMPLATES, MAX_PROJECTS, PURCHASE_LIMIT, FIELDS, VARS, varsFor,
-  templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, namesOf, josa, hasBatchim, fillTemplate,
+  templateOf, templateEdited, templatesOf, normalizeTemplates, pickTemplate, addTemplate, editTemplate, removeTemplate, MAX_TEMPLATES, VAR_GROUPS, normalizePreset, normalizeProjects, namesOf, josa, hasBatchim, fillTemplate,
   totalOf, gistOf, fromRecord, blankDraft, overLimit, approvalLine, lineText, compose, needs, bodyHtml, draftUrl, attachName,
   moneyOf, won, dotDate, summaryOf, parseSetupLocal, mergeSetup, attachList, attachBlock, mergeDraft, applyReason, reasonInput, REASON_KEYS,
   eduModeOf, EDU_MODES, spreadParts, attachWithCut, rndContent, rndProjects, REASON_LABEL, missingDocs, moreLead,
@@ -86,15 +86,57 @@ t('구매만 100만원 한도가 있다', () => {
   assert.equal(KINDS.purchase.limit, PURCHASE_LIMIT);
   assert.equal(KINDS.edu.limit, null);
 });
-t('양식은 고친 것만 저장하고, 비운 칸은 기본으로 돌아간다', () => {
-  const patch = templatePatch('purchase', { form: DEFAULT_TEMPLATES.purchase.form, title: '[구매] {품목요지}', body: '' });
-  assert.deepEqual(patch, { title: '[구매] {품목요지}' });
-  const saved = { purchase: patch };
-  assert.equal(templateOf('purchase', saved).title, '[구매] {품목요지}');
-  assert.equal(templateOf('purchase', saved).body, DEFAULT_TEMPLATES.purchase.body);
+t('옛 꼴(고친 칸만)의 양식은 내 양식 1 로 옮겨 그것을 쓰고, 비운 칸은 기본으로 돌아간다', () => {
+  const saved = { purchase: { title: '[구매] {품목요지}' }, edu: { title: DEFAULT_TEMPLATES.edu.title } };
+  assert.deepEqual(Object.keys(normalizeTemplates(saved)), ['purchase'], '기본과 같은 옛 꼴은 옮기지 않는다');
+  const now = templateOf('purchase', saved);
+  assert.deepEqual([now.id, now.name, now.title], ['t1', '내 양식 1', '[구매] {품목요지}']);
+  assert.equal(now.body, DEFAULT_TEMPLATES.purchase.body);
   assert.ok(templateEdited('purchase', saved));
   assert.ok(!templateEdited('edu', saved));
-  assert.equal(templateOf('edu', saved).form, 'KR_EA_Research_Task');
+  assert.deepEqual([templateOf('edu', saved).id, templateOf('edu', saved).name, templateOf('edu', saved).form], ['', '기본', 'KR_EA_Research_Task']);
+});
+t('내 양식 — 갈래마다 여러 개 등록·고르기·고치기·지우기, [기본] 은 레시피 그대로', () => {
+  let saved = {};
+  const one = addTemplate(saved, 'trip', { ...DEFAULT_TEMPLATES.trip, title: '{출장지} 출장 품의' });
+  saved = one.templates;
+  const two = addTemplate(saved, 'trip', { title: '{과제별명} 출장', body: '' });
+  saved = two.templates;
+  assert.deepEqual([one.id, two.id], ['t1', 't2']);
+  assert.deepEqual(templatesOf('trip', saved).map((t) => t.name), ['내 양식 1', '내 양식 2']);
+  assert.equal(templateOf('trip', saved).title, '{과제별명} 출장', '새로 등록한 것을 쓴다');
+  assert.equal(templateOf('trip', saved).body, DEFAULT_TEMPLATES.trip.body, '비운 본문은 기본');
+  saved = editTemplate(saved, 'trip', 't2', { name: '  짧은   출장 ', body: '{출장지}' });
+  assert.deepEqual([templateOf('trip', saved).name, templateOf('trip', saved).body], ['짧은 출장', '{출장지}']);
+  saved = pickTemplate(saved, 'trip', 't1');
+  assert.equal(templateOf('trip', saved).title, '{출장지} 출장 품의');
+  saved = pickTemplate(saved, 'trip', '');
+  assert.deepEqual([templateOf('trip', saved).id, templateOf('trip', saved).title], ['', DEFAULT_TEMPLATES.trip.title], '[기본]');
+  assert.equal(templatesOf('trip', saved).length, 2, '기본을 골라도 내 양식은 남는다');
+  assert.equal(templateOf('edu', saved).title, DEFAULT_TEMPLATES.edu.title, '다른 갈래는 그대로');
+  saved = pickTemplate(saved, 'trip', 't1');
+  saved = removeTemplate(saved, 'trip', 't1');
+  assert.deepEqual([templateOf('trip', saved).id, templatesOf('trip', saved).map((t) => t.id)], ['', ['t2']], '쓰던 것을 지우면 기본');
+  const three = addTemplate(saved, 'trip', {});
+  assert.deepEqual([three.id, templatesOf('trip', three.templates).at(-1).name], ['t3', '내 양식 1'], '지운 id 는 다시 쓰지 않고, 이름은 빈 번호부터');
+  saved = removeTemplate(three.templates, 'trip', 't2');
+  saved = removeTemplate(saved, 'trip', 't3');
+  assert.deepEqual(saved, {}, '다 지우면 갈래째 빠진다');
+  let full = {};
+  for (let i = 0; i < MAX_TEMPLATES; i++) full = addTemplate(full, 'order', {}).templates;
+  assert.equal(addTemplate(full, 'order', {}), null, `갈래마다 ${MAX_TEMPLATES}개까지`);
+  assert.deepEqual(normalizeTemplates({ outside: { pick: 'x', list: [{ id: 'a', title: '신고' }, { id: 'a' }, { name: '이름만' }] } }),
+    { outside: { pick: '', list: [{ id: 'a', name: '내 양식 1', form: '', title: '신고', body: '' }] } }, '같은 id·id 없는 것은 버리고, 없는 것을 골랐으면 기본');
+});
+t('틀에 쓰는 이름 — 공통·갈래·목록 안·꾸밈 무리, 누르면 넣을 글', () => {
+  const g = VAR_GROUPS.purchase;
+  assert.deepEqual(g.map((x) => x.label), ['공통', '구매', '품목마다', '꾸밈']);
+  assert.ok(g[0].vars.some(([tok, , ins]) => tok === '{과제별명}' && ins === '{과제별명}'));
+  assert.ok(g[1].vars.some(([tok]) => tok === '{품목요지}'));
+  assert.deepEqual(g[2].vars.slice(0, 3).map(([tok, , ins]) => [tok, ins]), [['{{#품목}} … {{/품목}}', '{{#품목}}\n{{/품목}}'], ['{번호}', '{번호}'], ['{품목명}', '{품목명}']]);
+  assert.deepEqual(g[3].vars.map(([tok, , ins]) => ins), ['', '', '{차례}', '{세부차례}'], '꼴({이름:은}·{이름?})은 넣지 않는다');
+  assert.deepEqual(VAR_GROUPS.edu.map((x) => x.label), ['공통', '교육', '꾸밈']);
+  assert.deepEqual(Object.keys(VAR_GROUPS), KIND_ORDER, '공문의 모든 갈래');
 });
 t('eclass 양식은 본문을 붙여 넣는 것과 칸 지도를 둔 구매요청서(구매의뢰만)·외부강의등 신고서(외부활동만) — manifest 의 order 차례', () => {
   assert.deepEqual(FORMS.map((f) => f.id), ['KR_EA_Research_Task', 'KR_Purchase_Order', 'KR_Outside_Lecture_Report', 'KR_EA_Form2']);

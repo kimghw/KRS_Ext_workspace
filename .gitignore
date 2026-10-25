@@ -8,6 +8,8 @@ native/com.krs.meetingroom.json
 
 # 다리 호출 기록 — 입력한 문장·회의 주제·이름이 들어 있다. 공개 저장소에 올리지 않는다.
 native/logs/
+# Help Chat 작업 기록(native/helpchat.mjs) — 요청 글·Claude 의 로그·이어 갈 대화 id.
+native/help/
 
 # 증빙 OCR(native/doctext.mjs)이 npm 꾸러미에서 풀어 두는 Tesseract 학습 데이터 — 없으면 다시 푼다.
 native/tessdata/

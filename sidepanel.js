@@ -8,7 +8,7 @@ import { DEFAULT_MODEL } from './src/ai.js';
 import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js';
 // 설정 › 연결 갈래의 "OneNote MCP" 연결 확인에만 쓰는 주소(KR_MS365_mcp onenote 서버). R&D 탭의 공유는 2026-10-18 부터 원노트·MCP 를 쓰지 않는다(src/rndnote.js 는 없어짐 — 공유 (SharePoint), rndpanel.js).
 const ONENOTE_MCP_URL = 'http://localhost:5005/mcp';
-import { bridgeGuide, bridgeRoot } from './src/bridgeguide.js';
+import { bridgeGuide, bridgeRoot, findPeer } from './src/bridgeguide.js';
 import { bridgeUses } from './src/bridgeuse.js';
 import { specGroups, yamlLines } from './src/specview.js';
 import { ACTIONS } from './actions/spec.js';
@@ -1799,8 +1799,12 @@ function paintAskReady() {
   // 확인이 끝나기 전에는 내지 않는다 — 패널을 열 때마다 잠깐 떴다 사라진다.
   const helpless = state.cliChecked && !ready;
   for (const p of document.querySelectorAll('.cli-help')) p.hidden = !helpless;
-  // 머리(새로고침·설정 왼쪽)의 연결 지침 복사 단추도 같은 조건 — 닿을 길이 하나도 없을 때만, 어느 탭에서든 (2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 … 복사하기 버튼을 넣어줘").
-  if (el.cliGuideHead) el.cliGuideHead.hidden = !helpless;
+  // 머리(새로고침·설정 왼쪽)의 B(연결 지침 복사)는 rerp 의 B 와 같게 다리가 없으면 늘 — API 키로 말 찾기가 되는 중이어도 Help Chat·git 은 다리가 있어야 한다.
+  // 그때는 옅게(.alt). 확인이 끝나기 전에는 숨긴다 (2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 … 복사하기 버튼을 넣어줘" · 10-24 "rerp의 B와 동일하게").
+  if (el.cliGuideHead) {
+    el.cliGuideHead.hidden = !state.cliChecked || state.cli;
+    el.cliGuideHead.classList.toggle('alt', ready);
+  }
   // 근태의 말로 채우기 칸은 규칙으로도 읽히니 잠그지 않되, 연결된 것으로 오인하지 않게 회색으로 내린다.
   attend.paintReady(!helpless);
   // 공문의 문서 넣는 곳도 같다 — 읽는 일은 Claude 만 하니, 닿지 않으면 회색으로 내리고 문서 없이 쓰기만 남긴다.
@@ -1836,6 +1840,7 @@ function paintBridgeUses() {
 /**
  * 연결 지침을 클립보드에 담는다. 확장은 다리를 스스로 놓지 못하므로, 이 PC 에서 명령을 돌릴 수 있는
  * 코딩 에이전트(Claude Code·Codex …)에 붙여 넣을 글을 만든다 — 확장 폴더·확장 ID·증상이 같이 들어간다.
+ * 같은 브라우저에 rERP 확장이 있으면 그것도 이어서 연결하라고 적는다(findPeer — 2026-10-24 사용자 지정: "하나만 해도 둘다 할 수 있다").
  */
 async function copyCliGuide(btn) {
   btn.disabled = true;
@@ -1843,10 +1848,12 @@ async function copyCliGuide(btn) {
     const id = chrome.runtime.id || '';
     const text = bridgeGuide({
       id, ...(await bridgeRoot(id)), error: state.cliError,
-      version: chrome.runtime.getManifest?.()?.version, userAgent: navigator.userAgent,
+      version: chrome.runtime.getManifest?.()?.version, userAgent: navigator.userAgent, peer: await findPeer(),
     });
     const ok = await copyText(text);
-    flash(btn.querySelector('.cli-guide-head-text') || btn, ok ? '복사됨 ✓' : '복사 실패', ok ? 1800 : 4000);   // 머리의 단추는 그림(svg)을 두고 글자 칸만 바꾼다
+    // 머리의 B 는 한 글자 칸이라 ✓ / ✗ 만 — 글자 칸만 바꾼다
+    const head = btn.querySelector('.cli-guide-head-text');
+    flash(head || btn, head ? (ok ? '✓' : '✗') : (ok ? '복사됨 ✓' : '복사 실패'), ok ? 1800 : 4000);
     logEvent('cli-guide', ok, ok ? '연결 지침 복사' : '연결 지침 복사 실패');
   } finally {
     btn.disabled = false;

@@ -362,6 +362,8 @@ async function scanMine(dates, { scanRooms, scanCars, onDay, onProgress, signal 
 
 /* ------------------------------------------------------------ 그리기 */
 
+// 목록의 칸은 한 줄에 몇 개가 서든 모두 같은 폭이다(2026-10-25 사용자 지정: "카드는 크기를 동일하게 해줘 2개든 3개든 한줄에 보일때").
+// 칸 하나의 가장 좁은 폭 390px 은 출장 줄의 날짜·시각(이틀에 걸친 것)과 아이콘 여섯이 한 줄에 드는 폭(실측 385px)이다.
 const STYLE = `${CARD_STYLE}
 .krs-mine:not(:has(.krs-mine-list:not([hidden]) .krs-mine-item, .krs-mine-warn:not(:empty), .krs-mine-bar:not([hidden]))) .krs-mine-body { display: none; }
 .krs-mine .krs-mine-head { cursor: pointer; user-select: none; }
@@ -370,10 +372,10 @@ const STYLE = `${CARD_STYLE}
 .krs-mine .krs-mine-bar { height: 3px; margin: 0 0 8px; border-radius: 2px; background: #e3eaf3; overflow: hidden; }
 .krs-mine .krs-mine-bar[hidden] { display: none; }
 .krs-mine .krs-mine-bar > i { display: block; width: 0; height: 100%; background: #1f4e9c; transition: width .3s; }
-.krs-mine .krs-mine-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.krs-mine .krs-mine-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 390px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
 .krs-mine .krs-mine-list[hidden] { display: none; }
 .krs-mine[aria-busy="true"] .krs-mine-list { opacity: .7; }
-.krs-mine .krs-mine-item { display: flex; align-items: flex-start; gap: 9px; flex: 1 1 280px; max-width: 460px; padding: 8px 12px; border: 1px solid #d5dbe3; border-radius: 8px; background: #fff; color: #222; font-size: 13px; line-height: 1.35; cursor: pointer; }
+.krs-mine .krs-mine-item { display: flex; align-items: flex-start; gap: 9px; padding: 8px 12px; border: 1px solid #d5dbe3; border-radius: 8px; background: #fff; color: #222; font-size: 13px; line-height: 1.35; cursor: pointer; }
 .krs-mine .krs-mine-item:hover { border-color: #1f4e9c; background: #f5f8fc; }
 .krs-mine .krs-mine-item.today { border-left: 3px solid #1f4e9c; }
 .krs-mine .krs-mine-kind { flex: none; margin-top: 1px; padding: 2px 8px; border-radius: 10px; background: #e3edfb; color: #1f4e9c; font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -397,10 +399,6 @@ const STYLE = `${CARD_STYLE}
 .krs-mine .krs-mine-item.over { border-style: dashed; border-color: #1f4e9c; background: #eef4fd; }
 .krs-mine .krs-mine-tag { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; }
 .krs-mine .krs-mine-state { color: #607089; font-size: 11px; line-height: 1.2; white-space: nowrap; }
-.krs-mine .krs-mine-item.is-trip { flex: 0 1 auto; max-width: 500px; }
-.krs-mine .krs-mine-item.is-trip .krs-mine-main { flex: 0 1 auto; }
-.krs-mine .krs-mine-item.is-trip .krs-mine-sub, .krs-mine .krs-mine-item.is-trip .krs-mine-drop,
-.krs-mine .krs-mine-item.is-trip .krs-mine-ask, .krs-mine .krs-mine-item.is-trip .krs-mine-todo { width: 0; min-width: 100%; }
 .krs-mine .krs-mine-marks { display: grid; grid-template-columns: repeat(3, 16px); gap: 5px 8px; flex: none; margin-top: 1px; }
 .krs-mine .krs-mine-mark { display: inline-flex; color: #aab4c3; line-height: 1; }
 .krs-mine .krs-mine-mark.on { color: #1f4e9c; }
@@ -565,7 +563,7 @@ function planHtml(it, i, today) {
     + `<span class="krs-mine-tag"><span class="krs-mine-kind ${it.group}">${escapeHtml(it.label)}</span>${state}</span>`
     + '<span class="krs-mine-main">'
     + `<span class="krs-mine-when">${escapeHtml(when)}</span>`
-    // 출장 줄의 내용은 날짜·시각이 끝나는 데까지만 적고 줄인다(같은 날 사용자 지정, CSS) — 전체는 풍선말에 있다.
+    // 출장 줄의 내용은 아이콘 앞까지 적고 줄인다(CSS — 칸은 모두 같은 폭, 2026-10-25 사용자 지정) — 전체는 풍선말에 있다.
     + (it.title ? `<span class="krs-mine-sub"><span class="krs-mine-what" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span></span>` : '')
     + drop + ask + up
     + '</span>' + marks + acts + '</li>';

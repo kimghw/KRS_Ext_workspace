@@ -28,12 +28,12 @@
           <span class="home-toggle-text">홈에 WORKSPACE</span>
           <input type="checkbox" id="homeCard" checked />
         </label>
-        <!-- 연결 지침 복사(2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 LLM 설정 프롬프트 복사하기 버튼을 넣어줘. workspace 도 동일하게"): Claude 에 닿을 길(로컬 CLI·API 키)이
-             하나도 없을 때만 머리에 보인다(sidepanel.js paintAskReady — 말 칸 아래 .cli-help 줄과 같은 조건, 확인이 끝나기 전에는 숨김). 누르면 말 칸·설정의 같은 단추와 같은 글(src/bridgeguide.js)을
-             클립보드에 담는다(.cli-guide-copy 배선 → copyCliGuide). 어느 탭에 있든 바로 복사할 수 있게 머리에 둔다. 그림(svg)은 두고 글자만 "복사됨 ✓" 로 잠깐 바뀐다. -->
-        <button id="cliGuideHead" class="icon cli-guide-copy cli-guide-head" type="button" hidden title="Claude 가 연결되지 않았습니다 — 이 PC 의 Claude Code·Codex 에 붙여 넣을 연결 지침(확장 폴더 · 확장 ID · 브라우저가 댄 까닭 · 조건 · 돌릴 명령)을 복사합니다. 붙여 넣으면 로컬 Claude CLI 다리를 연결해 줍니다" aria-label="연결 지침 복사">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          <span class="cli-guide-head-text">연결 지침 복사</span>
+        <!-- B(브릿지) — 연결 지침 복사(2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 LLM 설정 프롬프트 복사하기 버튼을 넣어줘. workspace 도 동일하게" ·
+             2026-10-24 "이거 설정하는 것은 rerp의 B와 동일하게 복사해서 할 수 있게 해줘 … 하나만 설치해도 확장자 2개다 사용할 수 있게끔"): kr_ext_rerp 의 B 처럼 다리(로컬 CLI)가 없으면 늘 머리에 보이고
+             (API 키로 말 찾기가 되는 중이면 옅게 — .alt; Help Chat·git 은 다리가 있어야 한다), 확인이 끝나기 전에는 숨긴다(sidepanel.js paintAskReady). 누르면 말 칸·설정·Help Chat 의 같은 단추와 같은 글
+             (src/bridgeguide.js — 같은 PC 의 rERP 확장도 이어서 연결)을 클립보드에 담는다(.cli-guide-copy 배선 → copyCliGuide). 글자 B 가 잠깐 ✓ 로 바뀐다. -->
+        <button id="cliGuideHead" class="icon cli-guide-copy cli-guide-head" type="button" hidden title="B(브릿지) — 로컬 Claude CLI 다리가 연결되지 않았습니다. 누르면 이 PC 의 Claude Code(VS Code)·다른 LLM 에 붙여 넣을 연결 지침(확장 폴더 · 확장 ID · 브라우저가 댄 까닭 · 돌릴 명령, 같은 PC 의 rERP 확장 연결까지)을 복사합니다" aria-label="연결 지침 복사 (B)">
+          <span class="cli-guide-head-text" aria-hidden="true">B</span>
         </button>
         <!-- GitHub 새 커밋 — 확장 폴더가 GitHub 보다 뒤졌으면 귀퉁이에 그 수를 띄우고, 누르면 받는다(git pull --ff-only — 다리가 돌린다, gitsync.js).
              다리가 없으면 숨는다. -->
@@ -324,10 +324,18 @@
           <ul id="gmHistList" class="gm-hist-list"></ul>
         </div>
       </details>
-      <!-- 양식 — 갈래마다 eclass 양식·제목 틀·본문 틀을 보고 고친다(2026-10-07 사용자 지정). 고친 것만 저장하고, 기본 양식으로 되돌릴 수 있다. -->
+      <!-- 양식 — 갈래마다 eclass 양식·제목 틀·본문 틀을 보고 고친다(2026-10-07 사용자 지정). 맨 위 메뉴에서 [기본](레시피의 틀)이나 갈래마다 등록한
+           내 양식을 골라 쓴다 — ＋ 는 지금 양식을 복사해 등록, 기본을 고치면 고친 글로 내 양식이 하나 생긴다(2026-10-25 사용자 지정: "사용자가 구매 별로
+           양식을 등록하고 사용할 수 있도록" · "1개 이상 등록할 수 있으면 좋지"). 틀에 쓰는 이름은 본문 틀 아래에 접지 않고(같은 날 "아래 필드명을 주면 될듯"). -->
       <details id="gmTplBox" class="gm-box card">
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span>양식</span><span id="gmTplState" class="summary-detail">기본 양식</span></summary>
         <div class="gm-box-body">
+          <div class="gm-tpl-pick">
+            <select id="gmTplPick" aria-label="쓸 양식"></select>
+            <button type="button" id="gmTplAdd" class="icon" title="지금 양식을 복사해 새 양식으로 등록" aria-label="새 양식 등록"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button type="button" id="gmTplDel" class="icon gm-tpl-del" title="이 양식 지우기" aria-label="이 양식 지우기" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+          </div>
+          <input type="text" id="gmTplName" placeholder="양식 이름" aria-label="양식 이름" autocomplete="off" spellcheck="false" hidden />
           <label for="gmTplForm" class="gm-label">eclass 양식</label>
           <select id="gmTplForm"></select>
           <input type="text" id="gmTplFormId" placeholder="양식 ID (예: KR_EA_Research_Task)" aria-label="양식 ID" autocomplete="off" spellcheck="false" hidden />
@@ -335,11 +343,8 @@
           <input type="text" id="gmTplTitle" autocomplete="off" spellcheck="false" />
           <label for="gmTplBody" class="gm-label">본문 틀</label>
           <textarea id="gmTplBody" rows="14" spellcheck="false"></textarea>
-          <details class="sub gm-vars-box">
-            <summary><strong>틀에 쓰는 이름</strong></summary>
-            <dl id="gmVars" class="gm-vars"></dl>
-          </details>
-          <div class="gm-actions"><button type="button" id="gmTplReset" class="ghost small">기본 양식으로</button></div>
+          <p class="gm-label">틀에 쓰는 이름</p>
+          <div id="gmVars" class="gm-vars"></div>
         </div>
       </details>
       <!-- 공문 설정 — 부서(본문 첫 줄)와 문서번호 코드(문서설정 Doc No.), 결재선에 설 사람(부서장·소장·본부장)·참조자, 과제 다섯 개(과제책임자가 합의자).
@@ -930,6 +935,17 @@
             </div>
           </details>
         </div>
+        <!-- Help Chat 줄 보이기(2026-10-24 사용자 지정: "LLM 설정 탭에서 안보이게 할 수 있도록") — 저장은 helpChatShow(기본 켬). 배선은 그 줄과 같이 helpchat.js 가 한다(sidepanel.js 가 깨져도 돈다).
+             숨겨도 도는 작업은 그대로 계속된다. -->
+        <div class="set-block">
+          <div class="set-block-head"><strong>Help Chat</strong><span class="summary-detail">다리로 — 디버깅·고치기·커밋·푸시·포크</span></div>
+          <div class="set-options">
+            <label class="check-row" title="패널 맨 아래에 Help Chat 줄을 둡니다. 안 되는 점·고칠 점을 한 줄로 보내면 이 PC 의 Claude Code 가 이 확장 폴더에서 디버깅하고 직접 고치며, 요청하면 git 커밋·푸시·포크까지 합니다. 로컬 Claude CLI 다리가 연결돼 있어야 합니다. 끄면 줄만 숨고 도는 작업은 계속됩니다.">
+              <span>패널 아래에 <strong>Help Chat</strong> 줄</span>
+              <input type="checkbox" id="helpChatShow" role="switch" checked />
+            </label>
+          </div>
+        </div>
         <div class="set-block set-has-help">
           <div class="set-block-head"><strong>Anthropic API 키</strong><span id="apiKeyState" class="summary-detail">CLI 가 없을 때만</span></div>
           <input type="password" id="apiKey" aria-label="Anthropic API 키" placeholder="sk-ant-... (선택)" autocomplete="off" spellcheck="false" />
@@ -966,6 +982,26 @@
     </section>
     <p class="footer-note">좋은 회의의 시작, 여유 있는 공간.</p>
   </main>
+  <!-- Help Chat 줄(helpchat.js — 2026-10-24 사용자 지정: "rerp의 help chat 위치를 똑같이 넣어주고" · "help chat을 두고.. 잘 안되는 부분을 디버깅 하거나 개선해야할 점을 직접 수정할 수 있다. 깃 커밋/푸쉬/포크등을 할 수 있다"):
+       2026-10-24 "이거 확장패널 맨 아래 쪽에 rerp 랑 같은 디자인으로": main 밖에서 창 맨 아래에 붙는 띠(kr_ext_rerp popup.html 의 .helpbar 와 같은 색·크기 — 폭 끝까지, 위 테두리 한 줄),
+       본문은 그 높이만큼 아래를 비운다(helpchat.js 가 --helpbar-h). 한 줄 입력 + 한 줄 상태(누르면 로그 펼침). 다리(native/helpchat.mjs)가 Claude Code 를 이 확장 폴더에서
+       떼어 띄워 고친다 — 패널을 닫아도 계속. 설정 → LLM 의 스위치(#helpChatShow)로 숨긴다. 비교작성 탭(body.compare-tab)에서는 숨김. -->
+  <div class="helpbar" id="helpbar" title="Help Chat: 확장이 기대와 다르게 돌거나 고치고 싶은 점을 한 줄로 보내면, 이 PC 의 Claude Code 가 이 확장 폴더에서 디버깅하고 직접 고칩니다. 요청하면 git 커밋·푸시·포크까지 합니다. 패널을 닫아도 계속되고, 끝나면 '적용'으로 확장을 다시 불러옵니다">
+    <form id="helpForm">
+      <input type="text" id="helpText" maxlength="2000" autocomplete="off" spellcheck="false" aria-label="Help Chat 요청" placeholder="Help Chat — 안 되는 점·고칠 점을 한 줄로 적고 Enter">
+      <button type="submit" id="helpSend" title="보내기 (Enter)">보내기</button>
+    </form>
+    <div class="help-row" id="helpRow" hidden>
+      <span id="helpStatus" class="help-status" role="status"></span>
+      <button type="button" id="helpApply" hidden title="확장을 다시 불러와 바뀐 코드를 적용합니다 (패널이 닫힙니다 — 다시 열면 됩니다)">적용</button>
+      <button type="button" id="helpStop" hidden>중지</button>
+      <button type="button" id="helpNew" hidden title="이 결과를 지우고, 다음 요청을 이전 대화와 잇지 않습니다">새 대화</button>
+      <button type="button" id="helpSetup" hidden title="다리를 아직 못 붙인 PC 용: 머리의 B 와 같은 연결 지침을 복사합니다 — 이 PC 의 Claude Code(VS Code)·다른 LLM 에 붙여 넣으면 다리를 연결하고, 같은 PC 의 rERP 확장도 이어서 연결합니다">설정 프롬프트 복사</button>
+    </div>
+    <div class="help-lines" id="helpLines" hidden></div>
+  </div>
+  <!-- Help Chat 줄 — 일부러 모듈이 아닌 독립 스크립트(sidepanel.js 가 깨져도 이 줄로 고쳐 달라고 할 수 있게). -->
+  <script src="helpchat.js"></script>
   <script type="module" src="sidepanel.js"></script>
 </body>
 </html>

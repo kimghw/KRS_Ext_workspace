@@ -91,7 +91,7 @@ export const hasRows = (formId) => Object.keys(RECIPE.forms[formId]?.rows || {})
 // 교육·출장의 제목은 "[과제 별명] 수행을 위한 [교육|온라인교육|출장] 품의" 다(2026-10-07 사용자 지정). 본문은 원본 연구공문처럼
 // '가. 과제 개요'(과제명·번호·연구기간·책임자 — 공문 설정의 과제 기본 내용)를 앞에 두고 '나.' 에 품의할 내용을 적는다.
 // 구매도 '가. 과제 개요' 를 앞에 둔다(2026-10-16 사용자 지정 "구매양식에 과제 개요가 들어가 있질 않음" — 원본은 과제 개요를 빼는 lean 목적이었다). 제목은 "{품목요지} 구매 품의" 그대로.
-// 틀의 원본은 레시피의 purposes/<목적>/body_spec.yaml 이다 — 패널의 '양식' 칸에서 고친 것은 브라우저에 따로 남는다(templatePatch).
+// 틀의 원본은 레시피의 purposes/<목적>/body_spec.yaml 이다 — 이것이 양식 칸 메뉴의 [기본]이고, 갈래마다 등록한 내 양식은 브라우저에 따로 남는다(normalizeTemplates).
 export const DEFAULT_TEMPLATES = Object.fromEntries(KIND_ORDER.map((k) => {
   const p = RECIPE.purposes[k];
   return [k, { form: p.form, title: p.template.title, body: p.template.body }];
@@ -115,6 +115,24 @@ export const VAR_MARKS = [
 ];
 
 /**
+ * 본문 틀 아래에 접지 않고 보이는 이름(필드명) — 무리마다 [적는 꼴, 뜻, 누르면 넣을 글](2026-10-25 사용자 지정: "어떤게 플레이스홀더로 있는지만
+ * 아래 필드명을 주면 될듯"). 공통 → 갈래 → 목록마다(그 안에서 쓰는 이름) → 꾸밈. 꾸밈의 {이름:은}·{이름?} 은 꼴이라 넣을 글이 없다.
+ */
+export const VAR_GROUPS = Object.fromEntries(KIND_ORDER.map((k) => {
+  const p = RECIPE.purposes[k];
+  const one = (name, desc) => [`{${name}}`, desc || '', `{${name}}`];
+  return [k, [
+    { label: '공통', vars: Object.entries(RECIPE.vars).map(([name, desc]) => one(name, desc)) },
+    { label: p.label, vars: Object.entries(p.vars).map(([name, v]) => one(name, v.desc)) },
+    ...Object.entries(p.lists).map(([name, l]) => ({
+      label: `${name}마다`,
+      vars: [[`{{#${name}}} … {{/${name}}}`, l.desc, `{{#${name}}}\n{{/${name}}}`], ...['번호', ...Object.keys(l.vars)].map((n) => one(n, `${name} 안에서`))],
+    })),
+    { label: '꾸밈', vars: VAR_MARKS.map(([tok, desc]) => [tok, desc, tok.includes('이름') ? '' : tok]) },
+  ]];
+}));
+
+/**
  * 교육 구분 — 제목의 "… 수행을 위한 교육 품의 / 온라인교육 품의"(2026-10-07 사용자 지정). 레시피 edu/purpose.yaml 의 mode 칸 options(첫째가 대면,
  * 둘째가 온라인)이고, 온라인으로 보는 말은 그 칸의 online 이다(대소문자·띄어쓰기는 보지 않는다).
  */
@@ -133,30 +151,127 @@ export function eduModeOf(draft) {
 
 const text = (v, max = 4000) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').slice(0, max) : '');
 
-/** 저장해 둔 양식(고친 것만 있다)을 기본 양식 위에 얹는다. 비운 칸은 기본으로 돌아간다. */
-export function templateOf(kind, saved) {
-  const base = DEFAULT_TEMPLATES[kind] || DEFAULT_TEMPLATES.purchase;
-  const mine = saved && typeof saved === 'object' ? saved[kind] : null;
-  const pick = (key) => (text(mine?.[key]).trim() ? text(mine[key]) : base[key]);
-  return { form: pick('form').trim(), title: pick('title').trim(), body: pick('body') };
+/*
+ * 내 양식 — 갈래마다 여러 개를 등록해 두고 양식 칸 맨 위 메뉴에서 [기본](레시피의 틀) 또는 그 가운데 하나를 골라 쓴다(2026-10-25 사용자 지정:
+ * "사용자가 구매 별로 양식을 등록하고 사용할 수 있도록 … 공문에 있는거 전부" · "1개 이상 등록할 수 있으면 좋지"). 저장 꼴은 갈래마다
+ * { pick(쓰는 양식의 id — 기본이면 ''), list: [{ id, name, form, title, body }] } 이다. 그 전의 꼴(갈래마다 기본과 다른 칸만 — { title, … })은
+ * '내 양식 1' 하나로 옮기고 그것을 고른다(고쳐 둔 틀이 그대로 서게).
+ */
+export const MAX_TEMPLATES = 20;
+const TPL_KEYS = ['form', 'title', 'body'];
+const tplText = (key, v) => (key === 'body' ? text(v, 20000) : text(v, 400).trim());
+const MINE = '내 양식';
+
+/** 아직 쓰지 않은 '내 양식 N' 의 가장 작은 N. */
+function nextName(list) {
+  const used = new Set(list.map((t) => t.name));
+  let n = 1;
+  while (used.has(`${MINE} ${n}`)) n += 1;
+  return `${MINE} ${n}`;
 }
 
-/** 양식을 고쳤는가(기본 양식과 다른가). */
+/** 새 id — t1·t2… 가운데 가장 큰 것 다음(지운 id 를 다시 쓰지 않게). */
+function nextId(list) {
+  const top = list.reduce((m, t) => Math.max(m, Number(/^t(\d+)$/.exec(t.id)?.[1]) || 0), 0);
+  return `t${top + 1}`;
+}
+
+/** 갈래 하나의 저장된 양식을 고른 꼴로. 없으면 null. */
+function boxOf(kind, v) {
+  if (!v || typeof v !== 'object') return null;
+  if (!Array.isArray(v.list)) {
+    // 옛 꼴 — 기본과 다른 칸만 있다. 비운 칸은 기본으로.
+    const base = DEFAULT_TEMPLATES[kind];
+    if (!base || !TPL_KEYS.some((key) => tplText(key, v[key]).trim() && tplText(key, v[key]) !== base[key])) return null;
+    const one = { id: 't1', name: `${MINE} 1` };
+    for (const key of TPL_KEYS) one[key] = tplText(key, v[key]).trim() ? tplText(key, v[key]) : base[key];
+    return { pick: 't1', list: [one] };
+  }
+  const list = [];
+  for (const t of v.list) {
+    const id = typeof t?.id === 'string' ? t.id.trim().slice(0, 40) : '';
+    if (!id || list.some((x) => x.id === id)) continue;
+    const one = { id, name: text(t.name, 40).replace(/\s+/g, ' ').trim() || nextName(list) };
+    for (const key of TPL_KEYS) one[key] = tplText(key, t[key]);
+    list.push(one);
+    if (list.length >= MAX_TEMPLATES) break;
+  }
+  if (!list.length) return null;
+  return { pick: list.some((t) => t.id === v.pick) ? v.pick : '', list };
+}
+
+/** 저장해 둔 양식 전부를 고른 꼴로 — 등록한 것이 있는 갈래만 담는다. */
+export function normalizeTemplates(saved) {
+  const out = {};
+  if (!saved || typeof saved !== 'object') return out;
+  for (const kind of KIND_ORDER) {
+    const box = boxOf(kind, saved[kind]);
+    if (box) out[kind] = box;
+  }
+  return out;
+}
+
+/** 갈래에 등록한 내 양식 — 메뉴의 [기본] 뒤에 선다. */
+export const templatesOf = (kind, saved) => boxOf(kind, saved?.[kind])?.list || [];
+
+/**
+ * 쓰는 양식 — 고른 내 양식, 없으면 기본. 내 양식의 비운 칸은 기본으로 돌아간다. id·name 은 메뉴와 양식 칸의 머리에 쓴다(기본이면 id 가 '').
+ */
+export function templateOf(kind, saved) {
+  const base = DEFAULT_TEMPLATES[kind] || DEFAULT_TEMPLATES.purchase;
+  const box = boxOf(kind, saved?.[kind]);
+  const mine = box?.list.find((t) => t.id === box.pick) || null;
+  const pick = (key) => (mine?.[key]?.trim() ? mine[key] : base[key]);
+  return { id: mine?.id || '', name: mine?.name || '기본', form: pick('form').trim(), title: pick('title').trim(), body: pick('body') };
+}
+
+/** 쓰는 양식이 기본 양식과 다른가. */
 export function templateEdited(kind, saved) {
   const base = DEFAULT_TEMPLATES[kind];
   const now = templateOf(kind, saved);
   return !!base && (now.form !== base.form || now.title !== base.title || now.body !== base.body);
 }
 
-/** 고친 양식을 저장할 모양으로. 기본 양식과 같은 칸은 담지 않는다 — 나중에 기본 양식이 바뀌면 따라가게. */
-export function templatePatch(kind, edited) {
-  const base = DEFAULT_TEMPLATES[kind];
-  const out = {};
-  for (const key of ['form', 'title', 'body']) {
-    const v = key === 'body' ? text(edited?.[key]) : text(edited?.[key]).trim();
-    if (v.trim() && v !== base[key]) out[key] = v;
-  }
-  return out;
+const withBox = (saved, kind, box) => {
+  const { [kind]: _, ...rest } = normalizeTemplates(saved);
+  return box?.list.length ? { ...rest, [kind]: box } : rest;
+};
+
+/** 쓸 양식을 고른다 — id 가 '' 이거나 없는 것이면 기본. */
+export function pickTemplate(saved, kind, id) {
+  const box = boxOf(kind, saved?.[kind]);
+  if (!box) return normalizeTemplates(saved);
+  return withBox(saved, kind, { ...box, pick: box.list.some((t) => t.id === id) ? id : '' });
+}
+
+/** 새 양식을 등록하고 그것을 고른다 — from(지금 보이는 틀)을 담고 이름은 '내 양식 N'. 한도에 차면 null. */
+export function addTemplate(saved, kind, from = {}) {
+  const box = boxOf(kind, saved?.[kind]) || { pick: '', list: [] };
+  if (box.list.length >= MAX_TEMPLATES) return null;
+  const one = { id: nextId(box.list), name: text(from.name, 40).trim() || nextName(box.list) };
+  for (const key of TPL_KEYS) one[key] = tplText(key, from[key] ?? templateOf(kind, null)[key]);
+  return { templates: withBox(saved, kind, { pick: one.id, list: [...box.list, one] }), id: one.id };
+}
+
+/** 내 양식의 칸(name·form·title·body)을 고친다. */
+export function editTemplate(saved, kind, id, patch = {}) {
+  const box = boxOf(kind, saved?.[kind]);
+  if (!box?.list.some((t) => t.id === id)) return normalizeTemplates(saved);
+  const list = box.list.map((t) => {
+    if (t.id !== id) return t;
+    const next = { ...t };
+    if ('name' in patch) next.name = text(patch.name, 40).replace(/\s+/g, ' ').trim() || t.name;
+    for (const key of TPL_KEYS) if (key in patch) next[key] = tplText(key, patch[key]);
+    return next;
+  });
+  return withBox(saved, kind, { ...box, list });
+}
+
+/** 내 양식을 지운다 — 쓰던 것이면 기본으로. */
+export function removeTemplate(saved, kind, id) {
+  const box = boxOf(kind, saved?.[kind]);
+  if (!box) return normalizeTemplates(saved);
+  return withBox(saved, kind, { pick: box.pick === id ? '' : box.pick, list: box.list.filter((t) => t.id !== id) });
 }
 
 /* ------------------------------------------------------------ 공문 설정·과제 */

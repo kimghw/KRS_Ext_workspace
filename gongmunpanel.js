@@ -24,9 +24,9 @@
 // 갈래·틀·칸·위임전결·문서설정의 원본은 레시피(recipes/gongmun)다.
 
 import {
-  KINDS, KIND_ORDER, FORMS, MAX_PROJECTS, VARS, VAR_MARKS, FIELDS,
+  KINDS, KIND_ORDER, FORMS, MAX_PROJECTS, VAR_GROUPS, FIELDS,
   KIND_KEY, PRESET_KEY, PROJECTS_KEY, TEMPLATES_KEY, DRAFT_KEY, RND_EXTRA_KEY,
-  templateOf, templateEdited, templatePatch, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
+  templateOf, templatesOf, normalizeTemplates, pickTemplate, addTemplate, editTemplate, removeTemplate, MAX_TEMPLATES, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
   mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, projectRefs, moreLead,
   docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, hasRows, outsideAuto, orderAuto, orderFromPurchase,
@@ -123,7 +123,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     // 문서설정의 결재선 줄 — 과제 책임자(합의자)·참조자를 보이기만 한다(적는 곳은 R&D 탭 — 과제 정보의 책임자, 참여인력 — 2026-10-16).
     lineSet: $('gmLineSet'), lead: $('gmLineLead'), refs: $('gmLineRefs'), lineWhy: $('gmLineWhy'), lineGo: $('gmLineGo'),
     tplBox: $('gmTplBox'), tplState: $('gmTplState'), tplForm: $('gmTplForm'), tplFormId: $('gmTplFormId'),
-    tplTitle: $('gmTplTitle'), tplBody: $('gmTplBody'), tplReset: $('gmTplReset'), vars: $('gmVars'),
+    tplTitle: $('gmTplTitle'), tplBody: $('gmTplBody'), vars: $('gmVars'),
+    tplPick: $('gmTplPick'), tplAdd: $('gmTplAdd'), tplDel: $('gmTplDel'), tplName: $('gmTplName'),
     presetBox: $('gmPresetBox'), presetState: $('gmPresetState'), dept: $('gmDept'), head: $('gmHead'),
     director: $('gmDirector'), chief: $('gmChief'), docNo: $('gmDocNo'), docNoHint: $('gmDocNoHint'),
     projList: $('gmProjList'), projAdd: $('gmProjAdd'), projCount: $('gmProjCount'),
@@ -148,7 +149,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     book: null, rnd: [], extra: {},
     // R&D 설정(rndSettings 원본 — rERP 를 켰는지, 집행에 미청구·사용계획을 더하는지)과 예상 비용(plannedExpenses) — 예산 줄(src/gmbudget.js)이 R&D 탭과 같은 잔액을 내게. 장부와 함께 읽는다(loadBook).
     rndSet: null, plans: {},
-    // 갈래마다 고친 양식만 담는다(src/gongmun.js 의 templatePatch).
+    // 갈래마다 등록한 내 양식과 쓰는 것({ pick, list } — src/gongmun.js 의 normalizeTemplates). 등록한 것이 없는 갈래는 기본 양식이다.
     templates: {},
     // 갈래마다 쓰고 있는 것 — { draft, source, notes, project(과제명), title·body(직접 고쳤으면 그 글, 아니면 null), files(읽은 파일 — 저장하지 않는다),
     //   parts(읽기가 가린 파일마다의 종류), cut(구매·교육 — 가격과 그 둘레를 오린 견적서, src/quotecut.js — 저장하지 않는다) }
@@ -2027,7 +2028,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (!show) return;
     const tpl = tplOf();
     const c = compose(st.kind, w.draft, ctxOf(w), tpl);
-    el.formName.textContent = formLabel(tpl.form);
+    // 내 양식으로 만든 공문이면 그 이름도 — 어느 틀로 만들었는지(2026-10-25).
+    el.formName.textContent = tpl.id ? `${formLabel(tpl.form)} · ${tpl.name}` : formLabel(tpl.form);
     // 칸이 정해진 폼(외부강의등 신고서)은 본문이 없고 칸마다 넣는다 — 본문 칸은 넣을 칸의 미리보기라 고칠 수 없다(고치면 양식에 들어가지 않으니). 말은 폼의 이름으로(신고서만이 아니다).
     const preview = fieldForm(tpl.form);
     el.body.readOnly = preview;
@@ -2400,6 +2402,17 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   function paintTpl() {
     const tpl = tplOf();
+    // 쓸 양식 — [기본](레시피의 틀)과 갈래마다 등록한 내 양식(2026-10-25 사용자 지정: "메뉴로 [기본] 으로 하면 이거 사용할 수 있고, 사용자가
+    // 구매 별로 양식을 등록하고 사용할 수 있도록" · "1개 이상 등록할 수 있으면 좋지"). 기본을 고치면 고친 글로 내 양식이 하나 생긴다(onTplInput).
+    const mine = templatesOf(st.kind, st.templates);
+    el.tplPick.innerHTML = '<option value="">기본</option>' + mine.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
+    el.tplPick.value = tpl.id;
+    el.tplName.hidden = !tpl.id;
+    if (document.activeElement !== el.tplName) el.tplName.value = tpl.id ? tpl.name : '';
+    el.tplAdd.disabled = mine.length >= MAX_TEMPLATES;
+    el.tplAdd.title = el.tplAdd.disabled ? `내 양식은 갈래마다 ${MAX_TEMPLATES}개까지입니다` : '지금 양식을 복사해 새 양식으로 등록';
+    el.tplDel.hidden = !tpl.id;
+    disarmTplDel();
     // 고를 수 있는 양식 — 외부강의등 신고서는 외부활동에서만(칸이 외부활동 초안의 칸이다, formsFor).
     const forms = formsFor(st.kind);
     const known = forms.some((f) => f.id === tpl.form);
@@ -2409,32 +2422,111 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (document.activeElement !== el.tplFormId) el.tplFormId.value = known ? '' : tpl.form;
     if (document.activeElement !== el.tplTitle) el.tplTitle.value = tpl.title;
     if (document.activeElement !== el.tplBody) el.tplBody.value = tpl.body;
-    el.vars.innerHTML = [...VARS[st.kind], ...VAR_MARKS].map(([t, d]) => `<dt>${escapeHtml(t)}</dt><dd>${escapeHtml(d)}</dd>`).join('');
+    // 틀에 쓰는 이름 — 접지 않고 본문 틀 아래에, 이름만(2026-10-25 사용자 지정: "어떤게 플레이스홀더로 있는지만 아래 필드명을 주면 될듯"). 뜻은 툴팁이고,
+    // 누르면 틀에 넣는다. 꾸밈의 {이름:은}·{이름?} 은 꼴이라 누르지 않는다.
+    el.vars.innerHTML = VAR_GROUPS[st.kind].map((g) => `<div class="gm-var-group"><span class="gm-var-label">${escapeHtml(g.label)}</span>${g.vars.map(([tok, desc, ins]) => (ins
+      ? `<button type="button" class="gm-var" data-ins="${escapeHtml(ins)}" title="${escapeHtml(desc ? `${desc} — 누르면 틀에 넣습니다` : '누르면 틀에 넣습니다')}">${escapeHtml(tok)}</button>`
+      : `<code class="gm-var" title="${escapeHtml(desc)}">${escapeHtml(tok)}</code>`)).join('')}</div>`).join('');
     paintTplState();
   }
 
   function paintTplState() {
-    const edited = templateEdited(st.kind, st.templates);
-    el.tplState.textContent = `${KINDS[st.kind].label} · ${edited ? '고친 양식' : '기본 양식'}`;
-    el.tplReset.disabled = !edited;
+    const tpl = tplOf();
+    el.tplState.textContent = `${KINDS[st.kind].label} · ${tpl.id ? tpl.name : '기본 양식'}`;
   }
 
+  /** 틀을 고칠 때 — 내 양식이면 그것을 고치고, 기본이면 고친 글로 내 양식을 새로 등록해 그것을 쓴다(기본은 레시피 그대로 둔다). */
   function onTplInput() {
     el.tplFormId.hidden = !!el.tplForm.value;
     const form = el.tplForm.value || el.tplFormId.value.trim();
-    st.templates = { ...st.templates, [st.kind]: templatePatch(st.kind, { form, title: el.tplTitle.value, body: el.tplBody.value }) };
+    const now = { form, title: el.tplTitle.value, body: el.tplBody.value };
+    const id = tplOf().id;
+    if (id) st.templates = editTemplate(st.templates, st.kind, id, now);
+    else {
+      const made = addTemplate(st.templates, st.kind, now);
+      if (!made) {
+        paintTpl();
+        setStatus(`내 양식은 갈래마다 ${MAX_TEMPLATES}개까지입니다 — 하나를 지우거나 메뉴에서 내 양식을 골라 고쳐 주세요.`, 'error');
+        return;
+      }
+      st.templates = made.templates;
+      paintTpl();
+      setStatus(`${KINDS[st.kind].label} 기본 양식은 그대로 두고 고친 글을 '${tplOf().name}' 으로 등록했습니다.`);
+    }
     saveTemplates();
     paintTplState();
     if (cur()) paintLive();
   }
 
-  function resetTpl() {
-    const { [st.kind]: _, ...rest } = st.templates;
-    st.templates = rest;
+  /** 메뉴에서 쓸 양식을 고른다 — 기본 또는 내 양식. */
+  function onTplPick() {
+    st.templates = pickTemplate(st.templates, st.kind, el.tplPick.value);
     saveTemplates();
     paintTpl();
     if (cur()) paintLive();
-    logEvent('gongmun', true, `${KINDS[st.kind].title} 양식을 기본으로 되돌림`);
+  }
+
+  /** ＋ — 지금 보이는 양식을 복사해 새 내 양식으로 등록하고 그것을 쓴다. 이름 칸에 커서를 둔다. */
+  function addTpl() {
+    const tpl = tplOf();
+    const made = addTemplate(st.templates, st.kind, { form: tpl.form, title: tpl.title, body: tpl.body });
+    if (!made) return;
+    st.templates = made.templates;
+    saveTemplates();
+    paintTpl();
+    if (cur()) paintLive();
+    el.tplName.focus();
+    el.tplName.select();
+  }
+
+  function onTplName() {
+    const id = tplOf().id;
+    if (!id) return;
+    st.templates = editTemplate(st.templates, st.kind, id, { name: el.tplName.value });
+    saveTemplates();
+    const opt = [...el.tplPick.options].find((o) => o.value === id);
+    if (opt) opt.textContent = tplOf().name;
+    paintTplState();
+    if (cur()) paintLive();
+  }
+
+  let tplDelTimer = 0;
+  function disarmTplDel() {
+    clearTimeout(tplDelTimer);
+    tplDelTimer = 0;
+    el.tplDel.classList.remove('armed');
+    el.tplDel.title = '이 양식 지우기';
+  }
+
+  /** 지우기 — 처음 누르면 붉어지고(3초) 그 안에 다시 누르면 지운다. 쓰던 양식이 지워지면 기본으로. */
+  function dropTpl() {
+    const tpl = tplOf();
+    if (!tpl.id) return;
+    if (!tplDelTimer) {
+      el.tplDel.classList.add('armed');
+      el.tplDel.title = `한 번 더 누르면 '${tpl.name}' 을 지웁니다`;
+      tplDelTimer = setTimeout(disarmTplDel, 3000);
+      return;
+    }
+    disarmTplDel();
+    st.templates = removeTemplate(st.templates, st.kind, tpl.id);
+    saveTemplates();
+    paintTpl();
+    if (cur()) paintLive();
+    logEvent('gongmun', true, `${KINDS[st.kind].title} 양식 '${tpl.name}' 지움`);
+  }
+
+  // 틀에 쓰는 이름을 넣을 칸 — 마지막으로 커서를 둔 틀(제목·본문), 처음엔 본문.
+  let tplField = null;
+  /** 틀에 쓰는 이름을 누르면 그 틀의 커서 자리에 넣고 고친 것으로 친다(기본이면 내 양식이 생긴다). 제목 틀에는 한 줄로. */
+  function onVarClick(e) {
+    const btn = e.target instanceof Element ? e.target.closest('[data-ins]') : null;
+    if (!btn) return;
+    const node = tplField || el.tplBody;
+    const ins = node === el.tplTitle ? btn.dataset.ins.replace(/\n/g, ' ') : btn.dataset.ins;
+    node.focus();
+    node.setRangeText(ins, node.selectionStart ?? node.value.length, node.selectionEnd ?? node.value.length, 'end');
+    onTplInput();
   }
 
   /* ---------------------------------------------------------- 공문 설정 */
@@ -2697,7 +2789,13 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       node.addEventListener('input', onTplInput);
       node.addEventListener('change', onTplInput);
     }
-    el.tplReset.addEventListener('click', resetTpl);
+    el.tplPick.addEventListener('change', onTplPick);
+    el.tplAdd.addEventListener('click', addTpl);
+    el.tplDel.addEventListener('click', dropTpl);
+    el.tplName.addEventListener('input', onTplName);
+    // 틀에 쓰는 이름 — 누르면 마지막으로 고치던 틀(제목·본문, 처음엔 본문)의 커서 자리에 넣는다.
+    for (const node of [el.tplTitle, el.tplBody]) node.addEventListener('focus', () => { tplField = node; });
+    el.vars.addEventListener('click', onVarClick);
     for (const node of [el.dept, el.head, el.director, el.chief, el.docNo]) node.addEventListener('input', onPresetInput);
     el.docNoHint.addEventListener('change', onDocNoPick);
     el.projList.addEventListener('input', onRowInput);
@@ -2733,7 +2831,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       st.projects = normalizeProjects(saved?.[PROJECTS_KEY]);
       st.rows = st.projects.map((p) => ({ ...p }));
       st.extra = normalizeRndExtra(saved?.[RND_EXTRA_KEY]);
-      st.templates = saved?.[TEMPLATES_KEY] && typeof saved[TEMPLATES_KEY] === 'object' ? saved[TEMPLATES_KEY] : {};
+      st.templates = normalizeTemplates(saved?.[TEMPLATES_KEY]);
       const kept = saved?.[DRAFT_KEY] && typeof saved[DRAFT_KEY] === 'object' ? saved[DRAFT_KEY] : {};
       st.lastProject = typeof kept.lastProject === 'string' ? kept.lastProject : '';
       for (const k of KIND_ORDER) {

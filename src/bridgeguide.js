@@ -48,13 +48,50 @@ const CAUSES = [
   [/exited|communicating|failed to start/i, '호스트가 뜨다가 끝난 경우입니다 — node 가 PATH 에 없거나 native 폴더가 덜 복사됐을 때 흔합니다(조건 1·4).'],
 ];
 
+/** rERP 확장(kr_ext_rerp) manifest.json 의 name — 압축해제 확장은 ID 가 PC 마다 달라 이름으로 찾는다(rndpanel.js 의 공유 폴더 묻기와 같다). */
+export const RERP_NAME = 'KR eClass + R&D ERP 현황';
+
+/**
+ * 같은 브라우저에 rERP 확장이 있는가. 연결 지침이 "한 번에 둘 다" 연결하게 하려고 묻는다(2026-10-24 사용자 지정: "하나만 해도 둘다 할 수 있다. 하나만 설치했다면 뭐 하나만 하지만").
+ * 켜진 것을 먼저 고른다. chrome.management 를 못 쓰면(검사·권한 없음) undefined — 있는지 모른다는 뜻이고, 없으면 null.
+ * @returns {Promise<{id: string, version: string, enabled: boolean} | null | undefined>}
+ */
+export async function findPeer(management = globalThis.chrome?.management) {
+  try {
+    const all = await management.getAll();
+    const hit = all.filter((x) => x?.name === RERP_NAME).sort((a, b) => Number(!!b.enabled) - Number(!!a.enabled))[0];
+    return hit ? { id: String(hit.id || ''), version: String(hit.version || ''), enabled: !!hit.enabled } : null;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 같은 PC 의 rERP 확장을 이어서 연결하는 절. 그 확장은 다리 대신 Help 서버(kr_ext_rerp help-server/server.js)로 Claude 에 닿는다 —
+ * 연결 방법은 그 저장소의 CLAUDE.md 가 정본이라 여기서는 폴더를 찾는 법과 어디를 따르는지만 적는다. 있는지 모르면(undefined) 찾아보라고만 한다.
+ */
+function peerSection(peer, ops, browser) {
+  if (peer === null) return `## 같은 PC 의 rERP 확장
+이 브라우저에는 rERP 확장(${RERP_NAME})이 없습니다 — 이 확장만 연결하면 됩니다.`;
+  const known = !!peer;
+  return `## 같은 PC 의 rERP 확장도 이어서 — 한 번에 둘 다
+${known
+    ? `이 브라우저에 rERP 확장(${RERP_NAME}, ID ${peer.id}${peer.version ? ` · v${peer.version}` : ''}${peer.enabled ? '' : ' · 꺼져 있음'})도 있습니다.`
+    : `이 브라우저에 rERP 확장(${RERP_NAME})이 있는지 확장이 확인하지 못했습니다 — ${browser.page} 에서 보고, 없으면 이 절은 건너뜁니다.`}
+그 확장은 다리 대신 이 PC 의 Help 서버(node help-server/server.js, http://127.0.0.1:8106)로 Claude 에 닿습니다. 위 다리를 연결한 뒤 이어서:
+1. 그 확장 폴더를 찾습니다 — 흔히 이 확장 폴더 옆의 kr_ext_rerp 입니다. 맞는지는 \`${ops} id <그 폴더>\` 의 값이 ${known ? `${peer.id} 와` : '그 확장 카드의 ID 와'} 같은지로 봅니다(아니면 ${browser.page} 의 그 확장 카드 "로드 위치").
+2. 그 폴더의 CLAUDE.md "Help Chat (help-server) 을 쓸 때 필요한 것" 절을 따라 준비물을 확인하고 Help 서버를 띄웁니다(그 폴더의 help-server\\setup.cmd 가 CLI 최신화 · git pull · 서버 실행을 한 번에 — 그 창은 닫지 않게 안내).
+3. 확인 — curl http://127.0.0.1:8106/health 의 답에 "name":"krx-help" 가 있으면 됩니다. 그 확장 코드도 고치지 않습니다.${known && !peer.enabled ? `\n(그 확장이 꺼져 있으니 쓰려면 ${browser.page} 에서 켜 달라고 사용자에게 말합니다.)` : ''}`;
+}
+
 /**
  * 연결 지침. 읽는 쪽은 이 PC 에서 PowerShell 을 돌릴 수 있는 코딩 에이전트다.
+ * 이 글 하나로 같은 PC 에 있는 두 확장을 다 연결한다 — 이 확장의 다리(그러면 패널 아래 Help Chat 도 된다)와, 있으면 rERP 확장의 Help 서버(peer).
  *
- * @param {{id?: string, root?: string, hint?: string, error?: string, version?: string, userAgent?: string}} info
- *   root 는 확실한 확장 폴더, hint 는 확실하지 않은 후보(rootFromManifest 참고), error 는 브라우저가 댄 까닭.
+ * @param {{id?: string, root?: string, hint?: string, error?: string, version?: string, userAgent?: string, peer?: {id: string, version?: string, enabled?: boolean} | null}} info
+ *   root 는 확실한 확장 폴더, hint 는 확실하지 않은 후보(rootFromManifest 참고), error 는 브라우저가 댄 까닭, peer 는 findPeer 의 답(undefined = 모름).
  */
-export function bridgeGuide({ id = '', root = '', hint = '', error = '', version = '', userAgent = '' } = {}) {
+export function bridgeGuide({ id = '', root = '', hint = '', error = '', version = '', userAgent = '', peer } = {}) {
   const browser = browserOf(userAgent);
   const ops = `powershell -ExecutionPolicy Bypass -File "${root || '<확장 폴더>'}\\.claude\\skills\\bridge\\bridge_ops.ps1"`;
   const cause = CAUSES.find(([re]) => re.test(error))?.[1];
@@ -81,6 +118,8 @@ ${folder}
 
 ## 배경
 브라우저 확장은 claude 를 직접 실행할 수 없어서, 네이티브 메시징 호스트(native\\host.mjs, node 로 돕니다)를 거쳐 부릅니다.
+다리가 연결되면 패널 아래 Help Chat(안 되는 점 디버깅·확장 코드 고치기, 요청하면 git 커밋·푸시·포크)도 같은 다리로 돕니다 — 따로 띄울 서버는 없습니다.
+포크·PR 까지 쓰려면 GitHub CLI(gh)에 로그인돼 있으면 됩니다(gh auth status — 없어도 연결에는 상관없음).
 로그인이나 토큰 문제가 아니라 통로 문제이고, 아래 여섯 가지가 모두 맞아야 연결됩니다.
 1. node 가 PATH 에 있다
 2. claude 가 PATH 에 있다
@@ -100,6 +139,8 @@ ${folder}
    ${ops} restart ${browser.key}
 5. 확인 — 사용자가 확장 패널 머리의 톱니 "설정 → LLM → 로컬 Claude CLI"에서 "다시 확인"을 눌러 배지가 "연결됨"인지 봅니다.
    그래도 안 되면 다리 호출 기록을 봅니다: ${ops} log
+
+${peerSection(peer, ops, browser)}
 
 ## 주의
 - 확장 ID 는 확장 폴더의 절대경로에서 나옵니다. 폴더를 옮기면 ID 가 바뀌어 다시 등록해야 합니다.

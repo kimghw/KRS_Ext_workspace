@@ -7,7 +7,8 @@
 //  - on  다리가 맡는다.
 //  - alt 다리 없이 다른 길로 간다(API 키 · 확장 안의 브라우저 엔진). 되기는 되지만 다리와 같지는 않다.
 //  - off 그 일을 못 한다(또는 덜 한 채로 간다 — 첨부를 파일째 보내는 것처럼).
-// 네 줄의 차례는 고정이다 — 가장 자주 쓰는 Claude 호출이 맨 위, 다리만 하는 일(GitHub·다리 기록)이 아래.
+// 다섯 줄의 차례는 고정이다 — 가장 자주 쓰는 Claude 호출이 맨 위, 다리만 하는 일(GitHub·다리 기록·Help Chat)이 아래.
+// Help Chat 줄은 2026-10-24 에 더했다(패널 아래 Help Chat 줄 — 다리가 떼어 띄운 Claude Code 가 확장 코드를 고친다, native/helpchat.mjs).
 
 const row = (id, label, via, state) => ({ id, label, via, state });
 
@@ -29,6 +30,7 @@ export function bridgeUses({ cli = false, apiKey = '', docText = { ok: false, re
         : row('doctext', LABEL.doctext, `파일째 보냄 — ${doc.reason || '꾸러미 없음'}`, 'off'),
     cli ? row('git', LABEL.git, '다리', 'on') : row('git', LABEL.git, '없음 — 아이콘 숨김', 'off'),
     cli ? row('logs', LABEL.logs, '다리', 'on') : row('logs', LABEL.logs, '없음', 'off'),
+    cli ? row('help', LABEL.help, '다리(떼어 띄운 Claude Code)', 'on') : row('help', LABEL.help, '없음 — 머리의 B 로 연결', 'off'),
   ];
 }
 
@@ -38,4 +40,5 @@ const LABEL = {
   doctext: '첨부 글자 먼저 뽑기(PDF 글자 층·OCR)',
   git: 'GitHub 새 커밋 확인·받기(패널 머리 아이콘)',
   logs: '활동 로그에 다리 기록(native\\logs) 담기',
+  help: 'Help Chat(패널 아래 — 디버깅·확장 코드 고치기·커밋·푸시·포크)',
 };

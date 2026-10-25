@@ -910,6 +910,7 @@ console.log('Claude 가 안 붙어 있으면 말로 찾기 칸이 잠긴다');
     assert.ok(helps.every((p) => !p.hidden && p.querySelector('button.cli-guide-copy')));
     assert.equal(doc.getElementById('cliGuide').hidden, false);
     assert.equal(doc.getElementById('cliGuideHead').hidden, false, '머리의 연결 지침 복사 단추도 나온다 (2026-10-23)');
+    assert.ok(!doc.getElementById('cliGuideHead').classList.contains('alt'), '닿을 길이 하나도 없으니 옅지 않다');
   });
   t('근태의 말로 채우기 칸은 규칙으로 읽히니 열려 있되, 연결된 것으로 오인하지 않게 회색(off)이고 플레이스홀더에 까닭이 적힌다', () => {
     const input = doc.getElementById('atChatInput');
@@ -929,12 +930,14 @@ console.log('Claude 가 안 붙어 있으면 말로 찾기 칸이 잠긴다');
   });
   doc.getElementById('cliGuideHead').click();
   await new Promise((r) => setTimeout(r, 30));
-  t('머리의 연결 지침 복사도 같은 글을 담고, 그림(svg)은 두고 글자만 "복사됨" 으로 바뀐다 (2026-10-23)', () => {
+  t('머리의 B 도 같은 글을 담고, 글자 B 가 잠깐 ✓ 로 바뀐다 (2026-10-23 · 10-24 "rerp의 B와 동일하게")', () => {
     assert.match(calls.clipboard.at(-1) || '', /Claude Code CLI 를 연결해 주세요/);
     const head = doc.getElementById('cliGuideHead');
-    assert.ok(head.querySelector('svg'), '그림이 사라졌다');
-    assert.match(head.querySelector('.cli-guide-head-text').textContent, /복사됨/);
+    assert.equal(head.querySelector('.cli-guide-head-text').textContent, '✓');
+    assert.equal(head.querySelector('.cli-guide-head-text').dataset.label, 'B');
   });
+  t('연결 지침에 같은 PC 의 rERP 확장 절이 붙는다 — 이 harness 에는 chrome.management 가 없어 "있는지 모름" 으로 (2026-10-24 "하나만 해도 둘다")', () =>
+    assert.match(calls.clipboard.at(-1) || '', /rERP 확장\(KR eClass \+ R&D ERP 현황\)이 있는지 확장이 확인하지 못했습니다/));
 }
 
 console.log('API 키가 있으면 말로 찾기 칸이 열린다');
@@ -949,7 +952,9 @@ console.log('API 키가 있으면 말로 찾기 칸이 열린다');
   t('말 칸의 연결 지침 줄은 숨고, 설정의 버튼은 CLI 가 없으니 남는다', () => {
     assert.ok([...doc.querySelectorAll('.cli-help')].every((p) => p.hidden));
     assert.equal(doc.getElementById('cliGuide').hidden, false);
-    assert.equal(doc.getElementById('cliGuideHead').hidden, true, '머리의 단추는 API 키로 닿으니 숨는다');
+    // 2026-10-24 "rerp의 B와 동일하게": Help Chat·git 은 다리가 있어야 하니 머리의 B 는 남되, API 키로 말 찾기는 되니 옅게
+    assert.equal(doc.getElementById('cliGuideHead').hidden, false, '머리의 B 는 다리가 없으니 남는다');
+    assert.ok(doc.getElementById('cliGuideHead').classList.contains('alt'), 'API 키로 되는 중이라 옅다');
   });
   t('근태의 말로 채우기 칸도 제 낯으로 돌아온다 — 회색이 걷히고 예시 플레이스홀더', () => {
     assert.ok(!doc.querySelector('.at-chat').classList.contains('off'));
@@ -1407,7 +1412,7 @@ console.log('공문 탭');
     const want = [['gmKinds', 'click'], ['gmFile', 'change'], ['gmCapture', 'click'], ['gmManual', 'click'],
       ['gmReset', 'click'], ['gmCut', 'click'], ['gmAgentGo', 'click'], ['gmAgentInput', 'keydown'], ['gmMoreFields', 'input'], ['gmPick', 'click'], ['gmProjects', 'click'], ['gmFields', 'input'], ['gmTitle', 'input'], ['gmBody', 'input'], ['gmRegen', 'click'],
       ['gmWrite', 'click'], ['gmOrder', 'click'], ['gmRank', 'change'], ['gmRetention', 'change'], ['gmDocNoOne', 'input'], ['gmSetReset', 'click'], ['gmSavePdf', 'click'], ['gmTplForm', 'change'], ['gmTplTitle', 'input'],
-      ['gmTplBody', 'input'], ['gmTplReset', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
+      ['gmTplBody', 'input'], ['gmTplPick', 'change'], ['gmTplAdd', 'click'], ['gmTplDel', 'click'], ['gmTplName', 'input'], ['gmVars', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
       ['gmProjList', 'input'], ['gmEvidenceToggle', 'click'], ['gmWorkspaceToggle', 'click'], ['gmViewTabs', 'click'], ['gmViewTabs', 'keydown'], ['gmCompare', 'click'], ['gongmun', 'dragover'], ['gongmun', 'drop'],
       ['gmFeeSum', 'click'], ['gmHistBox', 'toggle'], ['gmHistSpan', 'click'], ['gmHistAll', 'click'], ['gmHistRefresh', 'click'], ['gmHistList', 'click'],
       ['gmSearchGo', 'click'], ['gmSearchText', 'keydown'], ['gmSearchDir', 'click'], ['gmSearchSpan', 'click'], ['gmSearchList', 'click']];
@@ -1861,10 +1866,66 @@ console.log('공문 탭');
   window.chrome.tabs.update = keep.update;
   window.chrome.scripting.executeScript = keep.exec;
 
+  t('양식 칸 맨 위 메뉴는 [기본] 하나로 시작하고, 이름 칸·지우기는 내 양식에서만', () => {
+    assert.deepEqual([...doc.querySelectorAll('#gmTplPick option')].map((o) => [o.value, o.textContent]), [['', '기본']]);
+    assert.ok(doc.getElementById('gmTplName').hidden && doc.getElementById('gmTplDel').hidden);
+    assert.equal(doc.getElementById('gmTplState').textContent, '구매 · 기본 양식');
+  });
   type(doc.getElementById('gmTplTitle'), '[부서구매] {품목요지} 구매 품의');
-  t('양식(제목 틀)을 고치면 공문이 곧바로 따라 바뀌고, 고친 양식이라고 적힌다', () => {
+  t('기본의 제목 틀을 고치면 기본은 그대로 두고 고친 글을 내 양식 1 로 등록해 쓰며, 공문이 곧바로 따라 바뀐다(2026-10-25)', () => {
     assert.equal(doc.getElementById('gmTitle').value, '[부서구매] 34인치 모니터 구매 품의');
-    assert.match(doc.getElementById('gmTplState').textContent, /고친 양식/);
+    assert.deepEqual([...doc.querySelectorAll('#gmTplPick option')].map((o) => o.textContent), ['기본', '내 양식 1']);
+    assert.equal(doc.getElementById('gmTplPick').value, 't1');
+    assert.equal(doc.getElementById('gmTplState').textContent, '구매 · 내 양식 1');
+    assert.ok(!doc.getElementById('gmTplName').hidden && !doc.getElementById('gmTplDel').hidden);
+    assert.equal(doc.getElementById('gmTplName').value, '내 양식 1');
+    assert.match(doc.getElementById('gmFormName').textContent, /연구업무추진품의 · 내 양식 1/);
+  });
+  t('틀에 쓰는 이름은 접지 않고 본문 틀 아래에 무리마다 — 누르면 본문 틀의 커서 자리에 들어간다', () => {
+    assert.equal(doc.getElementById('gmVars').closest('details'), doc.getElementById('gmTplBox'), '양식 칸 말고 다른 접힘 안에 있지 않다');
+    assert.deepEqual([...doc.querySelectorAll('#gmVars .gm-var-label')].map((n) => n.textContent), ['공통', '구매', '품목마다', '꾸밈']);
+    assert.ok(doc.querySelector('#gmVars button[data-ins="{품목요지}"]')?.title.length > 0, '뜻은 툴팁');
+    assert.equal(doc.querySelectorAll('#gmVars code.gm-var').length, 2, '{이름:은}·{이름?} 은 꼴이라 누르지 않는다');
+    const body = doc.getElementById('gmTplBody');
+    const was = body.value;
+    body.focus();
+    body.setSelectionRange(0, 0);
+    doc.querySelector('#gmVars [data-ins="{업체}"]').click();
+    assert.equal(body.value, `{업체}${was}`);
+    assert.equal(doc.getElementById('gmTplPick').value, 't1', '내 양식을 고친다');
+    type(body, was);
+  });
+  doc.getElementById('gmTplAdd').click();
+  type(doc.getElementById('gmTplName'), '모니터용');
+  t('＋ 는 지금 양식을 복사해 새 양식으로 등록하고 이름 칸에 커서를 둔다 — 이름을 고치면 메뉴·머리가 따라간다', () => {
+    assert.deepEqual([...doc.querySelectorAll('#gmTplPick option')].map((o) => o.textContent), ['기본', '내 양식 1', '모니터용']);
+    assert.equal(doc.getElementById('gmTplPick').value, 't2');
+    assert.equal(doc.getElementById('gmTplState').textContent, '구매 · 모니터용');
+    assert.equal(doc.getElementById('gmTplTitle').value, '[부서구매] {품목요지} 구매 품의', '내 양식 1 을 복사');
+  });
+  const pickTpl = (id) => { const s = doc.getElementById('gmTplPick'); s.value = id; s.dispatchEvent(new window.Event('change', { bubbles: true })); };
+  pickTpl('');
+  t('메뉴에서 [기본] 을 고르면 레시피의 틀로 공문이 다시 서고, 내 양식은 메뉴에 남는다', () => {
+    assert.equal(doc.getElementById('gmTitle').value, '34인치 모니터 구매 품의');
+    assert.equal(doc.getElementById('gmTplState').textContent, '구매 · 기본 양식');
+    assert.ok(doc.getElementById('gmTplName').hidden && doc.getElementById('gmTplDel').hidden);
+    assert.equal(doc.querySelectorAll('#gmTplPick option').length, 3);
+  });
+  pickTpl('t2');
+  doc.getElementById('gmTplDel').click();
+  t('지우기는 두 번 — 처음엔 붉어지기만 한다', () => {
+    assert.ok(doc.getElementById('gmTplDel').classList.contains('armed'));
+    assert.equal(doc.querySelectorAll('#gmTplPick option').length, 3);
+  });
+  doc.getElementById('gmTplDel').click();
+  await ta('두 번째에 지우고 쓰던 것이면 기본으로 — 내 양식은 갈래마다 저장소에 { pick, list } 로 남는다', async () => {
+    assert.deepEqual([...doc.querySelectorAll('#gmTplPick option')].map((o) => o.textContent), ['기본', '내 양식 1']);
+    assert.equal(doc.getElementById('gmTplPick').value, '');
+    pickTpl('t1');
+    assert.equal(doc.getElementById('gmTitle').value, '[부서구매] 34인치 모니터 구매 품의');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(store.gongmunTemplates.purchase.pick, 't1');
+    assert.deepEqual(store.gongmunTemplates.purchase.list.map((t) => [t.id, t.name, t.title]), [['t1', '내 양식 1', '[부서구매] {품목요지} 구매 품의']]);
   });
   type(doc.getElementById('gmBody'), '직접 고친 본문');
   doc.getElementById('gmViewDraft').click();

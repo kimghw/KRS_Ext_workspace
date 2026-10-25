@@ -223,7 +223,7 @@ console.log('무엇을 남기나 (가짜 claude)');
 
   const before = logged.length;
   await ta('ping 은 남기지 않는다', async () => {
-    assert.deepEqual(await handle({ task: 'ping' }, { log }), { ok: true, pong: true });
+    assert.deepEqual(await handle({ task: 'ping' }, { log }), { ok: true, pong: true, help: true });
     assert.equal(logged.length, before);
   });
   await ta('logs 도 남기지 않고 tail 결과를 돌려준다', async () => {
@@ -454,7 +454,7 @@ console.log('실제 프로세스로 (크롬이 띄우는 것처럼)');
 
   const ping = await roundTrip({ task: 'ping' });
   await ta('ping 은 그대로 되고 기록은 늘지 않는다', async () => {
-    assert.deepEqual(ping, { ok: true, pong: true });
+    assert.deepEqual(ping, { ok: true, pong: true, help: true });
     assert.equal(fs.readFileSync(path.join(dir, dayName(new Date())), 'utf8').trim().split('\n').length, 1);
   });
 }

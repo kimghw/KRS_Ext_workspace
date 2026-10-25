@@ -938,9 +938,10 @@ console.log('근태(출장·외근·휴가)도 예약과 같은 모양으로 섞
     assert.deepEqual([...trip.querySelector('.krs-mine-main').children].map((n) => n.className), ['krs-mine-when', 'krs-mine-sub']);
     const style = m.root.querySelector('style').textContent;
     assert.match(style, /\.krs-mine-marks \{ display: grid; grid-template-columns: repeat\(3, 16px\)/);
-    // 출장 줄의 내용은 날짜·시각이 끝나는 데까지만 적고 줄인다(2026-10-04 사용자 지정) — 내용 줄은 글 칸의 폭을 넓히지 않고, 전체는 풍선말에 있다.
-    assert.match(style, /\.krs-mine-item\.is-trip \.krs-mine-main \{ flex: 0 1 auto; \}/);
-    assert.match(style, /\.krs-mine-item\.is-trip \.krs-mine-sub, [^{]*\{ width: 0; min-width: 100%; \}/);
+    // 칸은 모두 같은 폭이다(2026-10-25 사용자 지정: "카드는 크기를 동일하게 해줘 2개든 3개든 한줄에 보일때") — 출장 줄만 글에 맞춰
+    // 좁아지지 않고(2026-10-04 의 "날짜·시각이 끝나는 데까지만"을 바꿈), 내용은 아이콘 앞까지 적고 줄인다. 전체는 풍선말에 있다.
+    assert.match(style, /\.krs-mine-list \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(min\(100%, 390px\), 1fr\)\);/);
+    assert.doesNotMatch(style, /\.is-trip \{|max-width: 460px/);
     assert.deepEqual([trip.querySelector('.krs-mine-what').textContent, trip.querySelector('.krs-mine-what').title], ['착수회의 참석 - 대전', '착수회의 참석 - 대전']);
     assert.equal(past.querySelector('.krs-mine-marks').getAttribute('aria-label'), '여비 증빙 — 다녀온 출장 · 사전정산 완료');
     assert.equal(trip.querySelector('.krs-mine-marks').getAttribute('aria-label'), '여비 증빙');

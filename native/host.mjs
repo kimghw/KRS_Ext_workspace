@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { TASKS as SPEC_TASKS, systemPrompt } from '../src/input.js';
 import { tuneOf, DEFAULT_TUNE, limitOf } from '../src/tasktune.js';
 import { gitStatus, gitPull } from './gitsync.mjs';
+import * as helpChat from './helpchat.mjs';
 
 // 2026-10-05 사용자 지정: "모두 opus 5.5로 변경해줘" — 그 전에는 빨리 답하는 claude-haiku-4-5 였다(2026-10-03).
 const MODEL = 'claude-opus-5-5';
@@ -467,12 +468,22 @@ async function extractText(input, files) {
  * ping 과 logs 는 부를 때마다 남기면 기록이 그것으로 찬다 — 남기지 않는다.
  * gitStatus·gitPull 은 패널 머리의 git 아이콘이 부른다(native/gitsync.mjs — 명령은 거기 고정돼 있고 확장이 넘기는 값은 없다).
  * 확인은 몇 분마다 돌아 남기지 않고, 받기는 파일을 바꾸므로 남긴다.
+ * helpAsk·helpJob·helpCancel 은 패널 아래 Help Chat 줄(helpchat.js)이 부른다(native/helpchat.mjs — 오래 도는 작업은 떼어 띄운 실행기가 하고
+ * 여기서는 받기·살펴보기·멈추기만). 요청과 멈추기는 남기고, 1.5초마다 오는 살펴보기는 남기지 않는다.
  *
  * @param {object} msg
- * @param {{ run?: Function, log?: Function, tail?: Function, text?: Function, git?: {status: Function, pull: Function} }} [deps] 테스트가 갈아 끼운다
+ * @param {{ run?: Function, log?: Function, tail?: Function, text?: Function, git?: {status: Function, pull: Function}, help?: {ask: Function, job: Function, cancel: Function} }} [deps] 테스트가 갈아 끼운다
  */
-export async function handle(msg, { run = runClaude, log = writeLog, tail = tailLogs, text = extractText, git = { status: gitStatus, pull: gitPull } } = {}) {
-  if (msg?.task === 'ping') return { ok: true, pong: true };
+export async function handle(msg, { run = runClaude, log = writeLog, tail = tailLogs, text = extractText, git = { status: gitStatus, pull: gitPull }, help = helpChat } = {}) {
+  // help: 이 다리가 Help Chat 을 아는가 — 다른 폴더(옛 사본)의 다리가 등록돼 있으면 없다.
+  if (msg?.task === 'ping') return { ok: true, pong: true, help: true };
+  if (msg?.task === 'helpJob') return help.job(msg);
+  if (msg?.task === 'helpAsk' || msg?.task === 'helpCancel') {
+    const r = msg.task === 'helpAsk' ? help.ask(msg) : help.cancel(msg);
+    log({ task: msg.task, ok: !!r.ok, ...(r.id ? { id: r.id } : {}), ...(r.ok ? {} : { error: r.error }),
+      ...(msg.task === 'helpAsk' ? { input: clip(String(msg.text || ''), 300) } : {}) });
+    return r;
+  }
   if (msg?.task === 'logs') return { ok: true, entries: tail(msg.limit) };
   if (msg?.task === 'gitStatus') return git.status();
   if (msg?.task === 'gitPull') {
