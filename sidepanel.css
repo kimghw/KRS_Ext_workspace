@@ -327,8 +327,8 @@ button.pk-del:hover { color: var(--danger); }
 .set-block-head > .badge, .set-block-head > .summary-detail { min-width: 0; max-width: 100%; margin-left: auto; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
 .set-block > .hint { margin: 4px 0 0; }
 .set-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.settings :is(.set-actions, .conn-row, .mt-actions) button.ghost { min-height: 30px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; }
-.settings :is(.set-actions, .conn-row, .mt-actions) button.ghost:hover { border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); color: var(--pick); background: var(--pick-soft); }
+.settings :is(.set-actions, .conn-row, .mt-actions, .plus-folder-row, .plus-follow) button.ghost { min-height: 30px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; }
+.settings :is(.set-actions, .conn-row, .mt-actions, .plus-folder-row, .plus-follow) button.ghost:hover { border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); color: var(--pick); background: var(--pick-soft); }
 /* 부가 설명은 정보 아이콘으로 펼친다. summary만 머리에 두고 본문은 제자리에서 늘어나 좁은 패널에서도 잘리지 않는다. */
 .set-has-help { position: relative; --set-help-inset: 16px; }
 .set-has-help > .set-block-head, .set-intro.set-has-help > h2 { padding-right: 32px; }
@@ -404,6 +404,36 @@ button.pk-del:hover { color: var(--danger); }
 .set-options .check-row input:checked { background: var(--pick); border-color: var(--pick); }
 .set-options .check-row input:checked::before { transform: translateX(12px); }
 .set-options-cap { margin-top: 12px; }
+/* 설정 › Plus(2026-10-25 — R&D 설정의 공유 카드를 옮김, kr_ext_rerp 의 공유 (Plus) 탭과 같은 짜임): 따르기 배지 · 공유 폴더 칸 + 연결 확인 · 알림 줄 · 공유할 과제(라디오 + 과제 칩) · 과제 줄. */
+.plus-follow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; }
+.plus-follow .badge { white-space: normal; overflow-wrap: anywhere; }
+.plus-pane > .set-options { margin-bottom: 12px; }
+.plus-pane .set-block .set-options { margin-top: 4px; }
+.plus-folder-row { display: flex; gap: 6px; align-items: center; }
+.plus-folder-row input[type="text"] { flex: 1; min-width: 0; min-height: 34px; font-size: 12px; }
+.plus-folder-row button { flex: none; }
+#plusFolderNow { overflow-wrap: anywhere; }
+.plus-state { margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.plus-state:empty { display: none; }
+.plus-state.error { color: var(--danger); }
+.plus-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 12px 2px 8px; font-size: 12px; color: var(--fg); }
+.plus-scope > span { color: var(--muted); font-size: 11px; font-weight: 600; }
+.plus-scope label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.plus-scope input { margin: 0; accent-color: var(--pick); }
+.plus-pick { margin: 0 0 10px; }
+.plus-pick[hidden] { display: none; }
+.plus-items { margin-top: 8px; }
+.plus-pages { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.plus-pages:empty { display: none; }
+.plus-page { display: grid; gap: 2px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.plus-page > a, .plus-page > strong { color: var(--fg); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.plus-page > a:hover { color: var(--pick); text-decoration: underline; }
+.plus-page > span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.plus-page.bad > span { color: var(--danger); }
+.plus-guide { display: grid; gap: 10px; margin: 0; font-size: 11.5px; line-height: 1.65; }
+.plus-guide dt { margin-bottom: 2px; color: var(--fg); font-weight: 600; }
+.plus-guide dd { margin: 0; color: var(--muted); word-break: keep-all; overflow-wrap: anywhere; }
+.plus-guide code { font-size: 11px; }
 .settings #docCirculateState { margin: 10px 2px 0; padding-left: 10px; border-left: 2px solid var(--line); font-size: 11px; }
 /* 선택한 탭은 연한 강조색으로 채우고, 체크 표시로 색 없이도 상태를 구분한다. */
 .tab-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; }
@@ -1899,24 +1929,10 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-staff-warn li.warn::before { background: var(--bar-plan, #f2ad3d); }
 .rnd .rd-staff-msg { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .rnd .rd-staff-msg.error { color: var(--danger); }
-/* 공유 (SharePoint)(2026-10-18 — 원노트 공유 칸을 바꿈) — 켜기 · 공유 폴더 칸 · 지금 맞추기/폴더 열기/링크 복사 · 상태 글 · ⓘ 설명(접힌 한 줄). .rd-share-msg 는 rERP 칸의 알림 줄도 쓴다. */
-.rnd .rd-share-how { margin: 6px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; word-break: keep-all; }
-.rnd .rd-share-how code { font-family: ui-monospace, "D2Coding", monospace; font-size: 11.5px; color: var(--fg); }
-.rnd .rd-share-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
-.rnd .rd-share-row input[type="text"], .rnd .rd-share-row select { flex: 1; min-width: 0; }
-.rnd .rd-share-row button { flex: none; }
-.rnd .rd-share-open { align-self: center; color: var(--pick); font-size: 13px; font-weight: 600; text-decoration: none; }
-.rnd .rd-share-open:hover { text-decoration: underline; }
+/* 알림 줄(.rd-share-msg) — rERP 칸(rdErpMsg)이 쓴다. 공유 카드는 2026-10-25 설정 › Plus 로 옮겼다(.plus-* — 설정 화면 규칙 곁). */
 .rnd .rd-share-msg { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .rnd .rd-share-msg:empty { display: none; }
 .rnd .rd-share-msg.error { color: var(--danger); }
-/* ⓘ 설명 — 작은 접힌 줄(카드 칸의 큼직한 summary·꺾쇠는 쓰지 않는다). */
-.rnd .rd-share-help { margin-top: 6px; }
-.rnd .rd-share-help > summary { min-height: 0; gap: 4px; padding: 2px 0; color: var(--faint); font-size: 11px; }
-.rnd .rd-share-help > summary::after { display: none; }
-.rnd .rd-share-help > summary:hover { color: var(--pick); }
-.rnd .rd-share-help[open] > summary { color: var(--muted); }
-.rnd .rd-share-help .rd-share-how { margin: 2px 0 4px; }
 /* rERP 로 이어진 비목의 집행 칸 — rERP 승인액이라 읽기 전용(흐리게). */
 .rnd .rd-brow input[data-k="used"][readonly] { background: var(--surface-soft); color: var(--muted); cursor: default; }
 /* 예산 칸 맨 위 줄의 "집행에 더하기" 체크 셋(2026-10-11 사용자 지정 — R&D 설정에서 옮김) — 복사 아이콘 왼쪽에, 좁으면 줄을 바꾼다. rERP 를 끄면 잠그고 숨긴다. */
@@ -2109,26 +2125,12 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .rnd .rd-set .rd-box > summary > span:first-of-type { flex: none; }
 .rnd .rd-set .rd-box > summary .summary-detail { min-width: 0; font-size: 10.5px; text-align: right; overflow-wrap: anywhere; }
 .rnd .rd-set .rd-box > summary::after { flex: none; }
-.rnd .rd-share > .rd-box-body { border-top: 1px solid var(--line); padding-top: 12px; }
-.rnd .rd-share .rd-share-row { display: grid; gap: 6px; margin-top: 14px; }
-.rnd .rd-share-row > label { color: var(--muted); font-size: 11px; font-weight: 600; }
-.rnd .rd-set .rd-share-row input[type="text"] { min-height: 36px; border-color: var(--line); border-radius: 8px; background: var(--surface-soft); font-size: 12px; }
-.rnd .rd-set .rd-share-row input[type="text"]:focus { border-color: var(--pick); outline: 2px solid color-mix(in srgb, var(--pick) 20%, transparent); outline-offset: 1px; }
-.rnd .rd-share .rd-share-with { gap: 9px; margin-top: 12px; padding: 0; }
-.rnd .rd-share-with input { width: 14px; height: 14px; margin: 3px 0 0; }
-.rnd .rd-share-with .rd-setting-copy strong { font-size: 12px; }
-.rnd .rd-share .rd-share-actions { gap: 6px; margin-top: 14px; }
-.rnd .rd-share-actions button { min-height: 32px; max-width: 100%; padding: 6px 10px; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
-.rnd .rd-share-actions button.ghost { border: 1px solid var(--line); color: var(--fg); }
-.rnd .rd-share .rd-share-msg { padding: 9px 10px; border-radius: 8px; background: var(--surface-soft); font-size: 11.5px; line-height: 1.6; }
-.rnd .rd-share .rd-share-msg.error { background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
-.rnd .rd-share .rd-share-help { margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--line); }
-.rnd .rd-share-help > summary { justify-content: space-between; color: var(--muted); }
-.rnd .rd-share-help > summary::after { display: block; width: 4px; height: 4px; }
-.rnd .rd-share-guide { display: grid; gap: 10px; margin: 10px 0 0; font-size: 11.5px; line-height: 1.65; }
-.rnd .rd-share-guide dt { margin-bottom: 2px; color: var(--fg); font-weight: 600; }
-.rnd .rd-share-guide dd { margin: 0; color: var(--muted); word-break: keep-all; overflow-wrap: anywhere; }
-.rnd .rd-share-guide code { font-size: 11px; }
+.rnd .rd-set .rd-set-go { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin: 0 0 12px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--fg); font-size: 13px; text-align: left; cursor: pointer; }
+.rnd .rd-set .rd-set-go:hover { border-color: var(--pick); }
+.rnd .rd-set .rd-set-go > svg { flex: none; width: 18px; height: 18px; color: var(--pick); }
+.rnd .rd-set .rd-set-go > .rd-set-go-arrow { width: 16px; height: 16px; margin-left: auto; color: var(--muted); }
+.rnd .rd-set .rd-set-go .rd-setting-copy { grid-auto-flow: column; justify-content: space-between; align-items: baseline; flex: 1; }
+.rnd .rd-set .rd-set-go small { text-align: right; }
 .rnd .rd-set .rd-intake { padding: 0; background: transparent; }
 .rnd .rd-set .rd-drop { align-items: flex-start; gap: 5px; min-height: 76px; padding: 14px; background: color-mix(in srgb, var(--pick) 4%, var(--surface)); text-align: left; }
 .rnd .rd-set .rd-drop:hover, .rnd .rd-set .rd-intake.over .rd-drop { background: var(--pick-soft); border-color: var(--pick); }

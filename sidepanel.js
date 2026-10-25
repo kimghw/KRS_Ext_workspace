@@ -1903,6 +1903,8 @@ const rnd = createRndPanel({
   flash: (btn, text, ms) => flash(btn, text, ms),
   // 내 이름(설정) — 공유 (SharePoint)의 책임자 판정(과제 폴더를 만들 수 있는 사람 — 장부의 과제책임자 == 내 이름)·변경이력의 by·연차 파일의 updatedBy.
   me: () => state.myName,
+  // 공유 카드는 설정 › Plus 에 있다(2026-10-25) — R&D 탭의 링크 아이콘·참여인력 공유 아이콘이 꺼진 공유를 만나면 그리로.
+  openPlus: () => { showSettings(true); choosePane('plus'); },
 });
 
 /**
@@ -2074,9 +2076,9 @@ function setMode(mode) {
 
 /* ------------------------------------------------------------ 설정 화면 */
 
-/** 마지막에 본 갈래를 두는 키 — 일반 general · LLM llm · 연결 conn. */
+/** 마지막에 본 갈래를 두는 키 — 일반 general · LLM llm · 연결 conn · 공유 (Plus) plus(2026-10-25 — R&D 설정의 공유 카드를 옮김). */
 const SETTINGS_PANE_KEY = 'settingsPane';
-const SETTINGS_PANES = ['general', 'llm', 'conn'];
+const SETTINGS_PANES = ['general', 'llm', 'conn', 'plus'];
 const normalizePane = (v) => (SETTINGS_PANES.includes(v) ? v : 'general');
 /** Teams·OneNote MCP 가 닿는지 볼 때 기다리는 시간(src/teams.js 의 probe 와 같다). */
 const MCP_PROBE_MS = 2500;
@@ -2123,6 +2125,7 @@ function choosePane(name, { save = true } = {}) {
   if (save) chrome.storage.local.set({ [SETTINGS_PANE_KEY]: pane });
   if (pane === 'general') paintLog();
   if (pane === 'conn') mail.loadSettings();   // 메일 탭을 한 번도 열지 않았어도 저장된 MCP 주소·내 메일 주소가 보이게
+  if (pane === 'plus') rnd.showPlus();        // R&D 탭을 한 번도 열지 않았어도 공유 형편을 읽고 rERP 확장의 설정을 물어 그린다
 }
 
 /* 일반 갈래의 행위 명세 — 갈래 단추 → 종류 단추 → YAML 원본(src/specview.js). 같은 단추를 다시 누르면 접는다. */

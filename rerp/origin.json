@@ -1,12 +1,12 @@
 {
   "source": "kr_ext_rerp",
   "path": "E:/dev/kr_ext_rerp",
-  "commit": "0afeedd",
-  "commitDate": "2026-10-19",
-  "version": "0.8.6",
+  "commit": "036e430",
+  "commitDate": "2026-10-25",
+  "version": "0.8.9",
   "dirty": [],
-  "portedAt": "2026-10-19",
-  "note": "2026-10-18 공유 (Plus) v2(SharePoint 폴더의 과제별 JSON) — 새로 옮김 sp-store · prjdoc · prjdoc-sync · staff-sync · background.js 공유 배선(sharesync.js), 다시 옮김 plan-sync · plan · panel.css · research · research-sync · staff 와 그 테스트. 지움 mcp-client · plus-onenote(원본이 걷어 냄). render.js · rnd-api.js · settings.js(erp.js 몫)는 옮기지 않아 옛 지문 그대로(드리프트가 check 에 보인다). 2026-10-19 sp-store(+테스트)에 permissions·findPeople·writer.unshare·이메일 공유를 정본에서 먼저 더하고 다시 옮김(참여인력 칸 읽기·편집 체크). 2026-10-19 background.js 의 onMessageExternal shareFolder 응답은 WORKSPACE 가 묻는 쪽이라 옮기지 않음 — rndpanel.js askPeer(지문만 갱신). 2026-10-19 지문 갱신(0afeedd): render.js 의 예상 비용 아이콘 부분(공유 (Plus) v2 — plan-import·isProjectLead 지움, plan-export 는 폴더 주소 복사, ↗ 는 pageOf)을 planui.js 에 다시 옮김. rnd-api.js(collect 캐시 칸 planSync·plusOn 만)·settings.js(plus 기본값은 sharesync.js SHARE_DEFAULTS 와 이미 같음, adv·budgetExcludeDefault 그대로)·panel.css(.krext-ws 사업비 관리 화면 규칙만 — plan.css 범위 밖)는 옮길 것이 없어 지문만. 2026-10-19 저녁 행정지원 공유(사용자 \"행정지원은 공유가 안되냐? 과제마다 동일해야지\"): lib/prjdoc.js·prjdoc-sync.js·staff.js 와 tests/prjdoc·prjdoc-sync.test.js 를 원본 작업 트리(0afeedd + 미커밋)에서 다시 옮기고 지문 갱신. tests/staff.test.js 의 날짜 조각·기간 구간 검사는 test/rerp-staff.test.mjs 에 아직 옮기지 않아(행정지원 검사만 더함) 그 지문은 옛것 그대로(드리프트가 check 에 보인다). background.js 의 같은 날 변경은 행정지원 공유 배선(SHARE_SUPPORT_KEY·shareWant support·loadLocal/saveLocal support — 여기서는 sharesync.js shareWant 와 rndpanel.js shareLoadLocal/shareSaveLocal 로)과 openExtTab(사업비 관리 참여인력 변경 탭 — WORKSPACE 와 무관)뿐이라 지문만 갱신.",
+  "note": "2026-10-18 공유 (Plus) v2(SharePoint 폴더의 과제별 JSON) — 새로 옮김 sp-store · prjdoc · prjdoc-sync · staff-sync · background.js 공유 배선(sharesync.js), 다시 옮김 plan-sync · plan · panel.css · research · research-sync · staff 와 그 테스트. 지움 mcp-client · plus-onenote(원본이 걷어 냄). render.js · rnd-api.js · settings.js(erp.js 몫)는 옮기지 않아 옛 지문 그대로(드리프트가 check 에 보인다). 2026-10-19 sp-store(+테스트)에 permissions·findPeople·writer.unshare·이메일 공유를 정본에서 먼저 더하고 다시 옮김(참여인력 칸 읽기·편집 체크). 2026-10-19 background.js 의 onMessageExternal shareFolder 응답은 WORKSPACE 가 묻는 쪽이라 옮기지 않음 — rndpanel.js askPeer(지문만 갱신). 2026-10-19 지문 갱신(0afeedd): render.js 의 예상 비용 아이콘 부분(공유 (Plus) v2 — plan-import·isProjectLead 지움, plan-export 는 폴더 주소 복사, ↗ 는 pageOf)을 planui.js 에 다시 옮김. rnd-api.js(collect 캐시 칸 planSync·plusOn 만)·settings.js(plus 기본값은 sharesync.js SHARE_DEFAULTS 와 이미 같음, adv·budgetExcludeDefault 그대로)·panel.css(.krext-ws 사업비 관리 화면 규칙만 — plan.css 범위 밖)는 옮길 것이 없어 지문만. 2026-10-19 저녁 행정지원 공유(사용자 \"행정지원은 공유가 안되냐? 과제마다 동일해야지\"): lib/prjdoc.js·prjdoc-sync.js·staff.js 와 tests/prjdoc·prjdoc-sync.test.js 를 원본 작업 트리(0afeedd + 미커밋)에서 다시 옮기고 지문 갱신. tests/staff.test.js 의 날짜 조각·기간 구간 검사는 test/rerp-staff.test.mjs 에 아직 옮기지 않아(행정지원 검사만 더함) 그 지문은 옛것 그대로(드리프트가 check 에 보인다). background.js 의 같은 날 변경은 행정지원 공유 배선(SHARE_SUPPORT_KEY·shareWant support·loadLocal/saveLocal support — 여기서는 sharesync.js shareWant 와 rndpanel.js shareLoadLocal/shareSaveLocal 로)과 openExtTab(사업비 관리 참여인력 변경 탭 — WORKSPACE 와 무관)뿐이라 지문만 갱신. 2026-10-25 036e430(0.8.9)로 다시(WORKSPACE 에 rerp 와 같은 공유 (Plus) 설정 탭): sp-store·prjdoc·prjdoc-sync·staff-sync·staff·plan 전부(공유할 과제 allow · 나와 공유 훑기 shareSkip · 경로와 상관없는 과제 폴더 찾기 · 책임자 폴더 고르기 · fatal 이 지난 색인 지킴 · 지급 완료 paid 병합 · 목록 createList 등), tests/staff.test.js 를 원본 그대로 ESM 으로(끝에 행정지원 검사), sp-store·prjdoc-sync·staff-sync 검사 블록 갱신. background.js 는 공유 몫만(projectSync·scope·projects → sharePick · skipped 'project' · allow · shareSkip · shareAutoRename · shareRename(msg, index0) · shareProbe 의 경로 거름 없앰) — 가맹점(sites-sync·shareSites*·sitesSelfAt·runStore 의 나와 공유 나눠 쓰기)·collect*·git*·openExtTab·allowMembers·staffPersonRates 는 WORKSPACE 에 없어 옮기지 않음. settings.js 는 plus 의 projectSync·scope·projects 와 sharePick·sharesProject(sharesync.js 로), sitesSync·sitesScope·sitesProjects·teams·rndUrl·help.api 는 옮기지 않음. render.js 는 budgetTable 의 syncOn 이 sharePick 을 보는 한 줄만(planui.js). rnd-api.js(isLead·fetchMembers·personRates·패널 설정 칸)·panel.css(사업비 관리·청구 준비 규칙)는 erp.js·plan.css 범위 밖이라 지문만.",
+  "portedAt": "2026-10-25",
   "files": [
     {
       "from": "lib/format.js",
@@ -26,43 +26,43 @@
       "from": "lib/plan.js",
       "to": "rerp/plan.js",
       "how": "그대로 + chrome.runtime.sendMessage 세 곳 → api.send",
-      "sha1": "b5924b2c27ec63f402d001c331db81a584b94a58",
-      "bytes": 24049
+      "sha1": "07a71df2a37276c1f1573252de343765852bf49b",
+      "bytes": 24464
     },
     {
       "from": "lib/render.js",
       "to": "rerp/planui.js",
       "how": "과제집행비율 표 부분만 (rateCell·pct·rateOf·아이콘·isProjectLead·planBtn·planRow·planForm·budgetTable·projectLink)",
-      "sha1": "b7395dc807ba9e70196e24558bd013ceebfe6e7b",
-      "bytes": 170106
+      "sha1": "8d495e39f7cbdc41d2f4405f45880f476bb95b57",
+      "bytes": 187662
     },
     {
       "from": "lib/rnd-api.js",
       "to": "rerp/erp.js",
       "how": "call·describe·pool·fetchProjectRecs·fetchProjects·dateRange·fetchCards·trunc·execRate·fetchBudget·ssoLogin + collect 의 미청구 합산(withPending) · settings.js 의 adv 기본값",
-      "sha1": "43be6f7d3f08ac37b7fdcdf40f554a5a8194e4b4",
-      "bytes": 85589
+      "sha1": "a1021b97962a179e203f31bba51a2ab105a5844d",
+      "bytes": 92458
     },
     {
       "from": "lib/settings.js",
       "to": "rerp/erp.js · rerp/sharesync.js",
-      "how": "DEFAULTS 의 adv·budgetExclude(erp.js)·plus(sharesync.js SHARE_DEFAULTS) 와 parseJson 만",
-      "sha1": "a0d4568c105bd7ab58e1881bef6b63a84d6e540b",
-      "bytes": 25830
+      "how": "DEFAULTS 의 adv·budgetExclude(erp.js)·plus(sharesync.js SHARE_DEFAULTS — 가맹점 sitesSync·sitesScope·sitesProjects 빼고) · sharePick·sharesProject(sharesync.js) 와 parseJson 만",
+      "sha1": "565f47b3c3a56b3f6cd124077d7c7c22b0d1b226",
+      "bytes": 31628
     },
     {
       "from": "background.js",
       "to": "rerp/sharesync.js",
-      "how": "공유 (Plus) 배선(shareSync·queueShareSync·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps",
-      "sha1": "d288cc4377387be57ca8a33aef1ddc368aedcca6",
-      "bytes": 116050
+      "how": "공유 (Plus) 배선(shareSync·queueShareSync·shareAutoRename·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps · 가맹점(sites*)·collect*·git* 은 옮기지 않음",
+      "sha1": "6560caf9b15f61f61d3ee371fc69c3d8a9546baf",
+      "bytes": 161324
     },
     {
       "from": "lib/panel.css",
       "to": "rerp/plan.css",
       "how": "과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·공유 아이콘 규칙만",
-      "sha1": "5cb844a36121c94bb888ac7deee60ce6b54fb036",
-      "bytes": 75412
+      "sha1": "3b0777dd6f101d9d7e8eaa01e478f4361c7e562c",
+      "bytes": 188755
     },
     {
       "from": "tests/plan-sync.test.js",
@@ -96,57 +96,57 @@
       "from": "lib/staff.js",
       "to": "rerp/staff.js",
       "how": "그대로 (IIFE → export)",
-      "sha1": "22a8d958016553b20e0d938ddc00b756604baf9e",
-      "bytes": 53556
+      "sha1": "c8d2b8bf929a2abcc6eb51e9a0eaae661df2782b",
+      "bytes": 81704
     },
     {
       "from": "tests/staff.test.js",
       "to": "test/rerp-staff.test.mjs",
-      "how": "ESM 으로",
-      "sha1": "3600d1e44dd25960c06407938fe7025fbed9f9c9",
-      "bytes": 18247
+      "how": "ESM 으로 (머리의 require 만 import, 끝에 행정지원 검사 보탬)",
+      "sha1": "af773c3f8b2df46a551cf0371736a199b68614b1",
+      "bytes": 54106
     },
     {
       "from": "lib/staff-sync.js",
       "to": "rerp/staffsync.js",
       "how": "그대로 (IIFE → export, g.KRX_STAFF 는 shim)",
-      "sha1": "fca4d49700ba9175070c98753b25affb5bfec3fa",
-      "bytes": 5230
+      "sha1": "445c6878df22e208cf6257cadd482ecbab0cbff4",
+      "bytes": 6199
     },
     {
       "from": "lib/sp-store.js",
       "to": "rerp/spstore.js",
       "how": "그대로 (g = globalThis, export)",
-      "sha1": "81a7bb3d98fc07e0e4a32556b2556d6ff6c1b9c9",
-      "bytes": 86057
+      "sha1": "4a245c81dbdb8354326b86daaf0e88c3273125d2",
+      "bytes": 104565
     },
     {
       "from": "lib/prjdoc.js",
       "to": "rerp/prjdoc.js",
       "how": "그대로 (IIFE → export, g.KRX_PLAN_SYNC·KRX_RESEARCH_SYNC·KRX_STAFF_SYNC·KRX_STAFF 는 shim)",
-      "sha1": "037fb63afde8a76c5d933d2e1659b774d0c2f1c4",
-      "bytes": 45705
+      "sha1": "e4b0a99cf0125069daf80b1edaa3c234c3e59820",
+      "bytes": 46154
     },
     {
       "from": "lib/prjdoc-sync.js",
       "to": "rerp/prjdocsync.js",
       "how": "그대로 (IIFE → export, g.KRX_PRJDOC 는 shim)",
-      "sha1": "7ba075341079a07a8f47e0472991dc27fc671b29",
-      "bytes": 38462
+      "sha1": "d109182ea940365b47a5c5b0bab12f4ab8fbf91f",
+      "bytes": 41855
     },
     {
       "from": "tests/staff-sync.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (한 파일에 넷 + sharesync 배선 검사)",
-      "sha1": "fb57500e83094b9f967328546b697129456c04ab",
-      "bytes": 4840
+      "sha1": "57f71f291af5cbf1d2679e51c554fddc42cd8ec1",
+      "bytes": 6285
     },
     {
       "from": "tests/sp-store.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (가짜 fetch·chrome — 실 SharePoint 에 쓰지 않음)",
-      "sha1": "75c62afc39eff5bc114ca1adeed147fa6c3cb2fa",
-      "bytes": 119325
+      "sha1": "f0113ff7a3eabd6fdd911031fb882861adcd71a5",
+      "bytes": 135026
     },
     {
       "from": "tests/prjdoc.test.js",
@@ -159,8 +159,8 @@
       "from": "tests/prjdoc-sync.test.js",
       "to": "test/rerp-share.test.mjs",
       "how": "ESM 으로 (가짜 store)",
-      "sha1": "a5bd58d08c2e842c4f446b3a010cae586c8da186",
-      "bytes": 62567
+      "sha1": "6f755e5a8fc649e9fd8960b0e936939866276e7d",
+      "bytes": 68489
     }
   ]
 }

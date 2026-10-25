@@ -121,10 +121,14 @@ console.log('회의실 모드로 시작');
     assert.ok(wired.get('settingsTabs')?.has('click'));
     assert.ok(wired.get('settingsBox')?.has('keydown'), 'Esc');
   });
-  t('설정은 일반 · LLM · 연결 세 갈래다', () => {
+  t('설정은 일반 · LLM · 연결 · Plus 네 갈래다(Plus 는 2026-10-25 — R&D 설정의 공유 카드를 옮김)', () => {
     const tabs = [...doc.querySelectorAll('#settingsTabs [data-pane]')];
-    assert.deepEqual(tabs.map((b) => [b.dataset.pane, b.textContent]), [['general', '일반'], ['llm', 'LLM'], ['conn', '연결']]);
-    assert.deepEqual([...doc.querySelectorAll('#settingsBox .set-pane')].map((p) => p.dataset.pane), ['general', 'llm', 'conn']);
+    assert.deepEqual(tabs.map((b) => [b.dataset.pane, b.textContent]), [['general', '일반'], ['llm', 'LLM'], ['conn', '연결'], ['plus', 'Plus']]);
+    assert.deepEqual([...doc.querySelectorAll('#settingsBox .set-pane')].map((p) => p.dataset.pane), ['general', 'llm', 'conn', 'plus']);
+    const plus = doc.getElementById('setPlus');
+    for (const id of ['rdShareOn', 'rdShareFolder', 'plusProbe', 'rdShareOpen', 'plusCopy', 'rdShareLink', 'rdShareWith', 'plusDiscover', 'plusProjectSync', 'plusScopeAll', 'plusScopePick', 'plusPrjPick', 'plusPlanSync', 'plusResearchSync', 'plusStaffSync', 'plusChangesSync', 'rdShareState', 'plusPages', 'rdShareSync']) assert.ok(plus.querySelector(`#${id}`), id);
+    assert.equal(doc.getElementById('rdShareBox'), null, 'R&D 설정 안의 옛 카드는 없다');
+    assert.ok(doc.getElementById('rdSetBox').querySelector('#rdShareGo'), 'R&D 설정에는 그리로 가는 한 줄');
   });
   t('일반 — 보이는 탭 · 내 이름 · 켜고 끄기 · 활동 로그 · 페이지 구조 캡처', () => {
     const g = doc.getElementById('setGeneral');
@@ -246,7 +250,7 @@ console.log('패널 머리의 홈 카드 체크박스');
     assert.equal(window.document.getElementById('homeCard').checked, false));
 }
 
-console.log('설정 화면 — 톱니로 열면 설정만 보이고, 갈래(일반·LLM·연결)를 고르면 기억한다');
+console.log('설정 화면 — 톱니로 열면 설정만 보이고, 갈래(일반·LLM·연결·Plus)를 고르면 기억한다');
 {
   const { window, store, calls } = await boot({ mode: 'car' });
   const doc = window.document;
@@ -301,6 +305,19 @@ console.log('설정 화면 — 톱니로 열면 설정만 보이고, 갈래(일�
     assert.ok(calls.urls.includes('http://localhost:5005/mcp'));
     assert.equal(pane('connNoteState').textContent, '닿지 않음');
   });
+  pane('setTabPlus').click();
+  await settle();
+  t('Plus 갈래 — R&D 탭을 열지 않았어도 공유 형편을 읽어 그린다(rERP 확장이 없으면 이 확장의 설정, 기본은 꺼짐)', () => {
+    assert.ok(!pane('setPlus').hidden && pane('setConn').hidden);
+    assert.equal(store.settingsPane, 'plus');
+    assert.equal(pane('rdShareState').textContent, '꺼짐');
+    assert.ok(!pane('rdShareOn').checked && pane('rdShareSync').disabled);
+    assert.equal(pane('plusFollow').textContent, 'rERP 확장 없음 — 이 확장의 설정');
+    assert.ok(pane('plusFollowReset').hidden);
+    assert.ok(pane('plusScopeAll').checked && pane('plusPrjPick').hidden, '공유할 과제는 전체가 기본');
+  });
+  pane('setTabConn').click();
+  await settle();
   gear.click();
   await settle();
   t('톱니를 다시 누르면 닫히고 보던 탭(차량)의 제목이 돌아온다', () => {
@@ -400,9 +417,12 @@ console.log('설정 화면 안에서 보이는 탭을 끄면 설정은 열린 �
   t('→ 키로 다음 갈래(연결)', () => assert.ok(!doc.getElementById('setConn').hidden && store.settingsPane === 'conn'));
   doc.getElementById('setTabConn').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   await settle();
+  t('→ 키로 다음 갈래(Plus)', () => assert.ok(!doc.getElementById('setPlus').hidden && store.settingsPane === 'plus'));
+  doc.getElementById('setTabPlus').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  await settle();
   t('끝에서 → 는 처음(일반)으로, 고른 갈래만 Tab 차례에 든다', () => {
     assert.ok(!doc.getElementById('setGeneral').hidden);
-    assert.deepEqual([...doc.querySelectorAll('#settingsTabs [data-pane]')].map((b) => b.tabIndex), [0, -1, -1]);
+    assert.deepEqual([...doc.querySelectorAll('#settingsTabs [data-pane]')].map((b) => b.tabIndex), [0, -1, -1, -1]);
   });
   doc.getElementById('setTabGeneral').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await settle();

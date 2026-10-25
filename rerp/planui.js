@@ -98,7 +98,7 @@ function budgetTable(p, s, state) {
   // 공유 (Plus, 0.8.7 — SharePoint 공유 폴더의 과제별 폴더, 예상 비용은 그 안의 예상비용.json 한 파일): 저장 아이콘 옆에 과제 폴더 주소 복사(⬆ plan-export: 백그라운드 shareFolderCopy(prjNo) — 동료가 설정의 공유 폴더 칸에 붙여 넣으면 같은 파일을 씀)·열기(↗ = 예상비용.json planUrl, 아직 없으면 과제 폴더 folderUrl) 아이콘.
   // 눈 아이콘으로 예상 비용을 펼친 과제(hidden 아님)에만, 그리고 Plus 가 켜져 있을 때만 보인다 — 꺼져 있으면 공유 관련 아이콘·동작이 아예 없다 (2026-09-27 사용자). 항목이 없는 과제는 늘 펼쳐진 상태라 보임.
   // 툴팁에 이 과제의 마지막 공유 결과(storage.local.planSyncState.pages[과제번호] — background.js shareSync). 실패면 빨간색. 공유 자체는 켜져 있으면 자동(패널 열 때·편집 4초 뒤·자동 갱신)
-  const syncOn = !!(s && s.planSync), ps = syncOn ? (state.planSync || null) : null, pg = ps && ps.pages ? ps.pages[p.prjNo] : null;
+  const syncOn = !!(s && s.planSync && (!Array.isArray(s.sharePick) || s.sharePick.includes(String(p.prjNo)))), ps = syncOn ? (state.planSync || null) : null, pg = ps && ps.pages ? ps.pages[p.prjNo] : null;
   const page = syncOn && g.KRX_PLAN && g.KRX_PLAN.pageOf ? g.KRX_PLAN.pageOf(state, p.prjNo) : null, link = page ? page.webUrl : '';
   const syncStatus = !syncOn ? '' : (pg && pg.error ? `${F.fmtClock(pg.at || ps.at)} 공유 실패: ${pg.error}`
     : pg ? `마지막 공유 ${F.fmtClock(pg.at || ps.at)}${pg.remoteBy && pg.remoteAt ? ` · 파일 마지막 갱신 ${pg.remoteBy} ${F.fmtClock(pg.remoteAt)}` : ''}${pg.owner ? ` · ${pg.owner} 의 폴더` : ''}`

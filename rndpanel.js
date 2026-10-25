@@ -33,6 +33,7 @@ import RS from './rerp/research.js';
 import {
   SHARE_KEY, normalizeShare, shareKeyOf, projectOf as shareProjectOf, localProjectOf, localPlanOf, yearOf as shareYearOf, researchOf as shareResearchOf, budgetHash as shareBudgetHashOf,
   applyProject as shareApplyProject, applyYear as shareApplyYear, matchProject as shareMatchProject, PEOPLE_KEY, normalizePeople, permRows,
+  normalizePlus, plusOf, plusSet, plusWant,   // 공유 (Plus) 설정 — rERP 확장을 따르고 여기서 바꾼 칸만 이긴다(2026-10-25)
 } from './src/rndshare.js';
 import { PROJECTS_KEY as GM_PROJECTS_KEY } from './src/gongmun.js';
 import { JOB_LIST_PATH, JOB_QUERY, parseJobRows, rankJobs, jobLine } from './src/jobid.js';
@@ -68,9 +69,10 @@ const copyBtn = (attr, what) => `<button type="button" class="rd-icon" ${attr} t
  *   erp 는 rERP 를 부르는 것(rerp/erp.js — 검사에서는 흉내), me 는 내 이름(설정 — 책임자 판정·변경이력의 by·공유 파일의 updatedBy),
  *   spFetch 는 공유 (SharePoint)가 OneDrive 를 읽을 fetch(브라우저 로그인 쿠키 — 검사에서는 흉내, 없으면 전역), store 는 SharePoint 저장소 흉내(검사에서만 — 실 SharePoint 에 쓰지 않게; 없으면 rerp/sharesync.js 가 rerp/spstore.js 로),
  *   jobs 는 과제 정보 카드의 Job Id 저절로 찾기가 받는 R&D PMS 과제 목록(줄 배열 — 검사에서는 흉내),
- *   acct 는 회계(e-accounting — src/eacct.js)를 부르는 것 { list(year) → 내 부서 과제(I/O) 목록, get(year, io, options) → 그 과제의 회계 예산 스냅샷 } (검사에서는 흉내)
+ *   acct 는 회계(e-accounting — src/eacct.js)를 부르는 것 { list(year) → 내 부서 과제(I/O) 목록, get(year, io, options) → 그 과제의 회계 예산 스냅샷 } (검사에서는 흉내),
+ *   openPlus 는 설정 › Plus(공유 카드 — 2026-10-25 R&D 설정에서 옮김)를 여는 것(sidepanel.js — 없으면 아무것도 안 함)
  */
-export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, erp = ERP, me = () => '', spFetch = defaultSpFetch, store = undefined, jobs = defaultJobs, acct = defaultAcct }) {
+export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy, flash = () => {}, download = defaultDownload, readAsset = defaultReadAsset, today = todayStr, erp = ERP, me = () => '', spFetch = defaultSpFetch, store = undefined, jobs = defaultJobs, acct = defaultAcct, openPlus = () => {} }) {
   const el = {
     root: $('rnd'), projects: $('rdProjects'), empty: $('rdEmpty'), emptyImport: $('rdEmptyImport'), emptyAdd: $('rdEmptyAdd'),
     intake: $('rdIntake'), yaml: $('rdYaml'),
@@ -98,14 +100,19 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     chReason: $('rdChReason'), chAdd: $('rdChAdd'), chCancel: $('rdChCancel'), chNew: $('rdChNew'), chForm: $('rdChForm'), changes: $('rdChanges'), changesCopy: $('rdChangesCopy'),
     copy: $('rdCopy'), export: $('rdExport'), import: $('rdImport'), importGm: $('rdImportGm'),
     skillBox: $('rdSkillBox'), skillState: $('rdSkillState'), skills: $('rdSkills'), skillZip: $('rdSkillZip'), skillGuide: $('rdSkillGuide'),
-    // 공유 (SharePoint, 2026-10-18 — R&D 설정 안의 카드 "공유 (SharePoint)"): 켜기 · 공유 폴더 칸(비우면 내 OneDrive 의 문서/업무/shared) · 지금 맞추기 · 폴더 열기 · 링크 복사 · 상태 · 알림 줄.
-    shareBox: $('rdShareBox'), shareState: $('rdShareState'), shareOn: $('rdShareOn'), shareFolder: $('rdShareFolder'), shareWith: $('rdShareWith'), shareSync: $('rdShareSync'), shareOpen: $('rdShareOpen'), shareLink: $('rdShareLink'), shareMsg: $('rdShareMsg'),
+    // 공유 (SharePoint, 2026-10-18) — 2026-10-25 부터 설정 › Plus 갈래(sidepanel.html #setPlus — kr_ext_rerp 의 공유 (Plus) 탭과 같은 짜임): 공유 사용 · 공유 폴더 칸(비우면 rERP 확장의 설정) · 연결 확인 · 폴더 열기 · 주소 복사 · 조직 내 링크 ·
+    // 자동 공유 · 자동 찾기 · 과제별 공유(켜기 · 공유할 과제 · 항목) · 동기화 현황(상태 · 알림 줄 · 과제 줄 · 지금 동기화). R&D 설정에는 그리로 가는 한 줄(shareGo)만.
+    shareState: $('rdShareState'), shareOn: $('rdShareOn'), shareFolder: $('rdShareFolder'), shareWith: $('rdShareWith'), shareSync: $('rdShareSync'), shareOpen: $('rdShareOpen'), shareLink: $('rdShareLink'), shareMsg: $('rdShareMsg'),
+    shareGo: $('rdShareGo'), shareGoState: $('rdShareGoState'),
+    plusFollow: $('plusFollow'), plusFollowReset: $('plusFollowReset'), plusFolderNow: $('plusFolderNow'), plusProbe: $('plusProbe'), plusProbeState: $('plusProbeState'), plusCopy: $('plusCopy'),
+    plusDiscover: $('plusDiscover'), plusProjectSync: $('plusProjectSync'), plusSummary: $('plusSummary'), plusScopeAll: $('plusScopeAll'), plusScopePick: $('plusScopePick'), plusPick: $('plusPrjPick'), plusPages: $('plusPages'),
+    plusItems: { planSync: $('plusPlanSync'), researchSync: $('plusResearchSync'), staffSync: $('plusStaffSync'), changesSync: $('plusChangesSync') },
     // rERP 집행내역(예산 칸 아래, 접힌 한 줄 — erpState 가 그 줄의 형편) — 2026-10-11. 예상 비용은 공유가 켜져 있으면 과제 폴더의 예상비용.json 에서 받아 표에 보인다(보기만).
     erp: $('rdErp'), erpState: $('rdErpState'), erpInfo: $('rdErpInfo'), erpRefresh: $('rdErpRefresh'), erpLink: $('rdErpLink'), erpUnlink: $('rdErpUnlink'),
     erpPick: $('rdErpPick'), erpSelect: $('rdErpSelect'), erpPickOk: $('rdErpPickOk'), erpMsg: $('rdErpMsg'), erpTable: $('rdErpTable'),
     // 예산 칸 맨 위 줄 — 집행에 더할 것(미청구·사용계획 — 승인전 체크는 2026-10-11 사용자 지정으로 뺐다). 2026-10-11 사용자 지정으로 R&D 설정에서 옮겼다(값은 여전히 rndSettings).
     incRow: $('rdIncRow'), incUnbilled: $('rdIncUnbilled'), incPlan: $('rdIncPlan'),
-    // R&D 설정(접힌 한 줄) — rERP 집행내역 켜기/끄기 · 예산 칸에 보일 비목(items — 2026-10-11 사용자 지정). 공유 (SharePoint)·YAML 넣기·스킬 칸도 이 안에 있다.
+    // R&D 설정(접힌 한 줄) — rERP 집행내역 켜기/끄기 · 예산 칸에 보일 비목(items — 2026-10-11 사용자 지정). 설정 › Plus 로 가는 줄·YAML 넣기·스킬 칸도 이 안에 있다.
     setBox: $('rdSetBox'), setState: $('rdSetState'), erpOn: $('rdErpOn'), itemBox: $('rdItemBox'), items: $('rdItems'),
   };
   const st = {
@@ -147,7 +154,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // rERP 집행내역 — 도는 중인 조회, 이 세션에서 저절로 잇기를 해 본 차년도, 마지막으로 받은 과제 목록(고르기용), 이벤트를 달았는지.
     erpRun: null, erpTried: new Set(), erpRecs: null, erpRecsAt: 0, erpRecsErrAt: 0, erpBusy: false, plHost: null,   // erpRecsAt·erpRecsErrAt: 과제 목록을 받은(못 받은) 시각 — 공유 폴더의 과제 더하기가 10분(ERP_TTL_MS) 캐시로 쓴다
     // 예상 비용의 화면 상태 — rerp/plan.js(bind)와 rerp/planui.js(budgetTable)가 rerp 의 패널 state 와 같은 모양으로 읽고 쓴다.
-    // data.settings.planSync 는 공유 (SharePoint)가 켜져 있는지(예상 비용을 예상비용.json 에서 받는다), data.myNames 는 책임자 판정(과제책임자 == 내 이름)에 쓴다.
+    // data.settings.planSync 는 공유 (SharePoint)가 켜져 있고 예상 비용을 받는지(예상비용.json), sharePick 은 고른 과제만 공유할 때 그 열쇠들(rerp/plan.js plusOn — 고르지 않은 과제는 꺼진 것으로),
+    // data.myNames 는 책임자 판정(과제책임자 == 내 이름)에 쓴다.
     pl: { plans: {}, planShown: new Set(), expanded: new Set(), data: { settings: { planSync: false }, myNames: [] } },
   };
 
@@ -1235,10 +1243,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   // 참여인력 머리 줄의 공유 아이콘을 누르면 표 위에 이 과제의 SharePoint 과제 폴더(공유 카드가 맞춘 shareIndex 의 폴더)에 대한 **사람마다의 읽기·편집 체크**가 펴진다. 권한은 rerp/spstore.js permissions(확장 출처 GET)로 읽고,
   // 사람은 **이메일**로 맞춘다 — 사이트 사용자 정보의 표시 이름은 영문("MOON Changjae", 실측 2026-10-19)이라 한글 이름으로는 못 맞춘다. 참여인력의 한글 이름은 findPeople(사이트 search REST, GET)이 이메일로 풀어 rndSharePeople 에 기억한다(한 번 찾으면 다시 묻지 않는다 — ↻ 는 못 찾은 이름을 다시).
   // 체크하면 바로 반영(applyPerm): 지금 역할이 있으면 writer.unshare(그 사람의 역할 전부) → 줄 것이 있으면 writer.sharePeople([이메일], { role }) — 둘 중 하나만 켜진다(바꾸면 거둔 뒤 다시 줌, 빼면 거둠). 한 번에 한 사람, 끝나면 권한을 다시 읽어 실제 상태를 보인다.
-  // 공유가 꺼져 있으면 공유 카드로 안내, 과제 폴더가 아직 없으면 지금 맞추기 안내. 남의 폴더(책임자의 것 — shareIndex 의 owner)는 읽기만. 대상 이름은 이 차년도의 참여연구자(rERP 참여인력, 없으면 계획서)와 과제의 행정지원(나는 뺀다 — src/rndshare.js permRows).
+  // 공유가 꺼져 있으면 공유 카드로 안내, 과제 폴더가 아직 없으면 지금 동기화 안내. 남의 폴더(책임자의 것 — shareIndex 의 owner)는 읽기만. 대상 이름은 이 차년도의 참여연구자(rERP 참여인력, 없으면 계획서)와 과제의 행정지원(나는 뺀다 — src/rndshare.js permRows).
   const PERM_ROLE_TEXT = { edit: '편집', read: '읽기', owner: '소유자', other: '그 밖', '': '없음' };
   const savePeople = () => chrome.storage.local.set({ [PEOPLE_KEY]: st.permPeople });
-  const permErrText = (err) => { const d = SPX.describe(err); return d.kind === 'auth' ? 'OneDrive 에 로그인하세요 — 공유 카드의 폴더 열기로 로그인한 뒤 ↻' : d.message; };
+  const permErrText = (err) => { const d = SPX.describe(err); return d.kind === 'auth' ? 'OneDrive 에 로그인하세요 — 설정 › Plus 의 폴더 열기로 로그인한 뒤 ↻' : d.message; };
   const setPermMsg = (msg, error = false) => { el.permMsg.textContent = msg; el.permMsg.classList.toggle('error', !!error); el.permMsg.classList.toggle('hidden', !msg); };
   /** 권한 표에 올릴 이름 — 이 차년도의 참여연구자(rERP 참여인력, 없으면 계획서의 참여연구자)와 과제의 행정지원. 나는 permRows 가 뺀다. */
   function permNames(p) {
@@ -1269,7 +1277,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     if (st.perm.open === staffKey(p)) { closePerm(); return Promise.resolve(false); }
     Object.assign(st.perm, { open: staffKey(p), cfg: null, folder: '', owner: '', perms: null, row: '' });
     setPermMsg('');
-    if (!st.share.on) { paintPerm(); setPermMsg('공유 (SharePoint)가 꺼져 있습니다 — R&D 설정의 공유 카드에서 켜고 맞춘 뒤 다시 누르세요.', true); goSettings({ share: true }); return Promise.resolve(false); }
+    if (!st.share.on) { paintPerm(); setPermMsg('공유 (SharePoint)가 꺼져 있습니다 — 설정 › Plus 에서 켜고 맞춘 뒤 다시 누르세요.', true); goSettings({ share: true }); return Promise.resolve(false); }
     return loadPerm();
   }
   /** 과제 폴더(shareIndex)를 찾아 권한을 읽고, 아직 이메일을 모르는 이름은 찾는다(findPeople — 찾은 것은 rndSharePeople 에 남긴다). 한 번에 하나만. 던지지 않는다 — 까닭은 알림 줄에. */
@@ -1284,10 +1292,10 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       const prjNo = keyOfProject(p);
       const index = shareObj((await chrome.storage.local.get('shareIndex'))?.shareIndex);
       const ent = shareObj(index[prjNo]);
-      if (!ent.folder) { Object.assign(st.perm, { cfg: null, perms: null, folder: '', owner: '' }); setPermMsg('과제 폴더가 아직 없습니다 — 공유 카드의 지금 맞추기로 폴더를 만든 뒤 ↻ 를 누르세요.', true); return false; }
+      if (!ent.folder) { Object.assign(st.perm, { cfg: null, perms: null, folder: '', owner: '' }); setPermMsg('과제 폴더가 아직 없습니다 — 설정 › Plus 의 지금 동기화로 폴더를 만든 뒤 ↻ 를 누르세요.', true); return false; }
       const now = shareCfgNow();
       const cfg = await share.shareProjectCfg(prjNo, { folder: now.folder, driveHost: now.driveHost }, index);
-      if (!cfg) { Object.assign(st.perm, { cfg: null, perms: null, folder: '', owner: '' }); setPermMsg('과제 폴더를 찾지 못했습니다 — 공유 카드의 지금 맞추기 뒤 ↻ 를 누르세요.', true); return false; }
+      if (!cfg) { Object.assign(st.perm, { cfg: null, perms: null, folder: '', owner: '' }); setPermMsg('과제 폴더를 찾지 못했습니다 — 설정 › Plus 의 지금 동기화 뒤 ↻ 를 누르세요.', true); return false; }
       Object.assign(st.perm, { cfg, folder: String(ent.folder), owner: String(ent.owner || '') });
       st.perm.perms = await SPX.permissions(cfg, spIo());
       // 이메일을 모르는 이름만 찾는다 — 캐시에 있거나 이 세션에서 못 찾은(겹침·없음) 이름은 다시 묻지 않는다(↻ 는 다시).
@@ -1970,8 +1978,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   // 여기 몫(want): 예상 비용은 **받기만**(보기만 — 2026-10-11 사용자 지정, 파일은 rerp 가 쓴다) · 연구내용·예산 **계획**(파일 budget 줄 — 집행은 rERP/로컬)·변경이력(id 합집합)·별칭(aliasAt 늦은 쪽)은 양방향 · 참여연구원 계획(staff)은 안 한다(rERP 에서 읽는다 — 2026-10-18 저녁).
   // 과제 정보의 다른 기기 맞춤도 이제 연차 파일의 project 칸이 맡는다(별도 페이지 없음). 설정·과제 문맥·장부 읽기/쓰기(src/rndshare.js 변환)·참여연구원 이름·클립보드는 deps 로 넘기고,
   // 메시지(planSync · planSyncQueue · shareProbe · shareFolderCopy · shareOrgLink · shareFolderPeople · shareRename)는 send(msg) 로 — rerp/plan.js 의 api.send 에도 끼운다.
-  /** 이 패널의 동기화 몫 — plan 은 받기만(pullOnly), staff 는 안 함. sharesync 가 rerp 식으로 settings 에서 want 를 셈하면(budget 은 staffSync 와 함께) 어긋나므로 want 를 따로 준다(settings 에도 같이 실어 둔다). */
-  const SHARE_WANT = Object.freeze({ plan: true, research: true, budget: true, changes: true, alias: true, support: true, staff: false });   // support: 행정지원(project.support·supportAt) — 별칭처럼 양쪽이 고치고 늦은 쪽(2026-10-19)
+  // 이 패널의 동기화 몫은 설정 › Plus 의 항목에서(src/rndshare.js plusWant — plan 은 받기만(pullOnly), staff 는 늘 안 함, 예산 계획은 사업비를 따름, 별칭·행정지원(support — 2026-10-19)은 늘).
+  // sharesync 가 rerp 식으로 settings 에서 want 를 셈하면(budget·staff 를 staffSync 로 함께) 어긋나므로 want 를 따로 준다(settings 에도 같이 실어 둔다).
   const SHARE_PULL_ONLY = Object.freeze({ plan: true });
   /** 내 OneDrive 를 찾는 호스트(설정 folder 가 비었을 때) — rerp 의 기본값과 같다. 로그인이 필요할 때 "폴더 열기"가 여기로 간다. */
   const SHARE_DRIVE_HOST = String(SHARE_DEFAULTS?.driveHost || 'https://krclass-my.sharepoint.com').replace(/\/+$/, '');
@@ -2012,9 +2020,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
    */
   async function shareEffective() {
     const r = await askPeer();
+    // plus: rERP 확장의 공유 (Plus) 설정(2026-10-25 — 칸마다 따른다, src/rndshare.js plusOf). 답의 enabled 에 더해 plus 칸(rerp 가 답에 실어 주면 — 공유할 과제·항목·자동 공유/찾기)을 아는 것만.
     st.share.peer = r
-      ? { id: String(r.id || ''), folder: String(r.folder || '').trim().slice(0, 2000), driveHost: String(r.driveHost || '').trim().replace(/\/+$/, '') || SHARE_DRIVE_HOST, enabled: r.enabled === true, path: String(r.path || '').slice(0, 2000), url: String(r.url || '').slice(0, 2000), version: String(r.version || '').slice(0, 20), at: Date.now() }
+      ? { id: String(r.id || ''), folder: String(r.folder || '').trim().slice(0, 2000), driveHost: String(r.driveHost || '').trim().replace(/\/+$/, '') || SHARE_DRIVE_HOST, enabled: r.enabled === true, path: String(r.path || '').slice(0, 2000), url: String(r.url || '').slice(0, 2000), version: String(r.version || '').slice(0, 20), at: Date.now(),
+        plus: normalizePlus({ ...shareObj(r.plus), enabled: r.enabled }) }
       : {};
+    if (applyPlus()) shareOnChanged('rERP 확장의 설정을 따름');
     const now = shareCfgNow();
     const key = shareEffKey(now.folder, now.driveHost);
     if (key !== String(st.share.effective || '')) {
@@ -2038,13 +2049,11 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   }
   const share = createShareSync({
     settings: async () => {
-      const now = await shareEffective();   // 칸이 비면 rERP 확장의 설정(2026-10-19)
-      return {
-        enabled: !!st.share.on, folder: now.folder, driveHost: now.driveHost, discover: true, shareWith: st.share.shareWith === 'none' ? 'none' : 'participants',   // 카드의 체크(rndShare.shareWith) — 2026-10-19
-        planSync: true, researchSync: true, staffSync: false, changesSync: true, want: { ...SHARE_WANT }, pullOnly: { ...SHARE_PULL_ONLY },
-      };
+      const now = await shareEffective();   // 칸이 비면 rERP 확장의 설정(2026-10-19), 칸마다 rERP 확장의 공유 (Plus) 설정을 따름(2026-10-25)
+      const p = plusNow();
+      return { ...p, enabled: !!st.share.on, folder: now.folder, driveHost: now.driveHost, sitesSync: false, want: plusWant(p), pullOnly: { ...SHARE_PULL_ONLY } };   // 가맹점(common)은 이 확장에 없다
     },
-    want: () => ({ ...SHARE_WANT }), pullOnly: { ...SHARE_PULL_ONLY },
+    want: () => plusWant(plusNow()), pullOnly: { ...SHARE_PULL_ONLY },
     context: () => shareContextForSync(), loadLocal: () => shareLoadLocal(), saveLocal: (part, prj, data) => shareSaveLocal(part, prj, data), participants: (prjNo) => shareParticipants(prjNo),
     copyText, chrome: globalThis.chrome, fetch: spFetch, store,
   });
@@ -2085,7 +2094,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     }
     // 표는 rerp 의 것 그대로 — p 는 rerp 패널의 과제(prjNo·rspr·budget·budgetError), s 는 설정(planSync·quickPicks), state 는 예상 비용 화면 상태.
     el.erpTable.innerHTML = e
-      ? budgetTable({ prjNo: e.prjNo, rspr: e.rspr, budget: e.snap?.budget || null, budgetError: e.snap?.budget ? '' : (e.error?.message || ''), unbilledShared: 0 }, { planSync: st.share.on, quickPicks: [] }, st.pl)
+      ? budgetTable({ prjNo: e.prjNo, rspr: e.rspr, budget: e.snap?.budget || null, budgetError: e.snap?.budget ? '' : (e.error?.message || ''), unbilledShared: 0 }, { planSync: st.pl.data.settings.planSync, sharePick: st.pl.data.settings.sharePick, quickPicks: [] }, st.pl)
       : '';
     // 보기만(2026-10-11 사용자 지정) — 예상 비용을 적고 고치고 파일을 만드는 것은 rerp 확장(eClass 홈)에서 한다. 여기서는 ＋·✎·×·수량 −/＋·저장·주소 복사(⬆)를 걷어 내고
     // 눈(펼치기)·열기(↗ 예상비용.json)만 둔다. 공유 (SharePoint)로 받은 것이 표와 장부(사용계획)에 보인다.
@@ -2336,7 +2345,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /* ---------------------------------------------------------- 공유 (SharePoint) — 과제 정보·예산 계획·변경이력·연구내용 ↔ 과제 폴더의 연차 파일, 예상 비용 ← 예상비용.json (rerp/sharesync.js · src/rndshare.js) */
   // 2026-10-18 사용자 지정 — 원노트 공유(과제 정보 페이지 · 예상 비용 페이지 · 연구내용 페이지)를 모두 걷어 내고 SharePoint(OneDrive) 공유 폴더의 과제별 연차 파일 하나로:
   // "onedrive 에 업무/shared 안에 과제별로 .. 약칭으로 없으면 jobid 없으면 임시번호 … 년차별로 1개 파일이고 1개 파일에서 변경사항이랑 다 관리 … 과제 정보랑 등등" · "workspace 에도 경로주면 알아서 동기화".
-  // 켜면: 열 때(1분 안 재실행 안 함 — sharesync 의 load 규칙) · 지금 맞추기 · 장부를 고친 뒤 NOTE_WAIT_MS 모아서(고친 것이 있을 때만 — shareHashOf) · 탭이 보이는 동안 SHARE_PERIOD_MS 마다(주기 — rerp 의 자동 갱신 알람에 해당, 2026-10-19 "sharepoint 의 변경사항을 반영하지 않네?") 돈다.
+  // 켜면: 열 때(1분 안 재실행 안 함 — sharesync 의 load 규칙) · 지금 동기화 · 장부를 고친 뒤 NOTE_WAIT_MS 모아서(고친 것이 있을 때만 — shareHashOf) · 탭이 보이는 동안 SHARE_PERIOD_MS 마다(주기 — rerp 의 자동 갱신 알람에 해당, 2026-10-19 "sharepoint 의 변경사항을 반영하지 않네?") 돈다.
   //   과제 열쇠(prjdoc-sync 의 과제번호 자리)는 src/rndshare.js shareKeyOf(rERP 과제번호 → Job Id → 장부 id). 대상은 장부의 과제(+묘비)에 더해 **공유 폴더에 있는데 장부에 없는 내 rERP 참여 과제**(shareContextForSync — 그 과제는 받으면서 장부에 만든다).
   // 병합 기준(localAt — st.share.memo): 과제 정보는 memo[열쇠] = { id, at, hash } — 마지막으로 맞춘 뒤 WORKSPACE 몫 칸을 고쳤으면(지문이 다르면) 지금(로컬이 이김), 아니면 받아 둔 시각(그 뒤 고친 파일이 이김), 처음은 0(파일 쪽이 이김 — 다른 기기의 장부가 들어온다;
   //   다만 파일에 **비어 있는** 칸은 장부 값을 두고 다음 맞춤에 올린다 — rerp 가 먼저 만든 파일, shareSaveLocal 머리 주석).
@@ -2789,18 +2798,150 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     return [...out];
   }
 
-  /** 공유 카드 — 켜짐 · 공유 폴더 칸 · 상태 줄("꺼짐" / "맞춤 MM.DD HH:MM · 과제 n개" / 오류 — 로그인 필요면 "OneDrive 에 로그인하세요" + 폴더 열기) · 알림 줄 · 단추. rerp/planui.js 가 읽는 화면 상태(planSync·myNames)도 여기서 맞춘다. */
+  /* ---------- 공유 (Plus) 설정 — 2026-10-25 사용자 지정("rerp 에서 plus 기능을 워크스페이스에서 동일하게 … 둘은 같이 내용을 공유하는 거야" · "rerp 설정을 따름") ---------- */
+
+  /** 지금 쓰는 공유 (Plus) 설정 — 여기서 바꾼 칸(rndShare.own) > rERP 확장의 것(peer.plus — 마지막으로 물어 둔 답) > 기본(src/rndshare.js plusOf). */
+  const plusNow = () => plusOf(st.share.own, shareObj(st.share.peer).plus);
+  /** plusNow 를 읽는 곳이 많은 두 칸(on · shareWith)에 적어 둔다. 켜짐이 바뀌었으면 true. */
+  function applyPlus() {
+    const p = plusNow(), was = !!st.share.on;
+    st.share.on = p.enabled;
+    st.share.shareWith = p.shareWith;
+    return was !== p.enabled;
+  }
+  /** 켜짐이 바뀌었다(여기서 바꿈 · rERP 확장을 따라) — 형편을 비우고 꺼졌으면 맞춤을 멈춘다. 켜졌을 때 맞추는 것은 부른 쪽. */
+  function shareOnChanged(why = '') {
+    st.share.error = '';
+    st.shareKind = '';
+    st.shareNote = null;
+    if (!st.share.on) { st.share.last = ''; clearTimeout(shareTimer); shareAutoStop(); }
+    saveShare();
+    paintShare();
+    paintSet();
+    paintErp();
+    logEvent('rnd', true, `R&D 공유 (SharePoint) ${st.share.on ? '켬' : '끔'}${why ? ` — ${why}` : ''}`);
+  }
+  /** 칸 이름 — 활동 로그 글(참여연구원 자동 공유는 2026-10-19 카드의 글 그대로). */
+  const PLUS_LABEL = Object.freeze({ shareWith: '참여연구원 자동 공유', discover: '공유받은 과제 자동 찾기', projectSync: '과제별 공유', scope: '공유할 과제', projects: '고른 과제', planSync: '예상 비용', researchSync: '연구내용', staffSync: '사업비', changesSync: '변경이력' });
+  /**
+   * 설정 › Plus 의 칸 하나를 여기서 바꾼다(plusSet — rERP 확장의 값과 같아지면 다시 따른다). 켜짐이 바뀌면 켜고 끄고,
+   * 그 밖의 칸은 켜져 있으면 잠깐 뒤 맞춘다(체크를 여럿 누르면 모아서 한 번 — 자동 공유는 새 폴더에만 쓰여 맞추지 않는다).
+   */
+  async function onPlusSet(key, value) {
+    st.share.own = plusSet(st.share.own, key, value, shareObj(st.share.peer).plus);
+    if (applyPlus() || key === 'enabled') {
+      shareOnChanged();
+      if (st.share.on) { shareAutoStart(); await runShare('켬'); }
+      return;
+    }
+    saveShare();
+    paintShare();
+    paintErp();
+    const text = typeof value === 'boolean' ? (value ? '켬' : '끔') : key === 'scope' ? (value === 'pick' ? '고른 과제만' : '참여 과제 전체') : Array.isArray(value) ? `${value.length}개` : String(value);
+    logEvent('rnd', true, key === 'shareWith' ? `R&D 공유 — ${PLUS_LABEL.shareWith} ${value === 'none' ? '끔' : '켬'}` : `R&D 공유 — ${PLUS_LABEL[key] || key}: ${text}`);
+    if (st.share.on && key !== 'shareWith') { clearTimeout(shareTimer); shareTimer = setTimeout(() => runShare('설정'), NOTE_WAIT_MS); }
+  }
+  /** [rERP 설정 따르기] — 여기서 바꾼 칸과 공유 폴더 칸을 비워 rERP 확장의 설정을 다시 따른다. */
+  async function onPlusFollow() {
+    st.share.own = {};
+    el.shareFolder.value = '';
+    await saveShareFolder();
+    if (applyPlus()) shareOnChanged('rERP 확장의 설정을 따름');
+    saveShare();
+    paintShare();
+    logEvent('rnd', true, 'R&D 공유 (Plus) — rERP 확장의 설정을 따름');
+    if (st.share.on) { shareAutoStart(); runShare('설정'); }
+  }
+  /** [연결 확인] — 칸의 주소를 먼저 저장하고(바뀌었을 때만) 밑폴더를 풀어 과제 폴더 목록·나와 공유를 받아 본다(sharesync shareProbe). */
+  async function onPlusProbe() {
+    el.plusProbe.disabled = true;
+    setPlusMsg('연결 확인 중…');
+    const moved = await saveShareFolder();
+    let r;
+    try { r = await share.send({ type: 'shareProbe' }); } catch (err) { r = { ok: false, message: String(err?.message || err) }; }
+    el.plusProbe.disabled = false;
+    const text = r?.ok ? `${r.message}${r.folder?.path ? ` · ${r.folder.path}` : ''}`
+      : r?.kind === 'auth' ? 'OneDrive 에 로그인하세요 — 폴더 열기에서 Microsoft 에 로그인한 뒤 다시 누르세요' : `연결하지 못했습니다 — ${r?.message || r?.error || '응답 없음'}`;
+    setPlusMsg(text, !r?.ok);
+    logEvent('rnd', !!r?.ok, `R&D 공유 연결 확인: ${text}`);
+    if (moved && st.share.on) runShare('폴더');
+  }
+  /** [주소 복사] — 지금 쓰는 밑폴더를 여는 주소(sharesync shareFolderCopy — 꺼져 있어도 된다). 못 쓰면 주소를 줄에 보인다. */
+  async function onPlusCopy() {
+    let r;
+    try { r = await share.send({ type: 'shareFolderCopy' }); } catch (err) { r = { ok: false, message: String(err?.message || err) }; }
+    if (r?.ok) setPlusMsg(r.copied ? `주소를 복사했습니다 — ${r.url}` : `복사하지 못했습니다 — 직접 복사하세요: ${r.url}`, !r.copied);
+    else setPlusMsg(`주소를 얻지 못했습니다 — ${r?.message || r?.error || '응답 없음'}`, true);
+  }
+  function setPlusMsg(text, bad = false) {
+    el.plusProbeState.textContent = text;
+    el.plusProbeState.classList.toggle('error', !!bad);
+  }
+  /** 고를 수 있는 과제 — 장부의 과제(열쇠 · 별칭) 차례로, 그 뒤에 고른 것 가운데 장부에 없는 열쇠(rERP 확장에서 고른 과제 — 마지막 결과의 제목으로). */
+  function plusPickItems(P) {
+    const items = st.book.projects.map((p) => ({ key: keyOfProject(p), label: p.alias || p.name, title: `${p.name} · ${keyOfProject(p)}` }));
+    const known = new Set(items.map((x) => x.key));
+    for (const key of P.projects) if (!known.has(key)) items.push({ key, label: String(st.shareState?.pages?.[key]?.title || key), title: `${key} — 이 장부에 없는 과제` });
+    return items;
+  }
+  /** 설정 › Plus 의 나머지 — 따르기 줄 · 공유 방식 · 과제별 공유(켜기 · 공유할 과제 · 항목) · 지금 밑폴더 · 과제 줄. 설정 칸은 꺼져 있어도 고른다(rerp 옵션처럼). */
+  function paintPlus(P) {
+    const peer = shareObj(st.share.peer), peerPlus = shareObj(peer.plus);
+    const own = Object.keys(normalizePlus(st.share.own)).length + (st.share.folder ? 1 : 0);
+    const partial = Number(peer.at) > 0 && Object.keys(peerPlus).every((k) => k === 'enabled');   // 켜기·폴더만 답하는 rERP 확장(공유할 과제·항목을 아직 안 실어 줌)
+    el.plusFollow.textContent = !(Number(peer.at) > 0) ? 'rERP 확장 없음 — 이 확장의 설정' : `rERP 확장의 설정을 따름${partial ? '(켜기·폴더)' : ''}${own ? ` · 여기서 바꾼 칸 ${own}개` : ''}`;
+    el.plusFollow.classList.toggle('on', Number(peer.at) > 0 && !own);
+    el.plusFollowReset.hidden = !(Number(peer.at) > 0 && own);
+    el.plusDiscover.checked = P.discover;
+    el.plusProjectSync.checked = P.projectSync;
+    el.plusScopeAll.checked = P.scope !== 'pick';
+    el.plusScopePick.checked = P.scope === 'pick';
+    for (const [k, node] of Object.entries(el.plusItems)) node.checked = P[k];
+    el.plusSummary.textContent = !P.projectSync ? '꺼짐' : P.scope === 'pick' ? `고른 과제 ${P.projects.length}개` : '참여 과제 전체';
+    el.plusPick.hidden = P.scope !== 'pick';
+    const items = plusPickItems(P);
+    const sig = JSON.stringify([items, P.projects]);
+    if (el.plusPick.dataset.sig !== sig) {   // 다시 그리면 누르던 체크의 초점이 날아가니 바뀔 때만
+      el.plusPick.dataset.sig = sig;
+      const on = new Set(P.projects);
+      el.plusPick.innerHTML = items.length
+        ? items.map((x) => `<label class="tab-pick" title="${escapeHtml(x.title)}"><input type="checkbox" data-key="${escapeHtml(x.key)}"${on.has(x.key) ? ' checked' : ''} />${escapeHtml(x.label)}</label>`).join('')
+        : '<span class="hint">R&amp;D 탭에 과제가 없습니다</span>';
+    }
+    const s = st.shareState, now = shareCfgNow();
+    el.plusFolderNow.textContent = String(s?.base?.path || now.folder || '내 OneDrive 문서/업무/shared');
+    el.plusCopy.disabled = st.shareBusy;
+    const pages = Object.entries(shareObj(s?.pages)).map(([key, pg]) => ({ key, ...shareObj(pg) }));
+    const name = (pg) => { const p = shareProjectByKey(pg.key); return p ? (p.alias || p.name) : String(pg.title || pg.key); };
+    pages.sort((a, b) => name(a).localeCompare(name(b), 'ko'));
+    el.plusPages.innerHTML = plusPagesHtml(pages, name);
+  }
+  /** 동기화 현황의 과제 줄 — 이름(과제 폴더 링크) · 연차 · 결과 · 주인(남의 폴더). */
+  function plusPagesHtml(pages, name) {
+    return pages.map((pg) => {
+      const result = pg.error ? `실패 — ${pg.error}` : pg.noFolder ? '폴더 없음 — 책임자가 만들어 공유할 때까지'
+        : [pg.folderCreated && '폴더 만듦', pg.pulled && '받음', pg.pushed && '씀', pg.renameError && '이름 못 바꿈'].filter(Boolean).join(' · ') || '맞음';
+      const years = Array.isArray(pg.years) && pg.years.length ? `${pg.years.join('·')}차년도` : '';
+      const meta = [pg.folder && pg.folder !== name(pg) ? `폴더 ${pg.folder}` : '', years, result, pg.owner ? `주인 ${pg.owner}` : ''].filter(Boolean).join(' · ');
+      const head = pg.folderUrl ? `<a href="${escapeHtml(pg.folderUrl)}" target="_blank" rel="noopener">${escapeHtml(name(pg))}</a>` : `<strong>${escapeHtml(name(pg))}</strong>`;
+      return `<li class="plus-page${pg.error ? ' bad' : ''}">${head}<span>${escapeHtml(meta)}</span></li>`;
+    }).join('');
+  }
+
+  /** 공유 카드(설정 › Plus) — 켜짐 · 공유 폴더 칸 · 상태("꺼짐" / "맞춤 MM.DD HH:MM · 과제 n개" / 오류 — 로그인 필요면 "OneDrive 에 로그인하세요" + 폴더 열기) · 알림 줄 · 단추 · 설정 칸(paintPlus),
+   *  R&D 설정의 한 줄(shareGo). rerp/planui.js 가 읽는 화면 상태(planSync·sharePick·myNames)도 여기서 맞춘다. */
   function paintShare() {
-    const q = st.share, s = st.shareState;
+    const q = st.share, s = st.shareState, P = plusNow();
     el.shareOn.checked = !!q.on;
     if (document.activeElement !== el.shareFolder) el.shareFolder.value = q.folder || '';
     el.shareFolder.disabled = st.shareBusy;
-    if (el.shareWith) { el.shareWith.checked = q.shareWith !== 'none'; el.shareWith.disabled = st.shareBusy || !q.on; }
+    if (el.shareWith) el.shareWith.checked = q.shareWith !== 'none';
     el.shareSync.disabled = st.shareBusy || !q.on;
     el.shareLink.disabled = st.shareBusy || !q.on;
     const auth = !!q.error && st.shareKind === 'auth';
     const count = s && Number.isFinite(Number(s.count)) ? Number(s.count) : null;
     el.shareState.textContent = !q.on ? '꺼짐' : st.shareBusy ? '맞추는 중…' : q.error ? (auth ? 'OneDrive 에 로그인하세요' : '못 맞춤') : q.at ? `맞춤 ${when(q.at)}${count != null ? ` · 과제 ${count}개` : ''}` : '켜짐';
+    if (el.shareGoState) el.shareGoState.textContent = el.shareState.textContent;
     const note = st.shareNote;
     // rERP 확장의 설정을 따르는 중이면 칸의 빈 자리에 그 값을 보인다(2026-10-19). 결과 줄 끝에 맞춘 밑폴더 경로(rerp 옵션의 "지금 쓰는 밑폴더" 와 견주게)와, 칸에 값이 있는데 rERP 확장의 것과 다르면 알림.
     const now = shareCfgNow();
@@ -2818,12 +2959,14 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     el.shareOpen.dataset.url = pg?.folderUrl || s?.base?.viewUrl || `${SHARE_DRIVE_HOST}/`;
     el.shareOpen.textContent = auth ? 'OneDrive 열기' : pg?.folderUrl ? `폴더 열기 — ${pg.folder || label(p)}` : '공유 폴더 열기';
     el.shareOpen.disabled = !q.on && !auth;
-    // 머리 줄의 링크 아이콘(2026-10-19) — 공유 카드의 [링크 복사]와 같은 길. 꺼져 있으면 누를 때 R&D 설정의 공유 카드로 간다.
+    // 머리 줄의 링크 아이콘(2026-10-19) — 공유 카드의 [조직 내 편집 링크]와 같은 길. 꺼져 있으면 누를 때 설정 › Plus 로 간다.
     el.headLink.disabled = st.shareBusy;
-    el.headLink.title = !q.on ? 'SharePoint 링크 복사 — 공유 (SharePoint)가 꺼져 있습니다. 누르면 R&D 설정의 공유 카드로'
+    el.headLink.title = !q.on ? 'SharePoint 링크 복사 — 공유 (SharePoint)가 꺼져 있습니다. 누르면 설정 › Plus 로'
       : `SharePoint 링크 복사 — ${pg?.folder && !pg.owner ? `과제 폴더 ${pg.folder}` : '공유 폴더'}의 조직 내 편집 링크`;
-    st.pl.data.settings.planSync = !!q.on;
+    st.pl.data.settings.planSync = !!q.on && P.projectSync && P.planSync;
+    st.pl.data.settings.sharePick = P.scope === 'pick' ? P.projects : null;
     st.pl.data.myNames = [myName()].filter(Boolean);
+    paintPlus(P);
   }
 
   /** [폴더 열기] — 새 탭으로(사이드패널은 chrome.tabs, 검사에서는 window.open). */
@@ -2834,33 +2977,23 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     window.open(url, '_blank', 'noopener');
   }
 
-  async function onShareToggle() {
-    st.share.on = el.shareOn.checked;
-    st.share.error = '';
-    st.shareKind = '';
-    st.shareNote = null;
-    if (!st.share.on) { st.share.last = ''; clearTimeout(shareTimer); shareAutoStop(); }
-    saveShare();
-    paintShare();
-    paintSet();
-    paintErp();
-    logEvent('rnd', true, `R&D 공유 (SharePoint) ${st.share.on ? '켬' : '끔'}`);
-    if (st.share.on) { shareAutoStart(); await runShare('켬'); }
-  }
-
   /**
    * 공유 폴더 칸을 고치면 — 쓸 자리가 달라졌으면(shareEffective: 칸의 값, 비면 rERP 확장의 설정) 지난 지문(memo)·과제 → 폴더 캐시(shareIndex)·밑폴더 캐시(shareFolder)를 버린 뒤(shareReset) 켜져 있으면 바로 맞춘다.
    * 같은 자리면(rERP 확장이 따르던 값을 그대로 적은 때 등) 캐시를 둔다.
    */
   async function onShareFolder() {
+    if (await saveShareFolder() && st.share.on) await runShare('폴더');
+  }
+  /** 칸의 주소를 저장한다(바뀌었을 때만 — 쓸 자리를 다시 정한다). 바뀌었으면 true. */
+  async function saveShareFolder() {
     const v = el.shareFolder.value.trim().slice(0, 2000);
-    if (v === String(st.share.folder || '')) return;
+    if (v === String(st.share.folder || '')) return false;
     st.share.folder = v;
     st.shareNote = null;
     logEvent('rnd', true, `R&D 공유 폴더: ${v || '(비움 — rERP 확장의 설정, 없으면 내 OneDrive 문서/업무/shared)'}`);
     await shareEffective();
     paintShare();
-    if (st.share.on) await runShare('폴더');
+    return true;
   }
 
   /** 장부를 고쳤으면(지난번에 맞춘 지문과 다르면) 잠깐 뒤 맞춘다 — 받은 것을 들이는 중(shareApplying)에는 아니다. */
@@ -2896,7 +3029,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /** 까닭 → sharesync 의 reason: 열 때는 load(1분 안 재실행 안 함), 주기는 alarm(같은 규칙), 고침은 edit(도는 중이면 끝난 뒤 한 번 더), 그 밖은 manual. */
   const SHARE_REASON = Object.freeze({ '열 때': 'load', '주기': 'alarm', '고침': 'edit' });
   /** 공유 폴더와 맞춘다(한 번에 하나 — sharesync 가 모은다). 던지지 않는다 — 까닭은 칸에 보인다. */
-  function runShare(reason = '지금 맞추기') {
+  function runShare(reason = '지금 동기화') {
     if (!st.share.on) return Promise.resolve(false);
     clearTimeout(shareTimer);
     st.shareBusy = true;
@@ -2910,7 +3043,13 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /** 동기화가 끝나면 — 결과(rerp 와 같은 저장 키 planSyncState · plannedExpenses)를 화면 상태에 들이고 지문·묘비를 정리한다. */
   async function afterShareSync(r, reason = '') {
     st.shareBusy = false;
-    if (!r || r.skipped === 'off') return false;   // 꺼져 있을 때 들어온 요청(rerp/plan.js 의 load·view) — 그릴 것이 없다(화면은 이미 꺼짐)
+    // 꺼져 있을 때 들어온 요청(rerp/plan.js 의 load·view · 맞추는 사이 rERP 확장을 따라 꺼짐) · 고르지 않은 과제 하나(skipped 'project') — 맞추는 중 표시만 거둔다.
+    // 켜져 있는데 맞출 것이 없으면(과제별 공유 꺼짐 · 고른 과제 없음) 그 까닭을 알림 줄에.
+    if (!r || r.skipped === 'off' || r.skipped === 'project') {
+      if (r?.skipped === 'off' && st.share.on && Array.isArray(r.missing) && r.missing.length) st.shareNote = { text: `맞출 것이 없습니다 — ${r.missing.join(' · ')}`, error: false };
+      paintShare();
+      return false;
+    }
     try {
       const s = await chrome.storage.local.get([PLAN.KEY, PLAN.SKEY]);
       st.pl.plans = shareObj(s?.[PLAN.KEY]);
@@ -2932,7 +3071,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       } else {
         st.shareKind = String(r.kind || 'error');
         q.error = st.shareKind === 'auth'
-          ? `OneDrive 에 로그인하세요 — 이 브라우저에서 SharePoint(OneDrive)에 로그인한 뒤 지금 맞추기를 누르세요${r.error ? ` (${r.error})` : ''}`
+          ? `OneDrive 에 로그인하세요 — 이 브라우저에서 SharePoint(OneDrive)에 로그인한 뒤 지금 동기화를 누르세요${r.error ? ` (${r.error})` : ''}`
           : `공유 폴더와 맞추지 못했습니다 — ${r.error || r.message || '알 수 없는 오류'}`;
       }
       // 묘비 — 파일에 퍼졌고(쓴 과제) 90일이 지난 것은 버린다. 지문은 맞춘 뒤의 장부로.
@@ -3011,13 +3150,13 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   /**
    * 머리 줄의 톱니 아이콘(2026-10-19 사용자 지정 "설정 아이콘 추가 해서 R&D 설정 으로 바로 가게") — 탭 맨 아래 R&D 설정 카드를 펴고 거기로 내린다.
-   * 손으로 편 것으로 쳐서(setAuto 아님) 다른 차년도·과제로 가도 접지 않는다. share 면 그 안의 공유 (SharePoint) 카드까지 펴고 그리로.
+   * 손으로 편 것으로 쳐서(setAuto 아님) 다른 차년도·과제로 가도 접지 않는다. share 면 공유 카드가 있는 설정 › Plus 로(2026-10-25 — R&D 설정에서 옮김).
    */
   function goSettings({ share: toShare = false } = {}) {
+    if (toShare) { openPlus(); return; }
     el.setBox.open = true;
     st.setAuto = false;
-    if (toShare) el.shareBox.open = true;
-    (toShare ? el.shareBox : el.setBox).scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    el.setBox.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }
 
   /* ---------------------------------------------------------- 연구내용 기록(rerp/research.js) — YAML 을 넣을 때 rerp 와 같은 기록(researchPlans — 과제명#차년도)으로도 남긴다 */
@@ -3158,12 +3297,22 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     // 더하기·변경사항 카드(rndgen)는 놓인 문서를 받아 전파를 멈춘다 — 그때도 YAML 넣기 칸의 "놓기" 표시는 거둔다(잡는 단계에서).
     el.root.addEventListener('drop', () => el.intake.classList.remove('over'), true);
     document.addEventListener('paste', onPaste);
-    // 공유 (SharePoint) — 켜기 · 공유 폴더 칸(바꾸면 바로 맞춘다) · 지금 맞추기 · 링크 복사(폴더 열기는 링크).
-    el.shareOn.addEventListener('change', onShareToggle);
-    el.shareWith?.addEventListener('change', () => { st.share.shareWith = el.shareWith.checked ? 'participants' : 'none'; saveShare(); paintShare(); logEvent('rnd', true, `R&D 공유 — 참여연구원 자동 공유 ${el.shareWith.checked ? '켬' : '끔'}`); });   // 폴더를 새로 만들 때 참여연구원에게 자동 공유
+    // 공유 (SharePoint) — 켜기 · 공유 폴더 칸(바꾸면 바로 맞춘다) · 지금 동기화 · 링크 복사(폴더 열기는 링크).
+    // 설정 › Plus(2026-10-25) — 칸마다 여기서 바꾼 값(rndShare.own)으로. 공유할 과제 체크는 그 칸 안의 체크 상자에서 모아 한 번에.
+    el.shareOn.addEventListener('change', () => onPlusSet('enabled', el.shareOn.checked));
+    el.shareWith.addEventListener('change', () => onPlusSet('shareWith', el.shareWith.checked ? 'participants' : 'none'));   // 폴더를 새로 만들 때 참여연구원에게 자동 공유
+    el.plusDiscover.addEventListener('change', () => onPlusSet('discover', el.plusDiscover.checked));
+    el.plusProjectSync.addEventListener('change', () => onPlusSet('projectSync', el.plusProjectSync.checked));
+    for (const node of [el.plusScopeAll, el.plusScopePick]) node.addEventListener('change', () => { if (node.checked) onPlusSet('scope', node.value); });
+    el.plusPick.addEventListener('change', () => onPlusSet('projects', [...el.plusPick.querySelectorAll('input[data-key]:checked')].map((x) => x.dataset.key)));
+    for (const [k, node] of Object.entries(el.plusItems)) node.addEventListener('change', () => onPlusSet(k, node.checked));
+    el.plusFollowReset.addEventListener('click', onPlusFollow);
+    el.plusProbe.addEventListener('click', onPlusProbe);
+    el.plusCopy.addEventListener('click', onPlusCopy);
+    el.shareGo.addEventListener('click', () => goSettings({ share: true }));
     el.shareFolder.addEventListener('change', onShareFolder);
     el.shareFolder.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onShareFolder(); } });
-    el.shareSync.addEventListener('click', () => runShare('지금 맞추기'));
+    el.shareSync.addEventListener('click', () => runShare('지금 동기화'));
     el.shareOpen.addEventListener('click', openShareFolder);
     el.shareLink.addEventListener('click', () => copyShareLink());
     el.erpRefresh.addEventListener('click', () => refreshErp({ force: true, reason: '↻' }));
@@ -3178,6 +3327,46 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   async function show() {
     el.root.classList.remove('hidden');
+    await load();
+    // 집행내역 표에 ＋·줄·폼·아이콘의 이벤트(rerp/plan.js bind)를 단다 — 이 패널이 표 요소를 가진 동안 한 번. 다른 패널 인스턴스(검사)가 같은 화면을 썼으면
+    // 그 리스너가 남지 않게 요소를 새것으로 바꿔 끼우고 다시 단다.
+    PLAN.send = planSend;   // 보이는 인스턴스가 rerp/plan.js 의 요청(planSync · shareFolderCopy …)을 받는다
+    const host = $('rdErpTable');
+    if (host && host !== st.plHost) {
+      const fresh = host.cloneNode(false);
+      host.replaceWith(fresh);
+      el.erpTable = fresh;
+      st.plHost = fresh;
+      PLAN.bind(fresh, st.pl, drawErp);
+    }
+    paintAll();
+    paintSet();
+    // 공유 (SharePoint)가 켜져 있으면 열 때 맞추고(다른 기기·동료가 고친 것을 받는다 — 1분 안에 맞췼으면 sharesync 가 건너뛴다), 탭이 보이는 동안 주기마다 다시 맞춘다(2026-10-19).
+    // 그 전에 rERP 확장에 설정을 물어 따른다(2026-10-25 — 거기서 켰으면 여기서도 켜짐). 기다리지 않는다.
+    if (st.share.on) runShare('열 때');   // 맞출 때 sharesync 의 settings 가 rERP 확장에 다시 묻는다
+    else shareEffective().then(() => { if (st.share.on && !el.root.classList.contains('hidden')) { shareAutoStart(); runShare('켬'); } }).catch(() => {});
+    shareAutoStart();
+    // rERP — 이어져 있으면 신선하지 않을 때 다시 받고, 아니면 올해 차년도를 이 세션에서 한 번 저절로 잇는다. 기다리지 않는다.
+    erpAuto();
+  }
+
+  /** 설정 › Plus 를 열 때(sidepanel.js choosePane) — R&D 탭을 아직 안 열었어도 저장해 둔 형편을 읽고 rERP 확장에 다시 물어(따르기) 그린다. 거기서 켜져 이제 켜졌으면 맞춘다. */
+  async function showPlus() {
+    await load();
+    paintShare();
+    const was = !!st.share.on;
+    await shareEffective().catch(() => {});
+    paintShare();
+    if (!was && st.share.on) runShare('켬');
+  }
+
+  /** 저장해 둔 장부·공유 형편·설정을 한 번 읽는다(R&D 탭이나 설정 › Plus 를 처음 열 때 — 둘이 겹쳐 불려도 한 번). */
+  let loading = null;
+  function load() {
+    loading ||= loadOnce().catch((err) => { loading = null; throw err; });
+    return loading;
+  }
+  async function loadOnce() {
     if (!st.loaded) {
       const saved = await chrome.storage.local.get([BOOK_KEY, GM_PROJECTS_KEY, SHARE_KEY, SET_KEY, PLAN.SKEY, PEOPLE_KEY]);
       st.book = normalizeBook(saved?.[BOOK_KEY]);
@@ -3208,25 +3397,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       st.pl.planWho = myName();
       // 지금 장부의 지문 — 이 뒤로 고친 것이 있을 때만 잠깐 뒤 맞춘다(shareSoon).
       st.shareHash = shareHashOf(st.book);
+      applyPlus();   // on · shareWith 를 지금 설정(여기서 바꾼 칸 > 지난번 rERP 확장의 답 > 기본)으로
     }
-    // 집행내역 표에 ＋·줄·폼·아이콘의 이벤트(rerp/plan.js bind)를 단다 — 이 패널이 표 요소를 가진 동안 한 번. 다른 패널 인스턴스(검사)가 같은 화면을 썼으면
-    // 그 리스너가 남지 않게 요소를 새것으로 바꿔 끼우고 다시 단다.
-    PLAN.send = planSend;   // 보이는 인스턴스가 rerp/plan.js 의 요청(planSync · shareFolderCopy …)을 받는다
-    const host = $('rdErpTable');
-    if (host && host !== st.plHost) {
-      const fresh = host.cloneNode(false);
-      host.replaceWith(fresh);
-      el.erpTable = fresh;
-      st.plHost = fresh;
-      PLAN.bind(fresh, st.pl, drawErp);
-    }
-    paintAll();
-    paintSet();
-    // 공유 (SharePoint)가 켜져 있으면 열 때 맞추고(다른 기기·동료가 고친 것을 받는다 — 1분 안에 맞췼으면 sharesync 가 건너뛴다), 탭이 보이는 동안 주기마다 다시 맞춘다(2026-10-19). 기다리지 않는다.
-    if (st.share.on) runShare('열 때');
-    shareAutoStart();
-    // rERP — 이어져 있으면 신선하지 않을 때 다시 받고, 아니면 올해 차년도를 이 세션에서 한 번 저절로 잇는다. 기다리지 않는다.
-    erpAuto();
   }
 
   function hide() {
@@ -3235,7 +3407,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   }
 
   return {
-    wire, show, hide, book: () => st.book, skills: loadManifest, share: () => st.share, shareSync: (reason) => runShare(reason || '지금 맞추기'), erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
+    wire, show, hide, showPlus, book: () => st.book, skills: loadManifest, share: () => st.share, shareSync: (reason) => runShare(reason || '지금 동기화'), erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
     shareTick, shareAuto: () => !!shareEvery,   // 주기 맞춤(2026-10-19) — 검사가 한 번 돌리고(shareTick) 타이머가 도는지(shareAuto) 본다
     staff: () => (cur() ? curBook(cur()).erp?.staff || null : null), refreshStaff, staffRun: () => st.staffRun,
     // 공유 권한(2026-10-19) — 검사가 형편·반영 약속을 본다.

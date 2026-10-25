@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { normalizeProject, MAX_PROJECTS, blankYear } from '../src/rnd.js';
 import {
   SHARE_KEY, DEFAULT_BASE, WS_EXTRA, normalizeShare, erpNoOf, shareKeyOf, projectOf, localProjectOf, localPlanOf, researchOf, cleanRec, yearOf, budgetHash,
-  applyYear, applyProject, matchProject, PEOPLE_KEY, normalizePeople, permRows,
+  applyYear, applyProject, matchProject, PEOPLE_KEY, normalizePeople, permRows, PLUS_DEFAULTS, normalizePlus, plusOf, plusSet, plusWant,
 } from '../src/rndshare.js';
 
 let pass = 0;
@@ -32,13 +32,41 @@ t('저장해 두는 형편 — 꺼짐이 기본, 모르는 것은 버린다', ()
   assert.equal(SHARE_KEY, 'rndShare');
   assert.equal(DEFAULT_BASE, '업무/shared');
   assert.deepEqual(WS_EXTRA, ['wsId', 'code', 'calendar']);
-  assert.deepEqual(normalizeShare(null), { on: false, folder: '', folderCache: {}, at: 0, memo: {}, del: {}, last: '', error: '', shareWith: 'participants', peer: {}, effective: '' });
+  assert.deepEqual(normalizeShare(null), { on: false, folder: '', folderCache: {}, at: 0, memo: {}, del: {}, last: '', error: '', shareWith: 'participants', peer: {}, effective: '', own: {} });
   assert.equal(normalizeShare({ shareWith: 'none' }).shareWith, 'none', '자동 공유 끄기만 남고 그 밖은 기본 participants');
   assert.deepEqual(normalizeShare({ on: 'yes', folder: ' https://x.sharepoint.com/personal/me/Documents/업무/shared ', memo: [1], del: 'x', at: '5', extra: 1, last: 'ok', folderCache: { folderPath: '/p' } }),
-    { on: false, folder: 'https://x.sharepoint.com/personal/me/Documents/업무/shared', folderCache: { folderPath: '/p' }, at: 0, memo: {}, del: {}, last: 'ok', error: '', shareWith: 'participants', peer: {}, effective: '' });
+    { on: false, folder: 'https://x.sharepoint.com/personal/me/Documents/업무/shared', folderCache: { folderPath: '/p' }, at: 0, memo: {}, del: {}, last: 'ok', error: '', shareWith: 'participants', peer: {}, effective: '', own: {} });
   assert.deepEqual(normalizeShare({ peer: { folder: 'https://x', at: 5 }, effective: 'https://x\nhttps://h' }).peer, { folder: 'https://x', at: 5 }, 'rERP 확장의 설정 기억(peer)과 밑폴더 열쇠(effective)는 그대로 둔다');
   assert.equal(normalizeShare({ peer: 'x', effective: 7 }).effective, '');
   assert.equal(normalizeShare({ on: true, at: 9, memo: { P1: { at: 1 } } }).memo.P1.at, 1);
+  assert.deepEqual(normalizeShare({ on: true, shareWith: 'none' }).own, { enabled: true, shareWith: 'none' }, '2026-10-25 전 저장값 — 켬·자동 공유 끔은 이 확장에서 바꾼 것으로');
+  assert.deepEqual(normalizeShare({ on: false }).own, {}, '꺼 둔 것은 rERP 확장을 따른다');
+  assert.deepEqual(normalizeShare({ on: true, own: { scope: 'pick', x: 1 } }).own, { scope: 'pick' }, 'own 이 있으면 그것만');
+});
+
+console.log('공유 (Plus) 설정 — 이 확장에서 바꾼 칸 > rERP 확장 > 기본 (2026-10-25)');
+t('모양이 맞는 칸만 남는다', () => {
+  assert.deepEqual(normalizePlus({ enabled: 1, discover: false, shareWith: 'all', scope: 'pick', projects: [' P1 ', 'P1', '', 7], sitesSync: true }), { discover: false, scope: 'pick', projects: ['P1', '7'] });
+  assert.deepEqual(plusOf(null, null), { ...PLUS_DEFAULTS, projects: [] });
+  assert.equal(plusOf({}, null).enabled, false, '기본은 꺼짐');
+});
+t('rERP 확장의 값을 따르고, 바꾼 칸만 이긴다', () => {
+  const peer = { enabled: true, scope: 'pick', projects: ['P1'], planSync: false };
+  assert.deepEqual(plusOf({}, peer), { ...PLUS_DEFAULTS, enabled: true, scope: 'pick', projects: ['P1'], planSync: false });
+  assert.equal(plusOf({ enabled: false }, peer).enabled, false);
+  assert.deepEqual(plusOf({ projects: ['P2'] }, peer).projects, ['P2']);
+});
+t('바꾼 값이 rERP 확장의 값과 같아지면 다시 따른다 — rERP 확장이 모르는 칸은 남긴다', () => {
+  const peer = { enabled: true, scope: 'all' };
+  assert.deepEqual(plusSet({}, 'enabled', false, peer), { enabled: false });
+  assert.deepEqual(plusSet({ enabled: false }, 'enabled', true, peer), {});
+  assert.deepEqual(plusSet({}, 'discover', false, peer), { discover: false }, 'rERP 확장이 답하지 않은 칸');
+  assert.deepEqual(plusSet({ scope: 'pick', projects: ['P1'] }, 'scope', 'all', peer), { projects: ['P1'] });
+  assert.deepEqual(plusSet({}, 'enabled', true, null), { enabled: true }, 'rERP 확장이 없으면 늘 이 확장의 것');
+});
+t('이 장부의 몫 — 예산 계획은 사업비를 따르고 참여연구원 계획은 늘 안 한다', () => {
+  assert.deepEqual(plusWant(PLUS_DEFAULTS), { plan: true, research: true, budget: true, changes: true, alias: true, support: true, staff: false });
+  assert.deepEqual(plusWant({ ...PLUS_DEFAULTS, staffSync: false, planSync: false }), { plan: false, research: true, budget: false, changes: true, alias: true, support: true, staff: false });
 });
 
 console.log('공유 열쇠 — rERP 과제번호 → Job Id → 장부 id');

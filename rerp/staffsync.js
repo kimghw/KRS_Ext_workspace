@@ -4,7 +4,8 @@
  *   저장소가 SharePoint 폴더의 JSON 으로 바뀌어(사용자 결정 "mcp 없이 … 브라우저 토큰으로" · "변경내역/예산등이 다 포함") 병합과 그 보조만 남겼다 — 파일 읽기·쓰기는 lib/sp-store.js, 문서 모양은 lib/prjdoc.js, 과제별 차례는 lib/prjdoc-sync.js.
  *
  * 계획 모양은 lib/staff.js normalizePlanEntry(prjNo · year · from · to · budgetPay · budget · basis · src · people · at · by · note) — 저장소 맵의 키는 "과제번호@연차"(planKey).
- * 병합: 연차마다 at(마지막 수정 시각)이 큰 쪽이 이김(같으면 로컬). 삭제는 묘비(storage.local.staffPlansDeleted, lib/staff.js remove — { "과제번호@연차": 지운 시각 })로 전파 —
+ * 병합: 연차마다 at(마지막 수정 시각)이 큰 쪽이 이김(같으면 로컬). 지급 완료(paid — rERP 자금현황에서 셈한 사실, lib/staff.js paidThroughOf)는 계획의 at 과 따로 **paid.at 큰 쪽**(rERP 를 늦게 조회한 쪽 — 계획을 안 고친 사람의 조회도 퍼지고 새 계획의 옛 paid 가 덮지 않게, 2026-10-19).
+ *   삭제는 묘비(storage.local.staffPlansDeleted, lib/staff.js remove — { "과제번호@연차": 지운 시각 })로 전파 —
  *   묘비가 계획 at 이상이면 삭제, 계획이 더 새로우면 계획이 남고 묘비 폐기. 90일 지난 묘비는 버림. 과제별 파일에는 그 과제 몫만(delSlice), 되돌려 넣기는 putBack */
 import KRX_STAFF from './staff.js';
 const g = { KRX_STAFF };   // [workspace] 원본은 전역 g.KRX_STAFF 를 읽는다
@@ -41,6 +42,13 @@ api.merge = function (local, remote, now) {
   const best = new Map();
   for (const p of L.plans) best.set(keyOf(p), p);
   for (const p of R.plans) { const cur = best.get(keyOf(p)); if (!cur || p.at > cur.at) best.set(keyOf(p), p); }
+  // 지급 완료(paid — rERP 자금현황에서 셈한 사실)는 계획의 at 과 따로 paid.at 큰 쪽(rERP 를 늦게 조회한 쪽) — 계획을 안 고친 사람이 조회한 것도 퍼지고, 계획이 새 쪽의 옛 paid 가 덮지 않게
+  const Lp = new Map(L.plans.map((p) => [keyOf(p), p.paid || null])), Rp = new Map(R.plans.map((p) => [keyOf(p), p.paid || null]));
+  for (const [k, p] of best) {
+    const a = Lp.get(k) || null, b = Rp.get(k) || null;
+    const win = a && b ? (b.at > a.at ? b : a) : (a || b);
+    if ((win || null) !== (p.paid || null)) { const q = Object.assign({}, p); if (win) q.paid = win; else delete q.paid; best.set(k, q); }
+  }
   const del = {};
   for (const [k, v] of Object.entries(L.del)) del[k] = Math.max(num(v), num(del[k]));
   for (const [k, v] of Object.entries(R.del)) del[k] = Math.max(num(v), num(del[k]));

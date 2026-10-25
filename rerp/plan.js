@@ -145,8 +145,9 @@ function bind(host, state, draw) {
     state.planSaved = { prjNo, text, error: !!error, busy: !!busy }; if (!error) state.planSavedAt = Date.now(); draw();
     clearTimeout(savedTimer); if (!busy) savedTimer = setTimeout(() => { state.planSaved = null; draw(); }, ms || 3000);
   };
-  const plusOn = () => !!(state.data && state.data.settings && state.data.settings.planSync);
+  const plusOn = (prjNo) => { const s = state.data && state.data.settings; return !!(s && s.planSync && (!Array.isArray(s.sharePick) || s.sharePick.includes(String(prjNo || '')))); };   // 과제별 공유에서 고르지 않은 과제는 꺼진 것으로
   const OFF_MSG = '공유 (Plus)가 꺼져 있습니다 · 툴바 팝업 아래 줄에서 켜세요';
+  const OFF_PRJ_MSG = '이 과제는 공유하지 않습니다 · 설정 › 공유 (Plus) › 과제별 공유 › 공유할 과제에서 고르세요';
   /* 과제 폴더 주소 복사(⬆): 백그라운드 shareFolderCopy(prjNo) 가 이 과제 폴더(아직 모르면 밑폴더 — r.what 'base')를 여는 주소를 클립보드에 복사한다(오프스크린 문서 — 폴더를 푸는 데 몇 초 걸려도 됨). 동료는 설정 › 공유 (Plus) 의 공유 폴더 칸에 붙여 넣는다 */
   async function copyFolder(prjNo) {
     show(prjNo, '과제 폴더 주소를 복사하는 중…', false, true);
@@ -244,12 +245,12 @@ function bind(host, state, draw) {
       state.planError = ''; draw(); focus(d.sub ? 'date' : 'unit');
     } else if (act === 'plan-hide') {   // 과제 단위 보이기/감추기 (저장하지 않음). 감출 때 열린 폼은 닫는다. 펼칠 때 Plus 가 켜져 있으면 그 과제를 공유 파일과 바로 맞춘다(view)
       if (state.planShown.has(prjNo)) { state.planShown.delete(prjNo); if (state.planEdit && state.planEdit.prjNo === prjNo) close(); }
-      else { state.planShown.add(prjNo); if (plusOn()) api.requestSync('view', prjNo); }
+      else { state.planShown.add(prjNo); if (plusOn(prjNo)) api.requestSync('view', prjNo); }
       draw();
     } else if (act === 'plan-persist') {   // 저장 아이콘: 지금 저장하고 "저장됨". Plus 가 켜져 있으면 저장 직후 그 과제를 공유 파일과 바로 맞추고 결과를 덧붙인다
       (async () => {
         try { await save(state.plans, state.planDeleted, prjNo); } catch (e) { show(prjNo, '저장 실패', true); return; }
-        if (!plusOn()) { show(prjNo, '저장됨'); return; }
+        if (!plusOn(prjNo)) { show(prjNo, '저장됨'); return; }
         show(prjNo, '저장됨 · 공유 파일과 맞추는 중…', false, true);
         let r = null;
         try { r = await api.send({ type: 'planSync', reason: 'manual', prjNo }); } catch (e) { r = null; }
@@ -260,7 +261,7 @@ function bind(host, state, draw) {
         else show(prjNo, `저장됨 · 공유 실패: ${r.error || '응답 없음'}`, true, false, 8000);
       })();
     } else if (act === 'plan-export') {   // 공유 폴더 주소 복사: 동료가 설정의 공유 폴더 칸에 붙여 넣으면 같은 폴더의 같은 과제 파일을 쓴다
-      if (!plusOn()) { show(prjNo, OFF_MSG, true, false, 6000); return; }
+      if (!plusOn(prjNo)) { show(prjNo, state.data && state.data.settings && state.data.settings.planSync ? OFF_PRJ_MSG : OFF_MSG, true, false, 6000); return; }
       copyFolder(prjNo);
     }
   });

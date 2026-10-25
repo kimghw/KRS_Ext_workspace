@@ -25,8 +25,8 @@ export const MAP = [
   { from: 'lib/plan.js', to: 'rerp/plan.js', how: '그대로 + chrome.runtime.sendMessage 세 곳 → api.send' },
   { from: 'lib/render.js', to: 'rerp/planui.js', how: '과제집행비율 표 부분만 (rateCell·pct·rateOf·아이콘·isProjectLead·planBtn·planRow·planForm·budgetTable·projectLink)' },
   { from: 'lib/rnd-api.js', to: 'rerp/erp.js', how: 'call·describe·pool·fetchProjectRecs·fetchProjects·dateRange·fetchCards·trunc·execRate·fetchBudget·ssoLogin + collect 의 미청구 합산(withPending) · settings.js 의 adv 기본값' },
-  { from: 'lib/settings.js', to: 'rerp/erp.js · rerp/sharesync.js', how: 'DEFAULTS 의 adv·budgetExclude(erp.js)·plus(sharesync.js SHARE_DEFAULTS) 와 parseJson 만' },
-  { from: 'background.js', to: 'rerp/sharesync.js', how: '공유 (Plus) 배선(shareSync·queueShareSync·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps' },
+  { from: 'lib/settings.js', to: 'rerp/erp.js · rerp/sharesync.js', how: 'DEFAULTS 의 adv·budgetExclude(erp.js)·plus(sharesync.js SHARE_DEFAULTS — 가맹점 sitesSync·sitesScope·sitesProjects 빼고) · sharePick·sharesProject(sharesync.js) 와 parseJson 만' },
+  { from: 'background.js', to: 'rerp/sharesync.js', how: '공유 (Plus) 배선(shareSync·queueShareSync·shareAutoRename·shareProbe·shareFolderCopy·shareFolderPeople·shareOrgLink·shareRename·onMessage 갈래) — 설정·과제 문맥·loadLocal/saveLocal·참여인력·클립보드·chrome·fetch 는 deps · 가맹점(sites*)·collect*·git* 은 옮기지 않음' },
   { from: 'lib/panel.css', to: 'rerp/plan.css', how: '과제집행비율 표·집행비율 막대·예상 비용 줄과 폼·공유 아이콘 규칙만' },
   { from: 'tests/plan-sync.test.js', to: 'test/rerp.test.mjs', how: 'ESM 으로 옮기고 plan.js·erp.js 검사를 보탬' },
   // 연구내용(2026-10-14 원노트 → 2026-10-18 과제 폴더의 연차 파일 research 칸) — 연구개발계획서 기록과 그 병합 규칙
@@ -35,7 +35,7 @@ export const MAP = [
   { from: 'tests/research.test.js', to: 'test/rerp-research.test.mjs', how: 'ESM 으로 (help-server/classify.js 검사는 뺌)' },
   // 참여연구원 참여율·지급액(2026-10-18) — 계산은 kr_ext_rerp 의 사업비 변경 메뉴로 넘기고(사용자 지정), WORKSPACE 의 참여인력 칸은 rERP 에 등록된 값을 보이기만 한다(rndpanel.js · src/rnderp.js)
   { from: 'lib/staff.js', to: 'rerp/staff.js', how: '그대로 (IIFE → export)' },
-  { from: 'tests/staff.test.js', to: 'test/rerp-staff.test.mjs', how: 'ESM 으로' },
+  { from: 'tests/staff.test.js', to: 'test/rerp-staff.test.mjs', how: 'ESM 으로 (머리의 require 만 import, 끝에 행정지원 검사 보탬)' },
   // 공유 (Plus) v2(2026-10-18 저녁 — "onedrive 에 업무/shared 안에 과제별로 … 년차별로 1개 파일" · "workspace 에도 경로주면 알아서 동기화"): SharePoint 저장소 · 문서 모양과 병합 · 과제별 차례 · 사업비 병합
   { from: 'lib/staff-sync.js', to: 'rerp/staffsync.js', how: '그대로 (IIFE → export, g.KRX_STAFF 는 shim)' },
   { from: 'lib/sp-store.js', to: 'rerp/spstore.js', how: '그대로 (g = globalThis, export)' },

@@ -630,44 +630,12 @@
             <div id="rdItems" class="rd-set-items-list" role="group" aria-label="예산 칸에 보일 비목"></div>
           </div>
           <!-- 집행에 더하기(승인전·미청구·사용계획) 체크는 예산 칸 맨 위 줄(rdIncRow)로 옮겼다 — 2026-10-11 사용자 지정. -->
-          <!-- 공유 (SharePoint)(2026-10-18 사용자 지정 — kr_ext_rerp 에서 먼저 바뀌고 "거기도 이렇게 진행하도록 해줘" · "workspace 에도 경로주면 알아서 동기화": "mcp 없이 grph api 하지 않고 브라우저 토큰으로",
-               "onedrive 에 업무/shared 안에 과제별로 .. 약칭으로 없으면 jobid 없으면 임시번호 … 년차별로 1개 파일이고 1개 파일에서 변경사항이랑 다 관리 … 과제 정보랑 등등", "참여연구원들에게 공유할 수 있게 설정까지").
-               원노트·MCP·Graph 를 걷어 내고 브라우저의 Microsoft 로그인 쿠키만으로 OneDrive(SharePoint) 공유 폴더를 쓴다 — 과제마다 폴더(약칭 → Job Id → 과제번호) 안에 연차 파일 <n>차년도.json(과제 정보·예산 계획·변경이력·연구내용)과
-               kr_ext_rerp 가 적는 예상비용.json. 파일 모양·병합은 kr_ext_rerp 의 lib/prjdoc.js(정본, rerp/prjdoc.js). 변환은 src/rndshare.js, 배선(켜기·지금 맞추기·고친 뒤·탭 열 때)은 rndpanel.js 가 rerp/sharesync.js 로.
-               옛 원노트 묶음(과제 정보 페이지·예상 비용 받아 보기·연구내용 올리기)은 모두 이 파일에 들어 따로 없다. 꺼 두면 아무 데도 닿지 않는다.
-               공유 폴더 칸이 비면 rERP 확장(kr_ext_rerp)의 설정을 따른다(2026-10-19 "이 링크 공통으로 맞춰봐" — management 권한으로 이름을 찾아 shareFolder 를 묻는다, rndpanel.js askPeer·shareEffective). -->
-      <details id="rdShareBox" class="rd-box card rd-share">
-        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 19h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6 9.3 4.85 4.85 0 0 0 7 19z"/><path d="M12 11v6m0-6-2.5 2.5M12 11l2.5 2.5"/></svg><span>공유 (SharePoint)</span><span id="rdShareState" class="summary-detail">꺼짐</span></summary>
-        <div class="rd-box-body">
-          <label class="rd-check rd-setting-row">
-            <span class="rd-setting-copy"><strong id="rdShareOnLabel">과제 폴더 동기화</strong><small id="rdShareOnHelp">다른 기기·참여연구원과 과제 자료 맞추기</small></span>
-            <input type="checkbox" id="rdShareOn" class="rd-setting-switch" role="switch" aria-labelledby="rdShareOnLabel" aria-describedby="rdShareOnHelp" />
-          </label>
-          <div class="rd-share-row">
-            <label for="rdShareFolder">공유 폴더</label>
-            <input type="text" id="rdShareFolder" aria-label="공유 폴더" placeholder="비우면 내 OneDrive 의 문서/업무/shared" title="밑폴더 — 비우면 rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 그대로 따르고, 그것도 없으면 내 OneDrive 의 문서/업무/shared. 동료가 보낸 공유 폴더(그 사람의 …/shared 나 과제 폴더)·팀 사이트 폴더의 주소를 넣어도 됩니다(넣으면 rERP 확장의 설정보다 이것이 이깁니다)" autocomplete="off" spellcheck="false" />
-          </div>
-          <label class="rd-check rd-share-with">
-            <input type="checkbox" id="rdShareWith" aria-labelledby="rdShareWithLabel" aria-describedby="rdShareWithHelp" />
-            <span class="rd-setting-copy"><strong id="rdShareWithLabel">참여연구원에게 자동 공유</strong><small id="rdShareWithHelp">새 과제 폴더를 만들 때 편집 권한 부여</small></span>
-          </label>
-          <div class="rd-actions rd-share-actions">
-            <button type="button" id="rdShareSync" class="primary small">지금 맞추기</button>
-            <button type="button" id="rdShareOpen" class="ghost small" title="공유 폴더를 새 탭에 엽니다 — Microsoft 로그인이 풀렸으면 여기서 로그인하세요">폴더 열기</button>
-            <button type="button" id="rdShareLink" class="ghost small" title="조직 안에서 열리는 공유 폴더 링크를 복사합니다 — 참여연구원이나 다른 기기의 공유 폴더 칸에 붙여 넣으면 같은 폴더를 씁니다">링크 복사</button>
-          </div>
-          <p id="rdShareMsg" class="rd-share-msg" role="status"></p>
-          <details class="rd-share-help">
-            <summary>공유 범위 및 동기화 안내</summary>
-            <dl class="rd-share-guide">
-              <div><dt>함께 맞추는 자료</dt><dd>과제 정보(별칭·과제명·책임자·연구기간·비고), 예산 계획, 변경이력, 연구내용을 양방향으로 맞춥니다. 예상 비용은 rERP에서 받아 봅니다.</dd></div>
-              <div><dt>이 기기에만 보관</dt><dd>참여연구원 지급계획, 집행, 진행 기록은 공유하지 않습니다.</dd></div>
-              <div><dt>폴더와 참여연구원</dt><dd>주소를 비우면 rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 그대로 따르고(두 확장이 한 폴더), rERP 확장이 없으면 내 OneDrive의 <code>문서/업무/shared</code>를 씁니다. 동료에게 받은 공유 폴더 주소도 넣을 수 있습니다(넣으면 rERP 확장의 설정보다 이것이 이깁니다). 자동 공유는 새 폴더에만 적용되며, 동명이인·찾지 못한 사람은 결과에 표시됩니다. 자동 공유를 끄면 OneDrive 또는 rERP에서 직접 공유하세요.</dd></div>
-              <div><dt>동기화 시점</dt><dd>공유를 켤 때, 지금 맞추기를 누를 때, 과제를 수정한 뒤, R&amp;D 탭을 열 때 맞춥니다. 로그인이 필요하면 <strong>폴더 열기</strong>에서 Microsoft에 로그인하세요.</dd></div>
-            </dl>
-          </details>
-        </div>
-      </details>
+      <!-- 공유 (SharePoint) 카드는 2026-10-25 설정 › Plus 로 옮겼다("rerp 에서 plus 기능을 워크스페이스에서 동일하게") — 여기는 그리로 가는 한 줄과 형편(rndpanel.js paintShare). -->
+      <button type="button" id="rdShareGo" class="rd-set-go" title="설정 › Plus 에서 공유 폴더·공유할 과제·항목을 고릅니다 — rERP 확장(kr_ext_rerp)과 같은 설정을 따릅니다">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 19h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6 9.3 4.85 4.85 0 0 0 7 19z"/><path d="M12 11v6m0-6-2.5 2.5M12 11l2.5 2.5"/></svg>
+        <span class="rd-setting-copy"><strong>공유 (Plus)</strong><small id="rdShareGoState">꺼짐</small></span>
+        <svg class="rd-set-go-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
       <!-- 연구개발계획서 YAML 넣기 — 맨 아래(2026-10-08 사용자 지정). RND 폴더의 KR_<과제>.yaml(스냅샷)과 history/*.yaml(개정 레지스트리·예산 이력·참여연구원 이력).
            탭 어디에 놓아도 여기로 온다. 글을 붙여 넣어도 읽는다. src/rndyaml.js 가 과제·차년도에 맞춰 넣고, YAML 은 vendor/yaml 로 푼다. -->
       <div id="rdIntake" class="rd-intake card">
@@ -799,6 +767,7 @@
            일반: 보이는 탭 · 내 이름 · 켜고 끄기 네 줄 · 활동 로그 · 페이지 구조 캡처
            LLM: Claude 에 닿는 길 전부 — 로컬 Claude CLI(아래에 "다리가 하는 일" 표 #bridgeUses — src/bridgeuse.js) · Anthropic API 키 · 쓰는 모델
            연결: 이 PC 의 KR_MS365_mcp 서버 — Outlook(메일 탭이 MCP 주소·내 메일 주소를 #connOutlook 에 그린다, mailtrack/panel.js connRoot) · Teams · OneNote
+           Plus: 공유 (Plus) — SharePoint 과제 폴더(2026-10-25, R&D 설정에서 옮김 — rERP 확장의 설정을 따른다, rndpanel.js paintShare)
          마지막에 본 갈래는 settingsPane 에 남는다. 비교작성 탭에서는 initCompareTab 이 hidden 을 붙여 통째로 숨긴다. -->
     <section id="settingsBox" class="settings card" hidden aria-label="설정">
       <div class="settings-head">
@@ -806,6 +775,7 @@
           <button id="setTabGeneral" class="set-tab active" type="button" role="tab" data-pane="general" aria-selected="true" aria-controls="setGeneral">일반</button>
           <button id="setTabLlm" class="set-tab" type="button" role="tab" data-pane="llm" aria-selected="false" aria-controls="setLlm">LLM</button>
           <button id="setTabConn" class="set-tab" type="button" role="tab" data-pane="conn" aria-selected="false" aria-controls="setConn">연결</button>
+          <button id="setTabPlus" class="set-tab" type="button" role="tab" data-pane="plus" aria-selected="false" aria-controls="setPlus" title="공유 (Plus) — SharePoint 과제 폴더를 rERP 확장과 함께">Plus</button>
         </nav>
         <button id="settingsClose" class="ghost small settings-close" type="button" title="설정을 닫고 보던 탭으로 (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>닫기</button>
       </div>
@@ -978,6 +948,79 @@
           <div class="conn-row"><span id="connNoteState" class="badge conn-state" role="status" aria-live="polite">확인 전</span><button id="connNoteCheck" type="button" class="ghost small">연결 확인</button></div>
         </div>
         <p class="hint set-footnote">Outlook 주소는 localhost · 127.0.0.1만 입력할 수 있습니다. Teams·OneNote는 지정된 포트(5003 · 5005)를 사용합니다. Claude 연결은 <strong>LLM</strong> 탭에서 설정하세요.</p>
+      </div>
+      <!-- Plus(2026-10-25 사용자 지정: "rerp 에서 plus 기능을 워크스페이스에서 동일하게 사용할 수 있도록 해줘. 둘은 같이 내용을 공유하는 거야" · "설정에 Plus 탭 + rerp 수준" · "rerp 설정을 따름"):
+           kr_ext_rerp 옵션의 공유 (Plus) 탭과 같은 짜임 — 과제 자료 공유(공유 사용 · 공유 폴더 주소/연결 확인 · 폴더 열기/주소 복사/조직 내 편집 링크) · 공유 방식(자동 공유 · 자동 찾기) ·
+           과제별 공유(켜기 · 공유할 과제 전체/고른 과제 · 항목) · 동기화 현황(지금 동기화 · 과제 줄). 전체 공유(가맹점 common)는 WORKSPACE 에 가맹점이 없어 뺐다.
+           칸마다 rERP 확장의 설정을 따르고(shareFolder 답 — rndpanel.js askPeer) 여기서 바꾼 칸만 이긴다(rndShare.own — src/rndshare.js plusOf·plusSet). 공유 폴더 칸은 비우면 따른다.
+           배선·그리기는 rndpanel.js(paintShare · paintPlus), 맞추는 차례는 rerp/sharesync.js. -->
+      <div id="setPlus" class="set-pane plus-pane" role="tabpanel" data-pane="plus" aria-labelledby="setTabPlus" hidden>
+        <div class="set-intro set-has-help">
+          <h2>과제 자료 공유</h2>
+          <p class="hint set-lead">OneDrive 공유 폴더에서 참여연구원·rERP 확장과 과제 자료를 함께 관리합니다.</p>
+          <div class="plus-follow"><span id="plusFollow" class="badge" role="status">rERP 확장 확인 전</span><button type="button" id="plusFollowReset" class="ghost small" hidden title="이 확장에서 바꾼 칸과 공유 폴더 칸을 비우고 rERP 확장의 공유 (Plus) 설정을 다시 따릅니다">rERP 설정 따르기</button></div>
+          <details class="set-help" id="plusHelp">
+            <summary aria-label="공유 (Plus) 도움말" title="공유 범위와 동기화 안내"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></summary>
+            <div class="set-help-content">
+              <dl class="plus-guide">
+              <div><dt>함께 맞추는 자료</dt><dd>과제 정보(별칭·과제명·책임자·연구기간·비고), 예산 계획, 변경이력, 연구내용을 양방향으로 맞춥니다. 예상 비용은 rERP에서 받아 봅니다.</dd></div>
+              <div><dt>이 기기에만 보관</dt><dd>참여연구원 지급계획, 집행, 진행 기록은 공유하지 않습니다.</dd></div>
+              <div><dt>폴더와 참여연구원</dt><dd>주소를 비우면 rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 그대로 따르고(두 확장이 한 폴더), rERP 확장이 없으면 내 OneDrive의 <code>문서/업무/shared</code>를 씁니다. 동료에게 받은 공유 폴더 주소도 넣을 수 있습니다(넣으면 rERP 확장의 설정보다 이것이 이깁니다). 자동 공유는 새 폴더에만 적용되며, 동명이인·찾지 못한 사람은 결과에 표시됩니다. 자동 공유를 끄면 OneDrive 또는 rERP에서 직접 공유하세요.</dd></div>
+              <div><dt>동기화 시점</dt><dd>공유를 켤 때, 지금 동기화를 누를 때, 과제를 수정한 뒤, R&amp;D 탭을 열 때 맞춥니다. 로그인이 필요하면 <strong>폴더 열기</strong>에서 Microsoft에 로그인하세요.</dd></div>
+            </dl>
+            </div>
+          </details>
+        </div>
+        <div class="set-options">
+          <label class="check-row" title="켜면 과제 정보·예산 계획·변경이력·연구내용을 공유 폴더의 과제별 연차 파일과 맞추고, rERP 확장이 적은 예상 비용을 받아 봅니다. 꺼 두면 아무 데도 닿지 않습니다.">
+            <span><strong>공유 사용</strong></span>
+            <input type="checkbox" id="rdShareOn" role="switch" />
+          </label>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>공유 폴더</strong><span id="plusFolderNow" class="summary-detail"></span></div>
+          <div class="plus-folder-row">
+            <input type="text" id="rdShareFolder" aria-label="공유 폴더 주소" placeholder="비우면 내 OneDrive 의 문서/업무/shared" title="밑폴더 — 비우면 rERP 확장(kr_ext_rerp)의 공유 폴더 설정을 그대로 따르고, 그것도 없으면 내 OneDrive 의 문서/업무/shared. 동료가 보낸 공유 폴더(그 사람의 …/shared 나 과제 폴더)·팀 사이트 폴더의 주소를 넣어도 됩니다(넣으면 rERP 확장의 설정보다 이것이 이깁니다)" autocomplete="off" spellcheck="false" />
+            <button type="button" id="plusProbe" class="ghost small" title="입력한 주소를 저장하고 폴더 연결을 확인합니다">연결 확인</button>
+          </div>
+          <p id="plusProbeState" class="hint plus-state" role="status"></p>
+          <div class="set-actions">
+            <button type="button" id="rdShareOpen" class="ghost small" title="공유 폴더를 새 탭에 엽니다 — Microsoft 로그인이 풀렸으면 여기서 로그인하세요">폴더 열기</button>
+            <button type="button" id="plusCopy" class="ghost small" title="지금 공유 폴더의 주소를 복사합니다">주소 복사</button>
+            <button type="button" id="rdShareLink" class="ghost small" title="회사 계정으로 열고 편집할 수 있는 조직 내 링크를 만들어 복사합니다 — 참여연구원이나 다른 기기의 공유 폴더 칸에 붙여 넣으면 같은 폴더를 씁니다">조직 내 편집 링크</button>
+          </div>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>공유 방식</strong><span class="summary-detail">동료와 폴더를 잇는 길</span></div>
+          <div class="set-options">
+            <label class="check-row"><span><strong>참여연구원에게 자동 공유</strong> — 새 과제 폴더를 만들 때 편집 권한</span><input type="checkbox" id="rdShareWith" role="switch" /></label>
+            <label class="check-row"><span><strong>공유받은 과제 자동 찾기</strong> — OneDrive 의 ‘나와 공유’ 에서</span><input type="checkbox" id="plusDiscover" role="switch" /></label>
+          </div>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>과제별 공유</strong><span id="plusSummary" class="summary-detail"></span></div>
+          <div class="set-options">
+            <label class="check-row"><span><strong>켜기</strong> — 과제마다 폴더(연차 파일 · 예상비용.json)</span><input type="checkbox" id="plusProjectSync" role="switch" /></label>
+          </div>
+          <div class="plus-scope" role="radiogroup" aria-label="공유할 과제">
+            <span>공유할 과제</span>
+            <label><input type="radio" id="plusScopeAll" name="plusScope" value="all" /> 참여 과제 전체</label>
+            <label><input type="radio" id="plusScopePick" name="plusScope" value="pick" /> 고른 과제만</label>
+          </div>
+          <div id="plusPrjPick" class="tab-picks plus-pick" role="group" aria-label="공유할 과제 고르기" hidden></div>
+          <div class="set-options plus-items">
+            <label class="check-row"><span><strong>예상 비용</strong> — rERP 확장이 적은 예상 지출 받아 보기</span><input type="checkbox" id="plusPlanSync" role="switch" /></label>
+            <label class="check-row"><span><strong>연구내용</strong> — 연구개발계획서 기록</span><input type="checkbox" id="plusResearchSync" role="switch" /></label>
+            <label class="check-row"><span><strong>사업비</strong> — 예산 계획(참여연구원 계획은 rERP 확장 몫)</span><input type="checkbox" id="plusStaffSync" role="switch" /></label>
+            <label class="check-row"><span><strong>변경이력</strong> — 누가 무엇을 바꿨는지</span><input type="checkbox" id="plusChangesSync" role="switch" /></label>
+          </div>
+        </div>
+        <div class="set-block">
+          <div class="set-block-head"><strong>동기화 현황</strong><span id="rdShareState" class="summary-detail">꺼짐</span></div>
+          <p id="rdShareMsg" class="hint plus-state" role="status"></p>
+          <ul id="plusPages" class="plus-pages" aria-label="과제별 공유 결과"></ul>
+          <div class="set-actions"><button type="button" id="rdShareSync" class="primary small">지금 동기화</button></div>
+        </div>
       </div>
     </section>
     <p class="footer-note">좋은 회의의 시작, 여유 있는 공간.</p>

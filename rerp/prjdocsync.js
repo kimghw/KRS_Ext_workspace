@@ -9,7 +9,8 @@
  *            openWriter(cfg, io) → writer { ensureFolder(), ensurePath?(path), at?(cfg)(같은 작업 탭·다이제스트로 다른 폴더를 쓰는 손잡이), modify(name, transform, { comment }), close() },
  *            sharedWithMe?(io, { driveHost }) → [{ name, webUrl, folder, ownerName?, cfg? }], parseFolder?(url) → cfg, folderUrl?(cfg) → 주소, fileUrl?(cfg, name) }   (KRX_SP 를 감싼 것 — io = deps.io 를 그대로 넘긴다)
  *   base(cfg — 밑폴더, KRX_SP.parseFolder 결과: folderPath · siteUrl · viewUrl · fileUrl(name)), driveHost, names{ prjNo: 과제명 }, rsprs{ prjNo: 책임자 }, myPrjNos[](내 참여 과제), leadPrjNos[](내가 책임자), aliases{ prjNo: 약칭 },
- *   index(storage.local.shareIndex 캐시 — { [prjNo]: { base, folder, site, path, url, owner, at } }), discover(나와 공유 훑기 — 기본 true), only?(과제번호 하나만),
+ *   index(storage.local.shareIndex 캐시 — { [prjNo]: { base, folder, site, path, url, owner, at } }), discover(나와 공유 훑기 — 기본 true), skip?(storage.local.shareSkip — 지난 state.skip), only?(과제번호 하나만),
+ *   allow?[](공유할 과제번호 — 설정 plus.scope 'pick' 의 projects. 주면 대상 과제를 이 안으로만 줄인다(only 도). 없으면(null) 모두 — 2026-10-22 사용자 "공유설정에 전체/과제별"),
  *   want: { plan, research, staff, budget, changes, alias, support }(끈 칸은 받지도 올리지도 않음 — 파일의 그 칸은 그대로. 2026-10-19 몫: staff·budget 은 rerp 만 고치고 WORKSPACE 는 받기만 — 그쪽은 pullOnly 나 자기 몫으로; 행정지원 support 는 양쪽), who,
  *   pullOnly?: { plan, year }(그 파일은 **읽어 받기만** — 병합해 saveLocal 은 하지만 writer 를 열지 않아 쓰지도 만들지도 않고, 로컬에만 있는 것은 올라가지 않는다. KRS WORKSPACE 가 예상비용.json 을 받기만 할 때 —
  *     2026-10-18 사용자 "예상지출도 … workspace 에도 경로주면 알아서 동기화" 의 몫 나눔: 예상 비용은 rerp 가 쓰고 WORKSPACE 는 본다. 기본 둘 다 false),
@@ -18,10 +19,12 @@
  * 차례:
  *   ① base 의 폴더 목록(listFolders — 없으면 kind 'nofolder' → 처음 쓸 때 만든다). 폴더마다 색인(index)의 경로가 맞으면 그 과제 폴더로 믿고(그 폴더의 첫 연차 파일을 읽을 때 project.prjNo 로 검증 — 다르면 색인이 틀린 것으로 보고 다시 고른다),
  *      색인에 없는 폴더는 **훑는다**(probe — 파일 목록 + 첫 연차 파일 한 장 → project.prjNo. 연차 파일이 없는 폴더는 '아직 못 알아본 폴더' — 그 이름으로 폴더를 만들 차례가 오면 그것을 쓴다). state.scanned = 훑은 폴더 수.
- *   ② discover 면 "나와 공유" 목록(sharedWithMe)에서 폴더 항목 가운데 경로 끝이 …/shared(동료의 base — 그 안을 listFolders) 또는 …/shared/<이름>(과제 폴더)인 것을 같은 식으로 훑어 project.prjNo 가 내 참여 과제면 대상에 넣는다(owner = 그 폴더 주인).
- *      같은 과제가 내 base 에도 동료 폴더에도 있으면: 내가 책임자면 내 것, 아니면 동료(책임자) 것(내 것은 rec.alt 로 남겨 동료 폴더가 없어졌을 때 되돌아간다). 동료 사이트의 오류(권한 없음 등)는 그 폴더만 건너뛴다.
+ *   ② discover 면 "나와 공유" 목록(sharedWithMe)의 폴더 항목을 같은 식으로 훑어 project.prjNo 가 내 참여 과제면 대상에 넣는다(owner = 그 폴더 주인) — 경로 끝이 …/shared 면 동료의 base(그 안을 listFolders), …/common 은 건너뛰고(가맹점 — sites-sync),
+ *      그 밖의 폴더는 **경로·밑폴더 이름과 상관없이** 과제 폴더 후보(2026-10-25 사용자 "shared 는 달라도 상관 없고 내부에 프로젝트 폴더랑 common 만 공유연결하면"). 내 과제 폴더가 아니었던 것은 state.skip(경로 → { at, prj(그 폴더의 과제번호 — 없으면 '') })에 두고 deps.skip 으로 받아 이레 동안 다시 훑지 않는다(그사이 prj 가 내 참여 과제가 되면 바로 다시 훑음).
+ *      같은 과제의 폴더가 여럿(내 base · 동료 폴더들)이면 누가 돌려도 같은 것을 고른다: 책임자의 폴더(내 것이면 내가 책임자, 동료 것이면 주인 이름 = rsprs[prj]) → 아니면 경로가 앞선 것
+ *      (밀린 내 base 폴더는 rec.alt 로 남겨 동료 폴더가 없어졌을 때 되돌아간다). 동료 사이트의 오류(권한 없음 등)는 그 폴더만 건너뛴다.
  *      "나와 공유" 끝점 자체의 auth(401/403 — 테넌트 정책으로 막힌 Graph 호환 끝점)는 base 목록이 이미 성공한 뒤라 전체 실패로 두지 않고 discoverError 로만 남긴다(offline 만 전체 실패).
- *   ③ 대상 과제 = only ∪ (myPrjNos ∪ 로컬 자료가 있는 과제 ∪ 폴더에서 알아낸 내 참여 과제). 과제마다 폴더가 없으면 **내가 책임자거나 로컬 자료가 있을 때만** base 에 folderNameFor 이름으로 만든다(base 도 없으면 먼저), 아니면 noFolder(책임자가 만들어 공유할 때까지 대기 — 오류 아님).
+ *   ③ 대상 과제 = only ∪ (myPrjNos ∪ 로컬 자료가 있는 과제 ∪ 폴더에서 알아낸 내 참여 과제) — allow 를 주면 그 안의 것만. 과제마다 폴더가 없으면 **내가 책임자거나 로컬 자료가 있을 때만** base 에 folderNameFor 이름으로 만든다(base 도 없으면 먼저), 아니면 noFolder(책임자가 만들어 공유할 때까지 대기 — 오류 아님).
  *      그 이름이 이미 **다른 과제**의 폴더(이번에 알아본 것 · 이번에 만든 것 · base 에 있는데 못 알아본 폴더가 아닌 것)면 '<이름>-<과제번호>' 로 비켜 간다 — 두 과제가 같은 약칭이면 둘째가 첫째의 파일을 덮어쓰던 것(2026-10-18 검토).
  *      폴더 만들기는 **내 base 바로 아래**(owner 없음 · 같은 사이트)에서만 — 색인에 남은 동료 폴더가 지워졌거나 이름이 바뀌어 nofolder 가 되면 동료 사이트에 새로 만들지 않고 그 색인은 버린 뒤(state.index 에서도 빠짐 — 다음 실행이 나와 공유를 다시 훑음) 다시 고른다(alt → 책임자/로컬 자료면 base 에 새로 → 아니면 noFolder).
  *   ④ 연차마다(로컬 계획·기록·변경이력이 있는 연차 ∪ 폴더의 연차 파일 ∪ 현재 연차(projects[prj].anl, 모르면 1)) 연차 파일: readFile → parse(kind 'year'·연차가 이름과 같아야 — 아니면 kind 'parse' 로 그 파일만 건너뜀) → loadLocal → KRX_PRJDOC.mergeYear →
@@ -35,14 +38,15 @@
  * → { state }  state = { at, ok, base:{ path, viewUrl }(folder 도 같은 값 — v1 호환), count(과제), files(읽은·만든 파일 수), scanned(훑은 폴더 수), written, pulled, errors, error?, kind?, created:[폴더를 새로 만든 과제번호 — 배선이 참여연구원 자동 공유에 씀], discoverError?,
  *   pages: { [prjNo]: { prjNo, title, folder(이름), folderUrl(보기 주소), webUrl(현재 연차 파일 주소 — 파일이 있는 것을 확인했을 때만), planUrl(예상비용.json 주소), owner(남의 폴더면 주인), years:[n…], at, created(파일을 새로 만듦), folderCreated?, pulled, pushed, checkedIn?,
  *                      count(예상 비용 항목 수), counts{ plan, research, staff, budget, changes }, remoteAt(가장 늦은 파일 updatedAt ms), remoteBy, noFolder?, error?, kind? } },
- *   index: 새 shareIndex { [prjNo]: { base, folder, site, path, url, owner, at } } }
+ *   index: 새 shareIndex { [prjNo]: { base, folder, site, path, url, owner, at } }, skip: 새 shareSkip { [폴더 경로(소문자)]: { at(훑은 시각), prj } } }
  *   pages 는 v1·planSyncState 와 호환 칸(prjNo·title·webUrl·at·created·pulled·pushed·count·remoteAt·remoteBy)을 지킨다. 쿠키·다이제스트 값은 어디에도 남기지 않는다 */
 import KRX_PRJDOC from './prjdoc.js';
 const g = { KRX_PRJDOC };   // [workspace] 원본은 전역 g.KRX_PRJDOC 를 읽는다
 const api = {};
 const D = () => g.KRX_PRJDOC;
 const FATAL = new Set(['auth', 'offline', 'badurl', 'tab']);   // 과제 하나의 문제가 아니라 전체가 안 되는 것(내 사이트일 때)
-const SHARED_SEG = 'shared';
+const SHARED_SEG = 'shared', COMMON_SEG = 'common';   // common 은 가맹점 파일 폴더(lib/sites-sync.js 몫)
+const SKIP_MS = 7 * 86400000;   // 나와 공유에서 훑어 내 과제 폴더가 아니었던 폴더는 이레 동안 다시 훑지 않는다(state.skip → storage.local.shareSkip — 나와 공유가 실측 500건이라 매번 훑으면 GET 이 수백)
 const fail = (kind, msg) => { const e = new Error(msg); e.kind = kind; return e; };
 const kindOf = (e) => (e && e.kind) || '';
 const msgOf = (e) => String((e && e.message) || e);
@@ -66,16 +70,18 @@ api.run = async function (deps) {
   const mine = Array.from(new Set((deps.myPrjNos || []).map(String).filter(Boolean)));
   const leads = new Set((deps.leadPrjNos || []).map(String).filter(Boolean));
   const discover = deps.discover !== false && typeof store.sharedWithMe === 'function';
+  const allow = Array.isArray(deps.allow) ? new Set(deps.allow.map(String)) : null;   // 공유할 과제(고른 과제만) — null 이면 모두
   const index0 = obj(deps.index) || {};
   const baseSite = siteOf(base), basePath = str(base.folderPath);
   const baseInfo = { path: basePath, viewUrl: str(base.viewUrl) };
-  const state = { at: now, ok: true, base: baseInfo, folder: baseInfo, count: 0, files: 0, scanned: 0, written: 0, pulled: 0, errors: 0, created: [], pages: {}, index: {} };
+  const state = { at: now, ok: true, base: baseInfo, folder: baseInfo, count: 0, files: 0, scanned: 0, written: 0, pulled: 0, errors: 0, created: [], pages: {}, index: {}, skip: {} };
+  for (const [k, t] of Object.entries(obj(deps.skip) || {})) if (obj(t) && now - Number(t.at) < SKIP_MS) state.skip[k] = { at: Number(t.at), prj: str(t.prj) };   // ponytail: 이레 — 빈 채로 공유됐다가 나중에 연차 파일이 생긴 폴더는 늦으면 이레 뒤에 찾음
   const fileUrlOf = (cfg, name) => (typeof cfg.fileUrl === 'function' ? str(cfg.fileUrl(name)) : typeof store.fileUrl === 'function' ? str(store.fileUrl(cfg, name)) : '');
   const folderUrlOf = (cfg) => (typeof store.folderUrl === 'function' ? str(store.folderUrl(cfg)) : str(cfg.url));
   const viewUrlOf = (cfg) => str(cfg.viewUrl) || folderUrlOf(cfg);
   const underBase = (cfg) => siteOf(cfg) === baseSite && lower(cfg.folderPath).startsWith(`${lower(basePath)}/`);
   const finish = () => { state.count = Object.keys(state.pages).length; state.ok = state.errors === 0; if (!state.ok && !state.error) state.error = '동기화에 실패한 과제가 있습니다'; return { state }; };
-  const fatal = (e) => { state.ok = false; state.errors++; state.error = msgOf(e); state.kind = kindOf(e) || 'error'; return finish(); };
+  const fatal = (e) => { state.ok = false; state.errors++; state.error = msgOf(e); state.kind = kindOf(e) || 'error'; state.index = Object.assign({}, index0, state.index); return finish(); };   // 아무것도 검증 못 했으니 지난 색인은 그대로(2026-10-25 — 로그인 만료 403 뒤 shareIndex 가 비던 것)
   const fatalFor = (e, rec) => FATAL.has(kindOf(e)) && (!rec || rec.site === baseSite || kindOf(e) === 'offline');   // 동료 사이트의 auth 등은 그 과제만
 
   /* ---------- 폴더 알아보기 ---------- */
@@ -102,11 +108,18 @@ api.run = async function (deps) {
     const pj = parsed && parsed.kind === 'year' ? parsed.doc.project : null;
     return { prjNo: pj ? str(pj.prjNo) : '', jobId: pj ? str(pj.jobId) : '' };
   }
-  /* 과제에 폴더를 붙인다 — 이미 있으면: 내 base 폴더 vs 동료 폴더는 내가 책임자면 내 것, 아니면 동료 것 */
+  /* 과제에 폴더를 붙인다 — 같은 과제의 폴더가 여럿이면 **누가 돌려도 같은 것**: 책임자의 폴더(내 것이면 내가 책임자, 동료 것이면 주인 이름 = 과제책임자, 공백 무시) → 아니면 경로가 앞선 것.
+   *   (2026-10-25 — 책임자가 아닌 두 사람이 각자 폴더를 만들면 "아니면 동료 것" 규칙으로 서로 상대 폴더를 골라 갈라지던 것) */
+  const bare = (s) => str(s).replace(/\s+/g, '');
+  const leadDir = (prj, rec) => (rec.owner ? !!bare(rsprs[prj]) && bare(rec.owner) === bare(rsprs[prj]) : leads.has(prj));
   const pick = (prj, rec) => {
     const cur = folderOf[prj];
     if (!cur) { folderOf[prj] = rec; return; }
-    if (!cur.owner && rec.owner && !leads.has(prj)) { rec.alt = cur; folderOf[prj] = rec; }   // 밀어낸 내 폴더는 alt 로 — 동료 폴더가 없어졌을 때 되돌아간다
+    const a = leadDir(prj, rec), b = leadDir(prj, cur);
+    const win = a !== b ? (a ? rec : cur) : (lower(rec.cfg.folderPath) < lower(cur.cfg.folderPath) ? rec : cur);   // ponytail: 경로 차례 — 만든 시각은 목록에 없어서
+    const lose = win === rec ? cur : rec;
+    if (win.owner && !win.alt) win.alt = lose.owner ? lose.alt : lose;   // 밀어낸 내 base 폴더는 alt 로 — 동료 폴더가 없어졌을 때 되돌아간다
+    folderOf[prj] = win;
   };
   // ① base
   let baseMissing = false, folders = [];
@@ -148,12 +161,12 @@ api.run = async function (deps) {
       if (!cfg && typeof store.parseFolder === 'function') { try { cfg = store.parseFolder(str(it.webUrl)); } catch (x) { cfg = null; } }
       if (!cfg || !cfg.folderPath) continue;
       const segs = str(cfg.folderPath).split('/').filter(Boolean);
-      const last = lower(segs[segs.length - 1]), parent = lower(segs[segs.length - 2]);
+      const last = lower(segs[segs.length - 1]);
       const owner = str(it.ownerName);
       const cands = [];
       try {
         if (last === SHARED_SEG) { for (const f of (await store.listFolders(cfg, io)) || []) if (f && f.name) cands.push(mkRec(f.name, store.childCfg(cfg, f.name), cfg.folderPath, owner)); }
-        else if (parent === SHARED_SEG) cands.push(mkRec(segs[segs.length - 1], cfg, segs.slice(0, -1).join('/') ? `/${segs.slice(0, -1).join('/')}` : '', owner));
+        else if (last !== COMMON_SEG) cands.push(mkRec(segs[segs.length - 1], cfg, segs.slice(0, -1).join('/') ? `/${segs.slice(0, -1).join('/')}` : '', owner));   // 과제 폴더는 경로·밑폴더 이름과 상관없이 안의 연차 파일로 알아본다(2026-10-25 — 동료의 밑폴더가 shared 가 아니어도)
       } catch (e) { if (kindOf(e) === 'offline') return fatal(e); state.discoverError = msgOf(e); continue; }
       for (const rec of cands) {
         const key = lower(rec.cfg.folderPath);
@@ -161,9 +174,12 @@ api.run = async function (deps) {
         probed.add(key);
         const hit = idxByPath[key];
         if (hit) { rec.fromIndex = true; pick(hit, rec); continue; }
+        const sk = state.skip[key];
+        if (sk && !(sk.prj && mine.includes(sk.prj))) continue;   // 이레 안에 훑어 내 과제 폴더가 아니었던 것 — 그사이 그 과제의 참여인력이 됐으면 다시 훑는다
         let p;
         try { p = await probe(rec); } catch (e) { if (kindOf(e) === 'offline') return fatal(e); state.discoverError = msgOf(e); continue; }
-        if (p.prjNo && mine.includes(p.prjNo)) pick(p.prjNo, rec);
+        if (p.prjNo && mine.includes(p.prjNo)) { pick(p.prjNo, rec); delete state.skip[key]; }
+        else state.skip[key] = { at: now, prj: p.prjNo };
       }
     }
   }
@@ -215,6 +231,7 @@ api.run = async function (deps) {
     for (const p of D().localPrjNos(local)) targets.add(p);
     for (const p of Object.keys(folderOf)) if (mine.includes(p)) targets.add(p);
   }
+  if (allow) for (const p of Array.from(targets)) if (!allow.has(p)) targets.delete(p);   // 고르지 않은 과제는 폴더를 만들지도 읽지도 쓰지도 않는다
   const projectOf = (l, prj) => obj(obj(l.projects) && l.projects[prj]) || {};
   const metaOf = (prj, l) => { const pr = projectOf(l, prj); return { prjNm: names[prj] || str(pr.prjNm), rspr: rsprs[prj] || str(pr.rspr), stDt: str(pr.stDt), endDt: str(pr.endDt), who }; };   // 과제 전체 기간(start·end)은 WORKSPACE 몫 — fromLocalYear 가 local.projects 에서 가져간다
   const aliasOf = (prj, l) => str(aliases0[prj] || (l.aliases || {})[prj]);

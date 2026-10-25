@@ -13,6 +13,8 @@
  *   공유·링크 호출은 아직 실측 전(2026-10-18 저녁) — 응답 모양이 다르면 kind 'http' 에 본문 요지(200자)를 담아 사용자에게 보인다.
  *   permissions(cfg, io) 폴더 권한 읽기(ListItemAllFields 의 RoleAssignments 펼침 — 사람은 PrincipalId·표시 이름·이메일·가장 센 역할, 조직 내 링크 그룹은 links, 나 표시) · findPeople(cfg, names, io) 이름 → 사람(사이트 search REST 의 People 원본 — 한글 이름도 찾힘) ·
  *   writer.unshare(folderPath, ids) 사람(PrincipalId)의 권한 거두기(RoleAssignments/GetByPrincipalId → 역할마다 RemoveRoleAssignment) — 2026-10-19 KRS WORKSPACE 참여인력 칸의 읽기·편집 체크("체크하면 반영")가 쓴다.
+ *   참여연구원 자료 요청(0.8.9, 2026-10-20 — lib/collect.js · background.js collect*): writer.createList({ title, description, fields, titleField, ownOnly }) 이 사이트에 사용자 지정 목록(SharePoint List)을 만들고 칸(영문 내부 이름 → 한글 표시 이름·설명·기본값)·기본 보기·항목 보안(자기 항목만)을 맞춤(같은 제목이 있으면 그 목록에 빠진 칸만 — 되돌려 받을 수 있게) ·
+ *   writer.recycleList(id) 목록을 재활용통으로 · listItems(siteUrl, listId, io, { fields, top }) 목록 항목 읽기(확장 출처 GET — Author 의 이름·이메일 펼침) · listInfo(siteUrl, listId, io) 목록 정보(경로 · 폼 주소 — 공유 전에 저장된 경로 대신) · writer.sharePeople 의 { email:{ subject, body } } 는 ShareObject 의 메일 알림(sendEmail) — 목록(RootFolder 경로)도 폴더와 같은 길로 공유한다(자료 요청은 팀즈 딥 링크로 알리므로 메일은 쓰지 않음).
  *   실측(2026-10-19, 내 OneDrive 과제 폴더 — 권한·사람 찾기 GET 만): 사이트 사용자 정보의 Title 은 영문("MOON Changjae")이라 한글 이름과 맞춰지지 않는다 — 권한은 **이메일**로 맞추고, 주기는 sharePeople 에 이메일을 넘겨(피커가 이메일로 찾음) ShareObject, 바꾸기는 거둔 뒤 다시 주기.
  * kr_ext_aip 확장(E:\dev\kr_ext_aip\extension\lib\sharepoint.js · lib/scan/worker.js · lib/core/sharepointurl.js)이 SharePoint 시트를 다루는 방식을 이 저장소 꼴(IIFE · self.KRX_SP · ESM 아님)로 옮긴 것 —
  *   MCP 서버·Graph·Entra 로그인·원노트는 쓰지 않는다. 백그라운드 전용(chrome.windows · tabs · scripting) · Node 테스트 겸용(가짜 fetch · 가짜 chrome 주입).
@@ -332,7 +334,7 @@ api.permissions = async function (cfg, opts) {
 };
 /* 이름(또는 이메일)으로 사람 찾기 — 사이트 search REST 의 People 결과 원본(확장 출처 GET, 다이제스트 없음): <apiRoot>/search/query?querytext='…'&sourceid='<PEOPLE_SOURCE>'&selectproperties='PreferredName,WorkEmail,AccountName'.
  *   실측(2026-10-19): 한글 이름 '문창재' → PreferredName 'MOON Changjae' · WorkEmail · AccountName(i:0#.f|membership|<이메일>) 1줄 — 표시 이름이 영문이라 피커(sharePeople 의 이름 맞추기)로는 못 찾는 사람도 여기서는 찾힌다.
- *   1명이면 그 사람(표시 이름이 질문과 달라도), 여럿이면 PreferredName·이메일이 질문과 꼭 같은(공백·대소문자 무시) 1명, 아니면 ambiguous(후보 "이름 <이메일>"), 없으면 notFound. 이메일이 없는 줄은 세지 않는다.
+ *   게스트 계정(AccountName 에 #ext# — 외부 초대, gmail 등)은 조직 사용자 줄이 하나라도 있으면 뺀다(2026-10-20 '이은주' 가 gmail 게스트로 풀린 일; 게스트뿐이면 외부 참여자로 보고 그대로). 1명이면 그 사람(표시 이름이 질문과 달라도), 여럿이면 PreferredName·이메일이 질문과 꼭 같은(공백·대소문자 무시) 1명, 아니면 ambiguous(후보 "이름 <이메일>"), 없으면 notFound. 이메일이 없는 줄은 세지 않는다.
  *   → { found:[{ name(질문), title, email, login }], ambiguous:[{ name, candidates:[…] }], notFound:[name] }. 401/403·로그인 화면 → auth. 응답은 nometadata(PrimaryQueryResult.RelevantResults.Table.Rows[].Cells[])·verbose(d.query … .results) 둘 다 읽는다 */
 api.findPeople = async function (cfg, names, opts) {
   cfg = api.revive(cfg);
@@ -348,11 +350,13 @@ api.findPeople = async function (cfg, names, opts) {
     const j = (await r.json().catch(() => null)) || {};
     const q = (j.d && j.d.query) || j;
     const table = q.PrimaryQueryResult && q.PrimaryQueryResult.RelevantResults && q.PrimaryQueryResult.RelevantResults.Table;
-    const rows = arr(table && table.Rows).map((row) => {
+    let rows = arr(table && table.Rows).map((row) => {
       const o = {};
       for (const c of arr(row && row.Cells)) if (c && c.Key) o[c.Key] = c.Value == null ? '' : String(c.Value);
       return { title: o.PreferredName || '', email: o.WorkEmail || '', login: o.AccountName || '' };
     }).filter((x) => x.email);
+    const members = rows.filter((x) => !/#ext#/i.test(x.login));   // 게스트(외부 초대 — AccountName …#ext#@…)는 조직 사용자가 있으면 뺀다: 2026-10-20 실측 '이은주' → 'LEE Eunjoo' <ejlee@krs.co.kr> 와 게스트 '이은주' <…@gmail.com> 둘이 와 이름이 꼭 같은 게스트를 골랐다. 게스트뿐이면(외부 참여자) 그대로
+    if (members.length) rows = members;
     const exact = rows.filter((x) => norm(x.title) === norm(name) || norm(x.email) === norm(name));
     const hit = rows.length === 1 ? rows[0] : exact.length === 1 ? exact[0] : null;
     if (hit) found.push({ name, title: hit.title, email: hit.email, login: hit.login });
@@ -386,6 +390,44 @@ api.readFile = async function (cfg, name, opts) {
   if (vr.status === 404) return null;
   if (!vr.ok) throw errOfStatus(vr.status, `읽기 ${name}`);
   return { text: await vr.text(), meta: Object.assign(metaOf(m), { checkedOut, checkedOutByMe }) };
+};
+
+/* 목록 항목 읽기(확장 출처 GET — 참여연구원 자료 요청의 응답, lib/collect.js responsesOfItems · background.js collectFetch): <siteUrl>/_api/web/lists(guid'<id>')/items?$select=Id,Title,<fields…>,Created,Modified,Author/Title,Author/EMail&$expand=Author&$orderby=Modified desc&$top=500
+ *   → [{ Id, Title, …, Created, Modified, Author:{ Title, EMail } }](nometadata value · verbose d.results 둘 다). 목록이 없으면(404) kind 'notfound', 401/403·로그인 화면 → auth. opts(io) = { fetch }, o = { fields:[내부 이름(영문)…], top } */
+api.listItems = async function (siteUrl, listId, opts, o) {
+  const fetchFn = (opts && opts.fetch) || g.fetch;
+  o = o || {};
+  let origin, site;
+  try { const u = new URL(String(siteUrl)); origin = u.origin; site = `${u.origin}${u.pathname.replace(/\/+$/, '')}`; } catch (e) { badurl('사이트 주소(siteUrl)가 주소 모양이 아닙니다'); }
+  const id = String(listId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) badurl('목록 Id 가 GUID 모양이 아닙니다');
+  const fields = (Array.isArray(o.fields) ? o.fields : []).map((f) => String(f).replace(/[^A-Za-z0-9_]/g, '')).filter(Boolean);
+  const sel = ['Id', 'Title'].concat(fields, ['Created', 'Modified', 'Author/Title', 'Author/EMail']);
+  const top = o.top > 0 ? Math.min(5000, Number(o.top)) : 500;
+  const what = `목록 항목 ${id}`;
+  const res = await spGet(fetchFn, origin, `${site}/_api/web/lists(guid'${encLit(id)}')/items?$select=${sel.join(',')}&$expand=Author&$orderby=Modified%20desc&$top=${top}`, what);
+  if (res.status === 404) throw mkErr('notfound', `${what}: 목록이 없습니다 (404) — 지워졌거나 재활용통에 있습니다`, { status: 404 });
+  if (!res.ok) throw errOfStatus(res.status, what);
+  const j = await res.json().catch(() => null);
+  const list = j && Array.isArray(j.value) ? j.value : j && j.d && Array.isArray(j.d.results) ? j.d.results : null;
+  if (!list) throw mkErr('http', `${what} 응답이 JSON 이 아닙니다`, { status: res.status });
+  return list;
+};
+
+/* 목록 정보(Id 로) — { id, title, path(RootFolder 서버 상대 경로), newFormUrl, viewUrl }. 공유(ShareObject)는 이 경로로 가므로 저장된 경로 대신 매번 이것을 쓴다(저장본이 틀리거나 목록 이름이 바뀌어도). 404 → notfound */
+api.listInfo = async function (siteUrl, listId, opts) {
+  const fetchFn = (opts && opts.fetch) || g.fetch;
+  let origin, site;
+  try { const u = new URL(String(siteUrl)); origin = u.origin; site = `${u.origin}${u.pathname.replace(/\/+$/, '')}`; } catch (e) { badurl('사이트 주소(siteUrl)가 주소 모양이 아닙니다'); }
+  const id = String(listId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) badurl('목록 Id 가 GUID 모양이 아닙니다');
+  const what = `목록 정보 ${id}`;
+  const res = await spGet(fetchFn, origin, `${site}/_api/web/lists(guid'${encLit(id)}')?$select=Id,Title,DefaultNewFormUrl,DefaultViewUrl,RootFolder/ServerRelativeUrl&$expand=RootFolder`, what);
+  if (res.status === 404) throw mkErr('notfound', `${what}: 목록이 없습니다 (404) — 지워졌거나 재활용통에 있습니다`, { status: 404 });
+  if (!res.ok) throw errOfStatus(res.status, what);
+  const j = await res.json().catch(() => null), d = (j && j.d) || j;
+  if (!d || typeof d !== 'object') throw mkErr('http', `${what} 응답이 JSON 이 아닙니다`, { status: res.status });
+  return { id: String(d.Id || ''), title: String(d.Title || ''), path: String((d.RootFolder && d.RootFolder.ServerRelativeUrl) || ''), newFormUrl: String(d.DefaultNewFormUrl || ''), viewUrl: String(d.DefaultViewUrl || '') };
 };
 
 /* ---------- 페이지 안에서 도는 함수(사이트 출처, chrome.scripting.executeScript world:'MAIN' 으로 주입) — 바깥 변수 참조 금지, 결과는 JSON ---------- */
@@ -481,7 +523,7 @@ async function spSharePeople(a) {
     }
     const person = (p) => ({ name: String(p.entry.DisplayText || p.name), email: String((p.entry.EntityData && p.entry.EntityData.Email) || '') });
     const share = async (ps) => {
-      const r = await post(`${a.apiRoot}/SP.Web.ShareObject`, { url: a.url, peoplePickerInput: JSON.stringify(ps.map((p) => p.entry)), roleValue: a.roleValue, groupId: 0, propagateAcl: false, sendEmail: false, includeAnonymousLinkInEmail: false, emailSubject: '', emailBody: '' });
+      const r = await post(`${a.apiRoot}/SP.Web.ShareObject`, { url: a.url, peoplePickerInput: JSON.stringify(ps.map((p) => p.entry)), roleValue: a.roleValue, groupId: 0, propagateAcl: false, sendEmail: !!a.sendEmail, includeAnonymousLinkInEmail: false, emailSubject: String(a.emailSubject || ''), emailBody: String(a.emailBody || '') });
       const body = await r.text().catch(() => '');
       if (!r.ok) return { digest: r.status === 403 && /security validation|2130575251/i.test(body), auth: r.status === 401, error: `공유 ${r.status}: ${snip(body)}`, status: r.status };
       let j = null;
@@ -732,7 +774,95 @@ async function spRecycle(a) {
     return { ok: true, removed: true };
   } catch (e) { return fail('offline', String((e && e.message) || e)); }
 }
-api._page = { spDigest, spEnsureFolder, spBegin, spCommit, spRelease, spCreate, spRecycle, spSharePeople, spUnshare, spOrgLink, spRename };
+/* [페이지] 목록 만들기(참여연구원 자료 요청 — lib/collect.js, 2026-10-20): 같은 제목의 목록이 있으면 그 목록(existed — 지난번에 만들다 끊겼거나 다시 만들기)에 빠진 칸만 더하고, 없으면 POST web/lists(SP.List · BaseTemplate 100 사용자 지정 목록)
+ *   → 칸마다 fields/addfield(SP.FieldCreationInformation — Title 을 영문 name 으로 만들어 내부 이름을 고정) → MERGE 로 표시 이름(Title)·Description·DefaultValue → DefaultView/ViewFields/addViewField(새 목록이면 작성자 Author 도) → 제목 칸(Title)도 MERGE(표시 이름 · 설명 · 기본값)
+ *   → ownOnly 면 MERGE 목록 ReadSecurity 2 · WriteSecurity 2(응답자는 자기 항목만 보고 고침 — 월급여가 서로에게 보이지 않게; 목록 주인은 모두 봄) → 목록 정보(Id · RootFolder/ServerRelativeUrl · DefaultNewFormUrl · DefaultViewUrl).
+ *   a = { api, digest, title, description, fields:[{ name(영문), title, kind(2 글 · 3 여러 줄 · 9 수 · 4 날짜 · 6 선택 — choices:[…] 를 만들 때 Choices 로, MERGE 때 Choices·FillInChoice·EditFormat 0 드롭다운), desc, required?, defaultValue? }], titleField:{ title, desc, defaultValue } | null, ownOnly }
+ *   → { ok, id, title, path(RootFolder 서버 상대 경로), newFormUrl, viewUrl(서버 상대), existed, warnings:[…](칸·보기·보안 단계의 실패 — 목록은 있음) }. 다이제스트 거부는 'digest'(writer 가 다시 받아 한 번 더 — 그때는 existed 로 이어 간다). 본문은 verbose(__metadata 가 필요) · 응답은 nometadata 로 받고 d 꼴도 읽는다 */
+async function spCreateList(a) {
+  const J = { Accept: 'application/json;odata=nometadata' };
+  const V = 'application/json;odata=verbose';
+  const fail = (code, error, status) => ({ ok: false, code, error, status });
+  const codeOf = (s) => (s === 401 || s === 403 ? 'auth' : s === 404 ? 'notfound' : 'http');
+  const snip = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const lit = (p) => encodeURIComponent(String(p).replace(/'/g, "''"));
+  const isDigest = (r, body) => r.status === 403 && /security validation|2130575251/i.test(body);
+  const post = (url, body, extra) => fetch(url, { method: 'POST', headers: Object.assign({ Accept: J.Accept, 'Content-Type': V, 'X-RequestDigest': a.digest }, extra || {}), body: JSON.stringify(body), credentials: 'include' });
+  const merge = (url, body) => post(url, body, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+  const INFO = '?$select=Id,Title,DefaultNewFormUrl,DefaultViewUrl,RootFolder/ServerRelativeUrl&$expand=RootFolder';
+  const infoOf = (j) => { const d = j && j.d ? j.d : j || {}; return { id: String(d.Id || ''), title: String(d.Title || ''), path: String((d.RootFolder && d.RootFolder.ServerRelativeUrl) || ''), newFormUrl: String(d.DefaultNewFormUrl || ''), viewUrl: String(d.DefaultViewUrl || '') }; };
+  const typeOf = (k) => (k === 3 ? 'SP.FieldMultiLineText' : k === 9 ? 'SP.FieldNumber' : k === 4 ? 'SP.FieldDateTime' : k === 6 ? 'SP.FieldChoice' : 'SP.FieldText');
+  const choicesOf = (f, kind) => (kind === 6 && Array.isArray(f.choices) ? f.choices.map((c) => String(c == null ? '' : c).trim()).filter(Boolean).slice(0, 100) : []);
+  const choiceBody = (choices) => ({ Choices: { __metadata: { type: 'Collection(Edm.String)' }, results: choices } });   // verbose 본문의 문자열 모음
+  try {
+    const warnings = [];
+    let id = '', existed = false;
+    const er = await fetch(`${a.api}/lists/getbytitle('${lit(a.title)}')${INFO}`, { headers: J, credentials: 'include', cache: 'no-store' });
+    if (er.status === 401 || er.status === 403) return fail('auth', `목록 정보 ${er.status}`, er.status);
+    if (er.ok) { const info = infoOf(await er.json().catch(() => null)); if (info.id) { id = info.id; existed = true; } }
+    if (!id) {
+      const cr = await post(`${a.api}/lists`, { __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: String(a.title), Description: String(a.description || ''), AllowContentTypes: false, ContentTypesEnabled: false });
+      const cbody = await cr.text().catch(() => '');
+      if (!cr.ok) return fail(isDigest(cr, cbody) ? 'digest' : codeOf(cr.status), `목록 만들기 ${cr.status}: ${snip(cbody)}`, cr.status);
+      let cj = null; try { cj = JSON.parse(cbody); } catch (e) { cj = null; }
+      id = String(((cj && cj.d) || cj || {}).Id || '');
+      if (!id) return fail('http', '목록을 만들었지만 Id 를 받지 못했습니다');
+    }
+    const listApi = `${a.api}/lists(guid'${lit(id)}')`;
+    const have = new Set();   // 있던 목록이면 이미 있는 칸은 건너뛴다(내부 이름)
+    if (existed) {
+      const fr = await fetch(`${listApi}/fields?$select=InternalName`, { headers: J, credentials: 'include', cache: 'no-store' });
+      const fj = fr.ok ? ((await fr.json().catch(() => null)) || {}) : {};
+      for (const f of Array.isArray(fj.value) ? fj.value : fj.d && Array.isArray(fj.d.results) ? fj.d.results : []) if (f && f.InternalName) have.add(String(f.InternalName));
+    }
+    for (const f of Array.isArray(a.fields) ? a.fields : []) {
+      const name = String((f && f.name) || '').replace(/[^A-Za-z0-9_]/g, '');
+      if (!name || have.has(name)) continue;
+      const kind = Number(f.kind) || 2, choices = choicesOf(f, kind);
+      const fr = await post(`${listApi}/fields/addfield`, { parameters: Object.assign({ __metadata: { type: 'SP.FieldCreationInformation' }, Title: name, FieldTypeKind: kind, Required: !!f.required }, choices.length ? choiceBody(choices) : {}) });
+      if (!fr.ok) { const b = await fr.text().catch(() => ''); if (isDigest(fr, b)) return fail('digest', `칸 만들기 ${fr.status}`, fr.status); warnings.push(`칸 ${name} 만들기 ${fr.status}: ${snip(b)}`); continue; }
+      const patch = { __metadata: { type: typeOf(kind) }, Title: String(f.title || name), Description: String(f.desc || '') };
+      if (f.defaultValue != null) patch.DefaultValue = String(f.defaultValue);
+      if (choices.length) Object.assign(patch, choiceBody(choices), { FillInChoice: true, EditFormat: 0 });   // 선택 칸 — 드롭다운(EditFormat 0) + 목록 밖 값 직접 입력 허용
+      const mr = await merge(`${listApi}/fields/getbyinternalnameortitle('${lit(name)}')`, patch);
+      if (!mr.ok) { const b = await mr.text().catch(() => ''); if (isDigest(mr, b)) return fail('digest', `칸 이름 ${mr.status}`, mr.status); warnings.push(`칸 ${name} 표시 이름 ${mr.status}: ${snip(b)}`); }
+      const vr = await post(`${listApi}/DefaultView/ViewFields/addViewField('${lit(name)}')`, {});
+      if (!vr.ok) { const b = await vr.text().catch(() => ''); if (isDigest(vr, b)) return fail('digest', `보기 칸 ${vr.status}`, vr.status); warnings.push(`보기에 ${name} 더하기 ${vr.status}: ${snip(b)}`); }
+    }
+    if (!existed) {   // 새 목록의 기본 보기에 작성자(Author) 열 — 목록 주인이 누가 적었는지 보게(2026-10-20 사용자 "이거 누가 작성했는지도 모르네"). 있던 목록은 건드리지 않음(두 번 더하면 400)
+      const ar = await post(`${listApi}/DefaultView/ViewFields/addViewField('Author')`, {});
+      if (!ar.ok) { const b = await ar.text().catch(() => ''); if (isDigest(ar, b)) return fail('digest', `보기 작성자 ${ar.status}`, ar.status); warnings.push(`보기에 작성자 더하기 ${ar.status}: ${snip(b)}`); }
+    }
+    if (a.titleField && typeof a.titleField === 'object') {   // 제목 칸(Title) — 표시 이름 · 설명 · 기본값(과제 제목 — lib/collect.js titleFieldFor)
+      const tf = a.titleField;
+      const patch = { __metadata: { type: 'SP.FieldText' }, Title: String(tf.title || 'Title'), Description: String(tf.desc || '') };
+      if (tf.defaultValue != null) patch.DefaultValue = String(tf.defaultValue);
+      const tr = await merge(`${listApi}/fields/getbyinternalnameortitle('Title')`, patch);
+      if (!tr.ok) { const b = await tr.text().catch(() => ''); if (isDigest(tr, b)) return fail('digest', `제목 칸 ${tr.status}`, tr.status); warnings.push(`제목 칸 ${tr.status}: ${snip(b)}`); }
+    }
+    if (a.ownOnly) {
+      const sr = await merge(listApi, { __metadata: { type: 'SP.List' }, ReadSecurity: 2, WriteSecurity: 2 });
+      if (!sr.ok) { const b = await sr.text().catch(() => ''); if (isDigest(sr, b)) return fail('digest', `목록 보안 ${sr.status}`, sr.status); warnings.push(`항목 보안(자기 항목만) ${sr.status}: ${snip(b)}`); }
+    }
+    const ir = await fetch(`${listApi}${INFO}`, { headers: J, credentials: 'include', cache: 'no-store' });
+    const info = ir.ok ? infoOf(await ir.json().catch(() => null)) : { id, title: String(a.title), path: '', newFormUrl: '', viewUrl: '' };
+    if (!info.id) info.id = id;
+    return Object.assign({ ok: true, existed, warnings }, info);
+  } catch (e) { return fail('offline', String((e && e.message) || e)); }
+}
+
+/* [페이지] 목록을 재활용통으로(자료 요청 지우기) — lists(guid'…')/recycle() → { ok, removed }(없으면 removed:false) */
+async function spRecycleList(a) {
+  const fail = (code, error, status) => ({ ok: false, code, error, status });
+  const lit = (p) => encodeURIComponent(String(p).replace(/'/g, "''"));
+  try {
+    const r = await fetch(`${a.api}/lists(guid'${lit(a.id)}')/recycle()`, { method: 'POST', headers: { Accept: 'application/json;odata=nometadata', 'X-RequestDigest': a.digest }, credentials: 'include' });
+    if (r.status === 404) return { ok: true, removed: false };
+    if (!r.ok) { const body = await r.text().catch(() => ''); return fail(r.status === 403 && /security validation|2130575251/i.test(body) ? 'digest' : r.status === 401 || r.status === 403 ? 'auth' : 'http', `목록 지우기 ${r.status}: ${String(body).replace(/\s+/g, ' ').trim().slice(0, 200)}`, r.status); }
+    return { ok: true, removed: true };
+  } catch (e) { return fail('offline', String((e && e.message) || e)); }
+}
+api._page = { spDigest, spEnsureFolder, spBegin, spCommit, spRelease, spCreate, spRecycle, spSharePeople, spUnshare, spOrgLink, spRename, spCreateList, spRecycleList };
 
 /* ---------- 작업 창(AIP lib/scan/worker.js 포팅) ---------- */
 
@@ -806,6 +936,7 @@ function makeRun(c, tabId) {
  * writer = { tabId, windowId, folderPath, ensureFolder(path?) → { created }, ensurePath(path?) → { created, made:[경로…] }, write(name, text, { comment }) → { changed, created, updated, checkedIn, version, meta },
  *            modify(name, transform(curText|null) → { changed, text, discard? }, { comment }) → 같은 꼴, remove(name) → { removed }, close(),
  *            sharePeople(path, names, { role:'edit'|'read' }) → { shared, ambiguous, notFound, failed, error? }, unshare(path, ids) → { removed, missing }, orgLink(path, { edit }) → { url, edit, via }, rename(path, newName) → { path, name, changed, url },
+ *            createList({ title, description, fields, titleField, ownOnly }) → { id, title, path, url, newFormUrl, viewUrl, existed, warnings }, recycleList(id) → { removed }   (참여연구원 자료 요청 — sharePeople(path = 목록 경로, …, { role, email? }) 로 목록도 공유),
  *            at(path|cfg) → 같은 사이트의 다른 폴더에 묶인 writer(같은 작업 탭·다이제스트 — 파일 함수(modify·write·remove)와 폴더 기본값이 그 폴더, close 는 no-op; 사이트 밖이면 badurl) }
  *   path 인수(폴더): 서버 상대 경로 · cfg(folderPath) · 비면 writer 의 폴더 — 이 writer 의 사이트 안이어야 한다(동료의 personal 사이트 폴더는 그 사이트로 writer 를 따로 연다)
  *   modify: 내가 잡고 있던 체크아웃을 이어받았는데(spBegin resumed) 안 바뀌면 UndoCheckOut 대신 CheckIn(checkedIn:true) — 올라가 있던 초안을 살리고 체크아웃을 끝낸다. transform 이 discard:true 를 주면 그래도 UndoCheckOut.
@@ -885,7 +1016,8 @@ api.openWriter = async function (cfg, opts) {
       const role = o && o.role === 'read' ? 'read' : 'edit';
       const list = (Array.isArray(names) ? names : names == null ? [] : [names]).map((x) => String(x == null ? '' : x).trim()).filter(Boolean);
       if (!list.length) return { shared: [], ambiguous: [], notFound: [], failed: [] };
-      const r = await runW(spSharePeople, { apiRoot: cfg.apiRoot, url: `${cfg.origin}${folderPath}`, names: list, roleValue: role === 'read' ? ROLE_READ : ROLE_EDIT });
+      const em = o && o.email && typeof o.email === 'object' ? o.email : null;   // 메일 알림(ShareObject sendEmail) — 기본은 보내지 않음(자료 요청은 팀즈 딥 링크로 알림)
+      const r = await runW(spSharePeople, { apiRoot: cfg.apiRoot, url: `${cfg.origin}${folderPath}`, names: list, roleValue: role === 'read' ? ROLE_READ : ROLE_EDIT, sendEmail: !!em, emailSubject: em ? String(em.subject || '') : '', emailBody: em ? String(em.body || '') : '' });
       if (!r || !r.ok) throw errOfResult(r, `공유 ${folderPath}`);
       const out = { shared: Array.isArray(r.shared) ? r.shared : [], ambiguous: Array.isArray(r.ambiguous) ? r.ambiguous : [], notFound: Array.isArray(r.notFound) ? r.notFound : [], failed: Array.isArray(r.failed) ? r.failed : [] };
       if (r.error) out.error = String(r.error);
@@ -920,6 +1052,26 @@ api.openWriter = async function (cfg, opts) {
       const r = await runW(spRename, { api: cfg.api, folderPath, newPath });
       if (!r || !r.ok) throw errOfResult(r, `이름 바꾸기 ${folderPath}`);
       return { path: newPath, name, changed: true, url: `${cfg.origin}${encPath(newPath)}` };
+    },
+    /* 목록 만들기(참여연구원 자료 요청 — lib/collect.js · background.js collectCreate, 2026-10-20): 이 사이트에 사용자 지정 목록을 만들고 칸·기본 보기·항목 보안(자기 항목만)을 맞춘다(같은 제목이 있으면 그 목록에 빠진 칸만 — existed).
+     *   o = { title, description, fields:[{ name(영문 내부 이름), title(표시 이름), kind, desc, defaultValue? }], titleField:{ title, desc, defaultValue } | null, ownOnly(기본 true) } → { id, title, path(서버 상대), url, newFormUrl, viewUrl(절대 주소), existed, warnings } */
+    async createList(o) {
+      o = o || {};
+      const title = String(o.title || '').trim().slice(0, 80);
+      if (!title) badurl('목록 제목이 비어 있습니다');
+      const r = await runW(spCreateList, { api: cfg.api, title, description: String(o.description || ''), fields: Array.isArray(o.fields) ? o.fields : [], titleField: o.titleField && typeof o.titleField === 'object' ? o.titleField : null, ownOnly: o.ownOnly !== false });
+      if (!r || !r.ok) throw errOfResult(r, `목록 만들기 ${title}`);
+      const dec = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+      const abs = (p) => (p ? (/^https?:/i.test(p) ? String(p) : `${cfg.origin}${String(p).startsWith('/') ? '' : '/'}${encPath(dec(String(p)))}`) : '');   // 서버 상대 경로(SP 는 디코딩된 모양으로 줌)를 절대 주소로
+      return { id: String(r.id || ''), title: String(r.title || title), path: dec(String(r.path || '')), url: abs(r.path), newFormUrl: abs(r.newFormUrl), viewUrl: abs(r.viewUrl), existed: !!r.existed, warnings: Array.isArray(r.warnings) ? r.warnings.map(String) : [] };
+    },
+    /* 목록을 재활용통으로(자료 요청 지우기) → { removed }(없으면 false) */
+    async recycleList(id) {
+      const s = String(id || '').trim();
+      if (!/^[0-9a-f-]{36}$/i.test(s)) badurl('목록 Id 가 GUID 모양이 아닙니다');
+      const r = await runW(spRecycleList, { api: cfg.api, id: s });
+      if (!r || !r.ok) throw errOfResult(r, `목록 지우기 ${s}`);
+      return { removed: !!r.removed };
     },
     async modify(name, transform, o) {
       name = checkName(name);

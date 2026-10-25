@@ -7,7 +7,7 @@ import PRJDOC from '../rerp/prjdoc.js';
 import PRJDOC_SYNC from '../rerp/prjdocsync.js';
 import STAFF from '../rerp/staff.js';
 import STAFF_SYNC from '../rerp/staffsync.js';
-import { createShareSync, SHARE_DEFAULTS } from '../rerp/sharesync.js';
+import { createShareSync, SHARE_DEFAULTS, sharePick, sharesProject } from '../rerp/sharesync.js';
 globalThis.self = globalThis;   // 원본 검사가 두는 전역(옮긴 모듈은 쓰지 않지만 가짜 chrome 등이 기댈 수 있음)
 let n = 0, failed = 0;
 const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name); } catch (e) { failed++; console.log('FAIL', name, '\n   ', e.stack || e.message); process.exitCode = 1; } };
@@ -20,6 +20,7 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
  * v2 폴더 트리(2026-10-18 저녁 "업무/shared 안에 과제별로 … 참여연구원들에게 공유"): listFolders(모양 · Forms 제외 · Exists 규칙) · childCfg · writer.ensurePath(여러 단 — 문서함 뿌리 위로는 안 올라감) · sharedWithMe(nextLink 2쪽 · 폴더/파일 · cfg 는 폴더 주소가 풀릴 때만) ·
  * writer.sharePeople(피커 — 표시 이름이 꼭 같은 1명만, 1명이어도 이름이 다르면 ambiguous, 여럿/0명 · ShareObject 호출 모양 — odata=verbose · roleValue · peoplePickerInput JSON 문자열 · StatusCode≠0 → 한 명씩) · writer.orgLink(ShareLink → 실패 시 CreateOrganizationSharingLink) · writer.rename(MoveTo → MoveToUsingPath) ·
  * writer.at(같은 사이트의 다른 폴더 — 같은 작업 창·다이제스트, close 는 no-op, 사이트 밖은 badurl),
+ * 참여연구원 자료 요청(0.8.9): writer.createList(목록 · 칸(영문 내부 이름 · 한글 표시 이름 · 기본값) · 기본 보기 · 자기 항목만 · 있으면 빠진 칸만 · 다이제스트 거부 뒤 다시) · listItems(Author 펼침 · 404 notfound) · recycleList · 목록 경로 sharePeople(메일 알림 옵션),
  * 쿠키·다이제스트·피커 Key 값이 결과에 없는지, 페이지 함수가 바깥 변수를 쓰지 않는지. 가짜 fetch(메모리 폴더·파일(체크인 글 text · 체크아웃 초안 draft) · 요청 기록 · 다이제스트 검사 · 피커/공유/링크 끝점)·가짜 chrome(executeScript 는 func 를 실제로 호출해 가짜 fetch 위에서 돌림)만 쓴다 — 실 SharePoint 에 쓰지 않는다.
  * 실행: node tests/sp-store.test.js */
 {
@@ -44,7 +45,7 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
    * st.pickerBodies · st.shareBodies · st.linkBodies = [{ headers, body }](받은 요청 그대로 — 호출 모양 검사용), st.shares = [{ url, roleValue, emails }](성공한 공유), st.unshares = [[폴더, principalId, roleId]](거둔 역할), st.searchUrls(사람 찾기 요청 주소) */
   function fakeSp(o) {
     o = o || {};
-    const st = { folders: {}, calls: [], digestIssued: 0, validDigests: new Set(), cookie: COOKIE, loggedIn: o.loggedIn !== false, pickerBodies: [], shareBodies: [], linkBodies: [], shares: [], unshares: [], searchUrls: [], perms: JSON.parse(JSON.stringify(o.perms || {})), nextPrincipal: 5000 };
+    const st = { folders: {}, calls: [], digestIssued: 0, validDigests: new Set(), cookie: COOKIE, loggedIn: o.loggedIn !== false, pickerBodies: [], shareBodies: [], linkBodies: [], shares: [], unshares: [], searchUrls: [], perms: JSON.parse(JSON.stringify(o.perms || {})), nextPrincipal: 5000, lists: {}, nextList: 0, listBodies: [], itemUrls: [] };
     const LIST_ID = 'aaaabbbb-0000-0000-0000-000000000001', ITEM_ID = 42;
     let seq = 0;
     const mkFile = (text) => ({ text, draft: null, version: 1, checkedOutBy: null, uniqueId: `${String(++seq).padStart(8, '0')}-0000-0000-0000-00000000ABCD`, modified: '2026-10-18T01:02:03Z' });
@@ -53,6 +54,7 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     for (const [p, files] of Object.entries(o.files || {})) for (const [name, text] of Object.entries(files)) addFolder(p).files[name] = mkFile(text);
     for (const [name, who] of Object.entries(o.checkedOutBy || {})) for (const f of Object.values(st.folders)) if (f.files[name]) f.files[name].checkedOutBy = who;
     for (const [name, draft] of Object.entries(o.drafts || {})) for (const f of Object.values(st.folders)) if (f.files[name]) f.files[name].draft = draft;
+    for (const l of o.lists || []) st.lists[l.id] = Object.assign({ title: '', description: '', path: `/personal/kimghw_krs_co_kr/Lists/${l.title}`, fields: [{ InternalName: 'Title', Title: 'Title', Description: '', DefaultValue: null, kind: 2 }], viewFields: ['LinkTitle'], readSecurity: 1, writeSecurity: 1, items: [] }, l);   // 미리 있는 목록(참여연구원 자료 요청)
     const json = (obj, status, url) => ({ ok: (status || 200) >= 200 && (status || 200) < 300, status: status || 200, url: url || '', json: async () => obj, text: async () => JSON.stringify(obj) });
     const text = (s, status) => ({ ok: (status || 200) >= 200 && (status || 200) < 300, status: status || 200, url: '', json: async () => { throw new Error('not json'); }, text: async () => s });
     const login = () => ({ ok: true, status: 200, url: 'https://login.microsoftonline.com/common/oauth2/authorize?x=1', json: async () => ({}), text: async () => '<html>login</html>' });
@@ -144,6 +146,39 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
         const b = body(); st.linkBodies.push({ headers: H, body: b, at: 'CreateOrganizationSharingLink' });
         if (o.noOrgLink) return json({ 'odata.error': { message: { value: 'Sharing links are disabled by policy' } } }, 400);
         return json({ value: `${ORIGIN}/:f:/g/personal/kimghw_krs_co_kr/EFallback?e=${b && b.isEditLink ? 'edit' : 'view'}` });
+      }
+      // 목록(참여연구원 자료 요청 — createList · listItems · recycleList): st.lists[id] = { id, title, description, path, fields:[{ InternalName, Title, Description, DefaultValue, kind }], viewFields, readSecurity, writeSecurity, items }
+      const listInfo = (l) => ({ Id: l.id, Title: l.title, DefaultNewFormUrl: `${l.path}/NewForm.aspx`, DefaultViewUrl: `${l.path}/AllItems.aspx`, RootFolder: { ServerRelativeUrl: l.path } });
+      const listByTitle = (t) => Object.values(st.lists).find((l) => l.title === t);
+      let xm = new RegExp(`^web/lists/getbytitle\\('${LIT}'\\)(.*)$`).exec(rest);
+      if (xm) { const t = dec(xm[1]); st.calls.push([m, `list(${t})`]); if (o.deny403) return json({}, 403); const l = listByTitle(t); return l ? json(listInfo(l)) : json({ 'odata.error': { message: { value: 'List does not exist' } } }, 404); }
+      if (rest === 'web/lists') {
+        st.calls.push([m, 'lists']);
+        if (m !== 'POST' || !digestOk) return deny();
+        const b = body(); st.listBodies.push({ headers: H, body: b });
+        if (!b || !b.__metadata || b.__metadata.type !== 'SP.List') return json({ 'odata.error': { message: { value: '__metadata.type 없음' } } }, 400);
+        if (listByTitle(b.Title)) return json({ 'odata.error': { message: { value: 'A list with the specified title already exists' } } }, 400);
+        const id = `11111111-2222-3333-4444-${String(++st.nextList).padStart(12, '0')}`;
+        st.lists[id] = { id, title: b.Title, description: b.Description || '', path: `/personal/kimghw_krs_co_kr/Lists/${b.Title}`, fields: [{ InternalName: 'Title', Title: 'Title', Description: '', DefaultValue: null, kind: 2 }], viewFields: ['LinkTitle'], readSecurity: 1, writeSecurity: 1, items: [] };
+        return json({ Id: id, Title: b.Title });
+      }
+      xm = new RegExp(`^web/lists\\(guid'${LIT}'\\)(.*)$`).exec(rest);
+      if (xm) {
+        const id = dec(xm[1]), tail = xm[2], l = st.lists[id];
+        st.calls.push([m, `list#${id.slice(-3)}${tail.replace(/\?.*$/, '?')}`]);
+        if (o.deny403) return json({}, 403);
+        if (!l) return json({ 'odata.error': { message: { value: 'List does not exist' } } }, 404);
+        const isMerge = m === 'POST' && H['X-HTTP-Method'] === 'MERGE';
+        if (tail.startsWith('?$select=Id,Title,DefaultNewFormUrl')) return json(listInfo(l));
+        if (tail === '' && isMerge) { if (!digestOk) return deny(); const b = body(); if (b.ReadSecurity != null) l.readSecurity = b.ReadSecurity; if (b.WriteSecurity != null) l.writeSecurity = b.WriteSecurity; return json({}, 204); }
+        if (tail.startsWith('/fields?')) return json({ value: l.fields.map((f) => ({ InternalName: f.InternalName })) });
+        if (tail === '/fields/addfield') { if (m !== 'POST' || !digestOk) return deny(); const b = body(); const pr = b && b.parameters; if (!pr || !pr.__metadata || pr.__metadata.type !== 'SP.FieldCreationInformation') return json({}, 400); if (l.fields.some((f) => f.InternalName === pr.Title)) return json({ 'odata.error': { message: { value: 'duplicate' } } }, 400); l.fields.push({ InternalName: pr.Title, Title: pr.Title, Description: '', DefaultValue: null, kind: pr.FieldTypeKind, required: !!pr.Required, choices: pr.Choices && Array.isArray(pr.Choices.results) ? pr.Choices.results.slice() : null }); return json({ InternalName: pr.Title, Title: pr.Title }); }
+        let fx;
+        if ((fx = new RegExp(`^/fields/getbyinternalnameortitle\\('${LIT}'\\)$`).exec(tail))) { if (!isMerge || !digestOk) return deny(); const f = l.fields.find((y) => y.InternalName === dec(fx[1])); if (!f) return json({}, 404); const b = body(); if (b.Title != null) f.Title = b.Title; if (b.Description != null) f.Description = b.Description; if (b.DefaultValue != null) f.DefaultValue = b.DefaultValue; if (b.Choices && Array.isArray(b.Choices.results)) f.choices = b.Choices.results.slice(); if (b.FillInChoice != null) f.fillIn = b.FillInChoice; if (b.EditFormat != null) f.editFormat = b.EditFormat; return json({}, 204); }
+        if ((fx = new RegExp(`^/DefaultView/ViewFields/addViewField\\('${LIT}'\\)$`).exec(tail))) { if (m !== 'POST' || !digestOk) return deny(); l.viewFields.push(dec(fx[1])); return json({}, 200); }
+        if (tail.startsWith('/items?')) { st.itemUrls.push(u); return json({ value: l.items }); }
+        if (tail === '/recycle()') { if (m !== 'POST' || !digestOk) return deny(); delete st.lists[id]; return json('recycle-guid'); }
+        return text('nope', 404);
       }
       let lm = /^web\/Lists\(guid'([^']+)'\)\/GetItemById\((\d+)\)\/ShareLink$/.exec(rest);
       if (lm) {
@@ -302,6 +337,8 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     'LEE Jaehoon': [{ title: 'LEE Jaehoon', email: 'jhlee81@krs.co.kr' }, { title: 'LEE Jaehoon2', email: 'jhlee2@krs.co.kr' }],
     '없는사람': [],
     '메일없음': [{ title: 'NO Mail', email: '' }],
+    '이은주': [{ title: 'LEE Eunjoo', email: 'ejlee@krs.co.kr' }, { title: '이은주', email: 'eunjoo00417@gmail.com', login: 'i:0#.f|membership|eunjoo00417_gmail.com#ext#@krclass.onmicrosoft.com' }],   // 2026-10-20 실측 — 조직 사용자 + 같은 한글 이름의 게스트
+    '외부인': [{ title: '외부인', email: 'guest@gmail.com', login: 'i:0#.f|membership|guest_gmail.com#ext#@krclass.onmicrosoft.com' }],
   };
 
   await (async () => {
@@ -1231,6 +1268,9 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     assert.deepStrictEqual(calls(F), ['GET search(문창재)', 'GET search(김철수)', 'GET search(kim2@krs.co.kr)', 'GET search(LEE Jaehoon)', 'GET search(없는사람)', 'GET search(메일없음)']);
     assert.strictEqual(F.st.searchUrls[0], `${ORIGIN}/personal/kimghw_krs_co_kr/_api/search/query?querytext='${encodeURIComponent('문창재')}'&sourceid='b09a7990-05ea-4af9-81ef-edfab16c4e31'&selectproperties='PreferredName,WorkEmail,AccountName'&rowlimit=10`);
     assert.strictEqual(SP.PEOPLE_SOURCE, 'b09a7990-05ea-4af9-81ef-edfab16c4e31');
+    const g = await SP.findPeople(cfg, ['이은주', '외부인'], { fetch: F.fetch });
+    assert.deepStrictEqual(g.found.map((x) => [x.name, x.email]), [['이은주', 'ejlee@krs.co.kr'], ['외부인', 'guest@gmail.com']], '게스트(#ext#)는 조직 사용자가 있으면 빼고(이름이 꼭 같아도), 게스트뿐이면 그 사람');
+    assert.deepStrictEqual([g.ambiguous, g.notFound], [[], []]);
     const from = F.st.calls.length;
     assert.deepStrictEqual(await SP.findPeople(cfg, [], { fetch: F.fetch }), { found: [], ambiguous: [], notFound: [] });
     assert.deepStrictEqual(await SP.findPeople(cfg, [' ', null], { fetch: F.fetch }), { found: [], ambiguous: [], notFound: [] });
@@ -1289,9 +1329,103 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     assert.strictEqual(SP.describe(null).kind, 'error');
   });
 
+  /* ----- 참여연구원 자료 요청(0.8.9) — 목록 ----- */
+  const LIST_T = 'KR 참여현황 SSCB 1차년도';
+  const LIST_FIELDS = [{ name: 'PeriodFrom', title: '시작 달', kind: 2, desc: '시작' }, { name: 'PeriodTo', title: '끝 달', kind: 6, desc: '끝', choices: ['2026-11', '2026-12'] }, { name: 'Rate', title: '참여율(%)', kind: 9, desc: '%' }, { name: 'Note', title: '비고', kind: 3, desc: '' }];
+  const TITLE_F = { title: '항목', desc: '이 과제면 그대로', defaultValue: '이 과제' };
+  await test('writer.createList: 같은 제목이 없으면 POST lists(SP.List · 100 · verbose 본문) → 칸마다 addfield(영문 내부 이름) · MERGE 표시 이름·설명 · 기본 보기에 더함 → 제목 칸 MERGE(항목 · 기본값 "이 과제") → 목록 보안(자기 항목만) → 정보(절대 주소 · 디코딩한 경로); 다시 부르면 existed 로 빠진 칸만; 빈 제목은 badurl', async () => {
+    const F = fakeSp(); const C = fakeChrome(F.fetch);
+    const w = await SP.openWriter(CFG, { chrome: C });
+    const r = await w.createList({ title: LIST_T, description: '설명', fields: LIST_FIELDS, titleField: TITLE_F });
+    assert.strictEqual(r.existed, false); assert.ok(/^11111111-2222-3333-4444-/.test(r.id)); assert.strictEqual(r.title, LIST_T); assert.deepStrictEqual(r.warnings, []);
+    assert.strictEqual(r.path, `/personal/kimghw_krs_co_kr/Lists/${LIST_T}`);
+    assert.strictEqual(r.url, `${ORIGIN}/personal/kimghw_krs_co_kr/Lists/${encodeURIComponent(LIST_T)}`);
+    assert.strictEqual(r.newFormUrl, `${r.url}/NewForm.aspx`); assert.strictEqual(r.viewUrl, `${r.url}/AllItems.aspx`);
+    const l = F.st.lists[r.id];
+    assert.deepStrictEqual(l.fields.map((f) => [f.InternalName, f.Title, f.kind]), [['Title', '항목', 2], ['PeriodFrom', '시작 달', 2], ['PeriodTo', '끝 달', 6], ['Rate', '참여율(%)', 9], ['Note', '비고', 3]], '내부 이름은 영문, 표시 이름은 한글');
+    assert.deepStrictEqual([l.fields[0].DefaultValue, l.fields[0].Description, l.fields[3].Description, l.description], ['이 과제', '이 과제면 그대로', '%', '설명']);
+    assert.deepStrictEqual([l.fields[2].choices, l.fields[2].fillIn, l.fields[2].editFormat, l.fields[1].choices, l.fields[1].fillIn], [['2026-11', '2026-12'], true, 0, null, undefined], '선택 칸(kind 6)은 만들 때 Choices, MERGE 로 직접 입력 허용·드롭다운; 글 칸은 그대로');
+    assert.deepStrictEqual(l.viewFields, ['LinkTitle', 'PeriodFrom', 'PeriodTo', 'Rate', 'Note', 'Author'], '기본 보기에 칸들 + 작성자(2026-10-20 "이거 누가 작성했는지도 모르네")');
+    assert.deepStrictEqual([l.readSecurity, l.writeSecurity], [2, 2], '응답자는 자기 항목만');
+    const cb = F.st.listBodies[0]; assert.strictEqual(cb.headers['Content-Type'], 'application/json;odata=verbose'); assert.strictEqual(cb.body.BaseTemplate, 100); assert.ok(cb.headers['X-RequestDigest']);
+    const seq = calls(F).filter((c) => /\blists?\b|list[(#]/.test(c));
+    assert.ok(seq[0] === `GET list(${LIST_T})` && seq[1] === 'POST lists' && seq.includes('POST list#001/fields/addfield') && seq[seq.length - 1] === 'GET list#001?', seq.join(' | '));
+    // 다시(지난번에 만들다 끊김 · 다이제스트 거부 뒤) — 있는 목록에 빠진 칸만
+    l.fields.splice(3, 1);   // Rate 가 빠진 상태로
+    const n0 = F.st.calls.length;
+    const r2 = await w.createList({ title: LIST_T, fields: LIST_FIELDS, titleField: TITLE_F });
+    assert.strictEqual(r2.existed, true); assert.strictEqual(r2.id, r.id); assert.strictEqual(r2.newFormUrl, r.newFormUrl);
+    const seq2 = calls(F, n0);
+    assert.ok(!seq2.includes('POST lists') && seq2.filter((c) => c.endsWith('/fields/addfield')).length === 1 && seq2.includes('GET list#001/fields?'), seq2.join(' | '));
+    assert.deepStrictEqual(l.fields.map((f) => f.InternalName), ['Title', 'PeriodFrom', 'PeriodTo', 'Note', 'Rate']);
+    assert.strictEqual(l.viewFields.filter((v) => v === 'Author').length, 1, '있던 목록에는 작성자를 다시 더하지 않음');
+    await rejects(w.createList({ title: '' }), 'badurl');
+    await w.close();
+  });
+
+  await test('writer.createList: 다이제스트가 만료됐으면 403(security validation) → 다시 받아 한 번 더(목록은 한 번만) · 로그인 풀림(403) → auth', async () => {
+    const F = fakeSp(); const C = fakeChrome(F.fetch);
+    const w = await SP.openWriter(CFG, { chrome: C });
+    F.expire();
+    const r = await w.createList({ title: LIST_T, fields: LIST_FIELDS, titleField: TITLE_F });
+    assert.strictEqual(r.existed, false); assert.strictEqual(Object.keys(F.st.lists).length, 1);
+    assert.strictEqual(calls(F).filter((c) => c === 'POST contextinfo').length, 2, '다이제스트를 다시 받음');
+    assert.strictEqual(calls(F).filter((c) => c === 'POST lists').length, 2, '첫 POST 는 403, 둘째가 만듦');
+    await w.close();
+    const w3 = await SP.openWriter(CFG, { chrome: fakeChrome(fakeSp({ deny403: true }).fetch) }).catch((e) => e);
+    assert.strictEqual(w3.kind, 'auth', '로그인이 풀린 사이트에서는 작업 창부터 auth');
+  });
+
+  await test('listInfo: 목록 정보(Id 로 — 경로 · 폼 주소 · 제목, 빈칸 둘인 경로 그대로) · 없는 목록 404 → notfound · Id 모양 아니면 badurl', async () => {
+    const ID = '11111111-2222-3333-4444-000000000019';
+    const F = fakeSp({ lists: [{ id: ID, title: 'KR 참여현황 SSCB 2차년도', path: '/personal/kimghw_krs_co_kr/Lists/KR  SSCB 2' }] });
+    const got = await SP.listInfo(`${ORIGIN}/personal/kimghw_krs_co_kr/`, ID, { fetch: F.fetch });
+    assert.deepStrictEqual(got, { id: ID, title: 'KR 참여현황 SSCB 2차년도', path: '/personal/kimghw_krs_co_kr/Lists/KR  SSCB 2', newFormUrl: '/personal/kimghw_krs_co_kr/Lists/KR  SSCB 2/NewForm.aspx', viewUrl: '/personal/kimghw_krs_co_kr/Lists/KR  SSCB 2/AllItems.aspx' });
+    assert.ok(F.st.calls.some(([m, c]) => m === 'GET' && c === `list#${ID.slice(-3)}?`), '확장 출처 GET 한 번');
+    await rejects(SP.listInfo(`${ORIGIN}/personal/kimghw_krs_co_kr`, '11111111-2222-3333-4444-000000000008', { fetch: F.fetch }), 'notfound', /목록이 없습니다/);
+    await rejects(SP.listInfo(`${ORIGIN}/personal/kimghw_krs_co_kr`, 'nope', { fetch: F.fetch }), 'badurl');
+  });
+
+  await test('listItems: 목록 항목(Author 펼침 · $select 에 영문 칸만 · Modified desc · top 500) · 없는 목록 404 → notfound · 403 → auth · Id·사이트 주소 모양 아니면 badurl', async () => {
+    const items = [{ Id: 1, Title: '이 과제', PeriodFrom: '2026-11', PeriodTo: '2027-03', Rate: 25, Monthly: 5823, Note: '', Created: '2026-10-20T01:00:00Z', Modified: '2026-10-20T02:00:00Z', Author: { Title: 'MOON Changjae', EMail: 'cjmoon@krs.co.kr' } }];
+    const ID = '11111111-2222-3333-4444-000000000009';
+    const F = fakeSp({ lists: [{ id: ID, title: 'T', items }] });
+    const got = await SP.listItems(`${ORIGIN}/personal/kimghw_krs_co_kr/`, ID, { fetch: F.fetch }, { fields: ['PeriodFrom', 'Rate', 'Bad name!'] });
+    assert.deepStrictEqual(got, items);
+    const u = new URL(F.st.itemUrls[0]);
+    assert.strictEqual(u.pathname, `/personal/kimghw_krs_co_kr/_api/web/lists(guid'${ID}')/items`);
+    assert.strictEqual(u.searchParams.get('$select'), 'Id,Title,PeriodFrom,Rate,Badname,Created,Modified,Author/Title,Author/EMail');
+    assert.deepStrictEqual([u.searchParams.get('$expand'), u.searchParams.get('$orderby'), u.searchParams.get('$top')], ['Author', 'Modified desc', '500']);
+    await rejects(SP.listItems(`${ORIGIN}/personal/kimghw_krs_co_kr`, '11111111-2222-3333-4444-000000000008', { fetch: F.fetch }), 'notfound', /목록이 없습니다/);
+    await rejects(SP.listItems(`${ORIGIN}/personal/kimghw_krs_co_kr`, ID, { fetch: fakeSp({ deny403: true }).fetch }), 'auth');
+    await rejects(SP.listItems(`${ORIGIN}/personal/kimghw_krs_co_kr`, ID, { fetch: fakeSp({ loggedIn: false }).fetch }), 'auth');
+    await rejects(SP.listItems(`${ORIGIN}/personal/kimghw_krs_co_kr`, 'nope', { fetch: F.fetch }), 'badurl');
+    await rejects(SP.listItems('nope', ID, { fetch: F.fetch }), 'badurl');
+  });
+
+  await test('목록 경로 sharePeople(이메일로 · 메일 알림 옵션은 ShareObject sendEmail/제목/본문, 기본은 없음) · writer.recycleList(있으면 removed · 없으면 false · Id 모양 badurl)', async () => {
+    const ID = '11111111-2222-3333-4444-000000000009';
+    const F = fakeSp({ lists: [{ id: ID, title: 'T' }], people: PEOPLE }); const C = fakeChrome(F.fetch);
+    const w = await SP.openWriter(CFG, { chrome: C });
+    const listPath = '/personal/kimghw_krs_co_kr/Lists/T';
+    const r = await w.sharePeople(listPath, ['moon@krs.co.kr'], { role: 'edit', email: { subject: '자료 요청', body: '양식: https://x' } });
+    assert.deepStrictEqual(r.shared, [{ name: 'MOON Changjae', email: 'moon@krs.co.kr' }]);
+    const sb = F.st.shareBodies[F.st.shareBodies.length - 1].body;
+    assert.deepStrictEqual([sb.url, sb.sendEmail, sb.emailSubject, sb.emailBody, sb.roleValue], [`${ORIGIN}${listPath}`, true, '자료 요청', '양식: https://x', 'role:1073741827']);
+    await w.sharePeople(listPath, ['moon@krs.co.kr']);
+    const sb2 = F.st.shareBodies[F.st.shareBodies.length - 1].body;
+    assert.deepStrictEqual([sb2.sendEmail, sb2.emailSubject, sb2.emailBody], [false, '', ''], '기본은 메일 없음');
+    assert.ok(!JSON.stringify(r).includes('KEY-SECRET'), '피커 Key 는 결과에 없음');
+    assert.deepStrictEqual(await w.recycleList(ID), { removed: true });
+    assert.strictEqual(F.st.lists[ID], undefined);
+    assert.deepStrictEqual(await w.recycleList(ID), { removed: false });
+    await rejects(w.recycleList('x'), 'badurl');
+    await w.close();
+  });
+
   await test('페이지 함수는 바깥 변수를 쓰지 않는다(직렬화 주입) — 모듈 안 이름이 소스에 없고 쿠키로 요청한다', () => {
     const names = Object.keys(SP._page);
-    assert.deepStrictEqual(names.sort(), ['spBegin', 'spCommit', 'spCreate', 'spDigest', 'spEnsureFolder', 'spOrgLink', 'spRecycle', 'spRelease', 'spRename', 'spSharePeople', 'spUnshare']);
+    assert.deepStrictEqual(names.sort(), ['spBegin', 'spCommit', 'spCreate', 'spCreateList', 'spDigest', 'spEnsureFolder', 'spOrgLink', 'spRecycle', 'spRecycleList', 'spRelease', 'spRename', 'spSharePeople', 'spUnshare']);
     for (const fn of Object.values(SP._page)) {
       const src = fn.toString();
       assert.ok(!/mkErr|encLit|encPath|AUTH_MSG|ACCEPT_JSON|errOfResult|errOfStatus|kindOfStatus|DEFAULT_COMMENT|checkName|metaOf|redirectedOut|ROLE_EDIT|ROLE_READ|ROLE_RANK|roleOfKind|PEOPLE_SOURCE|SHARED_MAX_PAGES|\bbadurl\b|\bfolderOf\b|\bfileOf\b|\bsharedItemOf\b|\blistChildren\b|\bspGet\b|\bapi\.|\bg\./.test(src), `${fn.name}: 바깥 이름 참조`);
@@ -1841,6 +1975,21 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     assert.deepStrictEqual(r.state.created.sort(), ['P3', 'P4']);
   });
 
+  await test('공유할 과제(allow — 설정 고른 과제만): 고르지 않은 과제는 책임자·로컬 자료가 있어도 폴더를 만들지도 쓰지도 않음 · only 가 고르지 않은 과제면 아무것도 안 함 · 빈 목록이면 과제 없음', async () => {
+    const store = fakeStore({ [BASE]: {} });
+    const me = memLocal({ aliases: { P3: 'MW' }, projects: { P3: { anl: 1 }, P4: { anl: 1, jobId: 'RND4' } } });
+    const r = await Y.run(deps(store, me, { myPrjNos: ['P3', 'P4'], leadPrjNos: ['P3', 'P4'], names: {}, allow: ['P3'] }));
+    assert.deepStrictEqual([r.state.ok, Object.keys(r.state.pages), r.state.created], [true, ['P3'], ['P3']]);
+    assert.deepStrictEqual(Object.keys(store.tree).filter((k) => k.startsWith(`${BASE}/`)), [`${BASE}/MW`], 'P4(RND4) 폴더는 안 만듦');
+    const n0 = store.calls.length;
+    const r2 = await Y.run(deps(store, me, { myPrjNos: ['P3', 'P4'], leadPrjNos: ['P3', 'P4'], names: {}, allow: ['P3'], only: 'P4', index: r.state.index }));
+    assert.deepStrictEqual([r2.state.ok, Object.keys(r2.state.pages)], [true, []]);
+    assert.ok(!store.calls.slice(n0).some((c) => c.startsWith('open') || c.startsWith('modify') || c.startsWith('ensure')), 'writer 안 열림');
+    const r3 = await Y.run(deps(store, me, { myPrjNos: ['P3', 'P4'], leadPrjNos: ['P3', 'P4'], names: {}, allow: [], index: r.state.index }));
+    assert.deepStrictEqual(Object.keys(r3.state.pages), []);
+    assert.deepStrictEqual(r3.state.index.P3 && r3.state.index.P3.folder, 'MW', '고르지 않아도 알아본 폴더의 색인은 남김');
+  });
+
   await test('동료가 고친 파일: 예산 줄(WORKSPACE at)·새 사람(새 at)·높은 판·변경이력·별칭·jobId 를 받아 칸마다 saveLocal, 내 것은 올림 · 다시 돌리면 둘이 같아 쓰지 않음 · 동료가 다시 받으면 내 것이 들어온다', async () => {
     const store = fakeStore({ [BASE]: {} });
     const you = memLocal({ plan: { plans: { P1: { '10|연구활동비': [item('a', 5), item('d', 6, { by: '동료' })] } }, del: {} }, research: { 'mw급과제#1': rec('P1', 1, 'r3', 2, { goals: ['새 판'] }) },
@@ -1877,13 +2026,14 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
       [true, false, ['c', 'd'], { a: { ts: 9, prj: 'P1' } }, ['P1@1', 'P1@2'], '과제1', ['c10', 'c15'], []]);
   });
 
-  await test('나와 공유: 동료 base(…/shared)와 과제 폴더(…/shared/<이름>) 항목을 훑어 내 참여 과제(P2)면 그 폴더에 — writer 는 사이트마다 따로 · 남의 과제(P9)·엉뚱한 폴더는 무시 · index 에 owner·site · 다음엔 index 만으로(discover 끄면 sharedWithMe 안 부름) · 참여자는 동료 폴더를, 책임자는 내 폴더를 고른다', async () => {
+  await test('나와 공유: 동료 base(…/shared)와 과제 폴더 항목을 훑어 내 참여 과제(P2)면 그 폴더에 — writer 는 사이트마다 따로 · 남의 과제(P9)·연차 파일 없는 폴더는 무시(skip) · index 에 owner·site · 다음엔 index 만으로(discover 끄면 sharedWithMe 안 부름) · 참여자는 동료(책임자) 폴더를, 책임자는 내 폴더를 고른다', async () => {
     const p2doc = Object.assign(D.emptyYear({ prjNo: 'P2', prjNm: '과제2', rspr: '동료' }, 1), { staff: { plans: [splan('P2', 1, 500, [person('옛것', [1])], { prjNm: '과제2' })], del: {} }, updatedAt: '2026-10-18T00:00:00.000Z', updatedBy: '동료' });
-    const tree = { [BASE]: {}, [YOUR_BASE]: {}, [`${YOUR_BASE}/MW`]: { '1차년도.json': D.serialize(p2doc) }, [`${YOUR_BASE}/ZZ`]: { '1차년도.json': D.serialize(D.emptyYear({ prjNo: 'P9' }, 1)) }, [`${YOU}/Documents/기타`]: { '1차년도.json': D.serialize(D.emptyYear({ prjNo: 'P2' }, 1)) } };
+    const tree = { [BASE]: {}, [YOUR_BASE]: {}, [`${YOUR_BASE}/MW`]: { '1차년도.json': D.serialize(p2doc) }, [`${YOUR_BASE}/ZZ`]: { '1차년도.json': D.serialize(D.emptyYear({ prjNo: 'P9' }, 1)) }, [`${YOU}/Documents/기타`]: { '메모.txt': 'x' } };
     const store = fakeStore(tree, { shared: [{ path: YOUR_BASE, ownerName: '동료' }, { path: `${YOU}/Documents/기타`, ownerName: '동료' }] });
     const me = memLocal({ staff: { plans: { 'P2@1': splan('P2', 1, 9000, [person('문창재', [1165000], 5823000)], { prjNm: '과제2' }) }, del: {} }, aliases: { P1: 'SSCB' } });
     const r = await Y.run(deps(store, me));
-    assert.deepStrictEqual([r.state.ok, r.state.scanned, Object.keys(r.state.pages).sort()], [true, 2, ['P1', 'P2']], '동료 base 의 폴더 둘을 훑음(기타 폴더는 shared 가 아니라 무시)');
+    assert.deepStrictEqual([r.state.ok, r.state.scanned, Object.keys(r.state.pages).sort()], [true, 3, ['P1', 'P2']], '동료 base 의 폴더 둘 + 기타 폴더를 훑음');
+    assert.deepStrictEqual(Object.keys(r.state.skip).sort(), [`${YOU}/Documents/기타`, `${YOUR_BASE}/ZZ`].map((p) => p.toLowerCase()).sort(), '내 과제 폴더가 아닌 것(연차 파일 없음 · 남의 과제)은 skip');
     assert.deepStrictEqual([r.state.pages.P2.folder, r.state.pages.P2.owner, r.state.pages.P2.folderUrl, r.state.pages.P2.pushed, r.state.pages.P2.pulled, r.state.pages.P2.webUrl], ['MW', '동료', cfgOf(`${YOUR_BASE}/MW`).viewUrl, true, false, `${ORIGIN}${YOUR_BASE}/MW/1차년도.json`]);
     assert.deepStrictEqual(docOf(store, `${YOUR_BASE}/MW`, '1차년도.json').staff.plans[0].people[0].name, '문창재', '내 계획(9000)이 동료 폴더의 파일에 올라감');
     assert.deepStrictEqual([r.state.pages.P1.folder, r.state.pages.P1.owner], ['SSCB', '']);
@@ -1905,6 +2055,41 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     const store2 = fakeStore(clone(tree), { shared: [{ path: YOUR_BASE, ownerName: '동료' }], denied: [siteOf(YOUR_BASE)] });
     const r4 = await Y.run(deps(store2, memLocal({ aliases: { P1: 'SSCB' } }), { index: r.state.index }));
     assert.deepStrictEqual([r4.state.ok, r4.state.pages.P1.error, r4.state.pages.P1.pushed, r4.state.pages.P2.kind, r4.state.pages.P2.folder, r4.state.kind, /권한/.test(r4.state.discoverError)], [false, undefined, false, 'auth', 'MW', 'auth', true]);
+  });
+
+  await test('나와 공유 (2026-10-25): 동료의 밑폴더가 shared 가 아니어도 과제 폴더를 연차 파일로 찾음 · 같은 과제 폴더가 여럿이면 누가 돌려도 같은 것(책임자 폴더 → 경로 차례) · skip 은 이레 동안 다시 훑지 않음(그사이 그 과제 참여인력이 되면 다시)', async () => {
+    const KIM = '/personal/kim', LEE = '/personal/lee';
+    const KIM_DIR = `${KIM}/Documents/연구/공유/MW`, LEE_DIR = `${LEE}/Documents/RnD/MW`, JUNK = `${LEE}/Documents/잡동사니`;
+    const y = () => ({ '1차년도.json': D.serialize(D.emptyYear({ prjNo: 'P2', prjNm: '과제2', rspr: '동료' }, 1)) });
+    const tree = { [BASE]: {}, [`${KIM}/Documents/연구/공유`]: {}, [KIM_DIR]: y(), [`${LEE}/Documents/RnD`]: {}, [LEE_DIR]: y(), [JUNK]: { 'a.txt': 'x' } };
+    const shared = [{ path: LEE_DIR, ownerName: '이' }, { path: KIM_DIR, ownerName: '김' }, { path: JUNK, ownerName: '이' }];
+    // 나(참여자) — 김·이 둘 다 책임자가 아니면 경로가 앞선 김의 폴더, 목록 차례를 뒤집어도 같음
+    for (const list of [shared, shared.slice().reverse()]) {
+      const r = await Y.run(deps(fakeStore(clone(tree), { shared: list }), memLocal({}), { leadPrjNos: [] }));
+      assert.deepStrictEqual([r.state.ok, r.state.pages.P2.owner, r.state.index.P2.path], [true, '김', KIM_DIR]);
+    }
+    // 김(참여자 — 자기 base 가 연구/공유)도 이(자기 base 가 RnD)도 같은 김의 폴더를 고른다 — 서로 상대 폴더를 골라 갈라지지 않음
+    const kim = await Y.run(deps(fakeStore(clone(tree), { shared: [{ path: LEE_DIR, ownerName: '이' }] }), memLocal({}), { base: cfgOf(`${KIM}/Documents/연구/공유`), leadPrjNos: [] }));
+    const lee = await Y.run(deps(fakeStore(clone(tree), { shared: [{ path: KIM_DIR, ownerName: '김' }] }), memLocal({}), { base: cfgOf(`${LEE}/Documents/RnD`), leadPrjNos: [] }));
+    assert.deepStrictEqual([kim.state.index.P2.path, kim.state.index.P2.owner, lee.state.index.P2.path, lee.state.index.P2.owner], [KIM_DIR, '', KIM_DIR, '김']);
+    // 책임자('동료' — rsprs.P2)의 폴더가 있으면 경로와 상관없이 그것
+    const t2 = Object.assign(clone(tree), { [`${YOUR_BASE}/MW`]: y() });
+    const r3 = await Y.run(deps(fakeStore(t2, { shared: shared.concat([{ path: `${YOUR_BASE}/MW`, ownerName: '동 료' }]) }), memLocal({}), { leadPrjNos: [] }));
+    assert.deepStrictEqual([r3.state.index.P2.path, r3.state.index.P2.owner], [`${YOUR_BASE}/MW`, '동 료'], '주인 이름은 공백 무시');
+    // skip — 연차 파일 없는 폴더는 이레 동안 다시 훑지 않고, 이레가 지나면 다시
+    const r4 = await Y.run(deps(fakeStore(clone(tree), { shared }), memLocal({}), { leadPrjNos: [] }));
+    assert.deepStrictEqual(r4.state.skip[JUNK.toLowerCase()], { at: 100000, prj: '' });
+    const s5 = fakeStore(clone(tree), { shared });
+    await Y.run(deps(s5, memLocal({}), { leadPrjNos: [], skip: r4.state.skip, now: 100000 + 6 * 86400000 }));
+    assert.ok(!s5.calls.includes(`list:${JUNK}`), '이레 안 — 안 훑음');
+    const s6 = fakeStore(clone(tree), { shared });
+    await Y.run(deps(s6, memLocal({}), { leadPrjNos: [], skip: r4.state.skip, now: 100000 + 7 * 86400000 }));
+    assert.ok(s6.calls.includes(`list:${JUNK}`), '이레 지남 — 다시 훑음');
+    // 남의 과제(P2 — 내 참여 과제가 아님) 폴더는 skip 에 과제번호와 함께 → 그 과제 참여인력이 되면 이레를 기다리지 않고 다시 훑어 연결
+    const r7 = await Y.run(deps(fakeStore(clone(tree), { shared }), memLocal({}), { leadPrjNos: [], myPrjNos: ['P1'] }));
+    assert.deepStrictEqual([r7.state.skip[KIM_DIR.toLowerCase()], 'P2' in r7.state.pages], [{ at: 100000, prj: 'P2' }, false]);
+    const r8 = await Y.run(deps(fakeStore(clone(tree), { shared }), memLocal({}), { leadPrjNos: [], skip: r7.state.skip, now: 200000 }));
+    assert.deepStrictEqual([r8.state.index.P2.path, KIM_DIR.toLowerCase() in r8.state.skip], [KIM_DIR, false]);
   });
 
   await test('색인(index): 경로가 맞으면 훑지 않고(scanned 0) 첫 읽기에서 과제번호로 검증 · 폴더가 없어진 색인은 버리고 다시 훑는다 · 색인의 폴더가 실제로 다른 과제 것이면 그 과제에 돌리고 이 과제는 새로 고른다', async () => {
@@ -1955,8 +2140,9 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
   });
 
   await test('로그인 필요(auth)·작업 탭 실패(tab)는 전체 실패로 — 던지지 않고 state.kind 로, 나머지 과제는 멈춤 · 나와 공유 목록의 http 오류는 discoverError 로만', async () => {
-    const r = await Y.run(deps(fakeStore({ [BASE]: {} }, { authList: true }), memLocal({})));
-    assert.deepStrictEqual([r.state.ok, r.state.kind, r.state.count, r.state.pages, r.state.index], [false, 'auth', 0, {}, {}]);
+    const idx = { P1: { base: BASE, folder: 'SSCB', site: siteOf(BASE), path: `${BASE}/SSCB`, url: furl(`${BASE}/SSCB`), owner: '', at: 1 } };
+    const r = await Y.run(deps(fakeStore({ [BASE]: {} }, { authList: true }), memLocal({}), { index: idx }));
+    assert.deepStrictEqual([r.state.ok, r.state.kind, r.state.count, r.state.pages, r.state.index], [false, 'auth', 0, {}, idx], '로그인 만료로 멈추면 지난 색인은 그대로');
     assert.ok(/로그인/.test(r.state.error));
     const store = fakeStore({ [BASE]: {} }, { openFail: 'tab' });
     const me = memLocal({ aliases: { P1: 'A', P2: 'B' }, plan: { plans: { P1: { K: [item('a', 1)] }, P2: { K: [item('b', 1)] } }, del: {} } });
@@ -2199,6 +2385,18 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     assert.deepStrictEqual(back.del, { 'P2@1': 20, 'P1@1': 400 }, 'P1 묘비는 새것으로(P1@3 은 사라짐), P2 는 그대로');
     assert.strictEqual(back.plans['P2@1'], local.plans['P2@1']);
   });
+  await test('merge — 지급 완료(paid)는 계획 at 과 따로 paid.at 큰 쪽 (2026-10-19 "sharepoint 에도 제공해줘")', () => {
+    const paidA = { from: '2026-04', through: '2026-06', amt: 1, appr: 1, left: 0, at: 100, src: 'erp' }, paidB = Object.assign({}, paidA, { through: '2026-08', at: 200 });
+    const L = { plans: { 'P1@1': plan('P1', 1, 50, [person('a', [1000])], { paid: paidB }) }, del: {} };   // 로컬: 계획은 옛것, rERP 조회는 새것
+    const R = { plans: [plan('P1', 1, 90, [person('a', [2000])], { paid: paidA })], del: {} };            // 원격: 계획은 새것, 조회는 옛것
+    const m = Y.merge(L, R, 1000);
+    assert.deepStrictEqual([m.plans[0].people[0].plan[0].amt, m.plans[0].paid], [2000, paidB], '계획은 원격(at 90), paid 는 로컬(at 200)');
+    assert.ok(m.localChanged && m.remoteChanged);
+    const m2 = Y.merge({ plans: { 'P1@1': plan('P1', 1, 90, [person('a', [1])]) }, del: {} }, { plans: [plan('P1', 1, 50, [person('a', [2])], { paid: paidA })], del: {} }, 1000);
+    assert.deepStrictEqual([m2.plans[0].people[0].plan[0].amt, m2.plans[0].paid, m2.localChanged], [1, paidA, true], '한쪽에만 있으면 그것');
+    const m3 = Y.merge({ plans: { 'P1@1': plan('P1', 1, 90, [person('a', [1])], { paid: paidB }) }, del: {} }, { plans: [plan('P1', 1, 90, [person('a', [1])], { paid: paidB })], del: {} }, 1000);
+    assert.deepStrictEqual([m3.localChanged, m3.remoteChanged], [false, false]);
+  });
   })();
 }
 
@@ -2255,7 +2453,7 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
   /* chrome.storage.local 흉내 — rerp 와 같은 키(shareState · planSyncState · shareIndex · shareFolder) */
   function fakeChrome(init) {
     const store = Object.assign({}, init || {});
-    return { store, storage: { local: { get: async (k) => (Array.isArray(k) ? Object.fromEntries(k.map((x) => [x, clone(store[x])])) : typeof k === 'string' ? { [k]: store[k] === undefined ? undefined : clone(store[k]) } : clone(store)), set: async (o) => { Object.assign(store, clone(o)); }, remove: async (k) => { for (const x of Array.isArray(k) ? k : [k]) delete store[x]; } } } };
+    return { store, storage: { local: { get: async (k) => (Array.isArray(k) ? Object.fromEntries(k.filter((x) => store[x] !== undefined).map((x) => [x, clone(store[x])])) : typeof k === 'string' ? { [k]: store[k] === undefined ? undefined : clone(store[k]) } : clone(store)), set: async (o) => { Object.assign(store, clone(o)); }, remove: async (k) => { for (const x of Array.isArray(k) ? k : [k]) delete store[x]; } } } };
   }
   /* 가짜 로컬 — WORKSPACE 의 src/rndshare.js 변환 자리. prjdoc-sync 의 loadLocal 모양 그대로 */
   function memLocal(init) {
@@ -2301,7 +2499,8 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     assert.deepStrictEqual((await off.ss.send({ type: 'planSync', reason: 'manual' })).skipped, 'off');
     assert.deepStrictEqual(store.calls, []);
     assert.deepStrictEqual(Object.keys(C.store), []);
-    assert.deepStrictEqual(Object.keys(SHARE_DEFAULTS).sort(), ['changesSync', 'discover', 'driveHost', 'enabled', 'folder', 'planSync', 'researchSync', 'shareWith', 'staffSync']);
+    assert.deepStrictEqual(Object.keys(SHARE_DEFAULTS).sort(), ['changesSync', 'discover', 'driveHost', 'enabled', 'folder', 'planSync', 'projectSync', 'projects', 'researchSync', 'scope', 'shareWith', 'staffSync'], 'rerp 의 sitesSync · sitesScope · sitesProjects(가맹점)는 옮기지 않음');
+    assert.deepStrictEqual([SHARE_DEFAULTS.projectSync, SHARE_DEFAULTS.scope, SHARE_DEFAULTS.projects], [true, 'all', []]);
     assert.strictEqual(SHARE_DEFAULTS.driveHost, 'https://krclass-my.sharepoint.com');
   });
   await test('켜면 base(비면 내 OneDrive 문서/업무/shared) 를 풀어 shareFolder 에 캐시하고 책임 과제의 약칭 폴더에 연차 파일을 만들며 shareState·planSyncState·shareIndex 에 남긴다 · 폴더를 새로 만들었으니 참여연구원(내 이름 제외)에게 편집 공유 · 막 맞췄으면 load 는 recent', async () => {
@@ -2408,6 +2607,52 @@ const test = async (name, fn) => { try { await fn(); n++; console.log('ok  ', na
     const [r1, r2, r3] = await Promise.all([first, second, third]);
     assert.deepStrictEqual([r1.ok, r2.ok, r3 === r1, r1.written, r2.written], [true, true, true, 1, 0], 'load 는 진행 중인 결과 · manual 은 끝난 뒤 다시(이미 같아 쓸 것 없음)');
     assert.strictEqual(slow.calls.filter((c) => c.startsWith('folders:')).length, 2, '두 번 돌았다');
+  });
+  await test('sharePick · sharesProject — rerp lib/settings.js 그대로: pick 이면 고른 과제번호(글자), all 이면 null · 꺼짐/과제별 공유 꺼짐이면 false', () => {
+    assert.deepStrictEqual([sharePick({ scope: 'pick', projects: ['P1', 2] }), sharePick({ scope: 'pick' }), sharePick({ scope: 'all', projects: ['P1'] }), sharePick(null)], [['P1', '2'], [], null, null]);
+    assert.deepStrictEqual([sharesProject({ enabled: true }, 'P1'), sharesProject({ enabled: true, scope: 'pick', projects: ['P1'] }, 'P1'), sharesProject({ enabled: true, scope: 'pick', projects: ['P1'] }, 'P2'),
+      sharesProject({ enabled: false }, 'P1'), sharesProject({ enabled: true, projectSync: false }, 'P1'), sharesProject(null, 'P1')], [true, true, false, false, false, false]);
+  });
+  await test('공유할 과제(scope pick) — 고른 과제만 맞추고(allow) 고르지 않은 과제는 폴더를 만들지도 읽지도 않음 · 그 과제 하나만 맞추라고 하면 skipped project · 고른 과제가 없거나 과제별 공유를 끄면 off', async () => {
+    const CTX2 = { names: { P1: '과제1', P2: '과제2' }, rsprs: { P1: '나', P2: '나' }, myPrjNos: ['P1', 'P2'], leadPrjNos: ['P1', 'P2'], aliases: { P1: 'SSCB', P2: '수소' }, who: '나', myNames: ['나'] };
+    const mem = () => memLocal({ changes: { 'P1@1': [change('c1', '2026-10-01', '기타', 'x', '', '')], 'P2@1': [change('c2', '2026-10-02', '기타', 'y', '', '')] },
+      projects: { P1: { prjNm: '과제1', rspr: '나', anl: 1, stDt: '20260401', endDt: '20261231' }, P2: { prjNm: '과제2', rspr: '나', anl: 1, stDt: '20260401', endDt: '20261231' } } });
+    const all = fakeStore({ [BASE]: {} });
+    const ra = await mk({ store: all, settings: { enabled: true, shareWith: 'none' }, context: CTX2, mem: mem() }).ss.send({ type: 'planSync', reason: 'manual' });
+    assert.deepStrictEqual([ra.ok, Object.keys(ra.pages).sort(), Object.keys(all.tree).filter((k) => k.startsWith(`${BASE}/`)).sort()], [true, ['P1', 'P2'], [`${BASE}/SSCB`, `${BASE}/수소`]], '전체(기본)면 둘 다');
+    const store = fakeStore({ [BASE]: {} });
+    const settings = { enabled: true, shareWith: 'none', scope: 'pick', projects: ['P1'] };
+    const { ss, C } = mk({ store, settings, context: CTX2, mem: mem() });
+    const r = await ss.send({ type: 'planSync', reason: 'manual' });
+    assert.deepStrictEqual([r.ok, Object.keys(r.pages), r.created, Object.keys(store.tree).filter((k) => k.startsWith(`${BASE}/`))], [true, ['P1'], ['P1'], [`${BASE}/SSCB`]], 'P2 는 폴더를 만들지 않음');
+    assert.ok(!store.calls.some((c) => c.includes('수소')), 'P2 폴더에는 닿지 않음');
+    assert.deepStrictEqual(Object.keys(C.store.shareIndex), ['P1']);
+    const n0 = store.calls.length;
+    const one = await ss.send({ type: 'planSync', reason: 'manual', prjNo: 'P2' });
+    assert.deepStrictEqual([one.ok, one.skipped, one.prjNo, one.missing], [false, 'project', 'P2', ['설정 › Plus › 공유할 과제에서 이 과제 체크']]);
+    assert.strictEqual(store.calls.length, n0, '고르지 않은 과제 하나 — 아무 데도 닿지 않음');
+    assert.strictEqual((await ss.send({ type: 'planSync', reason: 'manual', prjNo: 'P1' })).ok, true, '고른 과제 하나는 그대로');
+    const none = await mk({ store, settings: { enabled: true, scope: 'pick', projects: [] }, context: CTX2, mem: mem() }).ss.send({ type: 'planSync', reason: 'manual' });
+    assert.deepStrictEqual([none.skipped, none.missing.length], ['off', 1], '고른 과제가 없으면 off(과제별 공유 안내)');
+    const offProj = mk({ store, settings: { enabled: true, projectSync: false }, context: CTX2, mem: mem() }).ss;
+    assert.deepStrictEqual([(await offProj.send({ type: 'planSync', reason: 'manual' })).skipped, (await offProj.send({ type: 'planSync', reason: 'manual', prjNo: 'P1' })).skipped], ['off', 'project']);
+  });
+  await test('나와 공유에서 훑어 내 과제가 아니었던 폴더는 shareSkip 에 남기고(상태에는 없음) 다음 맞춤은 다시 읽지 않는다 · 번호로 만든 내 폴더는 약칭이 있으면 약칭으로 이름을 바꾼다(shareAutoRename)', async () => {
+    const OTHER = '/personal/you/Documents/업무/남의과제';
+    const y9 = Object.assign(PRJDOC.emptyYear({ prjNo: 'P9', prjNm: '남의 과제' }, 1), { updatedAt: '2026-10-18T00:00:00.000Z', updatedBy: '동료' });
+    const y1 = Object.assign(PRJDOC.emptyYear({ prjNo: 'P1', prjNm: '과제1' }, 1), { updatedAt: '2026-10-18T00:00:00.000Z', updatedBy: '나' });
+    const store = fakeStore({ [BASE]: {}, [`${BASE}/P1`]: { '1차년도.json': PRJDOC.serialize(y1) }, [OTHER]: { '1차년도.json': PRJDOC.serialize(y9) } }, { shared: [{ path: OTHER, ownerName: '동료' }] });
+    const idx = { P1: { base: BASE, folder: 'P1', site: siteOf(BASE), path: `${BASE}/P1`, url: furl(`${BASE}/P1`), owner: '', at: 1 } };
+    const { ss, C } = mk({ store, settings: { enabled: true, shareWith: 'none' }, context: CTX, mem: memLocal(), init: { shareIndex: idx } });
+    const r = await ss.send({ type: 'planSync', reason: 'manual' });
+    assert.ok(r.ok && store.calls.includes(`read:${OTHER}/1차년도.json`), '처음에는 훑는다');
+    assert.deepStrictEqual([C.store.shareSkip[OTHER.toLowerCase()].prj, 'skip' in r, 'skip' in C.store.shareState], ['P9', false, false]);
+    assert.ok(store.calls.includes(`rename:${BASE}/P1:SSCB`), '과제번호 이름 폴더 → 약칭');
+    assert.deepStrictEqual([r.pages.P1.folder, r.pages.P1.renamedFrom, r.pages.P1.folderUrl, C.store.shareIndex.P1.folder, C.store.shareIndex.P1.path], ['SSCB', 'P1', cfgOf(`${BASE}/SSCB`).viewUrl, 'SSCB', `${BASE}/SSCB`]);
+    const n0 = store.calls.length;
+    const r2 = await ss.send({ type: 'planSync', reason: 'manual' });
+    assert.ok(r2.ok && !store.calls.slice(n0).includes(`read:${OTHER}/1차년도.json`), 'shareSkip 의 폴더는 이레 동안 다시 읽지 않음');
+    assert.ok(!store.calls.slice(n0).some((c) => c.startsWith('rename:')), '이미 약칭이면 그대로');
   });
   })();
 }

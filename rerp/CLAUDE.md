@@ -12,13 +12,13 @@ R&D 탭의 rERP 집행내역(과제집행비율 표·예상 비용)과 **공유 
 - 원본이 바뀌었는지는 `node tools/rerp.mjs check`(= `npm run rerp`)가 본다. `npm test` 의 `test/rerp-origin.test.mjs` 가 같은 것을 돌려 **원본이 옮긴 뒤로 바뀌었으면 빨갛게** 한다.
   반영 차례: `check` 로 바뀐 파일 확인 → 원본 diff(`git -C E:\dev\kr_ext_rerp diff <origin.json 의 commit>..HEAD -- <파일>`)를 여기 짝 파일에 같은 뜻으로 적용 → `node --test test/rerp*.test.mjs` →
   `rerp/origin.json` 의 그 파일 지문을 다시 적기(**`node tools/rerp.mjs stamp` 는 옮기지 않은 파일(render.js · rnd-api.js · settings.js)의 드리프트를 가리니 다 옮겼을 때만**) → `npm test`.
-- 상호운용 규약은 **바꾸지 않는다**: 저장 키(`plannedExpenses`·`plannedDeleted`·`planSyncState`·`researchPlans`·`staffPlans`·`shareState`·`shareIndex`·`shareFolder`), 공유 폴더 트리(base/<약칭 → Job Id → 과제번호>/`<n>차년도.json` · `예상비용.json`),
+- 상호운용 규약은 **바꾸지 않는다**: 저장 키(`plannedExpenses`·`plannedDeleted`·`planSyncState`·`researchPlans`·`staffPlans`·`shareState`·`shareIndex`·`shareFolder`·`shareSkip`), 공유 폴더 트리(base/<약칭 → Job Id → 과제번호>/`<n>차년도.json` · `예상비용.json`),
   문서 v2 의 모양과 병합(id·ts·aliasAt·at 큰 쪽, changes 는 id 합집합 500, ERP 칸은 rERP 값, 모르는 칸 보존), 집행비율 식(승인액÷예산액 · 미청구·승인전 반영 · 제외 비목 인건비·연구수당·간접비). 이것이 같아야 rerp 가 쓴 파일을 WORKSPACE 가 그대로 읽고 거꾸로도 된다.
 - 테스트는 `test/rerp.test.mjs`(원본 `tests/plan-sync.test.js` 를 ESM 으로 + plan·erp) · `test/rerp-share.test.mjs`(원본 `tests/sp-store·prjdoc·prjdoc-sync·staff-sync.test.js` 넷을 ESM 으로 한 파일에 + sharesync 배선) · `test/rerp-research.test.mjs` · `test/rerp-staff.test.mjs` — 원본 테스트가 늘면 같이 옮긴다. 실 SharePoint 에는 닿지 않는다(가짜 fetch·chrome·store).
 
 ## 쓰는 쪽
 
-`rndpanel.js`(예산 칸 아래 "rERP 집행내역", 공유 카드 "공유 (SharePoint)" — `createShareSync(deps)`)와 `src/rnderp.js`(차년도 ↔ rERP 잇기·스냅샷·비목 맞추기) · `src/rndshare.js`(장부 ↔ 연차 파일 `project`·`budget`·`changes`·`research` 변환). 설계 배경은 `docs/erp-shared-design.md`(2026-10-10 설계안 — 새 저장소 대신 이 폴더로 둔 것이 2026-10-11 결정).
+`rndpanel.js`(예산 칸 아래 "rERP 집행내역", 설정 › 공유 (Plus) — `createShareSync(deps)`, 공유할 과제는 `sharePick`)와 `src/rnderp.js`(차년도 ↔ rERP 잇기·스냅샷·비목 맞추기) · `src/rndshare.js`(장부 ↔ 연차 파일 `project`·`budget`·`changes`·`research` 변환). 설계 배경은 `docs/erp-shared-design.md`(2026-10-10 설계안 — 새 저장소 대신 이 폴더로 둔 것이 2026-10-11 결정).
 
 ## 예외 — `mcp.js`
 

@@ -172,7 +172,10 @@ const make = () => createRndPanel({
   // 확장 안의 파일(rnd/skills.json · rnd/skills/…)은 저장소에서 읽는다.
   readAsset: async (p, as) => { const buf = fs.readFileSync(new URL(`../${p}`, import.meta.url)); return as === 'bytes' ? new Uint8Array(buf) : buf.toString('utf8'); },
   today: () => '2026-10-08',
+  openPlus: () => { opened.push('plus'); },   // 설정 › Plus(공유 카드 — 2026-10-25 R&D 설정에서 옮김)를 연 횟수
 });
+/** 패널이 설정 › Plus 를 열어 달라고 한 기록. */
+const opened = [];
 let panel = make();
 panel.wire();
 await panel.show();
@@ -265,7 +268,7 @@ t('기본 비목 여섯 줄, 아직 적은 것 없음 · 계획서가 없으면 
   // 2026-10-11 사용자 지정 — 공문 탭의 공문 설정(gmPresetBox)과 같은 카드 한 줄: 아이콘 · 이름 · 형편(summary-detail) · 화살표
   assert.ok($('rdSetBox').classList.contains('card') && $('rdSetBox').classList.contains('rd-box'), 'R&D 설정은 공문 설정처럼 카드');
   assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > summary > *')].map((x) => x.tagName.toLowerCase() + (x.getAttribute('class') ? `.${x.getAttribute('class')}` : '')), ['svg', 'span', 'span.summary-detail']);
-  assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > .rd-set-body > *')].map((x) => x.id || x.className), ['rd-check rd-set-check', 'rdItemBox', 'rdShareBox', 'rdIntake', 'rdSkillBox']);
+  assert.deepEqual([...$('rdSetBox').querySelectorAll(':scope > .rd-set-body > *')].map((x) => x.id || x.className), ['rd-check rd-set-check', 'rdItemBox', 'rdShareGo', 'rdIntake', 'rdSkillBox']);
   assert.ok($('rdErpOn').checked, 'rERP 집행내역은 기본 켬');
   // 예산 칸에 보일 비목(2026-10-11 사용자 지정) — 계획서의 여섯 비목이 모두 켜진 채 늘어선다
   assert.deepEqual([...$('rdItems').querySelectorAll('label')].map((l) => [l.textContent, l.querySelector('input').checked]), [['인건비', true], ['연구시설·장비비', true], ['연구재료비', true], ['연구활동비', true], ['연구수당', true], ['간접비', true]]);
@@ -908,14 +911,18 @@ console.log('공유 (SharePoint, 2026-10-18) — 과제마다 OneDrive 공유 �
 const change = (node, value) => { if (value !== undefined) node.value = value; node.dispatchEvent(new window.Event('change', { bubbles: true })); };
 const pickChip = (label) => [...doc.querySelectorAll('#rdProjects [data-proj]')].find((b) => b.textContent === label).click();
 const bookProject = (alias) => panel.book().projects.find((x) => x.alias === alias);
-t('꺼져 있는 것이 기본 — 아무 데도 닿지 않는다. 카드는 R&D 설정 칸 안, YAML 넣는 곳 바로 위. 옛 원노트 카드는 없다', () => {
+t('꺼져 있는 것이 기본 — 아무 데도 닿지 않는다. 카드는 설정 › Plus(2026-10-25), R&D 설정에는 그리로 가는 한 줄(YAML 넣는 곳 바로 위). 옛 원노트 카드는 없다', () => {
   assert.equal($('rdShareState').textContent, '꺼짐');
+  assert.equal($('rdShareGoState').textContent, '꺼짐');
   assert.ok(!$('rdShareOn').checked);
   assert.ok($('rdShareSync').disabled && $('rdShareLink').disabled);
   assert.deepEqual(sp.calls, [], '꺼져 있으면 저장소에 닿지 않는다(탭을 열 때도)');
-  assert.equal($('rdShareBox').nextElementSibling.id, 'rdIntake');
-  assert.ok(!$('rdBody').contains($('rdShareBox')));
-  assert.ok($('rdSetBox').contains($('rdShareBox')), 'R&D 설정 칸 안');
+  assert.equal($('rdShareGo').nextElementSibling.id, 'rdIntake');
+  assert.equal($('rdShareBox'), null);
+  for (const id of ['rdShareOn', 'rdShareFolder', 'rdShareWith', 'rdShareSync', 'rdShareOpen', 'rdShareLink', 'rdShareMsg', 'rdShareState', 'plusDiscover', 'plusProjectSync', 'plusPrjPick', 'plusPages']) assert.ok($('setPlus').contains($(id)), `${id} 는 설정 › Plus 안`);
+  const n = opened.length;
+  $('rdShareGo').click();
+  assert.equal(opened.length, n + 1, 'R&D 설정의 한 줄을 누르면 설정 › Plus 로');
   assert.equal($('rdShareFolder').placeholder, '비우면 내 OneDrive 의 문서/업무/shared');
   for (const id of ['rdNoteBox', 'rdNoteOn', 'rdPlusOn', 'rdResShare']) assert.equal($(id), null, `${id} 는 없다`);
 });
@@ -954,7 +961,7 @@ await ta('켜면 바로 맞춘다 — 밑폴더(내 OneDrive 문서/업무/share
   assert.ok(logs.some((l) => l.text === 'R&D 공유 (SharePoint) 켬'));
   assert.ok(logs.some((l) => l.kind === 'rnd' && /^R&D 공유 맞춤\(켬\): 과제 4개/.test(l.text)));
 });
-await ta('다른 기기·동료가 고친 연차 파일을 지금 맞추기로 받는다 — 비고(WORKSPACE 몫)·별칭(늦게 바꾼 쪽)·변경이력(합집합)·예산 계획(파일이 더 늦으면 그 줄 전체), 달라진 것이 파일 쪽뿐이면 쓰지 않는다', async () => {
+await ta('다른 기기·동료가 고친 연차 파일을 지금 동기화로 받는다 — 비고(WORKSPACE 몫)·별칭(늦게 바꾼 쪽)·변경이력(합집합)·예산 계획(파일이 더 늦으면 그 줄 전체), 달라진 것이 파일 쪽뿐이면 쓰지 않는다', async () => {
   await wait(5);
   const folder = `${BASE}/파일 과제`;
   const d = JSON.parse(sp.tree[folder]['1차년도.json']);
@@ -978,7 +985,7 @@ await ta('다른 기기·동료가 고친 연차 파일을 지금 맞추기로 �
   assert.match($('rdShareMsg').textContent, /받음 1/);
   assert.equal(sp.puts.length, n, '달라진 것이 파일 쪽뿐이면 쓰지 않는다');
   assert.equal(sp.tree[folder]['1차년도.json'], JSON.stringify(d, null, 2), '파일은 그대로');
-  assert.ok(logs.some((l) => /^R&D 공유 맞춤\(지금 맞추기\)/.test(l.text)));
+  assert.ok(logs.some((l) => /^R&D 공유 맞춤\(지금 동기화\)/.test(l.text)));
 });
 await ta('이 기기에서 과제 정보를 고치면 잠깐 뒤 저절로 맞춰 파일에 쓴다 — 별칭은 늦게 바꾼 쪽', async () => {
   pickChip('파일');
@@ -1159,7 +1166,7 @@ await ta('로그인이 풀리면(auth) "OneDrive 에 로그인하세요" 와 One
   assert.equal($('rdShareOpen').textContent, 'OneDrive 열기');
   assert.ok($('rdShareOpen').dataset.url.startsWith('https://krclass-my.sharepoint.com'));
   assert.equal(chips().length, 4);
-  assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /^R&D 공유 맞춤\(지금 맞추기\): OneDrive 에 로그인하세요/.test(l.text)));
+  assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /^R&D 공유 맞춤\(지금 동기화\): OneDrive 에 로그인하세요/.test(l.text)));
   sp.authList = false;
 });
 await ta('끄면 더는 닿지 않는다 — 과제 정보를 고쳐도', async () => {
@@ -1169,15 +1176,13 @@ await ta('끄면 더는 닿지 않는다 — 과제 정보를 고쳐도', async 
   assert.equal($('rdShareMsg').textContent, '');
   assert.ok($('rdShareSync').disabled);
   assert.equal($('rdSetState').textContent, 'rERP 켬 · 공유 꺼짐');
-  // 머리 줄의 링크 아이콘은 꺼져 있으면 복사하지 않고 R&D 설정의 공유 카드로 간다(2026-10-19)
-  const c = copied.length;
-  $('rdSetBox').open = false; $('rdShareBox').open = false;
+  // 머리 줄의 링크 아이콘은 꺼져 있으면 복사하지 않고 공유 카드(설정 › Plus — 2026-10-25)로 간다(2026-10-19)
+  const c = copied.length, o = opened.length;
   $('rdHeadLink').click();
   assert.equal(copied.length, c, '꺼져 있으면 복사하지 않는다');
-  assert.ok($('rdSetBox').open && $('rdShareBox').open, 'R&D 설정의 공유 카드가 펴진다');
+  assert.equal(opened.length, o + 1, '설정 › Plus 를 연다');
   assert.ok($('rdHeadLink').classList.contains('fail'), '× 표시');
   assert.match($('rdHeadLink').title, /꺼져 있습니다/);
-  $('rdSetBox').open = false; $('rdShareBox').open = false;
   const n = sp.calls.length;
   pickChip('파일 과제');
   $('rdEdit').click();
@@ -1304,6 +1309,8 @@ await ta('공유를 켜면 이어진 과제는 rERP 과제번호를 열쇠로 �
   // rerp 확장(책임자)이 과제 폴더 TEST 에 적은 예상비용.json — 같은 모양(rerp/prjdoc.js kind 'plan'). 연차 파일은 아직 없다(폴더만 있으면 그 이름을 쓴다).
   myName = '홍길동';   // 이 과제(TEST)의 rERP 책임자 — 책임자여도 예상비용.json 은 쓰지 않는다(아래 검사). 이름은 파일 줄의 by·updatedBy 가 되니 맞추기 전에 바꾼다
   sp.reset();
+  delete store.shareIndex;   // 트리를 비웠으니 이 기기의 폴더 캐시도 — 2026-10-25 정본은 전체 실패(위 auth) 뒤에도 색인을 남겨, 잇기 전 열쇠가 TEST 폴더를 쥔 채 남는다
+  delete store.shareSkip;
   const folder = `${BASE}/TEST`;
   const planText = JSON.stringify({
     v: 2, kind: 'plan', project: { prjNo: PRJ, prjNm: 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발' },
@@ -1405,7 +1412,7 @@ await ta('공유 폴더에 있는데 장부에 없는 내 rERP 참여 과제는 
   panel.share().del = {};
   const n1 = logs.length;
   await syncNow();
-  await untilLong(() => !$('rdShareSync').disabled && logs.slice(n1).some((l) => /^R&D 공유 맞춤\(지금 맞추기\)/.test(l.text)));
+  await untilLong(() => !$('rdShareSync').disabled && logs.slice(n1).some((l) => /^R&D 공유 맞춤\(지금 동기화\)/.test(l.text)));
   assert.ok(!bookProject('SOC') && chips().length === 4, '지운 과제는 폴더가 남아 있어도 다시 더하지 않는다');
   assert.ok(!logs.slice(n1).some((l) => /과제 더함/.test(l.text)), logs.slice(n1).map((l) => l.text).join(' / '));
   // 뒷정리 — 폴더·색인·목록을 치운다
@@ -1499,7 +1506,7 @@ await ta('예산 칸 위의 "집행에 더하기" — 사용계획을 켜면 그
   assert.equal(used('연구활동비').value, '19,713');
   assert.ok(!q('#rdBudget .rd-brow-extra'));
 });
-await ta('과제책임자가 내 이름이어도 예상비용.json 은 쓰지 않는다(받기만) — 지금 맞추기에 쓸 것이 없으면 파일은 그대로', async () => {
+await ta('과제책임자가 내 이름이어도 예상비용.json 은 쓰지 않는다(받기만) — 지금 동기화에 쓸 것이 없으면 파일은 그대로', async () => {
   const before = store.planSyncState?.at;
   const n = sp.puts.length;
   $('rdShareSync').click();
@@ -1508,7 +1515,7 @@ await ta('과제책임자가 내 이름이어도 예상비용.json 은 쓰지 �
   assert.equal(sp.puts.length, n, '쓴 것 없음 — 예상비용.json 도 연차 파일도');
   assert.ok(!sp.puts.some((x) => x.endsWith('예상비용.json')), '예상비용.json 은 한 번도 쓰지 않았다');
   assert.match($('rdShareState').textContent, /^맞춤 .* · 과제 4개$/);
-  assert.ok(logs.some((l) => /R&D 공유 맞춤\(지금 맞추기\): 과제 4개/.test(l.text)));
+  assert.ok(logs.some((l) => /R&D 공유 맞춤\(지금 동기화\): 과제 4개/.test(l.text)));
 });
 await ta('rerp(책임자)가 먼저 만든 연차 파일(WORKSPACE 몫 칸이 모두 빈 것)을 처음 받아도 Job Id·I/O·연구기간·비고·과제번호는 지워지지 않고, 잠깐 뒤 한 번 더 맞춰 파일로 간다(2026-10-19 검토)', async () => {
   // 공유를 잠깐 끄고(폴더가 먼저 생기지 않게) 과제 WW 를 더해 rERP 에 잇는다 — 열쇠가 rERP 과제번호가 되어 rerp 가 만든 파일을 만난다
@@ -2151,14 +2158,14 @@ const permBox = (name, role) => $('rdStaffPermBody').querySelector(`tr[data-perm
 const tick = async (name, role, on) => { const box = permBox(name, role); box.checked = on; change(box); await until(() => panel.perm().row === ''); };
 const permCalls = (n) => sp.calls.slice(n).filter((c) => /^(perms|find|open|share|unshare|close):/.test(c));
 let permPath = '', permFolder = '';
-await ta('공유가 꺼져 있으면 — 아이콘은 보이고, 누르면 칸이 펴지며 공유 카드로 안내(R&D 설정·공유 카드가 펴짐). 다시 누르면 접힌다', async () => {
+await ta('공유가 꺼져 있으면 — 아이콘은 보이고, 누르면 칸이 펴지며 공유 카드로 안내(설정 › Plus 를 엶). 다시 누르면 접힌다', async () => {
   assert.ok(!hidden('rdStaffShare') && hidden('rdStaffPerm') && !$('rdShareOn').checked, 'TEST 1차년도 — 공유는 꺼진 채');
   const n = sp.calls.length;
   $('rdStaffShare').click();
   await wait(20);
   assert.ok(!hidden('rdStaffPerm') && $('rdStaffShare').classList.contains('on') && $('rdStaffShare').getAttribute('aria-pressed') === 'true');
-  assert.equal($('rdStaffPermMsg').textContent, '공유 (SharePoint)가 꺼져 있습니다 — R&D 설정의 공유 카드에서 켜고 맞춘 뒤 다시 누르세요.');
-  assert.ok($('rdStaffPermMsg').classList.contains('error') && $('rdSetBox').open && $('rdShareBox').open, '공유 카드로');
+  assert.equal($('rdStaffPermMsg').textContent, '공유 (SharePoint)가 꺼져 있습니다 — 설정 › Plus 에서 켜고 맞춘 뒤 다시 누르세요.');
+  assert.ok($('rdStaffPermMsg').classList.contains('error') && opened.at(-1) === 'plus', '공유 카드(설정 › Plus)로');
   assert.equal($('rdStaffPermBody').innerHTML, '');
   assert.equal(sp.calls.length, n, '저장소에 닿지 않는다');
   $('rdStaffShare').click();
@@ -2258,13 +2265,13 @@ await ta('남의 폴더(책임자의 것)는 읽기만 · 과제 폴더가 아�
   delete store.shareIndex.P7;
   $('rdStaffPermRefresh').click();
   await until(() => !panel.perm().busy);
-  assert.equal($('rdStaffPermMsg').textContent, '과제 폴더가 아직 없습니다 — 공유 카드의 지금 맞추기로 폴더를 만든 뒤 ↻ 를 누르세요.');
+  assert.equal($('rdStaffPermMsg').textContent, '과제 폴더가 아직 없습니다 — 설정 › Plus 의 지금 동기화로 폴더를 만든 뒤 ↻ 를 누르세요.');
   assert.ok($('rdStaffPermMsg').classList.contains('error') && $('rdStaffPermBody').innerHTML === '' && $('rdStaffPermFolder').textContent === '');
   store.shareIndex.P7 = keep;
   sp.authList = true;
   $('rdStaffPermRefresh').click();
   await until(() => !panel.perm().busy);
-  assert.equal($('rdStaffPermMsg').textContent, 'OneDrive 에 로그인하세요 — 공유 카드의 폴더 열기로 로그인한 뒤 ↻');
+  assert.equal($('rdStaffPermMsg').textContent, 'OneDrive 에 로그인하세요 — 설정 › Plus 의 폴더 열기로 로그인한 뒤 ↻');
   assert.ok(logs.some((l) => l.kind === 'rnd' && !l.ok && /^R&D 공유 권한 읽기 실패: /.test(l.text)));
   sp.authList = false;
   $('rdStaffPermRefresh').click();
@@ -2288,6 +2295,62 @@ await ta('남의 폴더(책임자의 것)는 읽기만 · 과제 폴더가 아�
   await until(() => $('rdShareState').textContent === '꺼짐');
   bookProject('TEST').support = [];
   sp.links = [];
+});
+
+console.log('설정 › Plus(2026-10-25 "rerp 에서 plus 기능을 워크스페이스에서 동일하게" · "rerp 설정을 따름") — rERP 확장의 공유 (Plus) 설정을 칸마다 따르고 여기서 바꾼 칸만 이긴다');
+await ta('rERP 확장이 답하면 그 설정(켬 · 고른 과제만 · 예상 비용 끔)을 따른다 — 여기서 끈 켜짐은 이기고, [rERP 설정 따르기]를 누르면 비워 따른다. 고른 과제만 맞춘다', async () => {
+  const KEY = 'P7';   // TEST 의 지금 차년도는 참여인력 검사에서 rERP 과제 P7 에 이어져 공유 열쇠가 P7
+  const peer = { ok: true, enabled: true, folder: '', driveHost: ORIGIN, version: '0.9.0', plus: { scope: 'pick', projects: [KEY], planSync: false } };
+  const asked = [];
+  const saved = { management: globalThis.chrome.management, runtime: globalThis.chrome.runtime };
+  globalThis.chrome.management = { getAll: async () => [{ type: 'extension', name: 'KR eClass + R&D ERP 현황', id: 'rerp-id', enabled: true }] };
+  globalThis.chrome.runtime = { id: 'ws-id', sendMessage: async (id, msg) => { asked.push([id, msg.type]); return peer; } };
+  try {
+    sp.reset();
+    await panel.showPlus();
+    assert.equal(asked.at(-1)?.[1], 'shareFolder', 'rERP 확장에 묻는다');
+    assert.ok(!$('rdShareOn').checked, '여기서 끈 것(own.enabled)이 rERP 확장의 켬을 이긴다');
+    assert.equal($('plusFollow').textContent, 'rERP 확장의 설정을 따름 · 여기서 바꾼 칸 1개');
+    assert.ok(!$('plusFollowReset').hidden);
+    assert.ok($('plusScopePick').checked && !$('plusPrjPick').hidden && !$('plusPlanSync').checked && $('plusResearchSync').checked, '공유할 과제·항목은 rERP 확장의 것');
+    assert.deepEqual([...$('plusPrjPick').querySelectorAll('input:checked')].map((x) => x.dataset.key), [KEY]);
+    assert.equal($('plusPrjPick').querySelectorAll('input').length, 4, '장부의 과제 넷을 고를 수 있다');
+    assert.equal($('plusSummary').textContent, '고른 과제 1개');
+    $('plusFollowReset').click();
+    await untilLong(() => /^맞춤 /.test($('rdShareState').textContent));
+    assert.ok($('rdShareOn').checked && $('plusFollowReset').hidden);
+    assert.equal($('plusFollow').textContent, 'rERP 확장의 설정을 따름');
+    assert.deepEqual(store.rndShare.own, {});
+    assert.deepEqual(Object.keys(store.planSyncState.pages), [KEY], '고른 과제만 맞춘다(allow)');
+    assert.deepEqual(spFolders(), ['TEST'], '고르지 않은 과제는 폴더를 만들지 않는다');
+    assert.equal($('plusPages').querySelectorAll('li').length, 1);
+    assert.match($('plusPages').textContent, /^TEST/);
+    // 과제를 하나 더 고르면 그 칸만 여기 것 — 다시 빼면 rERP 확장과 같아져 다시 따른다
+    const other = [...$('plusPrjPick').querySelectorAll('input')].find((x) => x.dataset.key !== KEY);
+    other.checked = true;
+    change(other);
+    await wait(10);
+    assert.deepEqual(Object.keys(store.rndShare.own), ['projects']);
+    assert.deepEqual([...store.rndShare.own.projects].sort(), [other.dataset.key, KEY].sort());
+    assert.equal($('plusFollow').textContent, 'rERP 확장의 설정을 따름 · 여기서 바꾼 칸 1개');
+    assert.equal($('plusSummary').textContent, '고른 과제 2개');
+    const box = [...$('plusPrjPick').querySelectorAll('input')].find((x) => x.dataset.key === other.dataset.key);
+    box.checked = false;
+    change(box);
+    await wait(10);
+    assert.deepEqual(store.rndShare.own, {}, 'rERP 확장과 같아지면 다시 따른다');
+    $('plusPlanSync').checked = true;
+    change($('plusPlanSync'));
+    await wait(10);
+    assert.deepEqual(store.rndShare.own, { planSync: true }, '항목도 칸마다');
+    assert.ok(logs.some((l) => l.text === 'R&D 공유 — 예상 비용: 켬'));
+  } finally {
+    globalThis.chrome.management = saved.management;
+    globalThis.chrome.runtime = saved.runtime;
+    $('rdShareOn').checked = false;
+    change($('rdShareOn'));
+    await until(() => $('rdShareState').textContent === '꺼짐');
+  }
 });
 
 console.log('다시 열기');

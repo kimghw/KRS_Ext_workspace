@@ -12,7 +12,8 @@
  *     행정지원(project.support)은 **양쪽**이 고치며 supportAt 큰 쪽(별칭과 같은 규칙), jobId · io · start · end · note 는 WORKSPACE 몫.
  *   year: { n(연차 1·2·3…), start, end('YYYY-MM' — 그 연차 계획 기간, 사업비 계획의 from/to) },
  *   budget: [ { name(비목), plan(계획 원 | null), at(ms), by } … ],   — 사업비 관리의 예산 줄(lib/staff.js normalizeBudget 모양 + at·by). 사업비 계획(staff.plans[].budget)에도 같은 줄이 비친다(아래 병합)
- *   staff: { plans: [ 그 연차의 계획 — lib/staff.js normalizePlanEntry 모양, 보통 1개 ], del: { ["과제번호@연차"]: 지운 시각 } },
+ *   staff: { plans: [ 그 연차의 계획 — lib/staff.js normalizePlanEntry 모양, 보통 1개. 현재 연차 계획에는 paid({ from, through('YYYY-MM' — rERP 에서 지급이 끝난 달), amt, appr(자금현황 인건비 승인액), left, at, src:'erp' })가 있을 수 있다 —
+ *                   rerp 가 rERP 자금현황에서 셈한 사실(2026-10-19 사용자 "sharepoint 에도 제공해줘. workspace도 알아야지"): WORKSPACE 는 그 달까지를 지급 완료로 보이기만, 병합은 lib/staff-sync.js(paid.at 큰 쪽) ], del: { ["과제번호@연차"]: 지운 시각 } },
  *   research: [ 그 차년도의 연구내용 기록 — lib/research.js rec 에서 받는 쪽 연결 칸(prjNo·prjNm·linkBy·src)을 뺀 것 ],
  *   changes: [ { id, date('YYYY-MM-DD'), kind('예산'|'연구내용'|'연구기간'|'연구진'|'기타' — kr_ext_workspace src/rnd.js CHANGE_KINDS 와 같은 이름), item, before, after, reason, by, at(ms), auto, …(key 등 모르는 칸 보존) } … ],
  *   updatedAt(ISO), updatedBy, …(모르는 최상위 칸 보존 — KRS WORKSPACE 가 더 넣을 수 있음) }

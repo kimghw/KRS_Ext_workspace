@@ -60,8 +60,40 @@ export function normalizeShare(raw) {
   const s = (v, max = 600) => (typeof v === 'string' ? v.slice(0, max) : '');
   const map = (v) => obj(v) || {};
   // shareWith: 과제 폴더를 새로 만들 때 참여연구원에게 자동 공유(편집) — 'participants'(기본, rerp 설정과 같음) | 'none' (2026-10-19 — 카드의 체크)
-  return { on: o.on === true, folder: s(o.folder, 2000).trim(), folderCache: map(o.folderCache), at: Number.isFinite(o.at) ? o.at : 0, memo: map(o.memo), del: map(o.del), last: s(o.last), error: s(o.error), shareWith: o.shareWith === 'none' ? 'none' : 'participants', peer: map(o.peer), effective: s(o.effective, 4100) };
+  // own: 이 확장에서 바꾼 공유 (Plus) 칸(normalizePlus — 2026-10-25). 그 전 저장값(own 없음)은 켬·자동 공유 끔만 이 확장의 것으로 옮긴다. on·shareWith 는 plusOf 결과를 배선이 적어 두는 것(읽는 곳이 많아 남김).
+  const own = 'own' in o ? normalizePlus(o.own) : normalizePlus({ enabled: o.on === true ? true : undefined, shareWith: o.shareWith === 'none' ? 'none' : undefined });
+  return { on: o.on === true, folder: s(o.folder, 2000).trim(), folderCache: map(o.folderCache), at: Number.isFinite(o.at) ? o.at : 0, memo: map(o.memo), del: map(o.del), last: s(o.last), error: s(o.error), shareWith: o.shareWith === 'none' ? 'none' : 'participants', peer: map(o.peer), effective: s(o.effective, 4100), own };
 }
+
+/* ------------------------------------------------------------ 공유 (Plus) 설정 — rERP 확장을 따른다 */
+// 2026-10-25 사용자 지정("rerp 에서 plus 기능을 워크스페이스에서 동일하게 … 둘은 같이 내용을 공유하는 거야" · "rerp 설정을 따름"): 칸마다 이 확장에서 바꾼 값(own) → rERP 확장의 값(peer — shareFolder 답) → 기본.
+// 바꾼 값이 rERP 확장의 값과 같아지면 own 에서 빼서 다시 따른다. 공유 폴더(folder·driveHost)는 따로 — 칸이 비면 따른다(rndpanel.js shareCfgNow).
+
+/** 칸과 기본값 — kr_ext_rerp lib/settings.js DEFAULTS.plus 가운데 WORKSPACE 가 쓰는 것(가맹점 sitesSync·sitesScope 는 없음). */
+export const PLUS_DEFAULTS = Object.freeze({ enabled: false, discover: true, shareWith: 'participants', projectSync: true, scope: 'all', projects: Object.freeze([]), planSync: true, researchSync: true, staffSync: true, changesSync: true });
+/** 아는 칸만, 모양이 맞는 것만(빠진 칸은 빠진 채로 — 따르기의 바탕). */
+export function normalizePlus(raw) {
+  const o = obj(raw) || {}, out = {};
+  for (const [k, d] of Object.entries(PLUS_DEFAULTS)) {
+    const v = o[k];
+    if (typeof d === 'boolean') { if (typeof v === 'boolean') out[k] = v; }
+    else if (k === 'shareWith') { if (v === 'participants' || v === 'none') out[k] = v; }
+    else if (k === 'scope') { if (v === 'all' || v === 'pick') out[k] = v; }
+    else if (Array.isArray(v)) out[k] = [...new Set(v.map((x) => str(x, 40)).filter(Boolean))].slice(0, 200);
+  }
+  return out;
+}
+/** 지금 쓰는 설정 — own > peer > 기본. */
+export const plusOf = (own, peer) => ({ ...PLUS_DEFAULTS, projects: [], ...normalizePlus(peer), ...normalizePlus(own) });
+/** 칸 하나를 이 확장에서 바꾼다 → 새 own. rERP 확장의 값과 같으면 own 에서 빼서 다시 따른다. */
+export function plusSet(own, key, value, peer) {
+  const next = { ...normalizePlus(own), ...normalizePlus({ [key]: value }) };
+  const p = normalizePlus(peer);
+  if (key in p && JSON.stringify(p[key]) === JSON.stringify(next[key])) delete next[key];
+  return next;
+}
+/** 이 장부의 몫(sharesync want) — 예상 비용은 받기만(pullOnly), 참여연구원 계획은 안 함, 예산 계획은 rerp 처럼 사업비(staffSync)를 따른다. */
+export const plusWant = (p) => ({ plan: p.planSync !== false, research: p.researchSync !== false, budget: p.staffSync !== false, changes: p.changesSync !== false, alias: true, support: true, staff: false });
 
 /* ------------------------------------------------------------ 열쇠 */
 
