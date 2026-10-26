@@ -12,9 +12,10 @@
   const ASK_MS = 20000, JOB_MS = 12000;
   const $ = (id) => document.getElementById(id);
   const bar = $('helpbar'), form = $('helpForm'), input = $('helpText'), btnSend = $('helpSend'), row = $('helpRow'), statusEl = $('helpStatus'), linesEl = $('helpLines'),
-    btnApply = $('helpApply'), btnStop = $('helpStop'), btnNew = $('helpNew'), btnSetup = $('helpSetup'), toggle = $('helpChatShow');
+    btnApply = $('helpApply'), btnStop = $('helpStop'), btnNew = $('helpNew'), btnSetup = $('helpSetup'), toggle = $('helpChatShow'), btnCap = $('helpCap');
   if (!bar || !form) return;
   let cur = null, lines = [], next = 0, detail = '', timer = 0, tick = 0, note = null /* { text, err, setup } 다리 연결 안내 등 일시 문구 */, open = false;
+  let capture = null;   // 패널 캡처로 고른 것 { count, code } — 다음 요청의 context.capture 로 실려 간다(sidepanel.js 의 'help-capture', 2026-10-26)
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -55,6 +56,7 @@
     if (settings) out.settings = settings.textContent.trim();
     const status = $('status');
     if (status && status.textContent.trim()) out.status = status.textContent.trim().slice(0, 200);
+    if (capture) out.capture = capture.code;   // 맨 끝 — 다리가 상태를 4000자로 자를 때 잘리는 것은 이것만
     return out;
   }
 
@@ -79,6 +81,11 @@
     btnNew.hidden = running || !has;
     btnSetup.hidden = !(note && note.setup);   // 다리에 닿지 못했을 때만 (note.setup = 그때 본 까닭 한 줄)
     btnSend.disabled = running; input.disabled = running;
+    if (btnCap) {
+      btnCap.hidden = !capture;
+      btnCap.textContent = capture ? `캡처 ${capture.count}` : '';
+      btnCap.title = capture ? `보낼 때 함께 가는 캡처(누르면 빼기)\n\n${capture.code.slice(0, 1500)}` : '';
+    }
     input.placeholder = running ? '처리 중… (패널을 닫아도 계속됩니다)' : 'Help Chat — 안 되는 점·고칠 점을 한 줄로 적고 Enter';   // 커밋·푸시·포크는 줄의 풍선 말에
     linesEl.hidden = !open || !has;
     if (!linesEl.hidden) {
@@ -129,7 +136,7 @@
     if (r.ok || (r.kind === 'busy' && r.id)) {   // busy: 앞선 요청(다른 창에서 보냈거나 저장이 안 된 것)을 이어서 본다 — 쓴 글은 그대로 둠
       cur = { id: r.id, text: r.ok ? text : '', at: Date.now(), state: 'running' };
       lines = []; next = 0; detail = ''; note = null;
-      if (r.ok) { input.value = ''; try { chrome.storage.local.remove(DRAFT); } catch (e) {} }
+      if (r.ok) { input.value = ''; capture = null; try { chrome.storage.local.remove(DRAFT); } catch (e) {} }
       await save();
       watch();
     } else { note = { text: r.error || '요청을 보내지 못했습니다', err: true, setup: r.kind === 'offline' || r.kind === 'old' ? r.error : '' }; render(); btnSend.disabled = false; }
@@ -141,6 +148,8 @@
     cur = Object.assign({}, cur, { applied: true }); await save();
     try { chrome.runtime.reload(); } catch (e) { note = { text: '다시 불러오지 못했습니다 — chrome://extensions 에서 새로고침하세요', err: true }; render(); }
   });
+  document.addEventListener('help-capture', (e) => { const d = e.detail || {}; capture = d.count ? { count: d.count, code: String(d.code || '') } : null; render(); });
+  if (btnCap) btnCap.addEventListener('click', () => { capture = null; render(); input.focus(); });
   btnNew.addEventListener('click', async () => { stopTimers(); cur = { fresh: true }; lines = []; next = 0; detail = ''; note = null; open = false; await save(); render(); input.focus(); });
 
   /* [설정 프롬프트 복사]: 다리를 아직 못 붙인 PC 에서 Claude Code·다른 LLM 에 붙여 넣을 글 — 머리의 B 와 같은 글(src/bridgeguide.js — 같은 PC 의 rERP 확장도 함께 연결).

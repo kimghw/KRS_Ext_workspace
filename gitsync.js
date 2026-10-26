@@ -85,6 +85,7 @@ export function createGitSync({ button, badge, log = () => {}, say = () => {}, s
 
   function paint() {
     const v = st.reload ? { mode: 'reload', count: '↻', title: st.reloadTitle } : gitView(st.last, { at: st.at });
+    // 다리가 있으면 늘 보인다 — 누르면 확인, 새 커밋이 있으면 받기(2026-10-26 사용자 지정: "깃허브 최신화 커밋있는지 확인할 수 있도록 우측 상단에 버튼").
     button.hidden = v.mode === 'off';
     button.dataset.mode = v.mode;
     button.title = v.title;

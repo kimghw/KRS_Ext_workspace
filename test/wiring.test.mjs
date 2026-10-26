@@ -218,36 +218,40 @@ const JUMP_DATE = (() => {
   t('근태 건의 부탁도 읽고 지운다', () => assert.equal(store.homeJump, undefined));
 }
 
-console.log('패널 머리의 홈 카드 체크박스');
+console.log('패널 머리의 홈 카드 단추(누를 때마다 켜고 끔)');
 {
   const { wired, window, store } = await boot({ mode: 'room' });
   const doc = window.document;
   const box = doc.getElementById('homeCard');
-  t('머리(새로고침 옆)에 있다', () => {
-    assert.ok(box, '체크박스가 없다');
-    assert.equal(box.type, 'checkbox');
+  t('머리(새로고침 옆)에 있는 단추다 — 스위치가 아니다', () => {
+    assert.ok(box, '단추가 없다');
+    assert.equal(box.tagName, 'BUTTON');
     assert.ok(box.closest('header.app-header'));
   });
-  t('설정이 없으면 켜진 채로 뜬다', () => assert.equal(box.checked, true));
-  t('change 리스너', () => assert.ok(wired.get('homeCard')?.has('change')));
-  t('무엇을 켜고 끄는지 적혀 있다', () => assert.match(box.closest('label').textContent, /홈에 WORKSPACE/));
+  t('설정이 없으면 켜진(눌린) 채로 뜬다', () => assert.equal(box.getAttribute('aria-pressed'), 'true'));
+  t('click 리스너', () => assert.ok(wired.get('homeCard')?.has('click')));
+  t('무엇을 켜고 끄는지 적혀 있다', () => assert.match(box.getAttribute('aria-label'), /홈에 WORKSPACE/));
 
-  box.checked = false;
-  box.dispatchEvent(new window.Event('change'));
+  box.click();
   await new Promise((r) => setTimeout(r, 40));
-  t('끄면 저장된다', () => assert.equal(store.homeCard, false));
+  t('누르면 꺼지고 저장된다', () => {
+    assert.equal(box.getAttribute('aria-pressed'), 'false');
+    assert.equal(store.homeCard, false);
+  });
   t('끈 것이 활동 기록에 남는다', () =>
     assert.ok((store.activityLog || []).some((e) => e.kind === 'setting' && /끔/.test(e.text))));
 
-  box.checked = true;
-  box.dispatchEvent(new window.Event('change'));
+  box.click();
   await new Promise((r) => setTimeout(r, 40));
-  t('다시 켜면 저장된다', () => assert.equal(store.homeCard, true));
+  t('다시 누르면 켜지고 저장된다', () => {
+    assert.equal(box.getAttribute('aria-pressed'), 'true');
+    assert.equal(store.homeCard, true);
+  });
 }
 {
   const { window } = await boot({ mode: 'room', homeCard: false });
   t('꺼 둔 설정이면 꺼진 채로 뜬다', () =>
-    assert.equal(window.document.getElementById('homeCard').checked, false));
+    assert.equal(window.document.getElementById('homeCard').getAttribute('aria-pressed'), 'false'));
 }
 
 console.log('설정 화면 — 톱니로 열면 설정만 보이고, 갈래(일반·LLM·연결·Plus)를 고르면 기억한다');
@@ -461,15 +465,16 @@ console.log('설정(일반)의 Teams 버튼 체크박스');
     assert.equal(window.document.getElementById('teamsButton').checked, false));
 }
 
-console.log('머리의 패널 캡처 단추와 설정(일반)의 스위치 — src/panelcap.js');
+console.log('Help Chat 줄의 패널 캡처 단추와 설정(일반)의 스위치 — src/panelcap.js');
 {
   const { wired, window, store, calls } = await boot({ mode: 'room' });
   const doc = window.document;
   const btn = doc.getElementById('panelCap');
   const box = doc.getElementById('panelCapture');
-  t('머리 줄의 새로고침 왼쪽에 있고, 처음엔 보이며 눌리지 않은 모양', () => {
-    assert.ok(btn.closest('.head-tools'), '머리 줄이 아니다');
-    assert.equal(btn.nextElementSibling?.id, 'refresh');
+  t('Help Chat 줄의 입력칸 왼쪽에 있고(머리에는 없다), 처음엔 보이며 눌리지 않은 모양', () => {
+    assert.ok(btn.closest('#helpForm'), 'Help Chat 줄이 아니다');
+    assert.deepEqual([btn.nextElementSibling?.id, btn.nextElementSibling?.nextElementSibling?.id], ['helpCap', 'helpText'], '사이에는 붙인 캡처(캡처 N, 2026-10-26)만');
+    assert.equal(doc.querySelector('.head-tools .panel-cap'), null);
     assert.equal(btn.hidden, false);
     assert.equal(btn.getAttribute('aria-pressed'), 'false');
     assert.ok(wired.get('panelCap')?.has('click'));
@@ -567,7 +572,7 @@ console.log('설정(일반)의 접수 미확인 공문 카드 체크박스');
     assert.equal(box.type, 'checkbox');
     assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
-  t('설정이 없으면 켜진 채로 뜬다', () => assert.equal(box.checked, true));
+  t('설정이 없으면 꺼진 채로 뜬다', () => assert.equal(box.checked, false));
   t('change 리스너', () => assert.ok(wired.get('homeUncfm')?.has('change')));
   t('무엇을 켜고 끄는지 적혀 있다', () => assert.match(box.closest('label').textContent, /접수 미확인 공문/));
 
@@ -2080,8 +2085,8 @@ console.log('공문 탭');
     assert.equal(doc.getElementById('gmOutsideBox'), null, '손으로 적는 사례비 장부 칸은 없다');
     const box = doc.getElementById('gmHistBox');
     assert.ok(box && !box.classList.contains('hidden'), '공문 이력 칸은 모든 갈래에서 선다');
-    assert.ok(box.compareDocumentPosition(doc.getElementById('gmWorkspace')) & window.Node.DOCUMENT_POSITION_PRECEDING, '작업 카드 아래, 양식 위');
-    assert.ok(box.compareDocumentPosition(doc.getElementById('gmTplBox')) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(box.compareDocumentPosition(doc.getElementById('gmWorkspace')) & window.Node.DOCUMENT_POSITION_PRECEDING, '작업 카드 아래');
+    assert.ok(box.compareDocumentPosition(doc.getElementById('gmTplBox')) & window.Node.DOCUMENT_POSITION_PRECEDING, '양식 아래(2026-10-26 — 양식이 공문 이력 위)');
     assert.equal(doc.getElementById('gmHistState').textContent, '읽지 못했습니다');
     assert.ok(doc.getElementById('gmHistNote').textContent.length > 0);
     assert.ok((store.activityLog || []).some((e) => e.kind === 'gongmun' && /공문 이력 읽기 실패/.test(e.text)));

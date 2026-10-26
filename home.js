@@ -3,7 +3,7 @@
 // 콘텐츠 스크립트는 ES 모듈이 아니라 import 문을 못 쓴다. 그래서 여기서 확장 안의 모듈을
 // 동적으로 불러온다 — manifest 의 web_accessible_resources 가 src/ 를 이 사이트에 열어 둔다.
 // 매니페스트는 eclass 전체에 붙이지만(경로 대소문자가 들쭉날쭉해서), 실제로 카드를 붙이는 건 홈뿐이다.
-// 붙일지 말지는 패널 머리의 체크박스(storage 의 homeCard)를 따른다. 꺼져 있어도 모듈은 불러 둔다
+// 붙일지 말지는 패널 머리의 홈 단추(storage 의 homeCard)를 따른다. 꺼져 있어도 모듈은 불러 둔다
 // — 패널에서 다시 켜면 새로고침 없이 카드가 붙어야 하기 때문이다.
 //
 // 같은 자리에서 DOC-Cruiser 미회람 문서 열람(src/circulate.js)과 접수 미확인 공문 카드(src/unconfirmed.js)도 시작한다.
@@ -25,7 +25,7 @@
     .then(({ startCirculate }) => startCirculate())
     .catch((err) => warn('미회람 문서 열람을 시작하지 못했습니다', err));
 
-  // DOC-Cruiser 접수 미확인 공문 카드. WORKSPACE 카드 위에 제목만 늘어놓는다(storage 의 homeUncfm, 기본 켬).
+  // DOC-Cruiser 접수 미확인 공문 카드. WORKSPACE 카드 위에 제목만 늘어놓는다(storage 의 homeUncfm, 기본 끔).
   import(chrome.runtime.getURL('src/unconfirmed.js'))
     .then(({ startUnconfirmed }) => startUnconfirmed(document))
     .catch((err) => warn('접수 미확인 공문 카드를 붙이지 못했습니다', err));

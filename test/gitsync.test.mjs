@@ -272,12 +272,12 @@ console.log('아이콘 — 확인·받기·다시 불러오기');
   await ta('새 커밋이면 수를 띄우고, 누르면 받는다 — 확장 파일이면 다시 불러오기가 된다', async () => {
     answers = { gitStatus: { ...base, behind: 2, commits: [{ hash: 'abc1234', subject: '고침' }] } };
     await sync.check({ quiet: false });
-    assert.deepEqual([button.dataset.mode, badge.textContent, badge.hidden], ['new', '2', false]);
+    assert.deepEqual([button.hidden, button.dataset.mode, badge.textContent, badge.hidden], [false, 'new', '2', false]);
     answers.gitPull = { ok: true, from: 'aaa', to: 'bbb', pulled: 2, files: ['sidepanel.js'], fileCount: 1, reload: true, deps: false };
     sent.length = 0;
     await sync.click();
     assert.deepEqual(sent, ['gitPull']);
-    assert.deepEqual([button.dataset.mode, badge.textContent], ['reload', '↻']);
+    assert.deepEqual([button.hidden, button.dataset.mode, badge.textContent], [false, 'reload', '↻']);
     assert.match(button.title, /한 번 더 누르면 확장을 다시 불러옵니다/);
     assert.deepEqual([logs.at(-1)[0], logs.at(-1)[1], logs.at(-1)[3].pulled], ['git', true, 2]);
     assert.equal(said.at(-1)[1], '');

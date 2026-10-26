@@ -288,7 +288,7 @@ console.log('\n실제 사이트를 읽는다 (로그인 필요)');
           strip.items > 0 || strip.rooms !== '' || strip.warn, JSON.stringify(strip)));
         console.log(`  note  ${strip.note}${strip.items ? ` · ${strip.items}건` : ''}${strip.warn ? ` · ${strip.warn}` : ''}`);
 
-        // 패널 머리의 체크박스를 사람처럼 눌러 끄고 켠다. 열려 있는 홈에 새로고침 없이 반영돼야 한다.
+        // 패널 머리의 홈 카드 단추를 사람처럼 눌러 끄고 켠다. 열려 있는 홈에 새로고침 없이 반영돼야 한다.
         // 끝나면 반드시 켜 둔다 — 검사가 사용자의 설정을 꺼 둔 채로 남기면 안 된다.
         const panelTab = await newTab('about:blank');
         const panel = await attach(panelTab);
@@ -297,7 +297,7 @@ console.log('\n실제 사이트를 읽는다 (로그인 필요)');
           let box = null;
           for (let i = 0; i < 25 && !(box = document.getElementById('homeCard')); i++) await wait(200);
           if (!box) return null;
-          if (box.checked !== ${want}) box.click();
+          if ((box.getAttribute('aria-pressed') === 'true') !== ${want}) box.click();
           await wait(300);
           return (await chrome.storage.local.get('homeCard')).homeCard;
         })()`);

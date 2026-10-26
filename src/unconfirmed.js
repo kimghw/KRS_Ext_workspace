@@ -20,9 +20,9 @@ import { parseHtml } from './aspnet.js';
 import { findAnchor, ROOT_ID as MINE_ROOT_ID } from './home.js';
 import { CARD_STYLE, ICON, setChip } from './homecard.js';
 
-/** 카드를 쓸지. 패널의 "설정 → 일반" 체크박스가 이 값을 쓴다. 값이 없으면 켠 것으로 본다. */
+/** 카드를 쓸지. 패널의 "설정 → 일반" 체크박스가 이 값을 쓴다. 켠 적이 없으면 끈 것으로 본다(2026-10-26 사용자 "접수 미확인 공문 … 빼줘도 될거 같아"). */
 export const ENABLE_KEY = 'homeUncfm';
-export const unconfirmedEnabled = (value) => value !== false;
+export const unconfirmedEnabled = (value) => value === true;
 /** 카드의 루트 요소 id. */
 export const ROOT_ID = 'krsUncfm';
 /** 홈으로 돌아올 때 다시 받되, 방금 받았으면 건너뛴다. 창을 오갈 때마다 사이트를 두드리지 않게. */

@@ -399,8 +399,8 @@ await ta('안 보이는 탭은 받지 않고, 보이면 받는다', async () => 
 /* ------------------------------------------------------------ 설정 */
 
 console.log('켜고 끄기 (패널의 체크박스)');
-t('값이 없으면 켠 것, false 일 때만 끈 것', () => {
-  assert.equal(unconfirmedEnabled(undefined), true);
+t('값이 없으면 끈 것, true 일 때만 켠 것', () => {
+  assert.equal(unconfirmedEnabled(undefined), false);
   assert.equal(unconfirmedEnabled(true), true);
   assert.equal(unconfirmedEnabled(false), false);
 });
@@ -414,8 +414,13 @@ async function start(init = {}, site = fakeSite()) {
   return { ctl, doc, storage, site, root: () => doc.getElementById(ROOT_ID) };
 }
 
-await ta('설정이 없으면 켠 것으로 보고 붙인다', async () => {
+await ta('설정이 없으면 붙이지도 읽지도 않는다', async () => {
   const s = await start();
+  assert.equal(s.root(), null);
+  assert.equal(s.site.calls.length, 0);
+});
+await ta('켜 두었으면 붙인다', async () => {
+  const s = await start({ [ENABLE_KEY]: true });
   assert.ok(s.root());
   assert.equal(s.site.calls.length, 1);
 });
@@ -425,7 +430,7 @@ await ta('꺼져 있으면 붙이지도 읽지도 않는다', async () => {
   assert.equal(s.site.calls.length, 0);
 });
 await ta('끄면 열려 있는 홈에서 곧바로 사라지고, 그 뒤로는 초점이 돌아와도 읽지 않는다', async () => {
-  const s = await start();
+  const s = await start({ [ENABLE_KEY]: true });
   await s.storage.set({ [ENABLE_KEY]: false });
   assert.equal(s.root(), null);
   assert.equal(s.ctl.card, null);
@@ -441,14 +446,14 @@ await ta('다시 켜면 새로고침 없이 붙는다', async () => {
   assert.equal(s.root().querySelectorAll('a.krs-uncfm-item').length, 3);
 });
 await ta('켜기를 거듭 받아도 카드는 하나', async () => {
-  const s = await start();
+  const s = await start({ [ENABLE_KEY]: true });
   await s.storage.set({ [ENABLE_KEY]: true });
   await s.storage.set({ [ENABLE_KEY]: true });
   await tick();
   assert.equal(s.doc.querySelectorAll(`#${ROOT_ID}`).length, 1);
 });
 await ta('stop 하면 카드를 떼고 설정 변화도 더 듣지 않는다', async () => {
-  const s = await start();
+  const s = await start({ [ENABLE_KEY]: true });
   s.ctl.stop();
   assert.equal(s.root(), null);
   assert.equal(s.storage.listenerCount(), 0);
@@ -467,10 +472,10 @@ console.log('확장 배선');
     assert.match(boot, /getURL\('src\/unconfirmed\.js'\)/);
     assert.match(boot, /startUnconfirmed\(document\)/);
   });
-  t('패널의 체크박스는 켜진 채로 들어 있다', () => {
+  t('패널의 체크박스는 꺼진 채로 들어 있다', () => {
     const box = panel.getElementById('homeUncfm');
     assert.ok(box, '체크박스가 없다');
-    assert.equal(box.hasAttribute('checked'), true);
+    assert.equal(box.hasAttribute('checked'), false);
     assert.ok(box.closest('#setGeneral'), '설정의 일반 갈래 안이 아니다');
   });
   t('설정 이름', () => assert.equal(ENABLE_KEY, 'homeUncfm'));

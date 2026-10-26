@@ -9,7 +9,7 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 // jsdom 은 가상 요소의 계산 스타일을 모른다("Not implemented") — 그 투덜거림은 가리고 다른 오류는 보인다(jsdom 30 은 forwardTo — sendTo 는 없어졌다).
 const virtualConsole = new VirtualConsole().forwardTo(console, { jsdomErrors: 'none' });
 import {
-  ENABLE_KEY, captureEnabled, CODE_MAX, DRAG_MIN, nameOf, pathOf, labelOf, snapshot, codeOf, contentText, cloneStyled, svgOf, openDefaults, startPick,
+  ENABLE_KEY, captureEnabled, CODE_MAX, DRAG_MIN, nameOf, pathOf, labelOf, snapshot, codeOf, shallowOf, contentText, cloneStyled, svgOf, openDefaults, startPick,
 } from '../src/panelcap.js';
 
 let pass = 0;
@@ -105,6 +105,28 @@ console.log('코드 복사');
     assert.ok(out.length < CODE_MAX + 400);
     assert.match(out, /<!-- … 잘림 — 전체 30,5\d\d자 -->/);
   });
+  t('얕은 코드(Help Chat 에 붙이는 것, 2026-10-26) — 자리 주석과 여는 태그, 바로 아래 자식만 한 줄씩, 더 깊은 것은 보이지 않는다', () => {
+    const out = codeOf([section], { shallow: true });
+    assert.match(out, /^<!-- 패널 캡처 -->\n<!-- main\.app > section#attend\.attend\.card · 400×200 -->\n<section id="attend" class="attend card" data-r="0,70,400,200">\n  <div class="ask-bar" data-r="10,80,380,44">[^\n]*<\/div>\n<\/section>\n$/);
+    assert.doesNotMatch(out, /<input|<strong/);
+  });
+  t('자식 줄 — 글 칸은 지금 값, 글은 한 줄로, 글 없이 자식만 있으면 …', () => {
+    const bar = shallowOf(doc.querySelector('.ask-bar'));
+    assert.match(bar, /^  <input type="text" id="atChatInput" value="적은 글" data-r="20,84,300,36">$/m);
+    assert.match(bar, /^  <strong id="st" data-r="350,90,30,16">굵게<\/strong>$/m);
+    assert.match(bar, /^  <textarea id="ta" data-r="0,0,0,0">여러 줄<\/textarea>$/m);
+    assert.equal(shallowOf(doc.getElementById('refresh')),
+      '<button id="refresh" class="icon refresh" type="button" data-r="300,13,34,34">\n  <svg viewBox="0 0 24 24" data-r="308,21,18,18">…</svg>\n</button>');
+    assert.equal(shallowOf(doc.getElementById('st')), '<strong id="st" data-r="350,90,30,16">굵게</strong>', '자식이 없으면 한 줄');
+  });
+  t('자식은 12개까지, 글은 40자까지', () => {
+    const list = doc.createElement('ul');
+    for (let i = 0; i < 14; i++) list.append(Object.assign(doc.createElement('li'), { textContent: i ? `${i}` : 'ㄱ'.repeat(50) }));
+    const out = shallowOf(list);
+    assert.equal(out.split('\n').length, 1 + 12 + 1 + 1);
+    assert.match(out, /^  <li>ㄱ{40}…<\/li>$/m);
+    assert.match(out, /^  <!-- … 외 2개 -->$/m);
+  });
 }
 
 console.log('가상 요소의 content');
@@ -170,7 +192,8 @@ console.log('고르기 막');
   let renderCalls = [];
   const render = async (els) => { renderCalls.push(els); return fakeBlob; };
   window.ClipboardItem = class { constructor(parts) { this.parts = parts; } };
-  const pick = startPick({ doc, hitAt, clipboard, render, head: '머리', onCopy: (r) => copies.push(r), onEnd: () => { ended++; } });
+  const changes = [];
+  const pick = startPick({ doc, hitAt, clipboard, render, head: '머리', onCopy: (r) => copies.push(r), onChange: (els) => changes.push(els.map((e) => e.id)), onEnd: () => { ended++; } });
   const host = doc.querySelector('.pcap');
   const veil = host.querySelector('.pcap-veil');
   const bar = host.querySelector('.pcap-bar');
@@ -229,6 +252,8 @@ console.log('고르기 막');
     assert.deepEqual(pick.chosen().map((e) => e.id), ['atChatInput']);
     assert.deepEqual([...host.querySelectorAll('.pcap-marks b')].map((b) => b.textContent), ['1']);
   });
+  t('고르고 뺄 때마다 onChange 에 지금 고른 것(Help Chat 에 붙이기)', () =>
+    assert.deepEqual(changes, [['refresh'], ['refresh', 'atChatInput'], ['atChatInput']]));
   click(310, 25);
   codeBtn.click();
   await tick();
@@ -302,7 +327,8 @@ console.log('끌어서 여러 개 (2026-10-17 "드래그 하면 여러개 포함
     .filter((el) => { const r = el.getBoundingClientRect(); return x >= r.left && x < r.right && y >= r.top && y < r.bottom; })
     .sort((a, b) => (a.contains(b) ? 1 : b.contains(a) ? -1 : 0));
   const clipboard = { writeText: async () => {}, write: async () => {} };
-  const pick = startPick({ doc, hitAt, clipboard, render: async () => ({}) });
+  const changes = [];
+  const pick = startPick({ doc, hitAt, clipboard, render: async () => ({}), onChange: (els) => changes.push(els.length) });
   const host = doc.querySelector('.pcap');
   const veil = host.querySelector('.pcap-veil');
   const dragBox = host.querySelector('.pcap-drag');
@@ -356,6 +382,7 @@ console.log('끌어서 여러 개 (2026-10-17 "드래그 하면 여러개 포함
   t('든 것이 모두 이미 고른 것이면 그렇다고', () => { assert.equal(tagOf(), '이미 고른 것입니다'); assert.deepEqual(preIds(), []); });
   ev('mouseup', 348, 122);
   t('다시 들어가지 않는다(한 번만)', () => assert.deepEqual(ids(), ['atChatInput', 'chk', 'attend']));
+  t('onChange 는 더해졌을 때만 — 든 것이 없거나 모두 이미 고른 것이면 부르지 않는다', () => assert.deepEqual(changes, [2, 3]));
   ev('mousedown', 100, 100);
   ev('mouseup', 100, 100);
   t('안 움직이고 놓으면 누른 것 — 고른 것을 빼고 번호가 당겨진다', () => {

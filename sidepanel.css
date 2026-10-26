@@ -40,46 +40,30 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .app-header button.icon svg { width: 18px; height: 18px; stroke-width: 1.8; }
 .app-header button.icon:hover:not(:disabled) { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 .app-header .settings-shortcut[aria-expanded="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
-.app-header button:focus-visible, .home-toggle input:focus-visible { outline-width: 2px; outline-offset: 2px; }
+.app-header button:focus-visible { outline-width: 2px; outline-offset: 2px; }
 .head-tools { display: flex; flex: none; align-items: center; gap: 7px; margin-left: auto; }
-/* 네이티브 체크박스라 키보드·저장 동작은 그대로이고, 집 아이콘 옆의 작은 스위치로 표시한다.
-   글자(홈에 WORKSPACE)는 읽기 도구에만 남기고 눈에는 집 아이콘과 스위치만 보인다 — 툴팁이 무엇을 켜고 끄는지 적는다. */
-.home-toggle {
-  position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 9px;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
-  color: var(--muted); font-size: 11px; font-weight: 550; white-space: nowrap; cursor: pointer; user-select: none;
-  transition: color .16s ease, border-color .16s ease, background .16s ease;
-}
-.home-toggle .home-icon { width: 16px; height: 16px; stroke-width: 1.8; }
-.home-toggle:hover { color: var(--fg); background: var(--surface-soft); }
-.home-toggle:has(input:checked) .home-icon { color: var(--pick); }
-.home-toggle:focus-within { border-color: color-mix(in srgb, var(--pick) 40%, var(--line)); }
-.home-toggle input { appearance: none; position: relative; flex: none; width: 26px; height: 16px; margin: 0; border: 1px solid var(--faint); border-radius: 999px; background: var(--faint); cursor: pointer; transition: background .16s ease, border-color .16s ease; }
-.home-toggle input::before { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); transition: transform .16s ease; }
-.home-toggle input:checked { border-color: var(--pick); background: var(--pick); }
-.home-toggle input:checked::before { transform: translateX(10px); }
-.home-toggle-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-@media (forced-colors: active) {
-  .home-toggle input { appearance: auto; background: none; }
-  .home-toggle input::before { display: none; }
-}
+/* 홈 카드 켜고 끄기(2026-10-26 사용자 지정: "그냥 버튼 누르는 걸로") — 다른 머리 단추와 같은 네모, 켜져 있으면 눌린 모양. */
+.app-header .home-toggle[aria-pressed="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 .refresh.spin svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* GitHub 새 커밋(gitsync.js). 새 커밋·재시작 대기는 연한 파랑, 갈라짐·겹침은 빨간 배지로 구분한다. */
+/* GitHub 새 커밋(gitsync.js). 로고(rerp 와 같은 mark-github)는 칠한 모양이라 선 아이콘의 fill/stroke 를 뒤집는다. 새 커밋·재시작 대기는 연한 파랑, 갈라짐·겹침은 빨간 배지로 구분한다. */
+.app-header .git-sync svg { fill: currentColor; stroke: none; }
 .app-header .git-sync[hidden] { display: none; }
-.app-header .git-sync[data-mode="new"], .app-header .git-sync[data-mode="reload"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 .app-header .git-sync[data-mode="error"] svg { opacity: .45; }
+.app-header .git-sync[data-mode="new"], .app-header .git-sync[data-mode="reload"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
 /* B(브릿지) — 연결 지침 복사(머리, 2026-10-23 · 10-24 사용자 지정 "rerp의 B와 동일하게"): 다리가 없으면 늘 보이는 글자 B(sidepanel.js paintAskReady).
    API 키로 말 찾기가 되는 중이면 옅게(.alt). hidden 은 button 의 display 가 UA 의 [hidden] 을 이기므로 따로. */
 .app-header .cli-guide-head[hidden] { display: none; }
 .app-header button.icon.cli-guide-head { font-size: 15px; font-weight: 750; line-height: 1; color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); }
 .app-header button.icon.cli-guide-head.alt { color: var(--muted); border-color: var(--line); }
-/* 패널 캡처(src/panelcap.js — 2026-10-17 사용자 지정). 머리의 단추는 설정이 끄면 숨고(hidden — button 의 display 가 UA 의 [hidden] 을 이기므로 따로),
+/* 패널 캡처(src/panelcap.js — 2026-10-17 사용자 지정). Help Chat 줄의 단추(입력칸 왼쪽, 2026-10-26 — 전에는 머리)는 설정이 끄면 숨고(hidden — button 의 display 가 UA 의 [hidden] 을 이기므로 따로),
    막이 씌워진 동안은 켜진 모양(aria-pressed). 막(.pcap)은 body 끝에 붙는 고정 겹이다 — 투명한 막(.pcap-veil) 위에 고른 칸의 파란 테두리와 번호(.pcap-box),
    가리키는 칸의 점선(.pcap-hover)과 이름표(.pcap-tag), 맨 아래 가운데의 띠(.pcap-bar — 고른 수·코드 복사·이미지 복사·끝). 모양은 웹페이지 캡처의 막(pagePick)과
    같되 띠는 아래에 둔다 — 패널은 좁아 위에 두면 머리(캡처·새로고침·설정 단추)를 가려 그것을 고를 수 없었다(2026-10-17 실측). */
-.app-header .panel-cap[hidden] { display: none; }
-.app-header .panel-cap[aria-pressed="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
+.helpbar .panel-cap { padding: 3px 5px; color: var(--hb-sub); }
+.helpbar .panel-cap svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.helpbar .panel-cap[aria-pressed="true"] { color: var(--pick); border-color: var(--pick); background: var(--pick-soft); }
+.helpbar .help-cap { border-color: var(--pick); background: var(--pick-soft); color: var(--pick); font-weight: 600; }   /* 붙인 캡처 '캡처 N'(2026-10-26) */
 .pcap { position: fixed; inset: 0; z-index: 1000; }
 .pcap-veil { position: absolute; inset: 0; cursor: crosshair; }
 .pcap-box { position: fixed; pointer-events: none; border: 2px solid var(--pick); border-radius: 4px; background: rgb(0 122 255 / 14%); }
@@ -90,7 +74,7 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .pcap-box b { position: absolute; top: -2px; left: -2px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 3px 0 7px 0; background: var(--pick); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
 .pcap-tag { position: absolute; bottom: 100%; left: -2px; max-width: calc(100vw - 24px); margin-bottom: 3px; padding: 1px 7px; border-radius: 5px; background: var(--fg); color: #fff; font-size: 11px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcap-tag.in { bottom: auto; top: 3px; left: 3px; margin: 0; }
-.pcap-bar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 20px); padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--fg); color: #fff; font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 24px rgb(0 0 0 / 28%); white-space: nowrap; }
+.pcap-bar { position: fixed; bottom: calc(var(--helpbar-h, 0px) + 12px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 20px); padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--fg); color: #fff; font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 24px rgb(0 0 0 / 28%); white-space: nowrap; }
 .pcap-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pcap-n b { display: block; font-weight: 600; }
 .pcap-n small { display: block; color: #b9b9c2; font-size: 11px; }
@@ -390,7 +374,7 @@ button.pk-del:hover { color: var(--danger); }
 .set-pane > .diag .summary-detail { font-size: 11px; color: var(--muted); }
 .set-pane > .diag > .details-content { padding: 0 12px 12px; }
 .key-row { display: block; margin-bottom: 6px; font-size: 14px; color: var(--muted); }
-/* 설정 안의 켜고 끄기 줄. 머리의 알약(.home-toggle)과 달리 본문 글줄에 맞춘다. */
+/* 설정 안의 켜고 끄기 줄 — 본문 글줄에 맞춘다. */
 .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 14px; color: var(--fg); cursor: pointer; user-select: none; }
 .check-row input { width: 15px; height: 15px; margin: 0; accent-color: var(--pick); cursor: pointer; }
 /* 업무 도우미만 오른쪽 스위치로 표시한다. 네이티브 input의 저장·키보드 동작을 유지한다. */
@@ -1617,9 +1601,10 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-docno-hint select { display: block; width: 100%; margin-top: 4px; }
 .gongmun .gm-box input[hidden] { display: none; }
 .gongmun .gm-box #gmTplFormId { margin-top: 6px; }
-/* 양식 칸 맨 위 — 쓸 양식 메뉴([기본]·내 양식)와 ＋(등록)·지우기 아이콘, 내 양식이면 그 아래 이름 칸. */
+/* 양식 칸 맨 위 — 쓸 양식 메뉴([기본]·내 양식)와 ＋(등록)·지우기 아이콘, 같은 줄 끝에 eclass 양식(2026-10-26), 내 양식이면 그 아래 이름 칸. */
 .gongmun .gm-tpl-pick { display: flex; align-items: center; gap: 6px; }
 .gongmun .gm-tpl-pick select { flex: 1; min-width: 0; font-weight: 600; }
+.gongmun .gm-tpl-pick #gmTplForm { font-weight: 400; }   /* 같은 줄의 eclass 양식(2026-10-26) */
 .gongmun .gm-tpl-pick button.icon { flex: none; width: 34px; min-height: 34px; padding: 7px; background: transparent; color: var(--muted); }
 .gongmun .gm-tpl-pick button.icon:hover:not(:disabled) { background: var(--pick-soft); color: var(--pick); }
 .gongmun .gm-tpl-pick button.icon[hidden] { display: none; }

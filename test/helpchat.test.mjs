@@ -400,6 +400,34 @@ console.log('패널 아래 Help Chat 줄(helpchat.js)');
     assert.equal(a.sent.filter((m) => m.task === 'helpAsk').at(-1).fresh, true);
   });
 
+  const k = await mount({}, (msg) => (msg.task === 'helpAsk' ? { ok: true, id: 'J1' } : doneJob(['README.md'])));
+  const capBtn = k.doc.getElementById('helpCap');
+  const capture = (count, code) => k.doc.dispatchEvent(new k.window.CustomEvent('help-capture', { detail: { count, code } }));
+  await ta('패널 캡처로 고른 것(help-capture, 2026-10-26)이 오면 입력칸 옆에 "캡처 N" — 툴팁에 코드, 다 빼면(0개) 숨는다', async () => {
+    assert.equal(capBtn.hidden, true);
+    capture(2, '<!-- 패널 캡처 -->\n<button id="x">');
+    assert.equal(capBtn.hidden, false);
+    assert.equal(capBtn.textContent, '캡처 2');
+    assert.match(capBtn.title, /<button id="x">/);
+    capture(0, '');
+    assert.equal(capBtn.hidden, true);
+  });
+  capture(1, '<button id="x">');
+  await k.send('이 단추 모양이 이상해요');
+  await ta('보내면 요청의 화면 상태 맨 끝에 capture 로 실려 가고 비워진다', async () => {
+    const ask = k.sent.find((m) => m.task === 'helpAsk');
+    assert.equal(ask.context.capture, '<button id="x">');
+    assert.equal(Object.keys(ask.context).at(-1), 'capture');
+    assert.equal(capBtn.hidden, true);
+  });
+  capture(1, '<button id="y">');
+  capBtn.click();
+  await k.send('다음 것');
+  await ta('"캡처 N" 을 누르면 뺀다 — 다음 요청에는 없다', async () => {
+    assert.equal(capBtn.hidden, true);
+    assert.equal(k.sent.filter((m) => m.task === 'helpAsk').at(-1).context.capture, undefined);
+  });
+
   const b = await mount({}, (msg) => (msg.task === 'helpAsk' ? { ok: true, id: 'J1' } : doneJob(['README.md', 'test/x.test.mjs'])));
   await b.send('설명만');
   await ta('문서·검사만 바뀌었으면 적용 단추가 없다', async () => assert.equal(b.doc.getElementById('helpApply').hidden, true));

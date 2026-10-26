@@ -36,7 +36,7 @@ import { createRndPanel } from './rndpanel.js';
 import { createMailPanel } from './mailtrack/index.js';
 import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
-import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick } from './src/panelcap.js';
+import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode } from './src/panelcap.js';
 import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
 import { tripRule, loadStages } from './src/settling.js';
@@ -2954,12 +2954,15 @@ function paintCirculate(st) {
 /* ------------------------------------------------------------ 패널 캡처(src/panelcap.js) */
 /** 씌워 둔 고르기 막 — 없으면 null. 머리의 캡처 단추를 다시 누르면 걷는다. */
 let panelPick = null;
-/** 머리의 캡처 단추를 설정대로 보이거나 숨긴다. 끄면 고르던 것도 끝낸다. */
+/** 머리의 홈 카드 단추 — 켜져 있으면 눌린 모양(2026-10-26 사용자 지정: "그냥 버튼 누르는 걸로"). */
+const paintHomeCard = (on) => el.homeCard.setAttribute('aria-pressed', String(on));
+/** Help Chat 줄의 캡처 단추를 설정대로 보이거나 숨긴다. 끄면 고르던 것도 끝낸다. */
 function paintCaptureButton(on) {
   el.panelCap.hidden = !on;
   if (!on) panelPick?.cancel();
 }
-/** 고르기 막을 씌운다(씌워져 있으면 걷는다). 복사한 것·못 한 것은 활동 로그에 한 줄. */
+/** 고르기 막을 씌운다(씌워져 있으면 걷는다). 복사한 것·못 한 것은 활동 로그에 한 줄.
+ *  고르는 대로 Help Chat 에 붙인다 — 자리와 한 겹 아래까지의 코드를 'help-capture' 로 넘기고(helpchat.js 가 요청에 싣는다), 끝나면 입력칸으로(2026-10-26). */
 function togglePanelPick() {
   if (panelPick) return panelPick.cancel();
   const head = `${el.appTitle.textContent} · v${chrome.runtime.getManifest?.()?.version ?? '?'} · ${stamp(Date.now())}`;
@@ -2967,7 +2970,9 @@ function togglePanelPick() {
     head,
     onCopy: ({ kind, count, ok, error }) => logEvent('capture', ok,
       `패널 캡처 — ${kind === 'code' ? '코드' : '이미지'} ${count}곳 ${ok ? '복사' : `복사 실패: ${error?.message || ''}`}`, { mode: state.mode }),
-    onEnd: () => { panelPick = null; el.panelCap.setAttribute('aria-pressed', 'false'); },
+    onChange: (els) => document.dispatchEvent(new CustomEvent('help-capture',
+      { detail: { count: els.length, code: els.length ? panelCode(els, { head, shallow: true }) : '' } })),
+    onEnd: () => { panelPick = null; el.panelCap.setAttribute('aria-pressed', 'false'); $('helpText')?.focus(); },
   });
   el.panelCap.setAttribute('aria-pressed', 'true');
 }
@@ -3018,7 +3023,7 @@ async function init() {
   el.connNoteUrl.textContent = ONENOTE_MCP_URL;
   // 비교작성 탭이면 여기서 끝 — 공문 탭만 띄운다.
   if (gongmun.compareTab) return initCompareTab();
-  el.homeCard.checked = homeEnabled(saved[HOME_ENABLE_KEY]);
+  paintHomeCard(homeEnabled(saved[HOME_ENABLE_KEY]));
   el.teamsButton.checked = teamsEnabled(saved[TEAMS_ENABLE_KEY]);
   el.qualityYearKeep.checked = riskYearEnabled(saved[QYEAR_ENABLE_KEY]);
   el.homeUncfm.checked = unconfirmedEnabled(saved[UNCFM_ENABLE_KEY]);
@@ -3118,9 +3123,10 @@ async function init() {
     chrome.storage.local.set({ spanDays: el.spanDays.value });
     load();
   });
-  // 홈 카드 사용 여부. 열려 있는 홈 탭은 저장소 변화를 듣고 곧바로 카드를 떼거나 붙인다.
-  el.homeCard.addEventListener('change', () => {
-    const on = el.homeCard.checked;
+  // 홈 카드 사용 여부 — 머리의 단추를 누를 때마다 켜고 끈다. 열려 있는 홈 탭은 저장소 변화를 듣고 곧바로 카드를 떼거나 붙인다.
+  el.homeCard.addEventListener('click', () => {
+    const on = el.homeCard.getAttribute('aria-pressed') !== 'true';
+    paintHomeCard(on);
     chrome.storage.local.set({ [HOME_ENABLE_KEY]: on });
     logEvent('setting', true, `e-Class 홈 WORKSPACE 카드 ${on ? '켬' : '끔'}`);
   });
@@ -3279,7 +3285,7 @@ async function init() {
     // 다른 창의 패널이 훑거나 예약·취소로 버린 날을 이 창의 보관소도 따라간다.
     store.sync(changes);
     // 다른 창의 패널에서 바꿨으면 이 창의 체크박스도 따라간다.
-    if (HOME_ENABLE_KEY in changes) el.homeCard.checked = homeEnabled(changes[HOME_ENABLE_KEY].newValue);
+    if (HOME_ENABLE_KEY in changes) paintHomeCard(homeEnabled(changes[HOME_ENABLE_KEY].newValue));
     if (TEAMS_ENABLE_KEY in changes) el.teamsButton.checked = teamsEnabled(changes[TEAMS_ENABLE_KEY].newValue);
     if (QYEAR_ENABLE_KEY in changes) el.qualityYearKeep.checked = riskYearEnabled(changes[QYEAR_ENABLE_KEY].newValue);
     if (UNCFM_ENABLE_KEY in changes) el.homeUncfm.checked = unconfirmedEnabled(changes[UNCFM_ENABLE_KEY].newValue);

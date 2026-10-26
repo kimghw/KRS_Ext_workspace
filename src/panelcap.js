@@ -12,6 +12,8 @@
 //     막은 바퀴(휠)를 막지 않아 패널을 내리면서 고를 수 있다.
 //   · 코드(codeOf) — 고른 차례대로 자리(선택자 경로 · 크기)를 주석으로 적고 그 HTML 을 그대로 준다. 입력칸의 지금 값(value·checked·selected)은
 //     outerHTML 에 없어 속성으로 적어 넣는다(snapshot). 한 곳이 너무 길면 자른다(CODE_MAX).
+//   · Help Chat 에 붙이기 — 고르는 대로(onChange) 얕은 코드(codeOf 의 shallow — 한 겹 아래까지, shallowOf)를 Help Chat 줄에 넘긴다(2026-10-26 사용자 지정:
+//     "캡쳐버튼 누르고 선택하면 바로 help chat에 들어 가게 … 상세 코드가 아니라 위치나 디자인을 추론할 수 있는정도"). 넘기는 길은 sidepanel.js.
 //   · 이미지(renderPng) — 확장 페이지는 chrome.tabs.captureVisibleTab 으로 찍을 수 없다(탭의 것만 찍는다). 그래서 고른 요소를 복제해 계산된 스타일을
 //     인라인으로 박고(기본값과 다른 것만 — 숨은 틀 문서의 같은 태그와 견준다, cloneStyled) SVG <foreignObject> 에 넣어 그림으로 읽어 캔버스에 그린다 —
 //     스타일시트가 없는 그림 안에서도 같은 모양이 나오게. ::before/::after 는 span 으로, appearance: none 인 체크박스(스위치)도 span 으로 바꾼다
@@ -100,16 +102,49 @@ export function snapshot(el) {
   return clone;
 }
 
+/** 닫는 태그가 없는 것. */
+const VOID_TAGS = /^(AREA|BASE|BR|COL|EMBED|HR|IMG|INPUT|LINK|META|SOURCE|TRACK|WBR)$/;
+/** 얕은 코드에서 보이는 자식 수와 자식 글의 앞부분 길이. */
+const SHALLOW_KIDS = 12;
+const SHALLOW_TEXT = 40;
+const brief = (s, max) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > max ? `${t.slice(0, max)}…` : t; };
+/** 여는 태그만 — 글 칸은 지금 값을 넣어. */
+function openTag(el) {
+  const c = el.cloneNode(false);
+  if (el.tagName === 'INPUT') applyValue(c, el);
+  const html = c.outerHTML;
+  return VOID_TAGS.test(el.tagName) ? html : html.slice(0, html.lastIndexOf('</'));
+}
+/** 한 줄 — 여는 태그, 글 앞부분(글 없이 자식만 있으면 …), 닫는 태그. */
+function lineOf(el) {
+  if (VOID_TAGS.test(el.tagName)) return openTag(el);
+  const text = brief(el.tagName === 'TEXTAREA' ? el.value : el.textContent, SHALLOW_TEXT) || (el.children.length ? '…' : '');
+  return `${openTag(el)}${text}</${el.tagName.toLowerCase()}>`;
+}
+
+/**
+ * 한 겹 아래까지만의 코드 — 요소의 여는 태그와 바로 아래 자식마다 한 줄(lineOf). 더 깊은 것은 보이지 않는다 — 자리와 모양을 짐작할 만큼만(Help Chat 에 붙이는 것).
+ * @param {Element} el
+ * @returns {string}
+ */
+export function shallowOf(el) {
+  const kids = [...el.children];
+  if (!kids.length) return lineOf(el);
+  const rows = kids.slice(0, SHALLOW_KIDS).map((ch) => `  ${lineOf(ch)}`);
+  if (kids.length > SHALLOW_KIDS) rows.push(`  <!-- … 외 ${kids.length - SHALLOW_KIDS}개 -->`);
+  return `${openTag(el)}\n${rows.join('\n')}\n</${el.tagName.toLowerCase()}>`;
+}
+
 /**
  * 고른 요소들의 코드 — 맨 앞에 머리말 주석, 곳마다 번호·자리·크기 주석과 HTML.
  * @param {Element[]} els
- * @param {{head?: string}} [opts] head 는 머리말에 붙는 말(탭 이름·버전·시각)
+ * @param {{head?: string, shallow?: boolean}} [opts] head 는 머리말에 붙는 말(탭 이름·버전·시각), shallow 면 HTML 대신 한 겹 아래까지(shallowOf)
  * @returns {string}
  */
-export function codeOf(els, { head = '' } = {}) {
+export function codeOf(els, { head = '', shallow = false } = {}) {
   const parts = els.map((el, i) => {
     const r = el.getBoundingClientRect();
-    let html = snapshot(el).outerHTML;
+    let html = shallow ? shallowOf(el) : snapshot(el).outerHTML;
     if (html.length > CODE_MAX) html = `${html.slice(0, CODE_MAX)}\n<!-- … 잘림 — 전체 ${html.length.toLocaleString('ko-KR')}자 -->`;
     const no = els.length > 1 ? `${i + 1}/${els.length} · ` : '';
     return `<!-- ${no}${pathOf(el)} · ${Math.round(r.width)}×${Math.round(r.height)} -->\n${html}`;
@@ -388,10 +423,10 @@ function saveBlob(blob, doc) {
  * 띠의 코드 복사는 codeOf 를 글로, 이미지 복사는 renderPng 를 PNG 로 클립보드에 넣는다. 복사한 뒤에도 막은 남는다(코드와 이미지를 이어 복사하게).
  * @param {{doc?: Document, head?: string, hitAt?: (x: number, y: number) => Element[], clipboard?: {writeText: Function, write: Function},
  *   render?: (els: Element[]) => Promise<Blob>, onCopy?: (r: {kind: 'code'|'image', count: number, ok: boolean, error?: Error}) => void,
- *   onEnd?: () => void}} [opts] hitAt·clipboard·render 는 검사가 갈아 끼운다
+ *   onChange?: (els: Element[]) => void, onEnd?: () => void}} [opts] hitAt·clipboard·render 는 검사가 갈아 끼운다, onChange 는 고른 것이 바뀔 때마다(Help Chat 에 붙이기)
  * @returns {{cancel: () => void, chosen: () => Element[], host: HTMLElement}}
  */
-export function startPick({ doc = document, head = '', hitAt = null, clipboard = null, render = renderPng, onCopy = null, onEnd = null } = {}) {
+export function startPick({ doc = document, head = '', hitAt = null, clipboard = null, render = renderPng, onCopy = null, onChange = null, onEnd = null } = {}) {
   const win = doc.defaultView;
   const clip = clipboard || win.navigator.clipboard;
   const hit = hitAt || ((x, y) => doc.elementsFromPoint(x, y));
@@ -579,6 +614,7 @@ export function startPick({ doc = document, head = '', hitAt = null, clipboard =
     paintMarks();
     paintBar();
     paintHover();
+    onChange?.(live());
   }
   /* 끌기 — 막에서 누르면 시작하고, 창에서 움직임·놓음을 받는다(막 밖으로 나가도 이어진다). DRAG_MIN 넘게 움직이면 네모를 그리며 든 것들을 미리 보이고,
      놓으면 그것들을 더한다. 안 움직이고 막 위에서 놓았으면 누른 것이다. */
@@ -615,10 +651,12 @@ export function startPick({ doc = document, head = '', hitAt = null, clipboard =
     }
     stopDrag();
     if (d.on) {
+      const before = chosen.length;
       for (const el of d.els) if (!chosen.includes(el)) chosen.push(el);
       paintMarks();
       paintBar();
       onMove(e);
+      if (chosen.length > before) onChange?.(live());
     } else if (e.target === veil) toggleAt(e);
   };
   function stopDrag() {

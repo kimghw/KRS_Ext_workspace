@@ -23,11 +23,10 @@
         </div>
       </div>
       <div class="head-tools">
-        <label class="home-toggle" title="e-Class 홈 맨 위에 WORKSPACE 카드(내 회의실·차량 예약과 출장·외근·휴가)를 붙입니다. 끄면 열려 있는 홈에서도 곧바로 사라지고, 홈에서 예약·근태를 읽지도 않습니다.">
-          <svg class="home-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7"/></svg>
-          <span class="home-toggle-text">홈에 WORKSPACE</span>
-          <input type="checkbox" id="homeCard" checked />
-        </label>
+        <!-- 홈 카드 켜고 끄기 — 스위치가 아니라 누를 때마다 바뀌는 단추(2026-10-26 사용자 지정: "홈을 토글 하는것보단 그냥 버튼 누르는 걸로"). 켜져 있으면 눌린 모양(aria-pressed). 저장은 homeCard. -->
+        <button id="homeCard" class="icon home-toggle" type="button" aria-pressed="true" aria-label="홈에 WORKSPACE" title="e-Class 홈 맨 위에 WORKSPACE 카드(내 회의실·차량 예약과 출장·외근·휴가)를 붙입니다 — 누를 때마다 켜고 끕니다(파랗면 켬). 끄면 열려 있는 홈에서도 곧바로 사라지고, 홈에서 예약·근태를 읽지도 않습니다.">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7"/></svg>
+        </button>
         <!-- B(브릿지) — 연결 지침 복사(2026-10-23 사용자 지정: "LLM 연결이 안되어 있으면 이쪽에 LLM 설정 프롬프트 복사하기 버튼을 넣어줘. workspace 도 동일하게" ·
              2026-10-24 "이거 설정하는 것은 rerp의 B와 동일하게 복사해서 할 수 있게 해줘 … 하나만 설치해도 확장자 2개다 사용할 수 있게끔"): kr_ext_rerp 의 B 처럼 다리(로컬 CLI)가 없으면 늘 머리에 보이고
              (API 키로 말 찾기가 되는 중이면 옅게 — .alt; Help Chat·git 은 다리가 있어야 한다), 확인이 끝나기 전에는 숨긴다(sidepanel.js paintAskReady). 누르면 말 칸·설정·Help Chat 의 같은 단추와 같은 글
@@ -35,17 +34,11 @@
         <button id="cliGuideHead" class="icon cli-guide-copy cli-guide-head" type="button" hidden title="B(브릿지) — 로컬 Claude CLI 다리가 연결되지 않았습니다. 누르면 이 PC 의 Claude Code(VS Code)·다른 LLM 에 붙여 넣을 연결 지침(확장 폴더 · 확장 ID · 브라우저가 댄 까닭 · 돌릴 명령, 같은 PC 의 rERP 확장 연결까지)을 복사합니다" aria-label="연결 지침 복사 (B)">
           <span class="cli-guide-head-text" aria-hidden="true">B</span>
         </button>
-        <!-- GitHub 새 커밋 — 확장 폴더가 GitHub 보다 뒤졌으면 귀퉁이에 그 수를 띄우고, 누르면 받는다(git pull --ff-only — 다리가 돌린다, gitsync.js).
-             다리가 없으면 숨는다. -->
+        <!-- GitHub 새 커밋 — 누르면 확인하고, 확장 폴더가 GitHub 보다 뒤졌으면 귀퉁이에 그 수를 띄워 그때 누르면 받는다(git pull --ff-only — 다리가 돌린다, gitsync.js).
+             다리가 없으면 숨는다(2026-10-26 사용자 지정: "깃허브 최신화 커밋있는지 확인할 수 있도록 우측 상단에 버튼"). 모양은 rerp 와 같은 GitHub 로고(Octicons mark-github). -->
         <button id="gitSync" class="icon git-sync" type="button" hidden title="GitHub 새 커밋 확인" aria-label="GitHub 새 커밋 확인">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12M18 9a9 9 0 0 1-9 9"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/></svg>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
           <span id="gitCount" class="git-count" hidden></span>
-        </button>
-        <!-- 패널 캡처(src/panelcap.js — 2026-10-17 사용자 지정: "클릭클릭 하면 1개 이상을 캡쳐해서 해당 부분의 코드나 이미지를 복사"). 누르면 패널 위에 고르기 막이
-             씌워져 칸·단추를 눌러 하나씩, 또는 끌어 네모 안의 것들을 한꺼번에 고르고, 띠의 단추로 그 부분의 코드(HTML)나 이미지(PNG)를 클립보드에 복사한다.
-             설정 → 일반 → 화면 구성의 스위치로 숨긴다(기본 켬). -->
-        <button id="panelCap" class="icon panel-cap" type="button" title="패널 캡처 — 패널의 칸·단추를 눌러 하나씩, 끌어 여러 개 고르고 그 부분의 코드나 이미지를 복사합니다" aria-label="패널 캡처" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>
         </button>
         <button id="refresh" class="icon refresh" type="button" title="새로고침" aria-label="새로고침">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4v6h-6M20 10a8 8 0 1 0-1.5 7"/></svg>
@@ -304,6 +297,29 @@
           </div>
         </div>
       </div>
+      <!-- 양식 — 갈래마다 eclass 양식·제목 틀·본문 틀을 보고 고친다(2026-10-07 사용자 지정). 맨 위 메뉴에서 [기본](레시피의 틀)이나 갈래마다 등록한
+           내 양식을 골라 쓴다 — ＋ 는 지금 양식을 복사해 등록, 기본을 고치면 고친 글로 내 양식이 하나 생긴다(2026-10-25 사용자 지정: "사용자가 구매 별로
+           양식을 등록하고 사용할 수 있도록" · "1개 이상 등록할 수 있으면 좋지"). 틀에 쓰는 이름은 본문 틀 아래에 접지 않고(같은 날 "아래 필드명을 주면 될듯"). -->
+      <details id="gmTplBox" class="gm-box card">
+        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span>양식</span><span id="gmTplState" class="summary-detail">기본 양식</span></summary>
+        <div class="gm-box-body">
+          <div class="gm-tpl-pick">
+            <select id="gmTplPick" aria-label="쓸 양식"></select>
+            <button type="button" id="gmTplAdd" class="icon" title="지금 양식을 복사해 새 양식으로 등록" aria-label="새 양식 등록"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button type="button" id="gmTplDel" class="icon gm-tpl-del" title="이 양식 지우기" aria-label="이 양식 지우기" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+            <!-- eclass 양식도 같은 줄에(2026-10-26 사용자 지정: "이건 한줄로 했으면 좋겠고") — 따로 서던 'eclass 양식' 제목은 툴팁으로. -->
+            <select id="gmTplForm" title="eclass 양식" aria-label="eclass 양식"></select>
+          </div>
+          <input type="text" id="gmTplName" placeholder="양식 이름" aria-label="양식 이름" autocomplete="off" spellcheck="false" hidden />
+          <input type="text" id="gmTplFormId" placeholder="양식 ID (예: KR_EA_Research_Task)" aria-label="양식 ID" autocomplete="off" spellcheck="false" hidden />
+          <label for="gmTplTitle" class="gm-label">제목 틀</label>
+          <input type="text" id="gmTplTitle" autocomplete="off" spellcheck="false" />
+          <label for="gmTplBody" class="gm-label">본문 틀</label>
+          <textarea id="gmTplBody" rows="14" spellcheck="false"></textarea>
+          <p class="gm-label">틀에 쓰는 이름</p>
+          <div id="gmVars" class="gm-vars"></div>
+        </div>
+      </details>
       <!-- 공문 이력 — 근태의 신청 내역처럼 eclass 기안함(완료함·상신함·반려함·임시보관함)에서 내가 기안한 공문을 읽어 카드로 보인다(2026-10-11 사용자 지정:
            "출장·근태 이력처럼 공문 이력을 … 시스템이 공문을 검색해서 읽어 와야지"). 고른 갈래의 것만 보이고 '전체'로 모두 본다. 외부강의등 신고서(외부활동)는
            본문까지 읽어 사례금·당해 연도 누적 합계를 보이고, 작성 내용 탭의 사례비 누계가 그것을 쓴다. 읽은 것은 이 브라우저(chrome.storage 의 gongmunHist)에
@@ -322,29 +338,6 @@
           </div>
           <p id="gmHistNote" class="gm-hist-note"></p>
           <ul id="gmHistList" class="gm-hist-list"></ul>
-        </div>
-      </details>
-      <!-- 양식 — 갈래마다 eclass 양식·제목 틀·본문 틀을 보고 고친다(2026-10-07 사용자 지정). 맨 위 메뉴에서 [기본](레시피의 틀)이나 갈래마다 등록한
-           내 양식을 골라 쓴다 — ＋ 는 지금 양식을 복사해 등록, 기본을 고치면 고친 글로 내 양식이 하나 생긴다(2026-10-25 사용자 지정: "사용자가 구매 별로
-           양식을 등록하고 사용할 수 있도록" · "1개 이상 등록할 수 있으면 좋지"). 틀에 쓰는 이름은 본문 틀 아래에 접지 않고(같은 날 "아래 필드명을 주면 될듯"). -->
-      <details id="gmTplBox" class="gm-box card">
-        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span>양식</span><span id="gmTplState" class="summary-detail">기본 양식</span></summary>
-        <div class="gm-box-body">
-          <div class="gm-tpl-pick">
-            <select id="gmTplPick" aria-label="쓸 양식"></select>
-            <button type="button" id="gmTplAdd" class="icon" title="지금 양식을 복사해 새 양식으로 등록" aria-label="새 양식 등록"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-            <button type="button" id="gmTplDel" class="icon gm-tpl-del" title="이 양식 지우기" aria-label="이 양식 지우기" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
-          </div>
-          <input type="text" id="gmTplName" placeholder="양식 이름" aria-label="양식 이름" autocomplete="off" spellcheck="false" hidden />
-          <label for="gmTplForm" class="gm-label">eclass 양식</label>
-          <select id="gmTplForm"></select>
-          <input type="text" id="gmTplFormId" placeholder="양식 ID (예: KR_EA_Research_Task)" aria-label="양식 ID" autocomplete="off" spellcheck="false" hidden />
-          <label for="gmTplTitle" class="gm-label">제목 틀</label>
-          <input type="text" id="gmTplTitle" autocomplete="off" spellcheck="false" />
-          <label for="gmTplBody" class="gm-label">본문 틀</label>
-          <textarea id="gmTplBody" rows="14" spellcheck="false"></textarea>
-          <p class="gm-label">틀에 쓰는 이름</p>
-          <div id="gmVars" class="gm-vars"></div>
         </div>
       </details>
       <!-- 공문 설정 — 부서(본문 첫 줄)와 문서번호 코드(문서설정 Doc No.), 결재선에 설 사람(부서장·소장·본부장)·참조자, 과제 다섯 개(과제책임자가 합의자).
@@ -795,10 +788,10 @@
           </div>
           <!-- 보이는 탭의 알림(마지막 하나는 못 끔) — 예약 현황의 상태 줄은 설정 화면이 열려 있으면 숨어 있어 여기 적는다(sidepanel.js settingsNote). -->
           <p id="setNote" class="status set-note" role="status" aria-live="polite"></p>
-          <!-- 머리의 패널 캡처 단추(src/panelcap.js — 2026-10-17 사용자 지정: "그 기능은 상단에 두고 설정에서 onoff 할수 있게"). 저장은 panelCapture(기본 켬). -->
+          <!-- Help Chat 줄의 패널 캡처 단추(src/panelcap.js — 2026-10-17 사용자 지정: "그 기능은 상단에 두고 설정에서 onoff 할수 있게", 자리는 2026-10-26 입력칸 왼쪽으로). 저장은 panelCapture(기본 켬). -->
           <div class="set-options set-options-cap">
-            <label class="check-row" title="머리 줄(새로고침 왼쪽)에 캡처 단추를 둡니다. 누르면 패널 위에 고르기 막이 씌워지고, 칸·단추를 눌러 하나 이상 고른 뒤 그 부분의 코드(HTML — 입력칸의 값 포함)나 이미지(PNG)를 클립보드에 복사합니다. 끄면 단추가 사라지고 고르던 것도 끝납니다.">
-              <span>머리에 <strong>패널 캡처</strong> 단추</span>
+            <label class="check-row" title="Help Chat 줄(입력칸 왼쪽)에 캡처 단추를 둡니다. 누르면 패널 위에 고르기 막이 씌워지고, 칸·단추를 눌러 하나 이상 고른 뒤 그 부분의 코드(HTML — 입력칸의 값 포함)나 이미지(PNG)를 클립보드에 복사합니다. 끄면 단추가 사라지고 고르던 것도 끝납니다.">
+              <span>Help Chat 줄에 <strong>패널 캡처</strong> 단추</span>
               <input type="checkbox" id="panelCapture" role="switch" checked />
             </label>
           </div>
@@ -825,7 +818,7 @@
             <!-- 체크박스마다 설명 문단은 두지 않는다. 무엇을 하는지는 줄의 툴팁(title)에 있다. -->
             <label class="check-row" title="e-Class 홈의 WORKSPACE 카드 위에 DOC-Cruiser 의 접수 미확인 문서(Uncfm. Rcv DOC)를 한 줄로 보여줍니다. 펼치면 제목이 나오고, 제목을 누르면 그 문서 창이 열립니다. 목록만 읽고 문서는 대신 열지 않습니다.">
               <span>홈에 <strong>접수 미확인 공문</strong> 카드</span>
-              <input type="checkbox" id="homeUncfm" role="switch" checked />
+              <input type="checkbox" id="homeUncfm" role="switch" />
             </label>
             <label class="check-row" title="DOC-Cruiser 의 미회람 문서(Non-circular documents)를 e-Class 홈을 열 때 하루에 한 번, 화면을 띄우지 않고 전부 열어 회람 처리합니다. 문서 내용은 읽어 주지 않습니다. 읽은 것으로 바뀐 문서는 되돌릴 수 없습니다.">
               <span>DOC-Cruiser <strong>미회람 문서</strong> 자동 열람</span>
@@ -1031,6 +1024,15 @@
        떼어 띄워 고친다 — 패널을 닫아도 계속. 설정 → LLM 의 스위치(#helpChatShow)로 숨긴다. 비교작성 탭(body.compare-tab)에서는 숨김. -->
   <div class="helpbar" id="helpbar" title="Help Chat: 확장이 기대와 다르게 돌거나 고치고 싶은 점을 한 줄로 보내면, 이 PC 의 Claude Code 가 이 확장 폴더에서 디버깅하고 직접 고칩니다. 요청하면 git 커밋·푸시·포크까지 합니다. 패널을 닫아도 계속되고, 끝나면 '적용'으로 확장을 다시 불러옵니다">
     <form id="helpForm">
+      <!-- 패널 캡처(src/panelcap.js — 2026-10-17 사용자 지정: "클릭클릭 하면 1개 이상을 캡쳐해서 해당 부분의 코드나 이미지를 복사"). 누르면 패널 위에 고르기 막이
+           씌워져 칸·단추를 눌러 하나씩, 또는 끌어 네모 안의 것들을 한꺼번에 고르고, 띠의 단추로 그 부분의 코드(HTML)나 이미지(PNG)를 클립보드에 복사한다.
+           자리는 입력칸 왼쪽(2026-10-26 사용자 지정: "이 캡쳐 버튼은 여기 채팅입력하는데 왼쪽에" — 전에는 머리). 설정 → 일반 → 화면 구성의 스위치로 숨긴다(기본 켬). -->
+      <button id="panelCap" class="panel-cap" type="button" title="패널 캡처 — 패널의 칸·단추를 눌러 하나씩, 끌어 여러 개 고르면 Help Chat 에 붙습니다(띠에서 코드·이미지 복사도)" aria-label="패널 캡처" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>
+      </button>
+      <!-- 캡처로 고른 것(2026-10-26 사용자 지정: "캡쳐버튼 누르고 선택하면 바로 help chat에 들어 가게") — 고르는 대로 '캡처 N' 이 서고, 보내면 요청에 실려 간다
+           (곳마다 자리와 한 겹 아래까지의 코드 — 툴팁에 보임). 누르면 뺀다. helpchat.js. -->
+      <button id="helpCap" class="help-cap" type="button" hidden></button>
       <input type="text" id="helpText" maxlength="2000" autocomplete="off" spellcheck="false" aria-label="Help Chat 요청" placeholder="Help Chat — 안 되는 점·고칠 점을 한 줄로 적고 Enter">
       <button type="submit" id="helpSend" title="보내기 (Enter)">보내기</button>
     </form>
