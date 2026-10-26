@@ -1626,6 +1626,11 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-tpl-pick button.gm-tpl-del:hover:not(:disabled) { background: var(--surface-soft); color: var(--danger); }
 .gongmun .gm-tpl-pick button.gm-tpl-del.armed { background: var(--danger); color: #fff; }
 .gongmun .gm-box #gmTplName { margin-top: 6px; }
+/* 양식 칸을 열면 사이드 패널 전체를 덮고 본문 틀이 남은 높이를 채운다 — 머리 줄은 위에 붙어 다시 누르면 접힌다(2026-10-26). */
+.gongmun #gmTplBox[open] { position: fixed; inset: 0; z-index: 40; margin: 0; border: 0; border-radius: 0; box-shadow: none; overflow-y: auto; overscroll-behavior: contain; }
+.gongmun #gmTplBox[open] > summary { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.gongmun #gmTplBox[open] > .gm-box-body { display: flex; flex-direction: column; min-height: calc(100vh - 43px); }
+.gongmun #gmTplBox[open] #gmTplBody { flex: 1 0 auto; resize: none; }
 /* 틀에 쓰는 이름 — 무리마다 한 줄, 이름은 작은 알약(누르면 틀에 넣음), 뜻은 툴팁. */
 .gongmun .gm-vars { display: grid; gap: 6px; margin: 0 0 4px; }
 .gongmun .gm-var-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
