@@ -485,7 +485,7 @@ t('from 의 대상에 객체 칸이 있으면 못 펼친다 — omit 으로 뺀�
 
 console.log('공문 명세는 레시피(recipes/gongmun → src/gmrecipe.js)와 같은 값을 말한다 — 2026-10-17 Codex 검토: 손으로 베낀 값이 어긋나면 여기서 빨갛다');
 t('gongmun 갈래의 kinds 가운데 레시피의 목적은 레시피의 목적 차례(RECIPE.order)와 같고(목적이 아닌 선행 품의 읽기 prior 는 그 뒤, llm 없음 — 2026-10-17), 종류마다 그 종류의 읽기·사유 작업만 가리킨다', () => {
-  assert.deepEqual(ACTIONS.domains.gongmun.kinds, [...RECIPE.order, 'prior']);
+  assert.deepEqual(ACTIONS.domains.gongmun.kinds, [...RECIPE.order, 'prior', 'delete'], '목적이 아닌 선행 품의 읽기 prior·임시보관 공문 삭제 delete(2026-10-27)는 그 뒤');
   assert.deepEqual([ACTIONS.actions['gongmun.prior'].llm, ACTIONS.actions['gongmun.prior'].runner, ACTIONS.actions['gongmun.prior'].confirm], [false, 'gongmun.prior', false]);
   for (const k of RECIPE.order) {
     const a = ACTIONS.actions[`gongmun.${k}`];

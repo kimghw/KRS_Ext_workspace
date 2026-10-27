@@ -5172,6 +5172,122 @@ console.log('공문 탭 — 구매의뢰(구매요청서) 연동: 구매 품의�
   await settle(500);
 }
 
+console.log('공문 탭 — 임시보관 공문 삭제(2026-10-27 사용자 지정: "삭제 기능이 없다.. 임시공문 작성 중인것도 삭제 같이"): 공문 이력의 임시보관 카드 삭제(두 번 누름)와 작성 취소가 eclass 임시보관함에서 지운다');
+{
+  const { blankDraft } = await import('../src/gongmun.js');
+  const { listPage } = await import('./fixtures/gmlist-fixture.mjs');
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const TODAY = ymd(new Date());
+  const Y = TODAY.slice(0, 4);
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+  const PROJECT = 'MW급 10kV 반도체 차단기 개발';
+  // 공문 이력에 읽어 둔 것: 임시보관(문서작성중) T 와 완료된 외부강의등 신고서 R. 임시보관함(서버)에는 T 와, 쓰다가 취소할 새 창의 문서 W(오늘)가 있다.
+  const T = { id: `HER-${Y}-000751`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: 'SSCB 연구개발과제 수행을 위한 온라인교육 품의', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(1), status: '문서작성중', flow: '1', box: 'temp' };
+  const R = { id: `HER-${Y}-000266`, form: 'KR_Outside_Lecture_Report', formName: '외부강의등 신고서', title: '외부강의등 신고서', name: '김거화', dept: '수소전기추진연구팀', date: daysAgo(20), done: daysAgo(20), status: '발송', flow: '7', box: 'finished' };
+  const W = { id: `HER-${Y}-000752`, form: 'KR_EA_Research_Task', formName: '연구업무품의서', title: '', name: '김거화', dept: '수소전기추진연구팀', date: TODAY, status: '문서작성중', flow: '1' };
+  // 임시보관함 흉내 — 검색은 작성일로 거르고, 문서삭제는 켠 체크박스(ctlNN)가 가리키는 마지막으로 그린 쪽의 줄을 지운다(test/gmdelete.test.mjs 와 같은 꼴).
+  const temp = [T, W];
+  const sent = [];
+  let shown = [];
+  let filtered = temp;
+  const page = (html) => ({ ok: true, status: 200, url: '', headers: { get: (h) => (String(h).toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null) }, arrayBuffer: async () => new TextEncoder().encode(html).buffer });
+  const render = (list) => { shown = list.slice(0, 10); return page(listPage({ rows: shown, count: list.length, dateType: '작성일' })); };
+  const fetchImpl = async (url, init = {}) => {
+    if (!/\/RealEANet\/AppBoard\/DocListTemp\.aspx/.test(String(url))) throw new Error('offline');
+    if (init.method !== 'POST') { sent.push({ target: 'GET' }); filtered = temp; return render(temp); }
+    const body = new URLSearchParams(init.body);
+    const target = String(body.get('__EVENTTARGET')).split('$').pop();
+    const checked = [...body.keys()].filter((k) => k.endsWith('$chkRow'));
+    sent.push({ target, from: body.get('ctl00$ContentPlaceHolder1$SearchBar$dtpBeginningDate'), to: body.get('ctl00$ContentPlaceHolder1$SearchBar$dtpClosingDate'), checked });
+    if (target === 'btnSearch') { filtered = temp.filter((r) => r.date >= sent.at(-1).from && r.date <= sent.at(-1).to); return render(filtered); }
+    if (target === 'lbtnDocumentDelete') {
+      for (const k of checked) { const hit = shown[+k.match(/ctl(\d+)\$chkRow$/)[1] - 1]; if (hit) temp.splice(temp.indexOf(hit), 1); }
+      filtered = filtered.filter((r) => temp.includes(r));
+      return render(filtered);
+    }
+    throw new Error(`모르는 포스트백 ${target}`);
+  };
+  const purchase = { ...blankDraft('purchase', { me: '김거화' }), gist: '온라인 강의', vendor: '인프런', total: 99000, items: [{ name: '온라인 강의', qty: 1, unitPrice: 99000, amount: 99000 }], use: '연구 역량', reason: '과제 수행에 필요한 기술 습득' };
+  const { window, store } = await boot({
+    mode: 'gongmun', gongmunKind: 'purchase', myName: '김거화', gongmunPreset: { dept: '연구본부 수소전기추진연구팀', head: '노길태' },
+    gongmunProjects: [{ name: PROJECT, alias: 'SSCB', code: 'RND-20-2026', job: 'RND00202026', lead: '박기도' }],
+    // 읽어 둔 공문 이력(10분 안 — 목록을 다시 읽지 않는다).
+    gongmunHist: { at: Date.now(), from: '2000-01-01', to: `${Y}-12-31`, span: '3m', rows: [T, R], reports: {}, notes: [] },
+    gongmunDraft: { purchase: { draft: purchase, source: { label: '직접 입력' }, project: PROJECT, notes: [], touched: [] } },
+  }, { fetchImpl });
+  const doc = window.document;
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const card = (id) => doc.querySelector(`#gmHistList [data-id="${id}"]`);
+  const del = () => card(T.id)?.querySelector('[data-act="del"]');
+  const status = () => doc.getElementById('gmStatus').textContent;
+  const targets = () => sent.map((s) => s.target);
+  await settle();
+  doc.getElementById('gmHistAll').click();   // 전체 — 구매 갈래가 아닌 교육 품의·신고서도 보이게
+  card(R.id).querySelector('.gm-hist-head').click();
+  t('완료된 공문 카드에는 삭제가 없다(eclass 가 지우지 못하게 한다) — eclass 에서 열기만', () => {
+    assert.deepEqual([...card(R.id).querySelectorAll('.gm-actions button')].map((b) => b.dataset.act), ['open']);
+  });
+  card(T.id).querySelector('.gm-hist-head').click();
+  t('임시보관(문서작성중) 카드를 펴면 eclass 에서 열기 옆에 붉은 삭제 — 두 번 누르기', () => {
+    assert.deepEqual([...card(T.id).querySelectorAll('.gm-actions button')].map((b) => [b.dataset.act, b.textContent]), [['open', 'eclass 에서 열기'], ['del', '삭제']]);
+    assert.ok(del().classList.contains('gm-hist-del') && !del().classList.contains('armed'));
+    assert.match(del().title, /두 번 누르기/);
+  });
+  del().click();
+  await settle();
+  t('한 번 누르면 붉게 채워지고 아무것도 보내지 않는다', () => {
+    assert.ok(del().classList.contains('armed'));
+    assert.match(del().title, /^한 번 더 누르면/);
+    assert.deepEqual(sent, []);
+  });
+  const logBefore = (store.activityLog || []).length;
+  del().click();
+  for (let i = 0; i < 40 && !/지웠습니다|지우지 못했습니다/.test(status()); i++) await settle(25);
+  t('다시 누르면 행위 gongmun.delete — 임시보관함을 그 작성일로 검색해 그 줄의 체크박스 하나만 켠 문서삭제, 다시 읽어 확인. 카드는 빠지고 상태 줄·활동 로그 한 줄', () => {
+    assert.deepEqual(targets(), ['GET', 'btnSearch', 'lbtnDocumentDelete', 'GET', 'btnSearch']);
+    assert.deepEqual([sent[1].from, sent[1].to], [T.date, T.date]);
+    assert.deepEqual(sent[2].checked, ['ctl00$ContentPlaceHolder1$grdDocList$grdDocList$ctl01$chkRow']);
+    assert.deepEqual(temp.map((r) => r.id), [W.id], 'T 만 지웠다');
+    assert.equal(card(T.id), null);
+    assert.equal(status(), `임시보관 공문을 지웠습니다 — ${T.id} · ${T.title}`);
+    const line = (store.activityLog || []).slice(logBefore).find((l) => /임시보관 공문 삭제/.test(l.text || ''));
+    assert.ok(line && line.ok, '활동 로그 한 줄(디스패처)');
+    assert.equal(line.text, `임시보관 공문 삭제 · ${T.id} · ${T.title}`);
+  });
+  await settle(480);
+  t('공문 이력 저장에서도 빠진다', () => assert.deepEqual(store.gongmunHist.rows.map((r) => r.id), [R.id]));
+
+  // 작성 취소 — 새 창이 문서번호(W)를 받은 뒤 과제 고르기에서 걸려 있을 때 취소를 누른다. 탭을 닫으면 걸려 있던 호출이 실패한다.
+  let release = null;
+  const removed = [];
+  window.chrome.tabs.create = async () => ({ id: 88 });
+  window.chrome.tabs.remove = async (id) => { removed.push(id); release?.(); };
+  window.chrome.scripting.executeScript = async ({ func }) => {
+    if (func.name === 'pageProbe') return [{ frameId: 0, result: { toolbar: true, ready: true } }, { frameId: 3, result: { form: true, ready: true, docId: W.id } }];
+    if (func.name === 'pageJob') { await new Promise((r) => { release = r; }); throw new Error('탭이 닫혔습니다'); }
+    return [{ result: null }];
+  };
+  sent.length = 0;
+  doc.getElementById('gmWrite').click();
+  for (let i = 0; i < 80 && !release; i++) await settle(50);
+  t('쓰는 동안(창이 문서번호를 받고 과제를 고르는 중) 가운데 단추는 작성 취소', () => {
+    assert.ok(release, '과제 고르기까지 왔다');
+    assert.equal(doc.getElementById('gmDone').textContent, '작성 취소');
+  });
+  doc.getElementById('gmDone').click();
+  for (let i = 0; i < 60 && !/지웠습니다|지우지 못했습니다/.test(status()); i++) await settle(25);
+  t('작성 취소를 누르면 창을 닫고, 그 창이 받은 문서번호(문서작성중)를 오늘 날짜로 임시보관함에서 함께 지운다', () => {
+    assert.ok(removed.includes(88), '쓰던 창을 닫는다');
+    assert.deepEqual(targets(), ['GET', 'btnSearch', 'lbtnDocumentDelete', 'GET', 'btnSearch']);
+    assert.deepEqual([sent[1].from, sent[1].to], [TODAY, TODAY]);
+    assert.deepEqual(temp, [], 'W 도 지웠다');
+    assert.equal(status(), `공문 작성을 취소했습니다 — 쓰던 창을 닫았습니다. eclass 임시보관함의 ${W.id}(문서작성중)도 지웠습니다.`);
+    assert.equal(doc.getElementById('gmDone').textContent, '완료');
+  });
+  await settle(500);
+}
+
 console.log(`\n통과 ${pass}건`);
 
 // sidepanel 이 자동 갱신 타이머를 붙여 두어 jsdom 에서는 이벤트 루프가 비지 않는다.

@@ -125,7 +125,8 @@ export const ACTIONS = {
         "consult",
         "order",
         "outside",
-        "prior"
+        "prior",
+        "delete"
       ],
       "preset": {
         "me": {
@@ -5489,6 +5490,76 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "결과({ draft(구매의뢰 초안 — 품목·합계·구매처·사업내용·선행 품의 칸), purchase(구매 초안 꼴), project(고른 과제 이름), files(첨부 — 이름·형식·바이트), notes, doc })로 패널이 구매의뢰 갈래의 작업(st.work.order)을 세운다 → 사람이 계정과목·I/O·납품장소를 확인하고 공문 작성(gongmun.order)을 누른다"
+    },
+    "gongmun.delete": {
+      "id": "gongmun.delete",
+      "domain": "gongmun",
+      "kind": "delete",
+      "title": "임시보관 공문 삭제",
+      "hint": "문서작성중 지우기",
+      "status": "live",
+      "confirm": true,
+      "effect": "write",
+      "log": "gongmun",
+      "summary": "임시보관 공문 {id} 삭제 · {title}",
+      "preset": {
+        "me": {
+          "from": "me",
+          "desc": "내 이름(기록에만 남는다 — 지우는 데 쓰지 않는다)"
+        },
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리)"
+        },
+        "setup": {
+          "from": "storage:gongmunPreset",
+          "type": "object",
+          "desc": "공문 설정(지우는 데 쓰지 않는다 — 갈래 공통이라 붙을 뿐)"
+        }
+      },
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true,
+          "label": "문서번호",
+          "desc": "지울 문서의 문서번호(공문 이력 줄의 id · 작성 취소면 새 창이 받은 DOCID — HER-2026-000751 꼴). 임시보관함 줄의 documentID 와 똑같은 것만 지운다",
+          "read": "지울 공문의 문서번호(HER-2026-000751 꼴) — 지어내지 않습니다",
+          "llm": true,
+          "ui": true,
+          "example": "HER-2026-000751",
+          "max": 40
+        },
+        "date": {
+          "type": "date",
+          "label": "작성일",
+          "desc": "그 문서의 작성일(공문 이력 줄의 date · 작성 취소면 오늘). 임시보관함을 이날로 검색한다 — 없으면 오늘에서 2년 앞까지",
+          "read": "그 공문의 작성일. 모르면 null",
+          "llm": true,
+          "ui": true,
+          "example": "2026-10-27"
+        },
+        "title": {
+          "type": "string",
+          "label": "제목",
+          "desc": "그 문서의 제목(기록과 활동 로그에만 — 줄은 문서번호로 찾는다)",
+          "read": "그 공문의 제목. 모르면 null",
+          "llm": true,
+          "ui": true,
+          "max": 200
+        }
+      },
+      "checks": [],
+      "rules": [],
+      "llm": false,
+      "runner": "gongmun.delete",
+      "uses": [
+        {
+          "module": "src/gmdelete.js",
+          "export": "deleteTemp"
+        }
+      ],
+      "then": [],
+      "next": "결과({ ok, absent(처음부터 목록에 없었음), title })로 패널이 공문 이력에서 그 줄을 빼고(saveHist) 상태 줄에 지웠다고 적는다. 작성 취소면 상태 줄 끝에 함께 지웠는지 덧붙인다"
     },
     "home.evidence": {
       "id": "home.evidence",

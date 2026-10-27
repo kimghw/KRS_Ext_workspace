@@ -214,3 +214,12 @@ test('공문 작성 — 작성 취소(signal)면 그 뒤 단계는 하지 않고
   assert.equal(jobCalls.length, 0);
   assert.ok(!seen.includes('fields'));
 });
+
+test('공문 작성 — 창이 뜨면 받은 문서번호를 onDoc 으로 바로 알린다(취소해도 — 작성 취소가 임시보관함에서 지운다, 2026-10-27)', async () => {
+  const { api, plan } = fakeWindow(ROWS);
+  const abort = new AbortController();
+  const docs = [];
+  const onStep = (s) => { if (s.key === 'job' && s.ok === null) abort.abort(); };
+  await assert.rejects(writeGongmun(plan, { api, dry: true, signal: abort.signal, onStep, onDoc: (id) => docs.push(id) }), { name: 'AbortError' });
+  assert.deepEqual(docs, ['HER-1']);
+});

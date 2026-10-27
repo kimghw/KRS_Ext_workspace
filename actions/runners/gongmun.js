@@ -10,6 +10,8 @@
 //        rec.input.form(양식 ID)은 닫힌 목록이 아니다(2026-10-17 — 공문 탭의 "양식 ID 직접 적기": 목록에 없는 양식은 창만 연다). 여기서 꼴(영문·숫자·_)과,
 //        레시피 폼의 only(외부강의등 신고서는 외부활동에서만)를 본다 — 틀리면 ActionError(writePlan 의 draftUrl 은 틀린 ID 를 조용히 기본 양식으로 돌려 실행 모드에 맞지 않는다).
 //        ok: 단계(steps)에 ok:false 가 하나도 없을 때(§14.3 — 건너뜀 'skip'·시험 dry 는 안 된 것이 아니다). 결과(tabId·docId·steps)는 그대로 돌려준다.
+//        onDoc(docId) — 새 창이 문서번호를 받자마자 알린다(작성 취소가 그 번호를 임시보관함에서 지운다 — 2026-10-27).
+//     'gongmun.delete' (rec) → deleteTemp(rec.input.id, { date: rec.input.date, today: rec.preset.today })   임시보관함에서 그 문서번호 줄만 지운다(2026-10-27)
 //
 // deps 의 키는 실제 함수 이름과 같고 기본값은 src 의 진짜 함수다(테스트는 가짜를 넣는다). 순수하다 — chrome·DOM 은 writeGongmun 안에만 있다.
 
@@ -17,6 +19,7 @@ import { ActionError } from '../gate.js';
 import { writePlan as realWritePlan, orderFromPurchase } from '../../src/gongmun.js';
 import { writeGongmun as realWriteGongmun } from '../../src/gmwrite.js';
 import { readPrior as realReadPrior, priorToPurchase, priorProject } from '../../src/gmprior.js';
+import { deleteTemp as realDeleteTemp } from '../../src/gmdelete.js';
 import { RECIPE } from '../../src/gmrecipe.js';
 import { RESEARCH_FORM } from '../../src/gmlist.js';
 
@@ -40,7 +43,10 @@ export function formProblem(form, kind, recipe = RECIPE) {
  * @param {import('../dispatch.js').createDispatcher extends (...a: any) => infer D ? D : never} d 디스패처
  * @param {{ writePlan?: Function, writeGongmun?: Function }} [deps]
  */
-export function registerGongmun(d, { writePlan = realWritePlan, writeGongmun = realWriteGongmun, readPrior = realReadPrior } = {}) {
+export function registerGongmun(d, { writePlan = realWritePlan, writeGongmun = realWriteGongmun, readPrior = realReadPrior, deleteTemp = realDeleteTemp } = {}) {
+  // 임시보관 공문 삭제(gongmun.delete — confirm. 2026-10-27 "삭제 기능이 없다.. 임시공문 작성 중인것도 삭제 같이"): 임시보관함을 작성일로 검색해 문서번호가 똑같은 줄 하나만 지우고
+  // 다시 읽어 사라졌는지 본다(src/gmdelete.js deleteTemp — 그대로면 던진다). 처음부터 없으면 absent 로 됐다.
+  d.register('gongmun.delete', (rec) => deleteTemp(rec.input.id, { date: rec.input.date || '', today: rec.preset.today || '' }), { ok: (r) => r?.ok === true });
   // 선행 품의 읽기(gongmun.prior — 조회, confirm 없음. 2026-10-17 "이것도 명세서를 만든 다음에 러너로 실행하도록"): 기록의 문서번호·양식·제목으로 eclass 에서 그 품의의 본문·첨부를 읽어
   // (src/gmprior.js readPrior) 구매 초안 꼴(priorToPurchase)로 바꾸고 구매의뢰 초안(orderFromPurchase — 선행 품의 칸에 문서번호·제목)·과제(priorProject — ctx.projects 가 패널의 과제 목록)·
   // 첨부(이름·형식·바이트 — 기록 밖)·알림을 돌려준다. 패널이 이것으로 구매의뢰 갈래의 작업을 세운다. 원화가 아니면(구독 품의의 USD) 고치라고 알린다.
@@ -73,7 +79,7 @@ export function registerGongmun(d, { writePlan = realWritePlan, writeGongmun = r
     const plan = writePlan(entry.kind, { title, body, draft, form, setting, rank, lead, refs }, {
       me: rec.preset.me, preset: rec.preset.setup, project: rec.preset.project, today: rec.preset.today,
     });
-    return writeGongmun(plan, { files, onStep: ctx.onStep, onTab: ctx.onTab, dry: ctx.dry, signal: ctx.signal || null });
+    return writeGongmun(plan, { files, onStep: ctx.onStep, onTab: ctx.onTab, onDoc: ctx.onDoc, dry: ctx.dry, signal: ctx.signal || null });
   }, { ok: writeOk });
   return d;
 }

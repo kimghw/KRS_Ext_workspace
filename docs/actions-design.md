@@ -447,6 +447,7 @@ export function registerTrip(d)
 export function registerGongmun(d)
   'gongmun.write' (rec, { files, onStep, onTab, dry }) → writeGongmun(writePlan(rec.kind, { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me, preset: setup, project, today } = rec.preset), { files, onStep, onTab, dry })
   'gongmun.prior' (rec, { projects })  → readPrior({ id, form, title } = rec.input) → priorToPurchase(doc) → orderFromPurchase(…, { me, doc }) · priorProject(doc, ctx.projects)   // 조회(confirm false) — 공문 이력 카드의 구매의뢰: 선행 품의의 본문·첨부를 읽어 구매의뢰 초안·첨부·과제를 돌려준다(2026-10-17)
+  'gongmun.delete' (rec)               → deleteTemp(id, { date, today: rec.preset.today })   // confirm — 공문 이력의 임시보관 카드 삭제·작성 취소: 임시보관함에서 그 문서번호 줄만 지우고 다시 읽어 확인(2026-10-27)
   // 'gongmun.setup' 은 2026-10-16 걷어냄(머리 메모)
 ```
 
@@ -589,6 +590,7 @@ R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 
 | trip.send | 어댑터가 `{ ok: true, channel, to, file, pages }` 를 돌려준다 | `r.ok` |
 | gongmun.write | `{tabId, docId, steps}` | `!r.steps.some((x) => x.ok === false)` |
 | gongmun.prior | `{ok, draft(구매의뢰 초안), purchase, project, files(이름·형식·바이트 — 로그에는 들지 않음), notes, doc}` | `r.ok === true` — 던지면(로그인·모양이 다름) 패널이 문서번호·제목만 넣는다 |
+| gongmun.delete | `{ok, absent(처음부터 목록에 없었음), title}` | `r.ok === true` — 보낸 뒤에도 목록에 있으면 던진다 |
 
 어댑터 주입: `register<갈래>(d, deps = {})` — deps 의 키는 실제 함수 이름과 같고 기본값은 src 모듈의 진짜 함수다(테스트는 가짜를 넣는다). 갈래별 테스트 파일은 §9 대로 `actions/test/runners-<갈래>.test.mjs` 다(§8 의 공용 runners.test.mjs 는 없다).
 

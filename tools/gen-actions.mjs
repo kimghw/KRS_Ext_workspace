@@ -44,7 +44,7 @@ export const RUNNERS = [
   'booking.search', 'booking.reserve', 'booking.cancel', 'booking.modify',
   'attend.apply', 'attend.doc', 'attend.cancel',
   'trip.create', 'trip.presave', 'trip.preconfirm', 'trip.postconfirm', 'trip.delete', 'trip.after', 'trip.send', 'trip.lodge',
-  'gongmun.write', 'gongmun.prior',
+  'gongmun.write', 'gongmun.prior', 'gongmun.delete',
 ];
 /** 칸의 형 — input.yaml 의 형에 tags(값의 목록)·file(이름·형식 참조)·object(한 겹)를 더한 것(§3.3). */
 const TYPES = new Set(['date', 'time', 'integer', 'number', 'string', 'enum', 'boolean', 'list', 'tags', 'file', 'object']);

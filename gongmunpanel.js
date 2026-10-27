@@ -143,10 +143,14 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   // 웹페이지 캡처 단추 둘(보고 있는 탭 · 부분 골라 캡처) — 출장 카드의 증빙 넣는 곳과 같은 것이다(webpick.js, 2026-10-08 사용자 지정).
   const pick = createWebPick(webcap);
   const PICK_KEY = 'gongmun';
+  // 공문 이력의 '삭제'(dropRow) — delArm 은 한 번 누른(붉어진) 줄의 문서번호(3초), delBusy 는 지우는 중인 줄의 문서번호.
+  let delArm = '';
+  let delBusy = '';
+  let delTimer = 0;
   const st = {
     // writing 은 뒤 탭에 쓰는 중, lastTab 은 연 공문 창의 탭, writeDone 은 끝난 작성의 결과({ ok, docId, bad(안 된 단계 이름) } — 쓰기 전·쓰는 중은 null, 취소했으면 { cancelled }).
-    // writeAbort 는 쓰는 동안의 AbortController — 작성 취소 단추가 abort 한다(2026-10-27).
-    kind: KIND_ORDER[0], loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null, writeAbort: null,
+    // writeAbort 는 쓰는 동안의 AbortController — 작성 취소 단추가 abort 한다(2026-10-27). writeDocId 는 쓰는 창이 받은 문서번호 — 작성 취소가 임시보관함에서 지운다(같은 날).
+    kind: KIND_ORDER[0], loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null, writeAbort: null, writeDocId: '',
     preset: normalizePreset(null),
     // projects 는 저장된(이름이 있는) 과제, rows 는 공문 설정 칸에 펼쳐 둔 줄(아직 이름을 적지 않은 줄도 있다).
     projects: [], rows: [],
@@ -1689,13 +1693,18 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const order = KINDS.order && kindOf(r) === 'purchase'
       ? '<button type="button" class="ghost small" data-act="order" title="이 품의를 eclass 에서 읽어(품목·금액·구매처·사유·견적서 첨부) 구매요청서(총무팀 수신) 초안을 만듭니다 — 선행 품의 읽기 행위(gongmun.prior)">구매의뢰</button>'
       : '';
+    // 임시보관(문서작성중·임시저장) 줄이면 '삭제' — 두 번 눌러 eclass 임시보관함에서 지운다(dropRow, 2026-10-27 사용자 지정: "삭제 기능이 없다.. 임시공문 작성 중인것도 삭제 같이").
+    const del = state === 'kept'
+      ? `<button type="button" class="ghost small gm-hist-del${delArm === r.id ? ' armed' : ''}" data-act="del"${delBusy ? ' disabled' : ''} title="${delArm === r.id
+        ? '한 번 더 누르면 eclass 임시보관함에서 이 공문을 지웁니다' : 'eclass 임시보관함에서 이 공문을 지웁니다(두 번 누르기)'}">${delBusy === r.id ? '지우는 중…' : '삭제'}</button>`
+      : '';
     return `<li class="gm-hist-item open st-${state}" data-id="${escapeHtml(r.id)}">${head}<div class="gm-hist-more">${more}`
-      + `<div class="gm-actions"><button type="button" class="ghost small" data-act="open" title="전자결재 문서 보기 창을 새 탭에 엽니다">eclass 에서 열기</button>${order}</div></div></li>`;
+      + `<div class="gm-actions"><button type="button" class="ghost small" data-act="open" title="전자결재 문서 보기 창을 새 탭에 엽니다">eclass 에서 열기</button>${order}${del}</div></div></li>`;
   }
 
-  /** 카드를 누르면 펴고, 'eclass 에서 열기'는 문서 보기 창을 새 탭에 연다. '구매의뢰'(구매 품의 줄)는 그 줄을 선행 품의로 구매의뢰 초안을 만든다. */
+  /** 카드를 누르면 펴고, 'eclass 에서 열기'는 문서 보기 창을 새 탭에 연다. '구매의뢰'(구매 품의 줄)는 그 줄을 선행 품의로 구매의뢰 초안을 만든다. '삭제'(임시보관 줄)는 dropRow. */
   function onHistClick(e) {
-    const btn = e.target instanceof Element ? e.target.closest('[data-act="open"], [data-act="order"], .gm-hist-head') : null;
+    const btn = e.target instanceof Element ? e.target.closest('[data-act="open"], [data-act="order"], [data-act="del"], .gm-hist-head') : null;
     const li = btn?.closest('[data-id]');
     const row = li && st.hist.rows.find((r) => r.id === li.dataset.id);
     if (!row) return;
@@ -1708,8 +1717,60 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       orderFromRow(row);
       return;
     }
+    if (btn.dataset.act === 'del') {
+      dropRow(row);
+      return;
+    }
     st.hist.open = st.hist.open === row.id ? '' : row.id;
     paintHist();
+  }
+
+  /**
+   * 행위 gongmun.delete(actions/spec/gongmun/delete.yaml — 확인 있음)로 eclass 임시보관함에서 그 문서번호를 지운다. 실행기(src/gmdelete.js deleteTemp)가 작성일로 검색해
+   * 문서번호가 똑같은 줄 하나만 지우고 다시 읽어 확인한다 — 못 지우면 던진다. 활동 로그 한 줄은 디스패처가 남긴다. 부른 쪽의 누름이 확인(confirmed: record.hash)이다.
+   * 지웠으면(처음부터 없었어도) 공문 이력에서 그 줄을 뺀다.
+   * @returns {Promise<{ok: true, absent: boolean, title: string}>}
+   */
+  async function deleteDraft({ id, date = '', title = '' }, why) {
+    const aid = 'gongmun.delete';
+    const { record } = actions.build(aid, { input: { id, date: date || null, title: String(title || '').slice(0, 200) || null }, preset: await presetFor(aid) });
+    const head = `${why} · ${id}${title ? ` · ${title}` : ''}`;
+    const res = await actions.run(record, {
+      confirmed: record.hash, text: head,
+      outcome: async (r) => ({ text: `${head}${r.absent ? ' · 이미 없었음' : ''}` }),
+    });
+    if (st.hist.rows.some((r) => r.id === id)) {
+      st.hist.rows = st.hist.rows.filter((r) => r.id !== id);
+      if (st.hist.open === id) st.hist.open = '';
+      saveHist();
+      paintHist();
+    }
+    return res;
+  }
+
+  /** 임시보관 카드의 '삭제' — 처음 누르면 붉어지고(3초) 그 안에 다시 누르면 지운다(2026-10-27). */
+  async function dropRow(row) {
+    if (delBusy || stateOf(row) !== 'kept') return;
+    clearTimeout(delTimer);
+    if (delArm !== row.id) {
+      delArm = row.id;
+      delTimer = setTimeout(() => { delArm = ''; paintHist(); }, 3000);
+      paintHist();
+      return;
+    }
+    delArm = '';
+    delBusy = row.id;
+    paintHist();
+    setStatus(`${row.id} 를 eclass 임시보관함에서 지우는 중…`);
+    try {
+      const r = await deleteDraft(row, '임시보관 공문 삭제');
+      setStatus(r.absent ? `${row.id} 는 eclass 임시보관함에 이미 없습니다 — 공문 이력에서 뺐습니다.` : `임시보관 공문을 지웠습니다 — ${row.id} · ${row.title || '(제목 없음)'}`);
+    } catch (err) {
+      setStatus(`임시보관 공문을 지우지 못했습니다 — ${err instanceof ActionError ? err.problems.join(' · ') : err.message}`, 'error');
+    } finally {
+      delBusy = '';
+      paintHist();
+    }
   }
 
   /** 접힌 칸을 펴면 읽는다(읽어 둔 것이 묵었으면 다시). */
@@ -2315,6 +2376,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     st.writing = true;
     st.lastTab = null;
     st.writeDone = null;
+    st.writeDocId = '';
     const abort = new AbortController();
     st.writeAbort = abort;
     paintWrite('첨부 PDF 를 만드는 중…');
@@ -2369,6 +2431,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     try {
       const res = await actions.run(record, {
         confirmed: record.hash, files, signal: abort.signal, onStep: paintStep, onTab: (tabId) => { st.lastTab = tabId; paintWrite('새 공문 창을 여는 중…'); },
+        onDoc: (docId) => { if (st.writeAbort === abort) st.writeDocId = docId; },
         text: head,
         // 활동 로그의 최종 문구 — 문서 ID·첨부 수·못 묶은 첨부·안 된 단계까지(디스패처가 이 한 줄을 남긴다).
         outcome: async (r) => {
@@ -2398,19 +2461,30 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   }
 
   /**
-   * 작성 취소의 끝(2026-10-27 사용자 지정: "문서작성중 취소 하는 기능") — 쓰던 뒤 탭을 닫고(반쯤 쓴 창은 임시저장 전이라 남길 것이 없다) 상태 줄에 취소했다고 적는다.
-   * 작성 칸(초안)은 그대로 둔다 — 고쳐서 다시 쓰거나 완료로 비운다.
+   * 작성 취소의 끝(2026-10-27 사용자 지정: "문서작성중 취소 하는 기능") — 쓰던 뒤 탭을 닫고 상태 줄에 취소했다고 적는다. 새 창은 뜨자마자 문서번호를 받아
+   * eclass 임시보관함에 문서작성중으로 남으므로, 그 번호를 받았으면(st.writeDocId) 행위 gongmun.delete 로 함께 지운다(같은 날 "임시공문 작성 중인것도 삭제 같이" —
+   * 작성 취소의 누름이 확인이다). 작성 칸(초안)은 그대로 둔다 — 고쳐서 다시 쓰거나 완료로 비운다.
    * @returns {undefined} writeDoc 이 그대로 돌려주기 좋게
    */
   function writeCancelled(abort) {
     if (st.writeAbort !== abort) return undefined;
     const tab = st.lastTab;
+    const docId = st.writeDocId;
     st.writeAbort = null;
     st.writing = false;
     st.lastTab = null;
+    st.writeDocId = '';
     st.writeDone = { ok: false, docId: '', bad: [], cancelled: true, closedTab: tab != null };
     if (tab != null) Promise.resolve(chrome.tabs?.remove?.(tab)).catch(() => {});
-    setStatus(tab != null ? '공문 작성을 취소했습니다 — 쓰던 창을 닫았습니다.' : '공문 작성을 취소했습니다.');
+    const head = tab != null ? '공문 작성을 취소했습니다 — 쓰던 창을 닫았습니다' : '공문 작성을 취소했습니다';
+    if (docId) {
+      setStatus(`${head}. eclass 임시보관함의 ${docId}(문서작성중)를 지우는 중…`);
+      deleteDraft({ id: docId, date: today() }, '공문 작성 취소 — 임시보관 공문 삭제')
+        .then((r) => setStatus(`${head}. eclass 임시보관함의 ${docId}(문서작성중)${r.absent ? '는 이미 없습니다' : '도 지웠습니다'}.`))
+        .catch((err) => setStatus(`${head}. eclass 임시보관함의 ${docId}(문서작성중)는 지우지 못했습니다(${err instanceof ActionError ? err.problems.join(' · ') : err.message}) — 공문 이력에서 지우세요.`, 'error'));
+    } else {
+      setStatus(tab != null ? `${head}. 창이 문서번호를 받은 뒤였다면 공문 이력에 문서작성중으로 남습니다 — 거기서 지우세요.` : `${head}.`);
+    }
     paintWrite();
     return undefined;
   }
@@ -2956,6 +3030,18 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.tplEdit.addEventListener('click', () => setTplPreview(false));
     el.tplView.addEventListener('click', () => setTplPreview(true));
     el.tplBox.addEventListener('toggle', () => { if (!el.tplBox.open) setTplPreview(false); });
+    // 나가기(✕ — 펼친 양식 칸의 머리 줄 끝)와 Esc — 접어서 제자리로(2026-10-27 사용자 지정: "양식에는 왜 나가기 버튼이 없냐").
+    $('gmTplExit').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.tplBox.open = false;
+    });
+    el.tplBox.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !el.tplBox.open || e.defaultPrevented) return;
+      e.preventDefault();
+      el.tplBox.open = false;
+      el.tplBox.querySelector('summary')?.focus();
+    });
     el.tplName.addEventListener('input', onTplName);
     // 틀에 쓰는 이름 — 누르면 마지막으로 고치던 틀(제목·본문, 처음엔 본문)의 커서 자리에 넣는다.
     for (const node of [el.tplTitle, el.tplBody]) node.addEventListener('focus', () => { tplField = node; });

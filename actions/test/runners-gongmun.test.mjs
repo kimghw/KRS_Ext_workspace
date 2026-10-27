@@ -78,13 +78,15 @@ function make({ result = RESULT, plan = { fake: 'plan' }, spec = ACTIONS } = {})
 console.log('등록');
 t('gongmun.write 를 등록한다 — 같은 디스패처에 두 번은 throw. 공문 갈래는 다섯 종류뿐(구매의뢰 order 는 출장과 외부활동 사이 — 레시피 RECIPE.order 의 차례)이고 모두 gongmun.write 로 돈다', () => {
   const { d } = make();
-  assert.throws(() => registerGongmun(d), /gongmun\.prior 는 이미 등록/, '둘(prior·write)을 등록하고 prior 가 먼저다');
+  assert.throws(() => registerGongmun(d), /gongmun\.delete 는 이미 등록/, '셋(delete·prior·write)을 등록하고 delete 가 먼저다');
   const ids = ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.allowance', 'gongmun.consult', 'gongmun.order', 'gongmun.outside'];
   // 선행 품의 읽기(prior — 조회, 2026-10-17 "이것도 명세서를 만든 다음에 러너로")는 레시피의 목적이 아니라 목적들 뒤에 서고 실행기가 다르다(gongmun.prior).
-  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'allowance', 'consult', 'order', 'outside', 'prior']);
-  assert.deepEqual(Object.keys(ACTIONS.actions).filter((id) => id.startsWith('gongmun.')), [...ids, 'gongmun.prior']);
+  // 임시보관 공문 삭제(delete — 확인 있음, 2026-10-27 "삭제 기능이 없다.. 임시공문 작성 중인것도 삭제 같이")도 목적이 아니라 그 뒤(gongmun.delete).
+  assert.deepEqual(ACTIONS.domains.gongmun.kinds, ['purchase', 'edu', 'trip', 'allowance', 'consult', 'order', 'outside', 'prior', 'delete']);
+  assert.deepEqual(Object.keys(ACTIONS.actions).filter((id) => id.startsWith('gongmun.')), [...ids, 'gongmun.prior', 'gongmun.delete']);
   for (const id of ids) assert.equal(ACTIONS.actions[id].runner, 'gongmun.write', id);
   assert.deepEqual([ACTIONS.actions['gongmun.prior'].runner, ACTIONS.actions['gongmun.prior'].confirm, ACTIONS.actions['gongmun.prior'].llm], ['gongmun.prior', false, false]);
+  assert.deepEqual([ACTIONS.actions['gongmun.delete'].runner, ACTIONS.actions['gongmun.delete'].confirm, ACTIONS.actions['gongmun.delete'].llm, ACTIONS.actions['gongmun.delete'].effect], ['gongmun.delete', true, false, 'write']);
 });
 t('공문 설정은 따로 된 행위가 아니라 종류마다의 사전설정 setup 이다(저장소 gongmunPreset, 없으면 관문이 막는다 — 채우던 채팅 칸은 2026-10-09 에 뺐다)', () => {
   for (const id of ['gongmun.purchase', 'gongmun.edu', 'gongmun.trip', 'gongmun.allowance', 'gongmun.consult', 'gongmun.order', 'gongmun.outside']) {
@@ -129,7 +131,8 @@ await ta('gongmun.write — writePlan 은 (entry.kind, 입력 여덟 칸, { me, 
   const { record } = d.build('gongmun.purchase', { input: INPUT, preset: PRESET });
   const onStep = () => {};
   const onTab = () => {};
-  const res = await d.run(record, { confirmed: record.hash, files: FILES, onStep, onTab, dry: true });
+  const onDoc = () => {};
+  const res = await d.run(record, { confirmed: record.hash, files: FILES, onStep, onTab, onDoc, dry: true });
   assert.equal(res, RESULT, '실행기 결과를 그대로 돌려준다');
   assert.equal(calls.plan.length, 1);
   assert.equal(calls.plan[0].kind, 'purchase', '갈래는 기록이 아니라 명세(entry.kind)에서');
@@ -140,7 +143,7 @@ await ta('gongmun.write — writePlan 은 (entry.kind, 입력 여덟 칸, { me, 
   assert.deepEqual(calls.plan[0].ctx, { me: '김거화', preset: SETUP, project: PROJECT, today: '2026-10-16' }, 'ctx.preset 자리에 공문 설정(setup)');
   assert.equal(calls.write.length, 1);
   assert.equal(calls.write[0].plan, plan);
-  assert.deepEqual(calls.write[0].opts, { files: FILES, onStep, onTab, dry: true, signal: null }, 'signal 은 작성 취소(ctx.signal — 없으면 null)');
+  assert.deepEqual(calls.write[0].opts, { files: FILES, onStep, onTab, onDoc, dry: true, signal: null }, 'signal 은 작성 취소(ctx.signal — 없으면 null), onDoc 은 창이 받은 문서번호(작성 취소가 지운다 — 2026-10-27)');
   assert.equal(calls.write[0].opts.files, FILES, '바이트는 ctx.files 그대로');
   assert.equal(log.length, 1);
   assert.deepEqual([log[0].kind, log[0].ok, log[0].text], ['gongmun', true, '구매품의 · 연구 데이터 저장용 모니터 구매 품의']);
@@ -156,7 +159,7 @@ await ta('gongmun.outside — 갈래는 outside, 과제 사전설정이 없어 w
   assert.equal(calls.plan[0].kind, 'outside');
   assert.deepEqual(calls.plan[0].ctx, { me: '김거화', preset: SETUP, project: undefined, today: '2026-10-16' });
   assert.deepEqual(calls.plan[0].input.draft.start, '14:00');
-  assert.deepEqual(calls.write[0].opts, { files: [], onStep: undefined, onTab: undefined, dry: undefined, signal: null });
+  assert.deepEqual(calls.write[0].opts, { files: [], onStep: undefined, onTab: undefined, onDoc: undefined, dry: undefined, signal: null });
 });
 await ta('gongmun.order — 갈래는 order(구매요청서). 구매 품의에서 넘어온 초안(품목·합계·사업내용·선행 품의 문서번호)이 그대로 writePlan 에 가고, 모르는 칸은 빈 채로, 본문 칸은 없다(when: form!=KR_Purchase_Order)', async () => {
   const { d, calls, log } = make();
@@ -357,6 +360,32 @@ await ta('원화가 아니면(구독 품의의 USD) 고치라는 알림이 앞�
 t('문서번호가 없으면 관문이 막는다 — 조회라 confirmed 는 받지 않는다', () => {
   const d = createDispatcher({ spec: ACTIONS, now: () => NOW });
   assert.throws(() => d.build('gongmun.prior', { input: { title: '제목만' }, preset: PRIOR_PRESET }), ActionError);
+});
+
+console.log('임시보관 공문 삭제(gongmun.delete — 공문 이력의 임시보관 카드·작성 취소, 2026-10-27 "삭제 기능이 없다.. 임시공문 작성 중인것도 삭제 같이")');
+await ta('내 이름·공문 설정이 비어 있어도(null) 기록이 선다 — 확인(confirmed) 없이는 돌지 않고, 누르면 deleteTemp(문서번호, { 작성일, 오늘 }) 한 번 · 로그 한 줄', async () => {
+  const log = [];
+  const asked = [];
+  const d = createDispatcher({ spec: ACTIONS, log: (e) => log.push(e), now: () => NOW });
+  registerGongmun(d, { deleteTemp: async (id, o) => { asked.push([id, o]); return { ok: true, absent: false, title: '온라인교육 품의' }; } });
+  const { record } = d.build('gongmun.delete', { input: { id: 'HER-2026-000751', date: '2026-10-27', title: '온라인교육 품의' }, preset: { me: null, setup: null, today: '2026-10-27' } });
+  await assert.rejects(d.run(record, {}), /확인 없이 실행할 수 없습니다/);
+  assert.deepEqual(asked, [], '확인이 없으면 실행기를 부르지 않는다');
+  const res = await d.run(record, { confirmed: record.hash, text: '임시보관 공문 삭제 · HER-2026-000751' });
+  assert.deepEqual(res, { ok: true, absent: false, title: '온라인교육 품의' });
+  assert.deepEqual(asked, [['HER-2026-000751', { date: '2026-10-27', today: '2026-10-27' }]]);
+  assert.deepEqual([log.at(-1).kind, log.at(-1).ok, log.at(-1).text, log.at(-1).data.record.action], ['gongmun', true, '임시보관 공문 삭제 · HER-2026-000751', 'gongmun.delete']);
+});
+await ta('작성일을 모르면 빈 글로 넘긴다(실행기가 오늘에서 2년 앞까지 찾는다) · 문서번호가 없으면 관문이 막는다 · deleteTemp 가 던지면 ✕ 한 줄과 함께 다시 던진다', async () => {
+  const log = [];
+  const asked = [];
+  const d = createDispatcher({ spec: ACTIONS, log: (e) => log.push(e), now: () => NOW });
+  registerGongmun(d, { deleteTemp: async (id, o) => { asked.push([id, o]); throw new Error('삭제를 보냈지만 HER-2026-000751 이(가) 임시보관함에 그대로 있습니다.'); } });
+  assert.throws(() => d.build('gongmun.delete', { input: { title: '제목만' }, preset: { me: null, setup: null, today: '2026-10-27' } }), ActionError);
+  const { record } = d.build('gongmun.delete', { input: { id: 'HER-2026-000751' }, preset: { me: null, setup: null, today: '2026-10-27' } });
+  await assert.rejects(d.run(record, { confirmed: record.hash }), /그대로 있습니다/);
+  assert.deepEqual(asked, [['HER-2026-000751', { date: '', today: '2026-10-27' }]]);
+  assert.equal(log.at(-1).ok, false);
 });
 
 console.log(`\n통과 ${pass}건`);

@@ -1,0 +1,40 @@
+# 임시보관 공문 삭제 — 공문 이력의 임시보관함 카드(문서작성중·임시저장)의 '삭제'(두 번 누름)와 공문 작성의 '작성 취소'(새 창이 받아 둔 문서번호)가 이 기록을 세운다
+# (gongmunpanel.js dropRow · writeCancelled). 2026-10-27 사용자 지정: "삭제 기능이 없다.. 임시공문 작성 중인것도 삭제 같이" · ApprovalInPrinciple 처럼(임시저장 철회 = 실물 삭제).
+# 실행기(actions/runners/gongmun.js → src/gmdelete.js deleteTemp)가 eclass 기안함 > 임시보관함을 작성일로 검색해 문서번호가 똑같은 줄 하나만 골라 문서삭제 포스트백을 보내고,
+# 목록을 다시 읽어 사라졌는지로 판정한다(그대로면 던진다). 처음부터 목록에 없으면 이미 없는 것(absent)이라 됐다고 본다. 상신·완료·반려 문서는 그 함에 없어 지우지 못한다.
+# 레시피의 목적이 아닌 종류라 llm 은 false 다(_domain.yaml 의 kinds 에서 목적들 뒤). 갈래 공통 사전설정 가운데 내 이름·공문 설정은 지우는 데 쓰지 않아 여기서 꼭 있어야 하지 않게 덮는다.
+id: gongmun.delete
+title: 임시보관 공문 삭제
+hint: 문서작성중 지우기
+confirm: true                  # 카드의 삭제(두 번 누름)·작성 취소의 누름이 확인이다
+effect: write
+summary: '임시보관 공문 {id} 삭제 · {title}'
+preset:
+  me: { from: me, desc: 내 이름(기록에만 남는다 — 지우는 데 쓰지 않는다) }
+  setup: { from: storage:gongmunPreset, type: object, desc: 공문 설정(지우는 데 쓰지 않는다 — 갈래 공통이라 붙을 뿐) }
+fields:
+  id:
+    type: string
+    required: true
+    max: 40
+    label: 문서번호
+    desc: 지울 문서의 문서번호(공문 이력 줄의 id · 작성 취소면 새 창이 받은 DOCID — HER-2026-000751 꼴). 임시보관함 줄의 documentID 와 똑같은 것만 지운다
+    read: 지울 공문의 문서번호(HER-2026-000751 꼴) — 지어내지 않습니다
+    example: HER-2026-000751
+  date:
+    type: date
+    label: 작성일
+    desc: 그 문서의 작성일(공문 이력 줄의 date · 작성 취소면 오늘). 임시보관함을 이날로 검색한다 — 없으면 오늘에서 2년 앞까지
+    read: 그 공문의 작성일. 모르면 null
+    example: '2026-10-27'
+  title:
+    type: string
+    max: 200
+    label: 제목
+    desc: 그 문서의 제목(기록과 활동 로그에만 — 줄은 문서번호로 찾는다)
+    read: 그 공문의 제목. 모르면 null
+llm: false
+runner: gongmun.delete
+uses:
+  - { module: src/gmdelete.js, export: deleteTemp }
+next: 결과({ ok, absent(처음부터 목록에 없었음), title })로 패널이 공문 이력에서 그 줄을 빼고(saveHist) 상태 줄에 지웠다고 적는다. 작성 취소면 상태 줄 끝에 함께 지웠는지 덧붙인다

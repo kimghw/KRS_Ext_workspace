@@ -41,8 +41,8 @@ export const OUTSIDE_FORM = 'KR_Outside_Lecture_Report';
 export const RESEARCH_FORM = 'KR_EA_Research_Task';
 /** 한 쪽의 줄 수(실측). */
 export const PAGE_SIZE = 10;
-const LOGIN = '로그인이 필요합니다. eclass 에 로그인한 뒤 다시 시도하세요.';
-const looksLogin = (html) => /id="tbUserId"|Account\/Log(in|out)|You must sign in|loginbyname\.aspx/i.test(html || '');
+export const LOGIN = '로그인이 필요합니다. eclass 에 로그인한 뒤 다시 시도하세요.';
+export const looksLogin = (html) => /id="tbUserId"|Account\/Log(in|out)|You must sign in|loginbyname\.aspx/i.test(html || '');
 const FORM = { 'Content-Type': 'application/x-www-form-urlencoded' };
 const BASE = `${ORIGIN}/RealEANet/AppBoard`;
 
@@ -121,7 +121,8 @@ export function searchFields({ from, to, keyword = '', formId = '' }) {
   };
 }
 
-const postback = (url, hidden, fields, target, arg, fetch) => fetch(url, {
+/** 문서함 화면의 포스트백 — 숨은 칸 + 보낼 칸 + __EVENTTARGET·__EVENTARGUMENT(src/gmdelete.js 의 문서삭제도 이것으로). */
+export const postback = (url, hidden, fields, target, arg, fetch) => fetch(url, {
   method: 'POST', headers: FORM, body: new URLSearchParams({ ...hidden, ...fields, __EVENTTARGET: target, __EVENTARGUMENT: arg }).toString(),
 });
 

@@ -18,7 +18,7 @@ title: 공문
 log: gongmun                   # 활동 로그 kind(src/logbook.js KIND_LABEL 의 gongmun) — gongmunpanel.js 가 지금 쓰는 것
 # 앞의 일곱은 레시피의 목적(RECIPE.order — 차례가 같아야 한다. 수당 allowance·자문 consult 는 2026-10-21). prior(선행 품의 읽기 — 공문 이력 카드의 구매의뢰, 조회라 confirm 없음, 2026-10-17 "이것도 명세서를 만든 다음에 러너로")는 목적이 아니라
 # 레시피가 작업을 만들지 않는다(llm: false) — 목적들 뒤에 둔다.
-kinds: [purchase, edu, trip, allowance, consult, order, outside, prior]
+kinds: [purchase, edu, trip, allowance, consult, order, outside, prior, delete]
 preset:
   me:    { from: me, required: true, desc: '기안자(내 이름 — 결재선의 기안, 과제책임자가 본인이면 합의를 뺀다)' }
   today: { from: today, desc: 오늘(YYYY-MM-DD) — writePlan 의 ctx.today(첨부 이름·본문 날짜 자리) }

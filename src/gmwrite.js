@@ -605,11 +605,11 @@ export const turnDegree = (turn) => {
  * @param {{onStep?: (step: {key:string, label:string, ok:boolean|'skip'|null, detail:string}) => void, onTab?: (tabId: number) => void,
  *   files?: {name:string, type?:string, base64:string}[], api?: object, dry?: boolean, tabId?: number}} [opts]
  *   files 는 창의 파일첨부에 올릴 파일(첨부 목록의 문서마다 PDF 하나 — 다섯 개까지). 없으면 첨부 단계는 건너뛴다(skip).
- *   onTab 은 새 공문 창을 열자마자 그 탭 번호를 알린다(패널의 '공문 보기' 가 쓰는 중에도 창을 열 수 있게).
+ *   onTab 은 새 공문 창을 열자마자 그 탭 번호를 알린다(패널의 '공문 보기' 가 쓰는 중에도 창을 열 수 있게). onDoc 은 창이 받은 문서번호를(작성 취소가 임시보관함에서 지운다).
  *   tabId 를 주면 새 창을 열지 않고 그 탭(이미 열린 새 공문 창)에 쓴다 — 실제 브라우저 검사용.
  * @returns {Promise<{tabId:number|null, docId:string, steps: object[]}>}
  */
-export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, files = [], api = globalThis.chrome, dry = false, tabId: given = null, signal = null } = {}) {
+export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, onDoc = () => {}, files = [], api = globalThis.chrome, dry = false, tabId: given = null, signal = null } = {}) {
   const steps = [];
   // 작성 취소(2026-10-27 — 패널의 작성 취소 단추): signal 이 서면 다음 페이지 호출·기다림에서 AbortError 를 던져 남은 단계를 하지 않는다(guard 도 삼키지 않는다). 탭은 부른 쪽이 닫는다.
   const halt = () => { if (signal?.aborted) throw Object.assign(new Error('작성을 취소했습니다'), { name: 'AbortError' }); };
@@ -679,6 +679,8 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
   }
   if (form == null) return { tabId, docId: '', steps: [report('open', false, '새 공문 창이 다 뜨지 않았습니다 — 창을 확인하고 다시 누르세요')] };
   report('open', true, docId ? `문서 ${docId}` : '');
+  // 문서번호는 창이 뜨면 이미 잡혀 임시보관함에 문서작성중으로 남는다 — 작성 취소가 지울 수 있게 바로 알린다(2026-10-27).
+  if (docId) { try { onDoc(docId); } catch { /* 패널 쪽 오류는 작성을 막지 않는다 */ } }
 
   const v = plan.values;
   const fields = Object.entries(plan.fields).map(([key, f]) => ({ key, ...f }));

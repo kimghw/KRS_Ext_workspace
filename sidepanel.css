@@ -1622,6 +1622,11 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun #gmTplBox[open] > summary { position: sticky; top: 0; z-index: 1; background: var(--surface); }
 .gongmun #gmTplBox[open] > .gm-box-body { display: flex; flex-direction: column; min-height: calc(100vh - 43px - var(--helpbar-h, 0px)); }
 .gongmun #gmTplBox[open] #gmTplBody { flex: 1 0 auto; resize: none; }
+/* 나가기(✕) — 펼쳐 패널을 덮었을 때만 머리 줄 오른쪽 끝에, 그때는 꺾쇠 대신(2026-10-27 사용자 지정: "양식에는 왜 나가기 버튼이 없냐"). */
+.gongmun #gmTplExit { display: none; flex: none; width: 30px; min-height: 30px; margin: 0 -4px 0 0; padding: 7px; background: transparent; color: var(--muted); }
+.gongmun #gmTplExit:hover { background: var(--surface-soft); color: var(--fg); }
+.gongmun #gmTplBox[open] #gmTplExit { display: inline-flex; }
+.gongmun #gmTplBox[open] > summary::after { display: none; }
 /* 미리보기(2026-10-27) — 본문 틀 / 미리보기 작은 두 단추(글자만큼의 폭, 켜진 쪽이 색 — 같은 날 "작게 해달라고")로 바꾸고, 미리보기면 틀(제목·본문·이름)은 숨고
    채운 제목·본문이 남은 높이를 채운다. 빈 칸 [이름] 은 붉은 글자. */
 .gongmun .gm-tpl-mode { display: flex; width: max-content; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -1701,6 +1706,9 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .gongmun .gm-hist-more em { margin-right: 4px; font-style: normal; font-size: 11px; font-weight: 650; color: var(--pick); }
 .gongmun .gm-hist-more .gm-actions { flex-basis: 100%; margin-top: 4px; }
 .gongmun .gm-hist-more .gm-actions button { flex: none; }
+/* 임시보관 카드의 삭제(2026-10-27) — 붉은 글자, 한 번 누르면(3초) 붉게 채워진다(양식 지우기와 같은 두 번 누름). */
+.gongmun .gm-hist-more .gm-actions button.gm-hist-del { color: var(--danger); }
+.gongmun .gm-hist-more .gm-actions button.gm-hist-del.armed { background: var(--danger); color: #fff; }
 .gongmun .gm-hist-empty { padding: 6px 2px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 /* ------------------------------------------------------------ R&D */
