@@ -2968,6 +2968,7 @@ function togglePanelPick() {
   const head = `${el.appTitle.textContent} · v${chrome.runtime.getManifest?.()?.version ?? '?'} · ${stamp(Date.now())}`;
   panelPick = startPanelPick({
     head,
+    copy: false,   // 코드냐 이미지냐 묻지 않고 고른 것은 Help Chat 에 코드로(2026-10-27 사용자 지정: "선택되면 그냥 코드로 보내")
     onCopy: ({ kind, count, ok, error }) => logEvent('capture', ok,
       `패널 캡처 — ${kind === 'code' ? '코드' : '이미지'} ${count}곳 ${ok ? '복사' : `복사 실패: ${error?.message || ''}`}`, { mode: state.mode }),
     onChange: (els) => document.dispatchEvent(new CustomEvent('help-capture',

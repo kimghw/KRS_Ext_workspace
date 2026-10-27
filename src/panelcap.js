@@ -423,10 +423,11 @@ function saveBlob(blob, doc) {
  * 띠의 코드 복사는 codeOf 를 글로, 이미지 복사는 renderPng 를 PNG 로 클립보드에 넣는다. 복사한 뒤에도 막은 남는다(코드와 이미지를 이어 복사하게).
  * @param {{doc?: Document, head?: string, hitAt?: (x: number, y: number) => Element[], clipboard?: {writeText: Function, write: Function},
  *   render?: (els: Element[]) => Promise<Blob>, onCopy?: (r: {kind: 'code'|'image', count: number, ok: boolean, error?: Error}) => void,
- *   onChange?: (els: Element[]) => void, onEnd?: () => void}} [opts] hitAt·clipboard·render 는 검사가 갈아 끼운다, onChange 는 고른 것이 바뀔 때마다(Help Chat 에 붙이기)
+ *   onChange?: (els: Element[]) => void, onEnd?: () => void, copy?: boolean}} [opts] hitAt·clipboard·render 는 검사가 갈아 끼운다, onChange 는 고른 것이 바뀔 때마다(Help Chat 에 붙이기),
+ *   copy: false 면 띠에 코드 복사·이미지 복사 단추를 두지 않는다(Help Chat 의 캡처 — 고르면 그냥 코드로 붙는다)
  * @returns {{cancel: () => void, chosen: () => Element[], host: HTMLElement}}
  */
-export function startPick({ doc = document, head = '', hitAt = null, clipboard = null, render = renderPng, onCopy = null, onChange = null, onEnd = null } = {}) {
+export function startPick({ doc = document, head = '', hitAt = null, clipboard = null, render = renderPng, onCopy = null, onChange = null, onEnd = null, copy = true } = {}) {
   const win = doc.defaultView;
   const clip = clipboard || win.navigator.clipboard;
   const hit = hitAt || ((x, y) => doc.elementsFromPoint(x, y));
@@ -451,6 +452,8 @@ export function startPick({ doc = document, head = '', hitAt = null, clipboard =
   const small = host.querySelector('.pcap-n small');
   const codeBtn = host.querySelector('.pcap-code');
   const imgBtn = host.querySelector('.pcap-img');
+  // Help Chat 에 붙이는 막이면 코드·이미지 복사를 묻지 않는다 — 고른 것은 onChange 로 코드가 되어 간다(2026-10-27). 단추는 떼어 두기만(아래 코드는 그대로).
+  if (!copy) { codeBtn.remove(); imgBtn.remove(); }
   let chosen = [];
   let chain = [];
   let level = 0;
@@ -527,7 +530,7 @@ export function startPick({ doc = document, head = '', hitAt = null, clipboard =
   function paintBar() {
     const n = chosen.length;
     host.classList.remove('pcap-said', 'pcap-fail');
-    big.textContent = busy ? '그리는 중…' : n ? `${n}개 골랐습니다` : '캡처할 곳을 누르세요';
+    big.textContent = busy ? '그리는 중…' : n ? `${n}개 골랐습니다${copy ? '' : ' · Help Chat 에 붙음'}` : '캡처할 곳을 누르세요';
     small.textContent = n ? '다시 누르면 빼기 · 끌면 더 고름 · ↑↓ 칸 크기 · Esc 끝' : '눌러 하나 · 끌어 여러 개 · ↑↓ 칸 크기 · Esc 끝';
     codeBtn.disabled = imgBtn.disabled = !n || busy;
   }

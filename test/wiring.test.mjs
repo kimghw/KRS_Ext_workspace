@@ -1437,7 +1437,7 @@ console.log('공문 탭');
     const want = [['gmKinds', 'click'], ['gmFile', 'change'], ['gmCapture', 'click'], ['gmManual', 'click'],
       ['gmReset', 'click'], ['gmCut', 'click'], ['gmAgentGo', 'click'], ['gmAgentInput', 'keydown'], ['gmMoreFields', 'input'], ['gmPick', 'click'], ['gmProjects', 'click'], ['gmFields', 'input'], ['gmTitle', 'input'], ['gmBody', 'input'], ['gmRegen', 'click'],
       ['gmWrite', 'click'], ['gmOrder', 'click'], ['gmRank', 'change'], ['gmRetention', 'change'], ['gmDocNoOne', 'input'], ['gmSetReset', 'click'], ['gmSavePdf', 'click'], ['gmTplForm', 'change'], ['gmTplTitle', 'input'],
-      ['gmTplBody', 'input'], ['gmTplPick', 'change'], ['gmTplAdd', 'click'], ['gmTplDel', 'click'], ['gmTplName', 'input'], ['gmVars', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
+      ['gmTplBody', 'input'], ['gmTplPick', 'change'], ['gmTplAdd', 'click'], ['gmTplDel', 'click'], ['gmTplEdit', 'click'], ['gmTplView', 'click'], ['gmTplBox', 'toggle'], ['gmTplName', 'input'], ['gmVars', 'click'], ['gmDept', 'input'], ['gmHead', 'input'], ['gmDirector', 'input'], ['gmChief', 'input'], ['gmDocNo', 'input'], ['gmDocNoHint', 'change'], ['gmProjAdd', 'click'],
       ['gmProjList', 'input'], ['gmEvidenceToggle', 'click'], ['gmWorkspaceToggle', 'click'], ['gmViewTabs', 'click'], ['gmViewTabs', 'keydown'], ['gmCompare', 'click'], ['gongmun', 'dragover'], ['gongmun', 'drop'],
       ['gmFeeSum', 'click'], ['gmHistBox', 'toggle'], ['gmHistSpan', 'click'], ['gmHistAll', 'click'], ['gmHistRefresh', 'click'], ['gmHistList', 'click'],
       ['gmSearchGo', 'click'], ['gmSearchText', 'keydown'], ['gmSearchDir', 'click'], ['gmSearchSpan', 'click'], ['gmSearchList', 'click']];
@@ -1920,6 +1920,21 @@ console.log('공문 탭');
     assert.equal(doc.getElementById('gmTplPick').value, 't1', '내 양식을 고친다');
     type(body, was);
   });
+  doc.getElementById('gmTplView').click();
+  t('미리보기 단추는 틀 대신 쓰던 초안의 값으로 채운 제목·본문을 세우고, 본문 틀 단추로 틀로(2026-10-27)', () => {
+    const box = doc.getElementById('gmTplBox');
+    assert.ok(box.classList.contains('previewing') && !doc.getElementById('gmTplPreview').hidden);
+    assert.equal(doc.getElementById('gmTplView').getAttribute('aria-pressed'), 'true');
+    assert.equal(doc.getElementById('gmTplEdit').getAttribute('aria-pressed'), 'false');
+    doc.getElementById('gmTplView').click();
+    assert.ok(box.classList.contains('previewing'), '미리보기를 다시 눌러도 미리보기');
+    assert.equal(doc.getElementById('gmTplPreviewTitle').textContent, '[부서구매] 34인치 모니터 구매 품의');
+    assert.match(doc.getElementById('gmTplPreviewNote').textContent, /^쓰던 초안으로 채움/);
+    assert.ok(!/\{품목요지\}/.test(doc.getElementById('gmTplPreviewBody').textContent), '본문 틀의 이름도 값으로');
+    doc.getElementById('gmTplEdit').click();
+    assert.ok(!box.classList.contains('previewing') && doc.getElementById('gmTplPreview').hidden);
+    assert.equal(doc.getElementById('gmTplEdit').getAttribute('aria-pressed'), 'true');
+  });
   doc.getElementById('gmTplAdd').click();
   type(doc.getElementById('gmTplName'), '모니터용');
   t('＋ 는 지금 양식을 복사해 새 양식으로 등록하고 이름 칸에 커서를 둔다 — 이름을 고치면 메뉴·머리가 따라간다', () => {
@@ -2302,7 +2317,7 @@ console.log('공문 탭 — 구매·교육·출장은 갈래 아래의 과제 �
     assert.ok(doc.getElementById('gmDraft').classList.contains('hidden'), '초안은 아직 없다');
     assert.deepEqual(chips(), [['SSCB', false], ['수소추진', false]]);
     assert.ok(bar.classList.contains('need'));
-    assert.equal(bar.querySelector('.gm-projbar-label').textContent, '과제 선택');
+    assert.equal(bar.querySelector('.gm-projbar-label').textContent, '연결 과제', '고르기 전에도 머리말은 그대로');
     assert.equal(chip('수소추진').title, `${B} · RS-2026-0002 · 책임자 홍길동`);
   });
   chip('수소추진').click();

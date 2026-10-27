@@ -319,6 +319,20 @@ console.log('고르기 막');
   t('띠의 ✕ 도 끝', () => { assert.equal(doc.querySelector('.pcap'), null); assert.equal(ended, 1); });
   pick.cancel();
 }
+{
+  const { doc, window } = boot();
+  const changes = [];
+  const pick = startPick({ doc, hitAt: () => [doc.getElementById('refresh')], copy: false, onChange: (els) => changes.push(els.length) });
+  const host = doc.querySelector('.pcap');
+  for (const type of ['mousedown', 'mouseup']) host.querySelector('.pcap-veil').dispatchEvent(new window.MouseEvent(type, { clientX: 310, clientY: 25, bubbles: true, cancelable: true }));
+  t('copy: false(Help Chat 의 캡처)면 코드·이미지 복사를 묻지 않는다 — 고르면 onChange 로 붙고 띠는 고른 수와 끝만(2026-10-27)', () => {
+    assert.equal(host.querySelector('.pcap-code, .pcap-img'), null);
+    assert.ok(host.querySelector('.pcap-no'));
+    assert.deepEqual(changes, [1]);
+    assert.equal(host.querySelector('.pcap-n b').textContent, '1개 골랐습니다 · Help Chat 에 붙음');
+  });
+  pick.cancel();
+}
 
 console.log('끌어서 여러 개 (2026-10-17 "드래그 하면 여러개 포함되도록")');
 {

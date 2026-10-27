@@ -51,6 +51,7 @@ import { readSlots } from './src/pagecap.js';
 import { dropReady, parseDrop, grabDropped } from './src/mailgrab.js';
 import { cutBoxes, cutDrop, cutName, cutQuote, CUT_PAD, PAD_STEP, MAX_PAD } from './src/quotecut.js';
 import { createWebPick, pickButton } from './webpick.js';
+import { memoSuggest } from './src/memo.js';
 
 const FILE_LIMIT = 10 * 1024 * 1024;
 /**
@@ -101,7 +102,7 @@ const formLabel = (id) => FORMS.find((f) => f.id === id)?.label || id;
  *   compareTab 은 비교작성 탭일 때의 갈래(sidepanel.html?compare=갈래 — sidepanel.js) — 그 갈래의 초안을 작성 내용(공문)·읽은 내용 두 칸으로 넓게 보인다
  *   actions 는 행위 디스패처(actions/dispatch.js — sidepanel 이 만들어 근태·공문 패널이 같이 쓴다). 없으면(단독 테스트) 여기서 만든다
  */
-export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '', flash = () => {}, webcap = {}, compareTab = '', actions: given = null, openSetting = null }) {
+export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '', flash = () => {}, webcap = {}, compareTab = '', actions: given = null, openSetting = null, suggest = memoSuggest }) {
   const el = {
     root: $('gongmun'), kinds: $('gmKinds'), projBar: $('gmProjBar'), pick: $('gmPick'), projLabel: $('gmProjLabel'),
     intake: $('gmIntake'), evidenceCount: $('gmEvidenceCount'), evidenceToggle: $('gmEvidenceToggle'), evidenceBody: $('gmEvidenceBody'), file: $('gmFile'), dropLead: $('gmDropLead'), capture: $('gmCapture'),
@@ -125,6 +126,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     tplBox: $('gmTplBox'), tplState: $('gmTplState'), tplForm: $('gmTplForm'), tplFormId: $('gmTplFormId'),
     tplTitle: $('gmTplTitle'), tplBody: $('gmTplBody'), vars: $('gmVars'),
     tplPick: $('gmTplPick'), tplAdd: $('gmTplAdd'), tplDel: $('gmTplDel'), tplName: $('gmTplName'),
+    tplEdit: $('gmTplEdit'), tplView: $('gmTplView'), tplPreview: $('gmTplPreview'), tplPreviewNote: $('gmTplPreviewNote'), tplPreviewTitle: $('gmTplPreviewTitle'), tplPreviewBody: $('gmTplPreviewBody'),
     presetBox: $('gmPresetBox'), presetState: $('gmPresetState'), dept: $('gmDept'), head: $('gmHead'),
     director: $('gmDirector'), chief: $('gmChief'), docNo: $('gmDocNo'), docNoHint: $('gmDocNoHint'),
     projList: $('gmProjList'), projAdd: $('gmProjAdd'), projCount: $('gmProjCount'),
@@ -1192,7 +1194,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
 
   /**
    * 갈래 아래의 과제 줄 — 칩은 R&D 탭처럼 별칭(없으면 과제명)이고 과제명·과제번호·책임자는 툴팁이다. 초안이 있으면 그 초안의 과제, 없으면 넣을 문서가
-   * 시작할 과제(defaultProject — 마지막에 고른 과제, 과제가 하나뿐이면 그것)가 켜진다. 아무것도 켜지지 않았으면 머리말이 고르라고 한다.
+   * 시작할 과제(defaultProject — 마지막에 고른 과제, 과제가 하나뿐이면 그것)가 켜진다. 아무것도 켜지지 않았으면 머리말("연결 과제")의 색으로 고르라고 한다.
    */
   function paintPick() {
     const w = cur();
@@ -1200,7 +1202,6 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const picked = w ? w.project : defaultProject(null);
     const on = list.some((p) => p.name === picked);
     el.projBar.classList.toggle('need', !!list.length && !on);
-    el.projBar.querySelector('.gm-projbar-label').textContent = list.length && !on ? '과제 선택' : '연결 과제';
     el.pick.innerHTML = list.length ? list.map((p, i) => {
       const active = p.name === picked;
       const tip = [p.name, p.code, p.lead ? `책임자 ${p.lead}` : ''].filter(Boolean).join(' · ');
@@ -2428,6 +2429,35 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       ? `<button type="button" class="gm-var" data-ins="${escapeHtml(ins)}" title="${escapeHtml(desc ? `${desc} — 누르면 틀에 넣습니다` : '누르면 틀에 넣습니다')}">${escapeHtml(tok)}</button>`
       : `<code class="gm-var" title="${escapeHtml(desc)}">${escapeHtml(tok)}</code>`)).join('')}</div>`).join('');
     paintTplState();
+    paintTplPreview();
+  }
+
+  // 미리보기를 켰는가 — 남기지 않는다(양식 칸을 다시 열면 틀부터).
+  let tplPreviewOn = false;
+  /**
+   * 미리보기 — 틀 대신 지금 초안의 값으로 채운 제목·본문(2026-10-27 사용자 지정: "양식에서 템플릿에 대한 미리보기 기능"). 쓰던 초안이 없으면 비운 초안과
+   * 고를 과제(defaultProject)로 채운다. 빈 칸은 compose 가 남긴 [이름] 이고 붉게 보인다.
+   */
+  function paintTplPreview() {
+    el.tplBox.classList.toggle('previewing', tplPreviewOn);
+    el.tplPreview.hidden = !tplPreviewOn;
+    el.tplView.setAttribute('aria-pressed', String(tplPreviewOn));
+    el.tplEdit.setAttribute('aria-pressed', String(!tplPreviewOn));
+    if (!tplPreviewOn) return;
+    const w = cur() || { draft: {}, project: defaultProject(null) };
+    const c = compose(st.kind, w.draft, ctxOf(w), tplOf());
+    const hole = c.missing.length ? new RegExp(`\\[(${c.missing.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\]`, 'g') : null;
+    const mark = (text) => (hole ? escapeHtml(text).replace(hole, '<mark>[$1]</mark>') : escapeHtml(text));
+    el.tplPreviewNote.textContent = `${cur() ? '쓰던 초안' : '초안이 없어 빈 값'}으로 채움${c.missing.length ? ` · 빈 칸 ${c.missing.length}` : ''}`;
+    el.tplPreviewTitle.innerHTML = mark(c.title);
+    el.tplPreviewBody.innerHTML = mark(c.body);
+  }
+
+  // 본문 틀 / 미리보기 단추 — 누른 쪽으로(이미 그쪽이면 그대로).
+  function setTplPreview(on) {
+    if (tplPreviewOn === on) return;
+    tplPreviewOn = on;
+    paintTplPreview();
   }
 
   function paintTplState() {
@@ -2710,12 +2740,44 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.docNoHint.classList.toggle('bad', c.state === 'unknown');
     const option = (o) => `<option value="${escapeHtml(o.code)}">(${escapeHtml(o.code)}) ${escapeHtml(o.team ? `${o.team} — ${o.name}` : o.name)}</option>`;
     const pick = (list, lead) => `${escapeHtml(lead)}<select aria-label="문서번호 코드 고르기"><option value="">고르세요</option>${list.map(option).join('')}</select>`;
-    el.docNoHint.innerHTML = c.state === 'set' ? `(${escapeHtml(c.code)}) ${escapeHtml(c.name)}`
+    el.docNoHint.innerHTML = c.state === 'set' ? `(${escapeHtml(c.code)}) ${escapeHtml(c.name)}${deptLearned ? ` — e-Class 인명의 내 부서(${escapeHtml(deptLearned)})에서 찾음` : ''}`
       : c.state === 'unknown' ? `코드 ${escapeHtml(c.code)} 은(는) 문서설정 창의 목록에 없습니다 — 다시 확인하세요`
         : c.state === 'one' ? `부서로 찾음: (${escapeHtml(c.code)}) ${escapeHtml(c.name)} — 비워 두면 이 코드를 씁니다`
           : c.state === 'many' ? pick(c.matches, `부서에 맞는 코드가 ${c.matches.length}개입니다 — 고르세요`)
             : c.state === 'none' ? pick(c.all, '부서에 맞는 코드를 찾지 못했습니다 — 문서설정 창의 목록에서 고르세요')
               : '';
+  }
+
+  /*
+   * 문서번호 코드를 모르면(공문 설정의 코드도, 부서로 하나로 찾은 코드도 없다) e-Class 인명(쪽지 받는 사람 찾기 — 읽기만)에서 내 이름의 부서를 찾아
+   * 빈 칸(부서·문서번호 코드)만 채운다(2026-10-27 사용자 지정: "Doc No. 문서번호 부서 코드 -- 이건 네가 찾아올 수 있잖아"). 적어 둔 칸은 건드리지 않는다.
+   * 내 이름(설정 → 일반)이 없거나 동명이인이 부서가 갈리면 그대로 둔다. 찾았거나 판가름이 났으면 이 패널에서는 다시 묻지 않고, 조회가 실패하면(로그인 풀림) 탭을 다시 열 때 또.
+   */
+  let deptTried = false;
+  let deptLearned = '';
+  async function learnDept() {
+    if (deptTried || st.compareTab) return;
+    if (['set', 'one'].includes(docNoCandidates(st.preset.dept, st.preset.docNo).state)) return;
+    const name = String(me() || '').replace(/\s/g, '');
+    if (!name) return;
+    deptTried = true;
+    let list;
+    try {
+      list = await suggest(name);
+    } catch {
+      deptTried = false;
+      return;
+    }
+    const depts = [...new Set((list || []).filter((x) => String(x.name || '').replace(/\s/g, '') === name).map((x) => String(x.dept || '').trim()).filter(Boolean))];
+    if (depts.length !== 1) return;
+    const c = docNoCandidates(depts[0], '');
+    const fill = (node, value) => { if (value && !node.value.trim()) { node.value = value; return true; } return false; };
+    const dept = fill(el.dept, depts[0]);
+    const code = c.state === 'one' && !st.preset.docNo && fill(el.docNo, c.code);
+    if (!dept && !code) return;
+    if (code) deptLearned = depts[0];
+    onPresetInput();
+    logEvent?.('gongmun', true, `공문 설정 — e-Class 인명에서 내 부서 ${depts[0]}${code ? ` · 문서번호 코드 ${c.code}` : ''} 채움`);
   }
 
   /** 안내 칸의 목록에서 고르면 문서번호 코드 칸에 들어간다. */
@@ -2792,6 +2854,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.tplPick.addEventListener('change', onTplPick);
     el.tplAdd.addEventListener('click', addTpl);
     el.tplDel.addEventListener('click', dropTpl);
+    el.tplEdit.addEventListener('click', () => setTplPreview(false));
+    el.tplView.addEventListener('click', () => setTplPreview(true));
+    el.tplBox.addEventListener('toggle', () => { if (!el.tplBox.open) setTplPreview(false); });
     el.tplName.addEventListener('input', onTplName);
     // 틀에 쓰는 이름 — 누르면 마지막으로 고치던 틀(제목·본문, 처음엔 본문)의 커서 자리에 넣는다.
     for (const node of [el.tplTitle, el.tplBody]) node.addEventListener('focus', () => { tplField = node; });
@@ -2852,6 +2917,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     paintMode();
     paintSearch();
     if (agentOn()) runSearch();
+    learnDept();
   }
 
   /** R&D 탭의 장부(rndBook)를 읽어 초안에서 고를 과제로 — 탭을 열 때마다(R&D 탭에서 과제·연구 내용을 고치고 돌아온다). */

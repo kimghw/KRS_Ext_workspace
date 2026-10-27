@@ -312,12 +312,23 @@
           </div>
           <input type="text" id="gmTplName" placeholder="양식 이름" aria-label="양식 이름" autocomplete="off" spellcheck="false" hidden />
           <input type="text" id="gmTplFormId" placeholder="양식 ID (예: KR_EA_Research_Task)" aria-label="양식 ID" autocomplete="off" spellcheck="false" hidden />
+          <!-- 본문 틀 / 미리보기 — 틀을 고치거나, 틀 대신 지금 초안의 값으로 채운 제목·본문을 본다(2026-10-27 사용자 지정: "양식에서 템플릿에 대한 미리보기 기능" ·
+               "본문틀/미리보기 버튼을 넣어줘" — 전에는 맨 위 줄의 눈 아이콘). -->
+          <div class="gm-tpl-mode" role="group" aria-label="양식 보기">
+            <button type="button" id="gmTplEdit" aria-pressed="true">본문 틀</button>
+            <button type="button" id="gmTplView" title="지금 초안의 값으로 채운 제목·본문" aria-pressed="false">미리보기</button>
+          </div>
           <label for="gmTplTitle" class="gm-label">제목 틀</label>
           <input type="text" id="gmTplTitle" autocomplete="off" spellcheck="false" />
           <label for="gmTplBody" class="gm-label">본문 틀</label>
           <textarea id="gmTplBody" rows="14" spellcheck="false"></textarea>
           <p class="gm-label">틀에 쓰는 이름</p>
           <div id="gmVars" class="gm-vars"></div>
+          <div id="gmTplPreview" class="gm-tpl-preview" hidden>
+            <p id="gmTplPreviewNote" class="gm-tpl-preview-note"></p>
+            <div id="gmTplPreviewTitle" class="gm-tpl-preview-title"></div>
+            <pre id="gmTplPreviewBody" class="gm-tpl-preview-body"></pre>
+          </div>
         </div>
       </details>
       <!-- 공문 이력 — 근태의 신청 내역처럼 eclass 기안함(완료함·상신함·반려함·임시보관함)에서 내가 기안한 공문을 읽어 카드로 보인다(2026-10-11 사용자 지정:
