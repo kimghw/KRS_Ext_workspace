@@ -2973,7 +2973,7 @@ function togglePanelPick() {
       `패널 캡처 — ${kind === 'code' ? '코드' : '이미지'} ${count}곳 ${ok ? '복사' : `복사 실패: ${error?.message || ''}`}`, { mode: state.mode }),
     onChange: (els) => document.dispatchEvent(new CustomEvent('help-capture',
       { detail: { count: els.length, code: els.length ? panelCode(els, { head, shallow: true }) : '' } })),
-    onEnd: () => { panelPick = null; el.panelCap.setAttribute('aria-pressed', 'false'); $('helpText')?.focus(); },
+    onEnd: () => { panelPick = null; el.panelCap.setAttribute('aria-pressed', 'false'); $('helpCap')?.nextElementSibling?.focus(); },   // 캡처 N 이 선 칸(첫 칸이 돌면 둘째 칸)
   });
   el.panelCap.setAttribute('aria-pressed', 'true');
 }

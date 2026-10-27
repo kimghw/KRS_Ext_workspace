@@ -1855,6 +1855,10 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 - 진행은 한 줄(`⏳ 1:23 · Edit gongmunpanel.js`), 끝나면 `✔ 완료 — 요약 · 수정 N개` / `✖ 실패 — 까닭`. 그 줄을 누르면 로그·답·바뀐 파일이 펼쳐집니다.
   확장 파일이 바뀌었고 문법 검사(`node --check`·JSON)가 통과했으면 **적용**(확장 다시 불러오기 — 패널이 닫힙니다), 설명·검사·다리만 바뀌었으면 적용 단추가 없습니다.
   **중지**, 다음 요청을 이전 대화와 잇지 않는 **새 대화**. 이어지는 요청은 2시간 안이면 같은 대화를 잇습니다(`--resume`).
+- **둘째 칸**(2026-10-27 사용자 지정: "help 책으로 작업중이면 입력칸을 하나 더 추가 해서 추가 작업도 할 수 있게"): 요청이 도는 동안 그 아래(점선 위)에 입력칸이 하나 더 섭니다.
+  거기로 보낸 요청은 앞의 것을 기다리지 않고 같은 작업 트리에서 **함께** 돌며(둘까지), 상태 줄·중지·적용·새 대화도 따로, 대화도 따로 잇습니다(다리의 `lane: '2'` — 상태 파일의 `running2`·`session2`, 저장 `helpChat2`).
+  Claude 에게는 다른 요청이 함께 돈다고 알려 그쪽 파일을 되도록 건드리지 않게 하지만, 끝난 뒤 **바뀐 파일** 목록에는 같은 때 도는 쪽이 고친 것이 섞일 수 있습니다. `캡처 N` 은 보낼 수 있는 칸 옆으로 옮겨 갑니다.
+  둘 다 쉬면 둘째 칸은 결과가 남아 있을 때만 보이고, 그 칸의 **새 대화**로 닫습니다.
 - 다리에 닿지 않으면 그 까닭과 **설정 프롬프트 복사**(머리의 B 와 같은 글)가 나옵니다. 다른 폴더(옛 사본)의 다리가 등록돼 있어 Help Chat 을 모르면 그렇게 말합니다(`ping` 의 `help`).
 - **숨기기**: 설정 → LLM → Help Chat 의 스위치(`helpChatShow`, 기본 켬). 줄만 숨고 도는 작업은 그대로입니다. 비교작성 탭에서는 늘 숨습니다.
 - Claude 는 `--permission-mode acceptEdits` 로 파일 고치기를 묻지 않고 하고, 명령은 허용 목록만 됩니다(`native/helpchat.mjs` 의 `ALLOWED` — `node`·`npm test`·`git status/diff/log/add/commit/push/pull/fetch/remote/branch/switch`·`gh repo fork`·`gh pr create` 등).
@@ -2059,8 +2063,8 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 | `src/nlq.js` | API 키 없이 쓰는 규칙 기반 질의 해석 |
 | `src/llm.js` | 로컬 CLI → API 키 → 규칙 순으로 백엔드 선택(답이 입력 명세와 다르면 다음 길로), 다리 기록 받아 오기. API 키 길의 첨부(`receipt`·`gongmun.*` — `textFirst`)는 보내기 전에 글자를 먼저 뽑는다(`doctext/index.js`, 반환의 `read`) |
 | `src/bridgeuse.js` | 설정 → LLM 의 **다리가 하는 일** 표(2026-10-16): Claude 호출·첨부 글자 먼저 뽑기·GitHub 새 커밋·활동 로그의 다리 기록·Help Chat(2026-10-24) 다섯 줄이 다리·API 키·브라우저 꾸러미의 조합에 따라 어느 길로 가는지(`bridgeUses`) |
-| `helpchat.js` | 패널 맨 아래 **Help Chat** 줄(2026-10-24 — kr_ext_rerp `popup/help.js` 를 옮김): 한 줄 요청을 다리에 `helpAsk` 로 보내고 `helpJob` 으로 이어 보기(1.5초마다), 한 줄 상태·펼친 로그·적용(`chrome.runtime.reload`)·중지·새 대화, 다리에 닿지 않으면 설정 프롬프트 복사(`src/bridgeguide.js` 를 누를 때만 부름), 설정 → LLM 의 보이기 스위치(`helpChatShow`). 모듈이 아닌 독립 스크립트 |
-| `native/helpchat.mjs` | Help Chat 의 다리 쪽(2026-10-24): 받기(`ask` — 작업 파일을 쓰고 실행기를 떼어 띄움)·살펴보기(`job`)·멈추기(`cancel` — 취소 표시)와 실행기(`run` — `claude -p --permission-mode acceptEdits` 를 이 폴더에서, stream-json → 한 줄 로그, git status 전후로 바뀐 파일·문법 검사, 2시간 안 대화 잇기). 허용·막는 명령 `ALLOWED`·`DISALLOWED`, 규칙 `native/helprules.md`, 기록 `native/help/` |
+| `helpchat.js` | 패널 맨 아래 **Help Chat** 줄(2026-10-24 — kr_ext_rerp `popup/help.js` 를 옮김): 한 줄 요청을 다리에 `helpAsk` 로 보내고 `helpJob` 으로 이어 보기(1.5초마다), 한 줄 상태·펼친 로그·적용(`chrome.runtime.reload`)·중지·새 대화, 다리에 닿지 않으면 설정 프롬프트 복사(`src/bridgeguide.js` 를 누를 때만 부름), 설정 → LLM 의 보이기 스위치(`helpChatShow`), 도는 동안 서는 둘째 칸(2026-10-27 — `lane`, `#helpLane2`). 모듈이 아닌 독립 스크립트 |
+| `native/helpchat.mjs` | Help Chat 의 다리 쪽(2026-10-24): 받기(`ask` — 작업 파일을 쓰고 실행기를 떼어 띄움)·살펴보기(`job`)·멈추기(`cancel` — 취소 표시)와 실행기(`run` — `claude -p --permission-mode acceptEdits` 를 이 폴더에서, stream-json → 한 줄 로그, git status 전후로 바뀐 파일·문법 검사, 2시간 안 대화 잇기, 줄(`lane` — 첫 칸·둘째 칸)마다 하나씩 함께 돌기). 허용·막는 명령 `ALLOWED`·`DISALLOWED`, 규칙 `native/helprules.md`, 기록 `native/help/` |
 | `src/logbook.js` | 활동 기록(최근 500건)과 복사용 보고서 |
 | `native/` | 로컬 Claude Code CLI 와 잇는 네이티브 메시징 다리 (호출 기록은 `native/logs/`, Help Chat 은 `native/helpchat.mjs`·`native/help/`). 첨부(출장 증빙)는 글자를 먼저 뽑는다(`native/doctext.mjs` — PDF 는 pdf.js 로 글자 층을 뽑아 글자만, 그림·스캔한 PDF 는 Tesseract OCR 글자를 파일과 같이. 기록의 `read`). 붙는 첨부는 메시지에 바로 실어 한 차례에 읽히고 생각은 조금만 하게 한다 — 안 되면 파일로 내려 Read 도구로 읽힌다(기록의 `attach`: `text`(글자만)/`direct`/`read`) |
 

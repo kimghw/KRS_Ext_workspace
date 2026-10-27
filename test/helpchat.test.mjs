@@ -111,6 +111,20 @@ console.log('받기 · 살펴보기 · 멈추기 (다리가 부르는 셋)');
     assert.deepEqual([r.ok, r.kind, r.id], [false, 'busy', first.id]);
     assert.equal(launched.length, 1);
   });
+  t('둘째 칸(lane 2, 2026-10-27)은 첫 칸이 돌아도 받는다 — 제 자리(running2)에, 함께 도는 요청 글을 붙여서. 둘째 칸끼리는 busy, 멈추기도 제 칸만', () => {
+    const r = help.ask({ text: '추가로', lane: '2' }, { dir, launch });
+    assert.equal(r.ok, true);
+    const st = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'));
+    assert.deepEqual([st.running.id, st.running2.id], [first.id, r.id]);
+    const j = JSON.parse(fs.readFileSync(path.join(dir, `${r.id}.json`), 'utf8'));
+    assert.deepEqual([j.lane, j.alongside], ['2', '공문 저장이 안 돼요']);
+    assert.match(help.promptOf(j.text, null, j.alongside), /다른 Help Chat 요청이 함께 돌고 있습니다\("공문 저장이 안 돼요"\)/);
+    assert.equal(help.job({ id: r.id }, { dir }).job.alongside, undefined, '함께 도는 글은 돌려주지 않는다');
+    assert.deepEqual([help.ask({ text: '또', lane: '2' }, { dir, launch }).kind], ['busy']);
+    assert.deepEqual(help.cancel({ lane: '2' }, { dir }), { ok: true, id: r.id });
+    assert.ok(!fs.existsSync(path.join(dir, `${first.id}.cancel`)));
+    fs.unlinkSync(path.join(dir, `${r.id}.cancel`));
+  });
   t('살펴보기 — since 부터의 줄, id 없이 부르면 마지막 작업, 도는 동안 detail 은 비움', () => {
     const r = help.job({ id: first.id, since: 0 }, { dir });
     assert.equal(r.ok, true);
@@ -213,6 +227,15 @@ process.stdin.on('end', async () => {
     const id = start('이어서');
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8')).resume, 'sess-edit');
     fs.unlinkSync(path.join(dir, `${id}.json`));
+  });
+  const idL = start('둘째 칸 것', { lane: '2' });
+  await ta('둘째 칸은 첫 칸의 대화를 잇지 않고, 끝나면 제 자리(running2·session2)만 정리한다', async () => {
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, `${idL}.json`), 'utf8')).resume, '');
+    assert.equal((await help.run(idL, opts)).state, 'done');
+    const st = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'));
+    assert.equal(st.running2, undefined);
+    assert.equal(st.session2.id, 'sess-edit');
+    assert.equal(st.session.id, 'sess-edit');
   });
 
   process.env.FAKE_MODE = 'broken';
@@ -357,6 +380,7 @@ console.log('패널 아래 Help Chat 줄(helpchat.js)');
   await ta('처음엔 줄만 보이고 상태 줄은 숨는다', async () => {
     assert.equal(a.doc.getElementById('helpbar').hidden, false);
     assert.equal(a.doc.getElementById('helpRow').hidden, true);
+    assert.equal(a.doc.getElementById('helpLane2').hidden, true, '둘째 칸은 첫 칸이 돌 때만');
   });
   await a.send('공문 저장이 안 돼요');
   await ta('보내면 다리에 helpAsk(글 · 화면 상태) — 쓴 글은 비우고, 곧바로 살펴본다', async () => {
@@ -450,6 +474,26 @@ console.log('패널 아래 Help Chat 줄(helpchat.js)');
   d.doc.getElementById('helpStop').click();
   await sleep(30);
   await ta('중지는 다리에 helpCancel', async () => assert.ok(d.sent.some((m) => m.task === 'helpCancel')));
+
+  const m = await mount({ helpChat: { id: 'J9', text: '앞선 것', at: Date.now() - 5000, state: 'running' } }, (msg) => (msg.task === 'helpAsk' ? { ok: true, id: 'J10' }
+    : msg.id === 'J9' ? { ok: true, job: { id: 'J9', state: 'running', startedAt: Date.now() - 5000 }, lines: [], next: 0 } : doneJob(['README.md'])));
+  await sleep(30);
+  await ta('첫 칸이 도는 동안 아래에 둘째 칸(2026-10-27) — 캡처 N 은 그 칸의 입력칸 옆으로', async () => {
+    assert.equal(m.doc.getElementById('helpLane2').hidden, false);
+    m.doc.dispatchEvent(new m.window.CustomEvent('help-capture', { detail: { count: 1, code: '<b>' } }));
+    assert.equal(m.doc.getElementById('helpCap').nextElementSibling.id, 'helpText2');
+  });
+  m.doc.getElementById('helpText2').value = '이것도 같이';
+  m.doc.getElementById('helpForm2').dispatchEvent(new m.window.Event('submit', { cancelable: true }));
+  await sleep(30);
+  await ta('둘째 칸으로 보내면 helpAsk 에 lane 2(캡처도 실려 감) — 제 상태 줄·저장 키(helpChat2), 첫 칸은 그대로 돈다', async () => {
+    const ask = m.sent.find((x) => x.task === 'helpAsk');
+    assert.deepEqual([ask.text, ask.lane, ask.context.capture], ['이것도 같이', '2', '<b>']);
+    assert.match(m.doc.getElementById('helpStatus2').textContent, /^✔ 완료 — 저장 단추를 고쳤습니다/);
+    assert.equal(m.store.helpChat2.id, 'J10');
+    assert.equal(m.store.helpChat.state, 'running');
+    assert.equal(m.doc.getElementById('helpText').disabled, true);
+  });
 
   const e = await mount({}, () => { throw new Error('Specified native messaging host not found.'); });
   await e.send('왜 안 돼');

@@ -529,6 +529,7 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .helpbar #helpApply { border-color: var(--hb-ok); color: var(--hb-ok); font-weight: 600; }
 .helpbar .help-lines { margin-top: 5px; max-height: 132px; overflow: auto; padding: 4px 6px; border: 1px solid var(--hb-line); border-radius: 5px; background: var(--hb-field); font-size: 11px; line-height: 1.5; color: var(--hb-text); }
 .helpbar .help-lines[hidden] { display: none; }
+.helpbar .help-lane { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--hb-line); }   /* 첫 칸이 도는 동안 서는 둘째 칸(2026-10-27) */
 .helpbar .help-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .helpbar .help-line .t { color: var(--hb-faint); }
 .helpbar .help-line.ok { color: var(--hb-ok); }

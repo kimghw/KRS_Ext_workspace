@@ -1055,6 +1055,22 @@
       <button type="button" id="helpSetup" hidden title="다리를 아직 못 붙인 PC 용: 머리의 B 와 같은 연결 지침을 복사합니다 — 이 PC 의 Claude Code(VS Code)·다른 LLM 에 붙여 넣으면 다리를 연결하고, 같은 PC 의 rERP 확장도 이어서 연결합니다">설정 프롬프트 복사</button>
     </div>
     <div class="help-lines" id="helpLines" hidden></div>
+    <!-- 둘째 칸(2026-10-27 사용자 지정: "help 책으로 작업중이면 입력칸을 하나 더 추가 해서 추가 작업도 할 수 있게") — 위 칸이 도는 동안 선다. 여기로 보낸 요청은 앞의 것을
+         기다리지 않고 따로(제 대화로) 함께 돈다. 짜임은 위와 같고 id 끝에 2. helpchat.js. -->
+    <div class="help-lane" id="helpLane2" hidden>
+      <form id="helpForm2">
+        <input type="text" id="helpText2" maxlength="2000" autocomplete="off" spellcheck="false" aria-label="Help Chat 추가 요청" placeholder="추가 작업 — 위 요청과 따로 함께 돕니다 · Enter">
+        <button type="submit" id="helpSend2" title="보내기 (Enter)">보내기</button>
+      </form>
+      <div class="help-row" id="helpRow2" hidden>
+        <span id="helpStatus2" class="help-status" role="status"></span>
+        <button type="button" id="helpApply2" hidden title="확장을 다시 불러와 바뀐 코드를 적용합니다 (패널이 닫힙니다 — 다시 열면 됩니다)">적용</button>
+        <button type="button" id="helpStop2" hidden>중지</button>
+        <button type="button" id="helpNew2" hidden title="이 결과를 지우고, 다음 요청을 이전 대화와 잇지 않습니다 (위 칸이 쉬고 있으면 이 칸은 닫힙니다)">새 대화</button>
+        <button type="button" id="helpSetup2" hidden title="다리를 아직 못 붙인 PC 용: 머리의 B 와 같은 연결 지침을 복사합니다">설정 프롬프트 복사</button>
+      </div>
+      <div class="help-lines" id="helpLines2" hidden></div>
+    </div>
   </div>
   <!-- Help Chat 줄 — 일부러 모듈이 아닌 독립 스크립트(sidepanel.js 가 깨져도 이 줄로 고쳐 달라고 할 수 있게). -->
   <script src="helpchat.js"></script>
