@@ -609,8 +609,10 @@ export const turnDegree = (turn) => {
  *   tabId 를 주면 새 창을 열지 않고 그 탭(이미 열린 새 공문 창)에 쓴다 — 실제 브라우저 검사용.
  * @returns {Promise<{tabId:number|null, docId:string, steps: object[]}>}
  */
-export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, files = [], api = globalThis.chrome, dry = false, tabId: given = null } = {}) {
+export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, files = [], api = globalThis.chrome, dry = false, tabId: given = null, signal = null } = {}) {
   const steps = [];
+  // 작성 취소(2026-10-27 — 패널의 작성 취소 단추): signal 이 서면 다음 페이지 호출·기다림에서 AbortError 를 던져 남은 단계를 하지 않는다(guard 도 삼키지 않는다). 탭은 부른 쪽이 닫는다.
+  const halt = () => { if (signal?.aborted) throw Object.assign(new Error('작성을 취소했습니다'), { name: 'AbortError' }); };
   // 차수 칸이 없는 폼(기안문·외부강의등 신고서)의 '제목·차수' 단계는 제목만 넣는다.
   const noDegree = !Object.values(plan.fields || {}).some((f) => f.source === 'degree');
   // 칸이 정해진 폼의 칸 단계는 그 폼의 이름으로 부른다 — 신고서는 '신고서 칸', 구매요청서는 '구매요청서 칸'(2026-10-17 — 폼이 둘이 되어 STEPS 의 이름만으로는 모자라다).
@@ -625,6 +627,7 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
   };
   // 창에 뜬 알림(alert)은 그 창의 스크립트를 멈춰 세운다 — 마냥 기다리지 않게 부를 때마다 시간을 건다. 끝나면 타이머를 치운다.
   const run = async (tabId, frameId, func, args, ms = STEP_MS) => {
+    halt();
     let timer;
     const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('창이 답하지 않습니다 — 공문 창에 뜬 알림을 닫았는지 보세요')), ms); });
     try {
@@ -657,6 +660,7 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
   const t0 = Date.now();
   while (Date.now() - t0 < FRAME_WAIT_MS) {
     await sleep(600);
+    halt();
     const all = await api.scripting.executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pageProbe, args: [plan.anchor, control] }).catch(() => []);
     const hit = (all || []).filter((r) => r?.result);
     const f = hit.find((r) => r.result.form && r.result.ready);
@@ -679,13 +683,14 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
   const v = plan.values;
   const fields = Object.entries(plan.fields).map(([key, f]) => ({ key, ...f }));
   const guard = async (key, fn) => {
-    try { return await fn(); } catch (err) { report(key, false, err.message); return null; }
+    try { return await fn(); } catch (err) { if (err?.name === 'AbortError') throw err; report(key, false, err.message); return null; }
   };
   /** 페이지 함수를 되물어 test 가 맞을 때까지 — 기다림은 이 쪽 타이머라 뒤 탭이 늦춰져도 그대로다. */
   const until = async (call, test, ms) => {
     const t1 = Date.now();
     let last = null;
     while (Date.now() - t1 < ms) {
+      halt();
       last = await call().catch(() => null);
       if (last && test(last)) return last;
       await sleep(POLL_MS);
@@ -798,6 +803,7 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
       let got = null;
       const t1 = Date.now();
       do {
+        halt();
         got = await run(tabId, form, pageForm, [list]).catch(() => null);
         if (Array.isArray(got) && !got.some((r) => r.ready === false)) break;
         await sleep(POLL_MS);
@@ -978,6 +984,7 @@ export async function writeGongmun(plan, { onStep = () => {}, onTab = () => {}, 
       report('body', !!again?.ok, again?.ok ? '화면을 오간 뒤 사라져 다시 넣었습니다' : '화면을 오간 뒤 본문이 사라졌습니다 — 창에서 확인하세요');
     }
   }
+  halt();
   return { tabId, docId, steps };
 }
 

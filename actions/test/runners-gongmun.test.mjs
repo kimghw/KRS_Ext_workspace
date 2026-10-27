@@ -140,7 +140,7 @@ await ta('gongmun.write — writePlan 은 (entry.kind, 입력 여덟 칸, { me, 
   assert.deepEqual(calls.plan[0].ctx, { me: '김거화', preset: SETUP, project: PROJECT, today: '2026-10-16' }, 'ctx.preset 자리에 공문 설정(setup)');
   assert.equal(calls.write.length, 1);
   assert.equal(calls.write[0].plan, plan);
-  assert.deepEqual(calls.write[0].opts, { files: FILES, onStep, onTab, dry: true });
+  assert.deepEqual(calls.write[0].opts, { files: FILES, onStep, onTab, dry: true, signal: null }, 'signal 은 작성 취소(ctx.signal — 없으면 null)');
   assert.equal(calls.write[0].opts.files, FILES, '바이트는 ctx.files 그대로');
   assert.equal(log.length, 1);
   assert.deepEqual([log[0].kind, log[0].ok, log[0].text], ['gongmun', true, '구매품의 · 연구 데이터 저장용 모니터 구매 품의']);
@@ -156,7 +156,7 @@ await ta('gongmun.outside — 갈래는 outside, 과제 사전설정이 없어 w
   assert.equal(calls.plan[0].kind, 'outside');
   assert.deepEqual(calls.plan[0].ctx, { me: '김거화', preset: SETUP, project: undefined, today: '2026-10-16' });
   assert.deepEqual(calls.plan[0].input.draft.start, '14:00');
-  assert.deepEqual(calls.write[0].opts, { files: [], onStep: undefined, onTab: undefined, dry: undefined });
+  assert.deepEqual(calls.write[0].opts, { files: [], onStep: undefined, onTab: undefined, dry: undefined, signal: null });
 });
 await ta('gongmun.order — 갈래는 order(구매요청서). 구매 품의에서 넘어온 초안(품목·합계·사업내용·선행 품의 문서번호)이 그대로 writePlan 에 가고, 모르는 칸은 빈 채로, 본문 칸은 없다(when: form!=KR_Purchase_Order)', async () => {
   const { d, calls, log } = make();

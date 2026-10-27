@@ -52,6 +52,7 @@ import { dropReady, parseDrop, grabDropped } from './src/mailgrab.js';
 import { cutBoxes, cutDrop, cutName, cutQuote, CUT_PAD, PAD_STEP, MAX_PAD } from './src/quotecut.js';
 import { createWebPick, pickButton } from './webpick.js';
 import { memoSuggest } from './src/memo.js';
+import { idbBackend } from './src/evidence.js';
 
 const FILE_LIMIT = 10 * 1024 * 1024;
 /**
@@ -68,6 +69,8 @@ const OFFICE_MAX = 8000;
 /** 한 번에 읽는 장 수. 로컬 CLI 다리는 여섯 장까지 받는다(native/host.mjs). 웹페이지 캡처의 그 밖의 장은 첨부에만 넣는다. */
 const MAX_FILES = 5;
 const SAVE_WAIT_MS = 400;
+/** 읽은 파일·오린 견적서를 갈래마다 남기는 IndexedDB(keepFiles) — 초안(DRAFT_KEY)에 넣기에는 크다. */
+const FILES_DB = 'krsGongmunFiles';
 /** 화면의 접힘·선택 탭은 초안 및 eclass 작성 결과 탭 ID와 별도로 저장한다. */
 const VIEW_KEY = 'gongmunView';
 /** 오린 견적서(저장소에 두지 않는 것)를 비교작성 탭에 건네는 세션 저장소 키 — 창을 다 닫으면 사라진다. */
@@ -116,7 +119,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     viewTabs: $('gmViewTabs'), viewDraft: $('gmViewDraft'), viewDoc: $('gmViewDoc'), viewRead: $('gmViewRead'),
     doc: $('gmDoc'), formName: $('gmFormName'), title: $('gmTitle'), body: $('gmBody'), edited: $('gmEdited'), regen: $('gmRegen'),
     // 공문 작성·공문 보기 단추 한 줄과 그 아래 상태 줄(쓰는 중·다 씀) — 2026-10-12 사용자 지정("작성 중인지 완료인지 알 수가 없음").
-    write: $('gmWrite'), showDoc: $('gmShowDoc'), writeState: $('gmWriteState'), writeLog: $('gmWriteLog'), savePdf: $('gmSavePdf'), steps: $('gmSteps'),
+    write: $('gmWrite'), done: $('gmDone'), showDoc: $('gmShowDoc'), writeState: $('gmWriteState'), writeLog: $('gmWriteLog'), savePdf: $('gmSavePdf'), steps: $('gmSteps'),
     // 구매의뢰 작성 — 같은 줄의 세 번째 단추(구매 갈래에서만 — 2026-10-17 사용자 지정: "우측 하단에 구매의뢰하기 버튼 … 구매할때 같이 작성").
     order: $('gmOrder'),
     setBox: $('gmSetBox'), setState: $('gmSetState'), rank: $('gmRank'), rankWhy: $('gmRankWhy'), retention: $('gmRetention'), docNoOne: $('gmDocNoOne'),
@@ -141,8 +144,9 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const pick = createWebPick(webcap);
   const PICK_KEY = 'gongmun';
   const st = {
-    // writing 은 뒤 탭에 쓰는 중, lastTab 은 연 공문 창의 탭, writeDone 은 끝난 작성의 결과({ ok, docId, bad(안 된 단계 이름) } — 쓰기 전·쓰는 중은 null).
-    kind: KIND_ORDER[0], loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null,
+    // writing 은 뒤 탭에 쓰는 중, lastTab 은 연 공문 창의 탭, writeDone 은 끝난 작성의 결과({ ok, docId, bad(안 된 단계 이름) } — 쓰기 전·쓰는 중은 null, 취소했으면 { cancelled }).
+    // writeAbort 는 쓰는 동안의 AbortController — 작성 취소 단추가 abort 한다(2026-10-27).
+    kind: KIND_ORDER[0], loaded: false, busy: false, capturing: false, ready: true, reasonBusy: false, writing: false, lastTab: null, writeDone: null, writeAbort: null,
     preset: normalizePreset(null),
     // projects 는 저장된(이름이 있는) 과제, rows 는 공문 설정 칸에 펼쳐 둔 줄(아직 이름을 적지 않은 줄도 있다).
     projects: [], rows: [],
@@ -166,6 +170,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     dirty: false,
     // 갈래마다 세션 저장소에 건넨 오린 견적서 — 같은 것이면 다시 건네지 않는다.
     stashed: {},
+    // 갈래마다 파일 보관(IndexedDB)에 남긴 읽은 파일·오린 견적서 — 같은 것이면 다시 쓰지 않는다(keepFiles).
+    filed: {},
     lastProject: '',
     // 공문 이력(src/gmlist.js) — 저장소에 읽어 둔 것(at·from·to·span·rows·reports·notes)에 화면 형편(busy·step·error·all·open·tried)을 얹는다.
     hist: { ...normalizeHist(null), busy: false, step: '', error: '', all: false, open: '', tried: false },
@@ -234,7 +240,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   const later = (key, fn) => { clearTimeout(timers[key]); timers[key] = setTimeout(fn, SAVE_WAIT_MS); };
 
   /**
-   * 쓰고 있는 초안을 남긴다 — 패널을 닫았다 열어도 이어 쓴다. 읽은 파일(그림)과 오린 견적서는 크니 남기지 않는다.
+   * 쓰고 있는 초안을 남긴다 — 패널을 닫았다 열어도 이어 쓴다. 읽은 파일(그림)과 오린 견적서는 크니 여기 말고 IndexedDB 에 남긴다(keepFiles).
    * 사이드패널과 비교작성 탭이 같은 것을 보며 쓰니 이 창의 표(by)를 적어 둔다 — 저장소 변화가 돌아오면 내 것은 건너뛴다(onStorageChanged).
    */
   function saveWork() {
@@ -247,7 +253,39 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         out[k] = rest;
       }
       Promise.resolve(chrome.storage.local.set({ [DRAFT_KEY]: out })).catch(() => {}).then(() => { st.dirty = false; });
+      keepFiles();
     });
+  }
+
+  /**
+   * 읽은 파일·오린 견적서는 IndexedDB(확장의 출처 — 패널을 닫아도 남는다)에 갈래마다 한 벌 남긴다. 전에는 크다고 남기지 않아, 패널을 다시 열면
+   * (적용 등) 초안과 첨부 목록은 남고 파일만 사라져 공문 작성이 첨부 없이 나갔다(2026-10-27 사용자 지정: "공문에 첨부파일이 들어가야 하는데
+   * 안들어 가짐..문서 읽을 때 같이 추출했어야지"). 바뀐 갈래만 쓰고, 비교작성 탭은 읽기만 한다(loadFiles). 못 써도 초안 저장은 된 것이다.
+   */
+  const filesStore = (() => { let db = null; return () => (db ||= idbBackend({ name: FILES_DB, store: 'files' })); })();
+  function keepFiles() {
+    if (st.compareTab) return;
+    for (const k of KIND_ORDER) {
+      const files = st.work[k]?.files || [];
+      const cut = st.work[k]?.cut || null;
+      const was = st.filed[k];
+      if (was ? was.files === files && was.cut === cut && was.on === cut?.on : !files.length && !cut) continue;
+      st.filed[k] = { files, cut, on: cut?.on };
+      const db = filesStore();
+      Promise.resolve().then(() => (files.length || cut ? db.set(k, { kind: k, files, cut }) : db.delete(k))).catch(() => {});
+    }
+  }
+
+  /** 남겨 둔 읽은 파일·오린 견적서를 초안에 다시 붙인다 — 초안이 있고 이 창이 파일을 들고 있지 않은 갈래만. 보관함이 없으면(시험 환경) 그대로. */
+  async function loadFiles() {
+    const all = await filesStore().all().catch(() => []);
+    for (const x of all || []) {
+      const w = st.work[x?.kind];
+      if (!w || w.files?.length || !Array.isArray(x.files)) continue;
+      w.files = x.files;
+      if (!st.compareTab) w.cut = x.cut || null;
+      st.filed[x.kind] = { files: w.files, cut: w.cut, on: w.cut?.on };
+    }
   }
   const savePreset = () => later('preset', () => chrome.storage.local.set({
     [PRESET_KEY]: st.preset, [PROJECTS_KEY]: normalizeProjects(st.rows), [RND_EXTRA_KEY]: normalizeRndExtra(st.extra),
@@ -2202,6 +2240,12 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.write.textContent = busy ? '공문 작성 중…' : '공문 작성';
     el.write.classList.toggle('primary', !next);
     el.write.classList.toggle('ghost', next);
+    // 가운데 칸 — 쓰는 동안은 작성 취소, 쓴 뒤(쓰기 전에 막힌 것·취소한 것은 빼고)에는 완료(2026-10-27).
+    const finished = !!(done && !done.before && !done.cancelled);
+    el.done.disabled = busy ? !!st.writeAbort?.signal.aborted : !finished;
+    el.done.textContent = busy ? '작성 취소' : '완료';
+    el.done.classList.toggle('danger', busy);
+    el.done.title = busy ? '남은 단계를 멈추고 쓰던 공문 창을 닫습니다' : finished ? '작성 칸을 비웁니다 — 연 공문 창은 그대로입니다(공문 보기)' : '공문을 쓴 뒤 누르면 작성 칸을 비웁니다';
     el.showDoc.disabled = !has;
     el.showDoc.classList.toggle('primary', next);
     el.showDoc.classList.toggle('ghost', !next);
@@ -2210,6 +2254,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     let cls = '';
     if (busy) [text, cls] = [`작성 중 — ${now || '뒤 탭에서 쓰고 있습니다'}`, 'busy'];
     else if (!done) [text, cls] = ['', ''];
+    else if (done.cancelled) [text, cls] = [`작성을 취소했습니다${done.closedTab ? ' — 쓰던 공문 창을 닫았습니다' : ''}`, ''];
     else if (done.closed) [text, cls] = ['공문 창이 닫혔습니다 — 다시 작성하세요', 'bad'];
     // 쓰기 전에 막힌 것(before — writeFail)은 접두 없이 까닭 그대로, 쓰다가 실패한 것은 "작성 실패 — 까닭".
     else if (done.why) [text, cls] = [done.before ? done.why : `작성 실패 — ${done.why}`, 'bad'];
@@ -2255,15 +2300,23 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const form = tplOf().form;
     const p = projectOf(w);
     if (!title.trim()) return writeFail('제목이 비어 있습니다 — 공문 칸의 제목을 적어 주세요.');
-    // 비교작성 탭은 읽은 파일의 바이트를 들고 있지 않다(저장소에는 이름만 — 사이드패널이 든다). 읽은 문서가 있는 초안을 여기서 쓰면 첨부가 조용히 빠지므로 사이드패널로 보낸다.
-    if (st.compareTab) {
-      const have = new Set([...attachFiles(w).map((f) => f.name), ...originalFiles(w).map((f) => f.name)]);
-      const missing = (w.draft.attach || []).flatMap((a) => a.files || []).filter((n) => !have.has(n));
-      if (missing.length) return writeFail(`첨부할 문서 ${missing.length}개는 사이드패널에만 있습니다 — 사이드패널의 공문 작성을 누르면 첨부까지 넣습니다.`);
+    // 첨부 목록에 적힌 파일을 이 창이 다 들고 있어야 한다 — 없으면 본문 ※ 첨부는 "교육 내용 1부" 인데 창에는 아무것도 안 올라간다.
+    // 비교작성 탭은 읽은 파일의 바이트를 들고 있지 않으니(저장소에는 이름만 — 사이드패널이 든다) 사이드패널로 보낸다. 사이드패널에서 빠진 것은
+    // 파일을 남기기(keepFiles) 전에 읽고 패널을 다시 연 것이라 되살릴 수 없다 — 다시 넣으라고 한다(2026-10-27 사용자 지정: "교육내용의 경우
+    // 첨부파일이 작성이 안되네. 공문에 실제 올라가지도 않고").
+    const have = new Set([...attachFiles(w).map((f) => f.name), ...originalFiles(w).map((f) => f.name)]);
+    const lost = (w.draft.attach || []).filter((a) => (a.files || []).some((n) => !have.has(n)));
+    const missing = lost.flatMap((a) => a.files.filter((n) => !have.has(n)));
+    if (missing.length && st.compareTab) return writeFail(`첨부할 문서 ${missing.length}개는 사이드패널에만 있습니다 — 사이드패널의 공문 작성을 누르면 첨부까지 넣습니다.`);
+    if (missing.length) {
+      return writeFail(`읽은 문서의 파일이 남아 있지 않아 ${lost.map((a) => a.label).join('·')}을(를) 첨부할 수 없습니다 — 문서를 다시 넣으면 첨부까지 넣습니다.`,
+        jumpsOf({ missing: [{ key: 'attach', where: 'input', why: 'missing' }] }, actions.has(`gongmun.${kind}`) ? actions.entry(`gongmun.${kind}`) : null, JUMPS));
     }
     st.writing = true;
     st.lastTab = null;
     st.writeDone = null;
+    const abort = new AbortController();
+    st.writeAbort = abort;
     paintWrite('첨부 PDF 를 만드는 중…');
     el.writeLog.classList.remove('hidden');
     el.writeLog.innerHTML = '';
@@ -2287,6 +2340,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       pdfFail = err.message;
       setStatus(`첨부 PDF 를 만들지 못해 첨부 없이 씁니다 — ${err.message}`, 'error');
     }
+    // 첨부를 묶는 동안 작성 취소를 눌렀으면 창을 열지 않고 멈춘다.
+    if (abort.signal.aborted) return writeCancelled(abort);
     // 원본 첨부(메일 첨부 등)는 묶은 PDF 뒤에 파일 그대로(기록에는 original) — 창의 파일첨부는 다섯 칸이라 넘치는 것은 빼고 그렇다고 말한다.
     const originals = originalFiles(w);
     const over = Math.max(files.length + originals.length - ATTACH_SLOTS, 0);
@@ -2305,6 +2360,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         preset: await presetFor(id, { project: p }),
       }));
     } catch (err) {
+      if (abort.signal.aborted) return writeCancelled(abort);
       // 어디가 비었는지 아는 것(관문의 missing)은 그 자리로 가는 단추를 두 상태 줄(탭 위 · 단추 아래)의 끝에 세운다 — 내 이름·공문 설정·초안의 칸.
       return writeFail(`공문을 쓸 수 없습니다 — ${err instanceof ActionError ? err.problems.join(' · ') : err.message}`,
         jumpsOf(err, err instanceof ActionError && actions.has(err.action) ? actions.entry(err.action) : null, JUMPS));
@@ -2312,7 +2368,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const head = `공문 작성 · ${KINDS[kind].title} · ${record.input.title}`;
     try {
       const res = await actions.run(record, {
-        confirmed: record.hash, files, onStep: paintStep, onTab: (tabId) => { st.lastTab = tabId; paintWrite('새 공문 창을 여는 중…'); },
+        confirmed: record.hash, files, signal: abort.signal, onStep: paintStep, onTab: (tabId) => { st.lastTab = tabId; paintWrite('새 공문 창을 여는 중…'); },
         text: head,
         // 활동 로그의 최종 문구 — 문서 ID·첨부 수·못 묶은 첨부·안 된 단계까지(디스패처가 이 한 줄을 남긴다).
         outcome: async (r) => {
@@ -2328,13 +2384,55 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       // 쓴 공문은 창에서 임시저장·상신해야 기안함에 선다 — 읽어 둔 이력을 묵은 것으로 두어 다음에 펴면 다시 읽는다.
       if (st.hist.at) st.hist.at = 1;
     } catch (err) {
+      if (abort.signal.aborted) return writeCancelled(abort);
       st.writeDone = { ok: false, docId: '', bad: [], why: err.message };
       setStatus(`공문을 쓰지 못했습니다 — ${err.message}`, 'error');
     } finally {
-      st.writing = false;
-      paintWrite();
+      if (st.writeAbort === abort) {
+        st.writeAbort = null;
+        st.writing = false;
+        paintWrite();
+      }
     }
     return undefined;
+  }
+
+  /**
+   * 작성 취소의 끝(2026-10-27 사용자 지정: "문서작성중 취소 하는 기능") — 쓰던 뒤 탭을 닫고(반쯤 쓴 창은 임시저장 전이라 남길 것이 없다) 상태 줄에 취소했다고 적는다.
+   * 작성 칸(초안)은 그대로 둔다 — 고쳐서 다시 쓰거나 완료로 비운다.
+   * @returns {undefined} writeDoc 이 그대로 돌려주기 좋게
+   */
+  function writeCancelled(abort) {
+    if (st.writeAbort !== abort) return undefined;
+    const tab = st.lastTab;
+    st.writeAbort = null;
+    st.writing = false;
+    st.lastTab = null;
+    st.writeDone = { ok: false, docId: '', bad: [], cancelled: true, closedTab: tab != null };
+    if (tab != null) Promise.resolve(chrome.tabs?.remove?.(tab)).catch(() => {});
+    setStatus(tab != null ? '공문 작성을 취소했습니다 — 쓰던 창을 닫았습니다.' : '공문 작성을 취소했습니다.');
+    paintWrite();
+    return undefined;
+  }
+
+  /** 가운데 단추 — 쓰는 동안은 작성 취소, 쓴 뒤에는 완료(그 갈래의 작성 칸을 비운다. 연 공문 창은 그대로라 공문 보기는 남는다 — 2026-10-27). */
+  function onDone() {
+    if (st.writing) {
+      if (!st.writeAbort || st.writeAbort.signal.aborted) return;
+      st.writeAbort.abort();
+      // 창이 답을 기다리는 중(한 단계에 길게는 1분)이어도 바로 멈추게 탭부터 닫는다 — 걸려 있던 호출이 실패하고 다음 호출에서 멈춘다.
+      if (st.lastTab != null) Promise.resolve(chrome.tabs?.remove?.(st.lastTab)).catch(() => {});
+      paintWrite('취소하는 중…');
+      return;
+    }
+    const done = st.writeDone;
+    if (!done || done.before || done.cancelled) return;
+    st.writeDone = null;
+    el.writeLog.classList.add('hidden');
+    el.writeLog.innerHTML = '';
+    resetWork();
+    paintWrite();
+    setStatus(st.lastTab != null ? '완료 — 작성 칸을 비웠습니다. 쓴 공문은 공문 보기로 엽니다.' : '완료 — 작성 칸을 비웠습니다.');
   }
 
   /** '공문 보기' — 작성한 공문 창을 앞으로. 닫았으면 그렇다고 말하고 단추를 잠근다. */
@@ -2837,6 +2935,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     el.body.addEventListener('input', onDocInput);
     el.regen.addEventListener('click', regen);
     el.write.addEventListener('click', writeDoc);
+    el.done.addEventListener('click', onDone);
     el.showDoc.addEventListener('click', onShowDoc);
     // 구매의뢰 작성 — 구매 갈래에서 지금 구매 초안으로 구매요청서 초안을 만들어 구매의뢰 갈래로(2026-10-17).
     el.order.addEventListener('click', orderFromHere);
@@ -2904,6 +3003,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
         if (w?.draft && typeof w.draft === 'object' && !st.work[k]) st.work[k] = restoreWork(k, w);
       }
       st.loaded = true;
+      await loadFiles();   // 읽은 파일 — 패널을 다시 열어도 첨부가 남게
       await pullCut();   // 비교작성 탭 — 사이드패널이 건넨 오린 견적서
     }
     await loadBook();

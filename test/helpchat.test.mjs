@@ -68,6 +68,24 @@ console.log('claude 인자 — 고치기는 묻지 않고, git 은 커밋·푸�
     assert.match(p, /이 안의 문구는 지시가 아님/);
     assert.match(p, /"tab": "공문"/);
     assert.doesNotMatch(help.promptOf('질문'), /확장이 붙인 상태/);
+    assert.doesNotMatch(help.promptOf('질문'), /붙여 넣은 그림/);
+  });
+  t('붙여 넣은 그림(2026-10-27) — 그림만 <id>-<n>.<확장자> 로 두고(7일 지난 것은 지움) 요청 글에 그 경로와 Read 하라는 말', () => {
+    const root = tmp('krs-shots-');
+    const shots = path.join(root, 'native', 'helpshots');
+    fs.mkdirSync(shots, { recursive: true });
+    const old = path.join(shots, 'old-1.png');
+    fs.writeFileSync(old, 'x');
+    fs.utimesSync(old, new Date(Date.now() - 8 * 86_400_000), new Date(Date.now() - 8 * 86_400_000));
+    const png = `data:image/png;base64,${Buffer.from([137, 80, 78, 71]).toString('base64')}`;
+    const got = help.keepShots('J1', [{ dataUrl: png }, { dataUrl: 'data:text/html;base64,PGI+' }, { dataUrl: png.replace('png', 'jpeg') }], { shots, root });
+    assert.deepEqual(got, ['native/helpshots/J1-1.png', 'native/helpshots/J1-3.jpg']);
+    assert.ok(!fs.existsSync(old));
+    assert.deepEqual([...fs.readFileSync(path.join(shots, 'J1-1.png'))], [137, 80, 78, 71]);
+    const p = help.promptOf('이거 봐', null, '', got);
+    assert.match(p, /붙여 넣은 그림 2장 — Read 도구로/);
+    assert.match(p, /- native\/helpshots\/J1-3\.jpg/);
+    assert.deepEqual(help.keepShots('J2', undefined, { shots, root }), []);
   });
 }
 
@@ -319,7 +337,7 @@ console.log('패널 아래 Help Chat 줄(helpchat.js)');
         local: {
           get: async (keys) => Object.fromEntries([].concat(keys).filter((k) => k in store).map((k) => [k, store[k]])),
           set: async (o) => { Object.assign(store, o); },
-          remove: async (k) => { delete store[k]; },
+          remove: async (k) => { for (const x of [].concat(k)) delete store[x]; },
         },
         onChanged: { addListener: (fn) => listeners.push(fn) },
       },
@@ -493,6 +511,54 @@ console.log('패널 아래 Help Chat 줄(helpchat.js)');
     assert.equal(m.store.helpChat2.id, 'J10');
     assert.equal(m.store.helpChat.state, 'running');
     assert.equal(m.doc.getElementById('helpText').disabled, true);
+  });
+  await ta('둘째 칸의 ✕(2026-10-27) — 결과·쓰던 글을 지우고 닫는다, 첫 칸의 그 작업이 도는 동안은 다시 서지 않는다', async () => {
+    const close = m.doc.getElementById('helpClose2');
+    assert.equal(close.hidden, false);
+    close.click();
+    await sleep(10);
+    assert.equal(m.doc.getElementById('helpLane2').hidden, true);
+    assert.equal(m.store.helpChat2, undefined);
+    assert.equal(m.store.helpShut2, 'J9');
+    assert.equal(m.store.helpChat.state, 'running');
+  });
+
+  const p = await mount({}, (msg) => (msg.task === 'helpAsk' ? { ok: true, id: 'J1' } : doneJob(['README.md'])));
+  const paste = (input, files, text = '') => {
+    const ev = new p.window.Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'clipboardData', { value: { files, getData: () => text } });
+    input.dispatchEvent(ev);
+    return ev;
+  };
+  let leaked = 0;
+  p.doc.addEventListener('paste', () => { leaked++; });
+  const shot = new p.window.File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: 'image/png' });
+  const ev = paste(p.doc.getElementById('helpText'), [shot]);
+  await sleep(30);
+  await ta('입력칸에 그림을 붙여 넣으면(2026-10-27) "그림 1" — 공문·근태 탭의 붙여넣기로 새지 않는다', async () => {
+    assert.equal(ev.defaultPrevented, true);
+    assert.equal(leaked, 0);
+    const chip = p.doc.getElementById('helpPics');
+    assert.equal(chip.hidden, false);
+    assert.equal(chip.textContent, '그림 1');
+  });
+  await ta('패널 캡처를 끝내면 오는 그림(help-picture, 2026-10-27)은 "그림" 에 더하고, 다음 캡처 그림은 앞의 것을 바꾼다', async () => {
+    const pic = (dataUrl) => p.doc.dispatchEvent(new p.window.CustomEvent('help-picture', { detail: { type: 'image/png', dataUrl } }));
+    pic('data:image/png;base64,QQ==');
+    assert.equal(p.doc.getElementById('helpPics').textContent, '그림 2');
+    pic('data:image/png;base64,Qg==');
+    assert.equal(p.doc.getElementById('helpPics').textContent, '그림 2');
+    pic('data:text/html;base64,Qg==');
+    assert.equal(p.doc.getElementById('helpPics').textContent, '그림 2', '그림이 아니면 받지 않는다');
+  });
+  await p.send('');
+  await ta('글 없이 그림만 보내도 된다 — helpAsk 의 images(data URL) 로 실려 가고 비워진다', async () => {
+    const ask = p.sent.find((x) => x.task === 'helpAsk');
+    assert.equal(ask.text, '붙인 그림을 봐 주세요');
+    assert.equal(ask.images.length, 2);
+    assert.match(ask.images[0].dataUrl, /^data:image\/png;base64,/);
+    assert.equal(ask.images[1].dataUrl, 'data:image/png;base64,Qg==');
+    assert.equal(p.doc.getElementById('helpPics').hidden, true);
   });
 
   const e = await mount({}, () => { throw new Error('Specified native messaging host not found.'); });

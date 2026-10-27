@@ -1,7 +1,7 @@
 // 공문 어댑터 — 기록(gongmun.<갈래>)을 기존 함수의 인자로 바꿔 부른다. 사이트의 순서(새 창·과제·제목·본문·문서설정·결재선·첨부)는 src/gmwrite.js 에 그대로 있다.
 //
 //   registerGongmun(d, { writePlan, writeGongmun })
-//     'gongmun.write' (rec, { files, onStep, onTab, dry })
+//     'gongmun.write' (rec, { files, onStep, onTab, dry, signal })   signal — 패널의 작성 취소(2026-10-27, AbortController)
 //        → writeGongmun(writePlan(entry.kind, { title, body, draft, form, setting, rank, lead, refs } = rec.input,
 //                                 { me: rec.preset.me, preset: rec.preset.setup, project: rec.preset.project, today: rec.preset.today }),
 //                       { files, onStep, onTab, dry })
@@ -73,7 +73,7 @@ export function registerGongmun(d, { writePlan = realWritePlan, writeGongmun = r
     const plan = writePlan(entry.kind, { title, body, draft, form, setting, rank, lead, refs }, {
       me: rec.preset.me, preset: rec.preset.setup, project: rec.preset.project, today: rec.preset.today,
     });
-    return writeGongmun(plan, { files, onStep: ctx.onStep, onTab: ctx.onTab, dry: ctx.dry });
+    return writeGongmun(plan, { files, onStep: ctx.onStep, onTab: ctx.onTab, dry: ctx.dry, signal: ctx.signal || null });
   }, { ok: writeOk });
   return d;
 }

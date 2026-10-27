@@ -473,7 +473,8 @@ console.log('Help Chat 줄의 패널 캡처 단추와 설정(일반)의 스위�
   const box = doc.getElementById('panelCapture');
   t('Help Chat 줄의 입력칸 왼쪽에 있고(머리에는 없다), 처음엔 보이며 눌리지 않은 모양', () => {
     assert.ok(btn.closest('#helpForm'), 'Help Chat 줄이 아니다');
-    assert.deepEqual([btn.nextElementSibling?.id, btn.nextElementSibling?.nextElementSibling?.id], ['helpCap', 'helpText'], '사이에는 붙인 캡처(캡처 N, 2026-10-26)만');
+    const between = [btn.nextElementSibling, btn.nextElementSibling?.nextElementSibling, btn.nextElementSibling?.nextElementSibling?.nextElementSibling].map((x) => x?.id);
+    assert.deepEqual(between, ['helpPics', 'helpCap', 'helpText'], '사이에는 붙여 넣은 그림(그림 N, 2026-10-27)·붙인 캡처(캡처 N, 2026-10-26)만');
     assert.equal(doc.querySelector('.head-tools .panel-cap'), null);
     assert.equal(btn.hidden, false);
     assert.equal(btn.getAttribute('aria-pressed'), 'false');
@@ -2154,6 +2155,37 @@ console.log('공문 탭 — 화면 탭·접힘 저장 복원');
     assert.deepEqual(store.gongmunView, { tab: 'draft', evidenceOpen: true, workspaceOpen: false });
     assert.equal(store.gongmunDraft.edu.body, '직접 고친 공문');
   });
+}
+
+console.log('공문 탭 — 읽은 파일이 남지 않은 초안은 첨부 없이 쓰지 않는다(2026-10-27 사용자 지정: "교육내용의 경우 첨부파일이 작성이 안되네. 공문에 실제 올라가지도 않고")');
+{
+  const { blankDraft } = await import('../src/gongmun.js');
+  // 파일을 남기기 전에 읽고 패널을 다시 연 초안 — 첨부 목록에는 이름이 있는데 파일 보관함(IndexedDB)에는 없다(jsdom 에는 보관함이 없다).
+  const { window, calls } = await boot({
+    mode: 'gongmun', gongmunKind: 'edu', myName: '김거화',
+    gongmunView: { tab: 'doc', evidenceOpen: false, workspaceOpen: false },
+    gongmunDraft: { edu: {
+      draft: {
+        ...blankDraft('edu', { me: '김거화' }), course: '클로드 코드 완벽 마스터', provider: '인프런', fee: 198000,
+        attach: [{ label: '교육 견적서', files: ['견적서_가격부분_2026-10-27.png'] }, { label: '교육 내용', files: ['화면캡처_inflearn.com_2026-10-27_2.png'] }],
+      },
+      source: { label: '교육 안내문 · 인프런' }, title: '과제 수행을 위한 온라인교육 품의', body: '본문',
+    } },
+  });
+  const doc = window.document;
+  const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+  doc.getElementById('gmWrite').click();
+  await settle(50);
+  t('빠진 문서를 적고 멈춘다 — 새 공문 창을 열지 않는다', () => {
+    assert.match(doc.getElementById('gmWriteState').textContent, /읽은 문서의 파일이 남아 있지 않아 교육 견적서·교육 내용을\(를\) 첨부할 수 없습니다 — 문서를 다시 넣으면 첨부까지 넣습니다/);
+    assert.match(doc.getElementById('gmStatus').textContent, /교육 견적서·교육 내용/);
+    assert.equal(doc.getElementById('gmWrite').textContent, '공문 작성');
+    assert.equal(calls.tabs.filter((x) => /RealEANET/i.test(x.url || '')).length, 0);
+  });
+  t('두 상태 줄 끝에 문서 넣는 곳으로 가는 단추', () => {
+    for (const id of ['gmWriteState', 'gmStatus']) assert.equal(doc.querySelector(`#${id} [data-jump="input:attach"]`)?.textContent, '첨부 채우기 →', id);
+  });
+  await settle(500);
 }
 
 console.log('공문 탭 — 비교작성 탭(2026-10-09 사용자 지정: "비교작성은 사이드패널이 아니라 크롬 탭에", "사이드 패널에서 비교하지 말라고")');
@@ -5025,8 +5057,10 @@ console.log('공문 탭 — 구매의뢰(구매요청서) 연동: 구매 품의�
   const card = (id) => doc.querySelector(`#gmHistList [data-id="${id}"]`);
   const pickedProject = () => doc.querySelector('#gmPick .gm-pick[aria-checked="true"]')?.textContent;
   await settle();
-  t('구매의뢰 작성 단추는 공문 작성·공문 보기 줄의 세 번째(ghost)이고 구매 갈래에서 보인다 — 아직 구매의뢰 초안이 없어 덮는다는 말은 없다', () => {
-    assert.deepEqual([...doc.querySelectorAll('#gongmun .gm-write-row > button')].map((b) => b.id), ['gmWrite', 'gmShowDoc', 'gmOrder']);
+  t('구매의뢰 작성 단추는 공문 작성·완료·공문 보기 줄의 네 번째(ghost)이고 구매 갈래에서 보인다 — 아직 구매의뢰 초안이 없어 덮는다는 말은 없다', () => {
+    assert.deepEqual([...doc.querySelectorAll('#gongmun .gm-write-row > button')].map((b) => b.id), ['gmWrite', 'gmDone', 'gmShowDoc', 'gmOrder']);
+    assert.equal(doc.getElementById('gmDone').textContent, '완료');
+    assert.ok(doc.getElementById('gmDone').disabled, '쓰기 전에는 완료를 누를 수 없다');
     assert.equal(order().textContent, '구매의뢰 작성');
     assert.ok(order().classList.contains('ghost'));
     assert.ok(!order().hidden);

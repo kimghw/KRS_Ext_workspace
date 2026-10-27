@@ -63,7 +63,8 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .helpbar .panel-cap { padding: 3px 5px; color: var(--hb-sub); }
 .helpbar .panel-cap svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .helpbar .panel-cap[aria-pressed="true"] { color: var(--pick); border-color: var(--pick); background: var(--pick-soft); }
-.helpbar .help-cap { border-color: var(--pick); background: var(--pick-soft); color: var(--pick); font-weight: 600; }   /* 붙인 캡처 '캡처 N'(2026-10-26) */
+.helpbar .help-cap { border-color: var(--pick); background: var(--pick-soft); color: var(--pick); font-weight: 600; }   /* 붙인 캡처 '캡처 N'(2026-10-26) · 붙여 넣은 그림 '그림 N'(2026-10-27) */
+.helpbar .help-close { padding: 3px 6px; color: var(--hb-sub); }   /* 둘째 칸 닫기 ✕(2026-10-27) */
 .pcap { position: fixed; inset: 0; z-index: 1000; }
 .pcap-veil { position: absolute; inset: 0; cursor: crosshair; }
 .pcap-box { position: fixed; pointer-events: none; border: 2px solid var(--pick); border-radius: 4px; background: rgb(0 122 255 / 14%); }
@@ -1561,6 +1562,9 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
    UA 의 [hidden] 을 이기므로 따로. */
 .gongmun .gm-write-row button { flex-basis: 40%; }
 .gongmun .gm-write-row button[hidden] { display: none; }
+/* 공문 작성 · 완료(쓰는 동안은 작성 취소) · 공문 보기 한 줄(2026-10-27 사용자 지정: "공문작성, 완료, 보기 이런순으로") — 가운데 칸은 좁게. */
+.gongmun #gmWrite, .gongmun #gmShowDoc { flex-basis: 36%; }
+.gongmun #gmDone { flex: 0 0 22%; padding: 0 8px; white-space: nowrap; }
 .gongmun #gmOrder { flex: 0 0 auto; margin-left: auto; min-height: 34px; padding: 0 12px; }
 .gongmun .gm-write-state { margin: 8px 0 0; padding-left: 20px; position: relative; font-size: 12.5px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .gongmun .gm-write-state::before { position: absolute; left: 2px; top: 0; width: 14px; text-align: center; font-weight: 700; }

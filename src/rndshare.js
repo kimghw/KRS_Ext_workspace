@@ -162,6 +162,36 @@ export function researchOf(recs, p, key = '', n = 0) {
   }
   return out;
 }
+/**
+ * 연구내용 기록(rerp/research.js readSnapshot 꼴) → 연구개발 계획 글 { title, text, goals } — src/rndyaml.js readPlan 과 같은 ■ 절 꼴이라 parseSections 로 그대로 그린다.
+ * 공유 폴더에서 받기만 하고 이 브라우저에 YAML 을 넣은 적 없는 과제의 연구개발 계획 칸에 쓴다(2026-10-27). 그릴 것이 없으면 null.
+ */
+export function planOfResearch(rec) {
+  if (!obj(rec)) return null;
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const lines = [];
+  const goals = list(rec.goals).map((g) => str(g, 2000)).filter(Boolean);
+  if (goals.length) lines.push('■ 개발목표', ...goals.map((g, i) => `${i + 1}. ${g}`));
+  const items = list(rec.contents).filter(obj);
+  if (items.length) {
+    lines.push('■ 개발내용');
+    for (const it of items) {
+      if (str(it.item, 2000)) lines.push(`- ${str(it.item, 2000)}`);
+      for (const s of list(it.details)) if (str(s, 2000)) lines.push(`  · ${str(s, 2000)}`);
+    }
+  }
+  const perf = list(rec.perf).filter((p) => obj(p) && str(p.name));
+  if (perf.length) lines.push('■ 성능목표', ...perf.map((p) => `- ${str(p.name)}: ${str(p.target)}${str(p.unit) ? ` ${str(p.unit)}` : ''}${str(p.method) ? ` (${str(p.method)})` : ''}`));
+  const outs = list(rec.outputs).map((s) => str(s, 2000)).filter(Boolean);
+  if (outs.length) lines.push('■ 주요결과물', ...outs.map((s) => `- ${s}`));
+  const sched = obj(rec.schedule);
+  if (sched) {
+    const parts = list(sched.items).filter(obj).map((a) => `${str(a.name, 2000)}${num(a.weeks) ? ` ${num(a.weeks)}주` : ''}`).filter((s) => s.trim());
+    if (num(sched.months) || parts.length) lines.push(`■ 수행일정${num(sched.months) ? ` (${num(sched.months)}개월)` : ''}`, ...parts.map((p) => `- ${p}`));
+  }
+  const n = Number(rec.n) || 0;
+  return lines.length ? { title: `연구개발 계획${n ? ` — ${n}차년도` : ''}`, text: lines.join('\n'), goals } : null;
+}
 /** 기록에서 받는 쪽 연결 칸을 뺀 사본 — 파일에 싣는 모양. */
 export const cleanRec = (rec) => { const o = { ...rec }; for (const k of LOCAL_REC) delete o[k]; return o; };
 

@@ -3,9 +3,9 @@
 // 어디에도 보내지 않는다(실 SharePoint 없음). 화면 쪽(켜기·지금 맞추기·고친 뒤 저절로)은 test/rndpanel.test.mjs 의 "공유" 가 본다.
 import assert from 'node:assert/strict';
 
-import { normalizeProject, MAX_PROJECTS, blankYear } from '../src/rnd.js';
+import { normalizeProject, MAX_PROJECTS, blankYear, parseSections } from '../src/rnd.js';
 import {
-  SHARE_KEY, DEFAULT_BASE, WS_EXTRA, normalizeShare, erpNoOf, shareKeyOf, projectOf, localProjectOf, localPlanOf, researchOf, cleanRec, yearOf, budgetHash,
+  SHARE_KEY, DEFAULT_BASE, WS_EXTRA, normalizeShare, erpNoOf, shareKeyOf, projectOf, localProjectOf, localPlanOf, researchOf, planOfResearch, cleanRec, yearOf, budgetHash,
   applyYear, applyProject, matchProject, PEOPLE_KEY, normalizePeople, permRows, PLUS_DEFAULTS, normalizePlus, plusOf, plusSet, plusWant,
 } from '../src/rndshare.js';
 
@@ -397,6 +397,16 @@ t('permRows — 이름은 이메일로 폴더 권한과 맞추고(표시 이름�
   assert.deepEqual(rows[1].candidates, ['LEE A <a@krs.co.kr>', 'LEE B <b@krs.co.kr>']);
   assert.deepEqual(permRows(['a'], null, null), [{ name: 'a', email: '', title: '', id: 0, role: '', state: 'lookup', candidates: [], extra: false }]);
   assert.deepEqual(permRows([], perms, {}, { me: '김거화' }).map((r) => r.name), ['MOON Changjae', 'LEE Jaehoon', 'ROH Gilltae'], '이름이 없으면 폴더의 사람만 extra 로');
+});
+
+t('planOfResearch — 공유 폴더 연구내용 기록을 연구개발 계획 ■ 절 글로(2026-10-27)', () => {
+  const r = planOfResearch({ n: 1, goals: ['A 개발', 'B'], contents: [{ item: '항목1', details: ['세부'] }], perf: [{ name: '효율', target: '90', unit: '%', method: '시험' }], outputs: ['보고서'], schedule: { months: 9, items: [{ name: '설계', weeks: 4 }] } });
+  assert.equal(r.title, '연구개발 계획 — 1차년도');
+  assert.deepEqual(r.goals, ['A 개발', 'B']);
+  assert.deepEqual(parseSections(r.text).map((s) => [s.title, s.note, s.items.length]), [['개발목표', '', 2], ['개발내용', '', 1], ['성능목표', '', 1], ['주요결과물', '', 1], ['수행일정', '9개월', 1]]);
+  assert.match(r.text, /- 효율: 90 % \(시험\)/);
+  assert.equal(planOfResearch({ n: 2, goals: [], contents: [] }), null);
+  assert.equal(planOfResearch(null), null);
 });
 
 console.log(`\n${pass} passed`);

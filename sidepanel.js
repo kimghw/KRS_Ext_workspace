@@ -36,7 +36,7 @@ import { createRndPanel } from './rndpanel.js';
 import { createMailPanel } from './mailtrack/index.js';
 import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
-import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode } from './src/panelcap.js';
+import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
 import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
 import { tripRule, loadStages } from './src/settling.js';
@@ -2966,16 +2966,39 @@ function paintCaptureButton(on) {
 function togglePanelPick() {
   if (panelPick) return panelPick.cancel();
   const head = `${el.appTitle.textContent} · v${chrome.runtime.getManifest?.()?.version ?? '?'} · ${stamp(Date.now())}`;
+  let picked = [];
   panelPick = startPanelPick({
     head,
     copy: false,   // 코드냐 이미지냐 묻지 않고 고른 것은 Help Chat 에 코드로(2026-10-27 사용자 지정: "선택되면 그냥 코드로 보내")
     onCopy: ({ kind, count, ok, error }) => logEvent('capture', ok,
       `패널 캡처 — ${kind === 'code' ? '코드' : '이미지'} ${count}곳 ${ok ? '복사' : `복사 실패: ${error?.message || ''}`}`, { mode: state.mode }),
-    onChange: (els) => document.dispatchEvent(new CustomEvent('help-capture',
-      { detail: { count: els.length, code: els.length ? panelCode(els, { head, shallow: true }) : '' } })),
-    onEnd: () => { panelPick = null; el.panelCap.setAttribute('aria-pressed', 'false'); $('helpCap')?.nextElementSibling?.focus(); },   // 캡처 N 이 선 칸(첫 칸이 돌면 둘째 칸)
+    onChange: (els) => {
+      picked = els;
+      document.dispatchEvent(new CustomEvent('help-capture', { detail: { count: els.length, code: els.length ? panelCode(els, { head, shallow: true }) : '' } }));
+    },
+    onEnd: () => {
+      panelPick = null;
+      el.panelCap.setAttribute('aria-pressed', 'false');
+      $('helpCap')?.nextElementSibling?.focus();   // 캡처 N 이 선 칸(첫 칸이 돌면 둘째 칸)
+      shootPicked(picked.filter((x) => x.isConnected));
+    },
   });
   el.panelCap.setAttribute('aria-pressed', 'true');
+}
+/** 캡처를 끝내면 고른 곳을 그림으로 그려 클립보드에 복사하고 Help Chat 에 '그림'으로 붙인다 — 묻지 않는다(2026-10-27 사용자 지정: "캡쳐하면 그낭 자동으로
+ *  복사하고 묻지 말고 붙여 넣어줘"). 막을 걷은 뒤에 그려 막이 그림에 들지 않는다. 붙이기는 'help-picture'(helpchat.js 가 앞의 캡처 그림을 바꾼다). */
+async function shootPicked(els) {
+  if (!els.length) return;
+  try {
+    const blob = await panelPng(els);
+    const dataUrl = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = () => reject(r.error); r.readAsDataURL(blob); });
+    document.dispatchEvent(new CustomEvent('help-picture', { detail: { type: 'image/png', dataUrl } }));
+    let copied = true;
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } catch { copied = false; }   // 복사는 곁다리 — 못 해도 붙이기는 된 것이다
+    logEvent('capture', true, `패널 캡처 — 그림 ${els.length}곳 Help Chat 에 붙임${copied ? ' · 복사' : ''}`, { mode: state.mode });
+  } catch (err) {
+    logEvent('capture', false, `패널 캡처 — 그림을 그리지 못했습니다: ${err?.message || err}`, { mode: state.mode });
+  }
 }
 
 function initHourSelects() {

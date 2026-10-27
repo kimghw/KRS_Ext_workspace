@@ -203,3 +203,14 @@ test('공문 작성 — 비슷한 과제(0.5 이상)도 없으면 고르지 않�
   assert.equal(job.ok, false);
   assert.match(job.detail, /창의 Job Id\. 검색으로 고르세요 — 책임자·과제명이 비슷한 과제\(유사도 0\.5 이상\)도 없습니다$/);
 });
+
+test('공문 작성 — 작성 취소(signal)면 그 뒤 단계는 하지 않고 AbortError 로 멈춘다(2026-10-27)', async () => {
+  const { api, plan, jobCalls } = fakeWindow(ROWS);
+  const abort = new AbortController();
+  const seen = [];
+  // 과제를 처음 고를 때 취소를 누른 셈 — 다시 고르기·제목은 하지 않는다.
+  const onStep = (s) => { seen.push(s.key); if (s.key === 'job' && s.ok === null) abort.abort(); };
+  await assert.rejects(writeGongmun(plan, { api, dry: true, signal: abort.signal, onStep }), { name: 'AbortError', message: '작성을 취소했습니다' });
+  assert.equal(jobCalls.length, 0);
+  assert.ok(!seen.includes('fields'));
+});

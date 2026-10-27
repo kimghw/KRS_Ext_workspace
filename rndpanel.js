@@ -31,7 +31,7 @@ import KRX_PRJDOC from './rerp/prjdoc.js';
 import RS from './rerp/research.js';
 // 장부 ↔ 연차 파일 변환(2026-10-18): 공유 설정(rndShare)·연차 파일 project 칸·받은 것을 장부에 들이기·차년도 변환·과제 맞추기.
 import {
-  SHARE_KEY, normalizeShare, shareKeyOf, projectOf as shareProjectOf, localProjectOf, localPlanOf, yearOf as shareYearOf, researchOf as shareResearchOf, budgetHash as shareBudgetHashOf,
+  SHARE_KEY, normalizeShare, shareKeyOf, projectOf as shareProjectOf, localProjectOf, localPlanOf, yearOf as shareYearOf, researchOf as shareResearchOf, planOfResearch, budgetHash as shareBudgetHashOf,
   applyProject as shareApplyProject, applyYear as shareApplyYear, matchProject as shareMatchProject, PEOPLE_KEY, normalizePeople, permRows,
   normalizePlus, plusOf, plusSet, plusWant,   // 공유 (Plus) 설정 — rERP 확장을 따르고 여기서 바꾼 칸만 이긴다(2026-10-25)
 } from './src/rndshare.js';
@@ -116,7 +116,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     setBox: $('rdSetBox'), setState: $('rdSetState'), erpOn: $('rdErpOn'), itemBox: $('rdItemBox'), items: $('rdItems'),
   };
   const st = {
-    loaded: false, book: normalizeBook(null),
+    loaded: false, book: normalizeBook(null), research: {},
     // editing 은 고치는 중인 과제 id('new' 는 새 과제). snap 은 그린 시점의 예산 줄 — 계획이 바뀌었는지 이것과 견준다.
     // overlay 는 머리·몸통을 덮는 카드({ name, close } — rndgen 의 과제 더하기 'add', 2026-10-16). 폼·덮개가 열려 있으면 과제 칩은 어느 것도 켜지지 않는다(＋ 칩은 2026-10-19 에 없앴다 — 대상은 그 카드의 배지에서).
     editing: null, overlay: null, snap: [], logEdit: null, chEdit: null,
@@ -981,6 +981,18 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
   /* ---------------------------------------------------------- 참여연구자 · 연구개발 계획(계획서에서 온 것) */
 
+  /**
+   * 보고 있는 차년도의 연구개발 계획 — 장부의 계획서 글(key 'plan')이 먼저, 없으면 연구내용 기록(researchPlans — 공유 폴더 연차 파일의 research 칸에서 받은 것 포함)의
+   * 이 과제(과제명·과제번호)·이 차년도 것을 같은 ■ 절 글로(2026-10-27 — 공유 폴더에만 계획서가 있는 과제가 "아직 없습니다"로 보였다). shared 는 쓴 기록(없으면 null).
+   */
+  function planNow(p) {
+    const own = fileLog(curBook(p), 'plan');
+    if (own) return { log: own, shared: null };
+    const recs = Object.values(shareResearchOf(st.research, p, '', curYear(p))).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+    for (const rec of recs) { const log = planOfResearch(rec); if (log) return { log, shared: rec }; }
+    return { log: null, shared: null };
+  }
+
   /** 계획서(YAML)에서 온 두 줄을 저마다의 칸에 — 참여연구자는 표, 계획은 절 제목과 목록. 없으면 넣는 곳을 짚어 준다. */
   function paintFiles() {
     const p = cur();
@@ -993,13 +1005,13 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     paintStaff();
     paintSupport();
 
-    const plan = fileLog(b, 'plan');
+    const { log: plan, shared } = planNow(p);
     const secs = plan ? parseSections(plan.text) : null;
     const goals = secs?.find((s) => s.title === '개발목표')?.items.length || 0;
     const months = secs?.find((s) => s.title === '수행일정')?.note || '';
     el.plan.innerHTML = plan ? (secs ? sectionsHtml(secs) : `<p class="rd-text">${escapeHtml(plan.text)}</p>`) : none('연구개발 계획이');
     el.planState.textContent = !plan ? '계획서 없음' : [goals ? `목표 ${goals}개` : '', months].filter(Boolean).join(' · ') || '있음';
-    el.planSrc.textContent = plan ? src : '';
+    el.planSrc.textContent = !plan ? '' : shared ? `공유 폴더 연구내용${shared.rev ? ` ${shared.rev}` : ''} 기준` : src;
     el.planTools.classList.toggle('hidden', !plan);
   }
 
@@ -1683,7 +1695,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     copyWith(el.budgetCopy, budgetTsv(u.loose ? [...b.budget, { id: 'unbilled', item: `미청구(과제카드 ${u.count}건)`, plan: null, used: u.loose }] : b.budget), '예산 표');
   };
   const copyLogs = () => { const p = cur(); const notes = p ? noteLogs(curBook(p)) : []; if (p) copyWith(el.logsCopy, logLines(notes).join('\n'), `진행 기록 ${notes.length}건`); };
-  const copyFile = (btn, key, what) => { const p = cur(); const l = p ? fileLog(curBook(p), key) : null; if (l) copyWith(btn, entryText(l), what); };
+  const copyFile = (btn, key, what) => { const p = cur(); const l = !p ? null : key === 'plan' ? planNow(p).log : fileLog(curBook(p), key); if (l) copyWith(btn, entryText(l), what); };
   const copyChanges = () => { const p = cur(); if (p) copyWith(el.changesCopy, changeLines(curBook(p).changes).join('\n'), `변경이력 ${curBook(p).changes.length}건`); };
 
   /* ---------------------------------------------------------- 파일·가져오기 */
@@ -3195,7 +3207,13 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   }
 
   function wire() {
-    el.chKind.innerHTML = CHANGE_KINDS.map((k) => `<option value="${k}">${k}</option>`).join('');
+    // 연구내용 기록이 바뀌면(YAML 넣기 · 공유 폴더에서 받음) 연구개발 계획 칸이 그것을 보므로 다시 그린다(2026-10-27).
+    chrome.storage.onChanged?.addListener?.((ch, area) => {
+      if (area !== 'local' || !ch[RS.KEY]) return;
+      st.research = shareObj(ch[RS.KEY].newValue);
+      if (st.loaded && cur()) paintFiles();
+    });
+    el.chKind.innerHTML =CHANGE_KINDS.map((k) => `<option value="${k}">${k}</option>`).join('');
     el.projects.addEventListener('click', (e) => {
       const b = e.target instanceof HTMLElement ? e.target.closest('[data-proj]') : null;
       if (b) pickProject(b.dataset.proj);
@@ -3395,6 +3413,8 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
       // 예상 비용(rerp/plan.js 의 plannedExpenses — rerp 와 같은 저장 키)을 읽는다.
       st.pl.plans = await PLAN.load();
       st.pl.planWho = myName();
+      // 연구내용 기록 — 계획서 글이 없는 차년도의 연구개발 계획 칸(planNow). 바뀌면 storage.onChanged 로 다시 받는다.
+      st.research = shareObj(await RS.load());
       // 지금 장부의 지문 — 이 뒤로 고친 것이 있을 때만 잠깐 뒤 맞춘다(shareSoon).
       st.shareHash = shareHashOf(st.book);
       applyPlus();   // on · shareWith 를 지금 설정(여기서 바꾼 칸 > 지난번 rERP 확장의 답 > 기본)으로
