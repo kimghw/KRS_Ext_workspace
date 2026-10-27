@@ -9,7 +9,7 @@
  * (확장 파일이 바뀌었고 문법 검사가 통과했을 때만). 줄 보이기는 storage.local.helpChatShow(기본 켬) — 설정 → LLM 의 스위치 #helpChatShow 도 여기서 배선한다(숨겨도 도는 작업은 그대로).
  * 첫 칸이 도는 동안에는 그 아래에 둘째 칸(#helpLane2 — id 끝에 2, 저장은 helpChat2·helpDraft2)이 서서 따로 함께 도는 요청을 하나 더 보낸다(2026-10-27 사용자 지정:
  * "help 책으로 작업중이면 입력칸을 하나 더 추가 해서 추가 작업도 할 수 있게") — 다리의 lane '2', 대화도 따로 잇는다. 둘째 칸은 ✕(#helpClose2)로 비우고 닫는다(2026-10-27).
- * 입력칸에 붙여 넣은 그림(화면 캡처)은 '그림 N'(#helpPics)으로 서서 다음 요청의 images 로 간다(2026-10-27). */
+ * 입력칸에 붙여 넣은 그림(화면 캡처)은 수 칩(#helpPics — 수만, 무엇인지는 툴팁)으로 서서 다음 요청의 images 로 간다(2026-10-27). */
 (() => {
   const HOST = 'com.krs.meetingroom', SHOW = 'helpChatShow';
   const ASK_MS = 20000, JOB_MS = 12000;
@@ -225,15 +225,15 @@
     if (btnCap) {
       if (btnCap.nextElementSibling !== at.input) at.form.insertBefore(btnCap, at.input);
       btnCap.hidden = !capture;
-      btnCap.textContent = capture ? `캡처 ${capture.count}` : '';
-      btnCap.title = capture ? `보낼 때 함께 가는 캡처(누르면 빼기)\n\n${capture.code.slice(0, 1500)}` : '';
+      btnCap.textContent = capture ? String(capture.count) : '';   // 수만(2026-10-27 "그림,캡쳐 수만 표기하도록") — 무엇인지는 툴팁
+      btnCap.title = capture ? `캡처 ${capture.count}곳 — 보낼 때 함께 갑니다(누르면 빼기)\n\n${capture.code.slice(0, 1500)}` : '';
     }
     if (btnPics) {   // '그림 N' 은 '캡처 N' 앞
       const before = btnCap || at.input;
       if (btnPics.nextElementSibling !== before) at.form.insertBefore(btnPics, before);
       btnPics.hidden = !pics.length;
-      btnPics.textContent = pics.length ? `그림 ${pics.length}` : '';
-      btnPics.title = pics.length ? '보낼 때 함께 가는 붙여 넣은 그림(누르면 빼기)' : '';
+      btnPics.textContent = pics.length ? String(pics.length) : '';
+      btnPics.title = pics.length ? `그림 ${pics.length}장 — 보낼 때 함께 갑니다(누르면 빼기)` : '';
     }
     pad();
   }
