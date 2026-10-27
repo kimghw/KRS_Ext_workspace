@@ -33,6 +33,7 @@ krs-web-agents 의 `spec/spec_<주제>.md`(① 질의·요청 히스토리 ② �
 | [rnd.md](rnd.md) | R&D 탭 — 과제·별칭·차년도·예산·참여인력·YAML 넣기/뽑기·R&D 설정·원노트 | README 「R&D 탭」 · `rndgen/README.md` |
 | [rerp.md](rerp.md) | rERP 연동과 인건비 — 집행내역·예상 비용·연구내용 공유·참여율과 월별 지급 | README 「R&D 탭」 · `rerp/README.md` · `rerp/reference.md` |
 | [mail.md](mail.md) | 메일 탭 — 회신 추적 | `mailtrack/README.md` |
+| [mine.md](mine.md) | 현황 탭 — 내 예약·근태 목록, 일일 업무 카드(e-Class 일일업무통계 대시보드) | README 「현황 (WORKSPACE 현황)」 |
 | [actions.md](actions.md) | 행위 층 — 사람이 누르든 LLM 이 말하든 명세 → 기록 → 실행기 | `actions/README.md` · `docs/actions-design.md` |
 | [settings.md](settings.md) | 설정·LLM 연결·로컬 다리·첨부 글자 뽑기·패널 캡처·Gmail 시험 | README 「설정」·「로컬 CLI 연결」·「패널 캡처」 |
 | [panel-ui.md](panel-ui.md) | 패널 공통 UI 원칙 — 접힘·요약 줄·아이콘·자동 찾기·칸 배치 | 각 탭 설명 |

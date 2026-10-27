@@ -1,5 +1,5 @@
 # 근태 갈래 — HR(hr.krs.co.kr) 신청서. 종류 파일은 신청 여섯(trip·out·flex·leaveout·leave·health — 화면 차례, src/attend.js KIND_ORDER),
-# 신청 내역 줄의 행위 둘(cancel 취소신청 · doc 상신·회수·삭제), 그리고 2단계로 미룬 welfare(가족 기념일 지원 신청 화면 채우기 — status: planned).
+# 신청 내역 줄의 행위 둘(cancel 취소신청 · doc 상신·회수·삭제), 출퇴근 위반 줄의 commute(출/퇴근기록 변경신청 — 2026-10-27), 그리고 2단계로 미룬 welfare(가족 기념일 지원 신청 화면 채우기 — status: planned).
 #
 # 칸은 src/attend.js 의 fieldsFor(form)·blankForm(kind) 과 맞춘다 — actions/test/spec.test.mjs 가 종류마다 "fieldsFor 의 키 ⊆ fields, 이름(label) 같음"
 # 과 "blankForm 의 키 ⊆ fields ∪ ignore" 를 본다. 폼 기본값(출장 07:00~20:00·외근 09:00·소통 13:00/60분 …)은 blankForm·SUBS 가 깔고 여기서는
@@ -11,7 +11,7 @@
 domain: attend
 title: 근태
 log: attend                    # 활동 로그 kind(src/logbook.js KIND_LABEL) — attendpanel.js 가 지금 쓰는 'attend' 그대로
-kinds: [trip, out, flex, leaveout, leave, health, cancel, doc, welfare]
+kinds: [trip, out, flex, leaveout, leave, health, cancel, doc, commute, welfare]
 preset:
   today: { from: today, desc: '오늘(YYYY-MM-DD) — 날짜 칸의 기본값이고 "내일"·"다음 주 수요일" 셈의 기준(blankForm(kind, today))' }
   me: { from: me, desc: 내 이름(패널 설정의 myName) }

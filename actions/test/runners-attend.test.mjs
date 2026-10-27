@@ -153,4 +153,22 @@ await ta('ctx.item 의 문서번호가 기록과 다르면 ActionError — HR �
   assert.deepEqual(calls, []);
 });
 
+console.log('attend.commute — 출퇴근 위반 줄의 출/퇴근기록 변경신청(2026-10-27)');
+await ta('기록 { date, start, end, nextDay, reason } → buildCommuteJob → hrRunJob(결재요청). 확인(지문) 없이는 돌지 않는다', async () => {
+  const { d, calls } = make();
+  const input = { date: '2026-10-21', start: '08:30', end: '17:45', nextDay: false, reason: '출근 태깅 누락' };
+  const rec = d.build('attend.commute', { input, preset: presetFor('attend.commute') }).record;
+  await rejects(d.run(rec, {}), /확인/);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await d.run(rec, { confirmed: rec.hash, onStage: () => {} }), HR_OK);
+  const job = calls[0][1];
+  assert.deepEqual([calls[0][0], job.fn, job.ops[0].op, job.ops[0].workDate, job.ops[0].start, job.ops[0].end, job.ops[0].nextDay, job.ops[0].reason],
+    ['hrRunJob', 'apprRequest', 'commuteRow', '20261021', '08:30', '17:45', 'N', '출근 태깅 누락']);
+});
+await ta('사유·시각이 비면 관문이 막는다 — 기록이 지어지지 않는다', async () => {
+  const { d } = make();
+  assert.throws(() => d.build('attend.commute', { input: { date: '2026-10-21', start: '08:30', end: '17:45', reason: '' }, preset: presetFor('attend.commute') }), ActionError);
+  assert.throws(() => d.build('attend.commute', { input: { date: '2026-10-21', start: '', end: '17:45', reason: '누락' }, preset: presetFor('attend.commute') }), ActionError);
+});
+
 console.log(`\n통과 ${pass}건`);

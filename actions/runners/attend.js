@@ -9,15 +9,17 @@
 //   attend.doc    (rec, { item, onStage })   → delete 면 hrDeleteDoc(item) 을 { ok: true, deleted: n } 로, 아니면 hrRunJob(buildDocJob(item, action))
 //   attend.cancel (rec, { item, onStage })   → hrRunJob(buildCancelJob(item, reason))
 //                 item 은 신청 내역의 줄(사이트에서 읽은 것 — ctx). 기록의 docNo 와 다르면 ActionError(§14.2)
+//   attend.commute (rec, { onStage })        → hrRunJob(buildCommuteJob({ date, start, end, nextDay, reason }))
+//                 출퇴근 위반 줄의 출/퇴근기록 변경신청(2026-10-27). 그 날의 기록 줄은 실행기가 HR 의 목록에서 찾는다 — ctx 가 없다
 //
 // 사이트 특유의 차례(HR 입력 차례·확인)는 src/attend.js·src/hr.js 에 그대로 있다 — 여기는 기록을 인자로 바꾸기만 한다.
 // 성공 판정(§14.3): hrRunJob 의 결과는 ok === true, 삭제는 던지지 않으면 성공. 결재요청의 최종 성공(목록에서 확인)은 패널이 ctx.outcome 으로 정한다.
 
-import { buildJob, buildDocJob, buildCancelJob, blankForm, settle } from '../../src/attend.js';
+import { buildJob, buildDocJob, buildCancelJob, buildCommuteJob, blankForm, settle } from '../../src/attend.js';
 import { hrRunJob, hrDeleteDoc } from '../../src/hr.js';
 import { ActionError } from '../gate.js';
 
-const defaults = { buildJob, buildDocJob, buildCancelJob, hrRunJob, hrDeleteDoc, blankForm, settle };
+const defaults = { buildJob, buildDocJob, buildCancelJob, buildCommuteJob, hrRunJob, hrDeleteDoc, blankForm, settle };
 
 /** 행위 ID 의 종류 — attend.trip → trip. */
 const kindOf = (rec) => String(rec?.action || '').split('.')[1] || '';
@@ -71,5 +73,9 @@ export function registerAttend(d, deps = defaults) {
     return f.hrRunJob(f.buildDocJob(item, rec.input.action), { onStage: ctx.onStage });
   }, { ok: okHr });
   d.register('attend.cancel', (rec, ctx = {}) => f.hrRunJob(f.buildCancelJob(sameItem(rec, ctx), rec.input.reason), { onStage: ctx.onStage }), { ok: okHr });
+  d.register('attend.commute', (rec, ctx = {}) => {
+    const { date, start, end, nextDay, reason } = rec.input;
+    return f.hrRunJob(f.buildCommuteJob({ date, start, end, nextDay: !!nextDay, reason }), { onStage: ctx.onStage });
+  }, { ok: okHr });
   return d;
 }

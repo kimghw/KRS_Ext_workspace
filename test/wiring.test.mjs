@@ -982,6 +982,7 @@ console.log('API 키가 있으면 말로 찾기 칸이 열린다');
     assert.equal(doc.getElementById('cliGuideHead').hidden, false, '머리의 B 는 다리가 없으니 남는다');
     assert.ok(doc.getElementById('cliGuideHead').classList.contains('alt'), 'API 키로 되는 중이라 옅다');
   });
+  t('회의실 탭에는 일일 업무 카드가 없다(현황에서만)', () => assert.ok(doc.getElementById('dwrBox').classList.contains('hidden')));
   t('근태의 말로 채우기 칸도 제 낯으로 돌아온다 — 회색이 걷히고 예시 플레이스홀더', () => {
     assert.ok(!doc.querySelector('.at-chat').classList.contains('off'));
     assert.equal(doc.getElementById('atChatInput').placeholder, '예) 내일 오후 2~4시 부산시청 외근');
@@ -1004,6 +1005,14 @@ console.log('내 예약 모드로 시작 (조기 return 회귀 방지)');
     assert.equal(doc.getElementById('tabMine').textContent, '현황');
     assert.match(doc.getElementById('appTitle').textContent, /^현황/);
     assert.match(doc.getElementById('scheduleTitle').textContent, /^WORKSPACE 현황/);
+  });
+  t('현황에는 목록 위에 일일 업무 카드가 선다(2026-10-27 — e-Class 일일업무통계 대시보드의 내 것, dwrbox.js) — 기간 단추·두 아이콘·업무 더하기/고치기/빼기에 리스너', () => {
+    const box = doc.getElementById('dwrBox');
+    assert.ok(!box.classList.contains('hidden'));
+    assert.equal(box.nextElementSibling.id, 'grid');
+    for (const id of ['dwrRanges', 'dwrWrite', 'dwrOpen', 'dwrMsg', 'dwrTop']) assert.ok(wired.get(id)?.has('click'), id);
+    for (const type of ['change', 'keydown']) assert.ok(wired.get('dwrTop')?.has(type), `dwrTop ${type}`);
+    assert.ok(wired.get('dwrBox')?.has('toggle'));
   });
   t('근태 화면의 안내 글은 건드리지 않는다 (예약 현황 쪽 안내만 바꾼다)', () => {
     assert.equal(doc.getElementById('atRangeHint').textContent, '오늘부터 전부 · 정산 중인 출장은 다녀온 뒤 4주까지');

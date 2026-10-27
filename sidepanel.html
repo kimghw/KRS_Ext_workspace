@@ -90,6 +90,25 @@
         </div>
       </div>
       <div class="statusline"><span id="atStatus" class="status" role="status" aria-live="polite"></span></div>
+      <!-- 출퇴근 위반 — 유연 종류에서만 보인다(2026-10-27 사용자 지정). HR 자율출퇴근 체크리스트의 날마다 출근·퇴근을 그 날의 근무시간(계획)과
+           맞춰 지각·조퇴인 날만 줄로 세운다. 근태(출장·연차·외근 …)와 점심(12~13시)으로 비운 시간은 위반이 아니고, 기록이 없는 출근·퇴근은
+           보지 않는다(2~3일 늦게 올라온다, src/commute.js).
+           4W · 8W 는 신청 내역의 것과 같은 꼴로, 누르면 그만큼 전부터 오늘까지를 곧바로 읽는다. 3M · 6M · 12M 은 그 달 수만큼 전부터
+           (2026-10-27 사용자 지정: "이거 기간을 3개월 6개월 12개월 버튼 넣어줘"). -->
+      <div id="atCommute" class="at-commute hidden">
+        <div class="section-heading at-commute-head">
+          <h2 id="atCommuteTitle">출퇴근 위반 <span id="atCommuteCount" class="count"></span><span id="atCommuteRange" class="head-date"></span></h2>
+          <button class="open-inline at-back" type="button" data-commute="4w" aria-pressed="true" aria-label="4주 전부터 출퇴근 위반 보기" title="4주 전부터 오늘까지의 출퇴근 기록을 봅니다">4W</button>
+          <button class="open-inline at-back" type="button" data-commute="8w" aria-pressed="false" aria-label="8주 전부터 출퇴근 위반 보기" title="8주 전부터 오늘까지의 출퇴근 기록을 봅니다">8W</button>
+          <button class="open-inline at-back" type="button" data-commute="3m" aria-pressed="false" aria-label="3개월 전부터 출퇴근 위반 보기" title="3개월 전부터 오늘까지의 출퇴근 기록을 봅니다">3M</button>
+          <button class="open-inline at-back" type="button" data-commute="6m" aria-pressed="false" aria-label="6개월 전부터 출퇴근 위반 보기" title="6개월 전부터 오늘까지의 출퇴근 기록을 봅니다">6M</button>
+          <button class="open-inline at-back" type="button" data-commute="12m" aria-pressed="false" aria-label="12개월 전부터 출퇴근 위반 보기" title="12개월 전부터 오늘까지의 출퇴근 기록을 봅니다">12M</button>
+        </div>
+        <div id="atCommuteWrap" class="mine-wrap card">
+          <ul id="atCommuteList" class="at-commute-list"></ul>
+          <p id="atCommuteEmpty" class="hint hidden"></p>
+        </div>
+      </div>
       <div class="section-heading at-list-head">
         <h2>신청 내역 <span id="atCount" class="count"></span><span id="atRange" class="head-date"></span></h2>
         <!-- 4W · 8W — 누르면 4주·8주 전부터 근태를 올려 둔 가장 늦은 날까지를 곧바로 조회한다(2026-10-05 사용자 지정: 조회 기간 칸 안에 있던
@@ -730,6 +749,25 @@
         </button>
         <span class="selection-hint">빈 시간을 눌러 예약하세요</span>
       </div>
+      <!-- 일일 업무(2026-10-27 사용자 지정 — "현황에 eclass 에서 내일일 업무 보고 대쉬보드를 갖어와서 보는 기능") — e-Class 「일일업무통계 대시보드」(/dwrdashboard)의 내 것.
+           현황 탭에서만 선다. 접힌 머리 줄은 기간 · 작성 화면/대시보드 아이콘. 안은 dwrbox.js 가 그린다(받는 것은 src/dwr.js).
+           안은 업무 비율 하나 — 업무별 실제 비율과 연구과제 참여율로 달마다 셈한 목표 비율(src/workshare.js), 목록에 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더한다(2026-10-27 사용자 지정:
+           "연구개발 참여율을 월간으로 계산했을 때 해야 되는 업무 시간을 업무별 업무량이랑 같이 보이게 해줘 시간 비율로" — 네 칸·진행현황·활동성·최근 업무는 뺐다). -->
+      <details id="dwrBox" class="dwr-box card hidden" open>
+        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>일일 업무</span><span id="dwrState" class="summary-detail"></span><button type="button" id="dwrWrite" class="dwr-icon" title="일일 업무 작성 화면 열기 (e-Class Daily Work Report)" aria-label="일일 업무 작성 화면 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button><button type="button" id="dwrOpen" class="dwr-icon" title="e-Class 일일업무통계 대시보드 열기" aria-label="일일업무통계 대시보드 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg></button></summary>
+        <div class="dwr-body">
+          <div class="dwr-head">
+            <div id="dwrRanges" class="dwr-ranges" role="group" aria-label="기간">
+              <button type="button" data-range="year" aria-pressed="true" title="올해 1월 1일부터 오늘까지">올해</button><button type="button" data-range="month" aria-pressed="false" title="지난달 오늘부터 오늘까지">한 달</button><button type="button" data-range="week" aria-pressed="false" title="7일 전부터 오늘까지">7일</button>
+            </div>
+            <span id="dwrLast" class="dwr-last" title="마지막으로 적은 일일 업무의 날짜"></span>
+          </div>
+          <div class="dwr-sub">업무 비율 <small>(실제 / 목표)</small></div>
+          <ol id="dwrTop" class="dwr-top"></ol>
+          <p id="dwrHint" class="dwr-hint"></p>
+          <p id="dwrMsg" class="dwr-msg" role="status"></p>
+        </div>
+      </details>
       <div id="grid" class="grid-wrap card" aria-busy="true"></div>
       <div id="mineWrap" class="mine-wrap card hidden">
         <ul id="mineList" class="mine-list"></ul>

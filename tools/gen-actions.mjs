@@ -42,7 +42,7 @@ const TARGET = new URL('../actions/spec.js', import.meta.url);
 /** 디스패처에 등록되는 실행기 이름(docs/actions-design.md §6.6). live 행위의 runner 는 이 가운데 하나여야 한다 — LLM 도 YAML 도 새 실행기를 만들지 못한다. */
 export const RUNNERS = [
   'booking.search', 'booking.reserve', 'booking.cancel', 'booking.modify',
-  'attend.apply', 'attend.doc', 'attend.cancel',
+  'attend.apply', 'attend.doc', 'attend.cancel', 'attend.commute',
   'trip.create', 'trip.presave', 'trip.preconfirm', 'trip.postconfirm', 'trip.delete', 'trip.after', 'trip.send', 'trip.lodge',
   'gongmun.write', 'gongmun.prior', 'gongmun.delete',
 ];

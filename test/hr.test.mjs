@@ -198,6 +198,64 @@ await ta('보이면 회수하고 "회수되었습니다" 를 기다린다', asyn
   assert.equal((await injected.frameRun(RECALL)).ok, true);
 });
 
+console.log('출/퇴근기록 변경신청 표(2026-10-27 화면 소스 — docapprtmchng100Grid · insertGridRow · fn_TimeCal · apprtm-pop)');
+/**
+ * 변경신청 화면 흉내 — "출퇴근시간 선택" 목록(apprtm-pop, 그 달) · 사이트의 insertGridRow(목록 줄 → 표 줄, 변경 칸은 00:00) ·
+ * 근무시간 셈(fn_TimeCal — 사이트 것과 같은 셈) · 결재요청(확인 → 알림). setValue 로 고친 칸은 사이트가 셈하지 않는다(사람이 고칠 때만 onEditRowChanged).
+ */
+const tmSite = (popRows) => ($, calls, window) => {
+  const data = [];
+  $.ajax = (o) => { calls.push(['pop', o.url, o.data]); o.success(popRows); };
+  return {
+    docapprtmchng100Grid: {
+      getData: () => data.map((r) => ({ ...r })),
+      setValue: (rowKey, key, v) => { data.find((r) => r.rowKey === rowKey)[key] = v; },
+      getGrid: () => ({ commit() {} }),
+    },
+    insertGridRow(d) {
+      data.push({ rowKey: data.length, workDate: d.workDate, startTime: d.startTime, endTime: d.endTime, workHour: d.sWorkHour, chngStartTime: '00:00', chngEndTime: '00:00', chngWorkHour: 0, chngRsn: '' });
+    },
+    fn_TimeCal(sh, sm, eh, em, next) {
+      const diff = ((+eh * 60 + +em + (next === 'Y' ? 1440 : 0)) - (+sh * 60 + +sm)) / 60;
+      const total = Math.floor(diff * 10) / 10;
+      return { workHour: Math.floor((total - Math.floor(diff / 4) * 0.5) * 10) / 10, workHourTotal: total };
+    },
+    apprRequest() {
+      calls.push(['request', data.map((r) => ({ ...r }))]);
+      $.confirm('결재요청 하시겠습니까?', '알림', () => $.alert('결재 요청되었습니다.', '알림'));
+    },
+  };
+};
+const TM_FORM = '<input name="userId" value="11115"><input name="docNo" id="docNo">';
+const TM_POP = [{ workDate: '20261020', startTime: '0825', endTime: '1735', sWorkHour: 32, nextDayInd: 'N' }, { workDate: '20261021', startTime: '0842', endTime: '1745', sWorkHour: 32, nextDayInd: 'N' }];
+const { buildCommuteJob } = await import('../src/attend.js');
+await ta('그 달 목록에서 그 날 줄을 사이트 함수로 넣고, 변경 시각·익일·사유와 근무시간(사이트의 셈)을 적은 뒤 결재요청한다', async () => {
+  const { calls } = page(TM_FORM, tmSite(TM_POP));
+  const r = await injected.frameRun({ ...buildCommuteJob({ date: '2026-10-21', start: '08:30', end: '17:45', reason: '출근 태깅 누락' }), timeoutMs: 3000 });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(calls[0], ['pop', '/uhr/docappr/apprtm-pop', { emplNo: '11115', baseMonth: '2026-10' }]);
+  const [, rows] = calls[1];
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], { rowKey: 0, workDate: '20261021', startTime: '0842', endTime: '1745', workHour: 32, chngStartTime: '08:30', chngEndTime: '17:45',
+    nextDayInd: 'N', chngRsn: '출근 태깅 누락', chngWorkHour: 8.2, workHourTotal: 9.2 });
+  assert.equal(r.message, '결재 요청되었습니다.');
+  assert.deepEqual(r.read.commuteRow, { workDate: '20261021', startTime: '0842', endTime: '1745', chngStartTime: '08:30', chngEndTime: '17:45', workHourTotal: 9.2 });
+});
+await ta('그 날 줄이 목록에 없으면(기록이 아직 안 올라왔다) 표에 넣지도 누르지도 않는다', async () => {
+  const { calls } = page(TM_FORM, tmSite(TM_POP.slice(0, 1)));
+  const r = await injected.frameRun({ ...buildCommuteJob({ date: '2026-10-21', start: '08:30', end: '17:45', reason: '누락' }), timeoutMs: 3000 });
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(' '), /20261021 의 출퇴근 기록을 HR 의 변경 목록에서 찾지 못했습니다/);
+  assert.ok(!calls.some((c) => c[0] === 'request'));
+});
+await ta('사이트 함수(insertGridRow · fn_TimeCal)가 없으면 누르지 않는다', async () => {
+  const { calls } = page(TM_FORM, ($, c, w) => { const s = tmSite(TM_POP)($, c, w); delete s.fn_TimeCal; return s; });
+  const r = await injected.frameRun({ ...buildCommuteJob({ date: '2026-10-21', start: '08:30', end: '17:45', reason: '누락' }), timeoutMs: 3000 });
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(' '), /출퇴근기록 변경 표를 찾지 못했습니다/);
+  assert.ok(!calls.some((c) => c[0] === 'request'));
+});
+
 console.log('문서를 HR 웹 화면에서 열기');
 {
   const DOC = { pgmId: '1102', pgmUrlAd: '/uhr/docappr/apprholi100/view', param: { docNo: '202610-11115-0001', emplNo: '11115', statusCode: '3' } };

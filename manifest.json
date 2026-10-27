@@ -11,7 +11,8 @@
     "downloads",
     "nativeMessaging",
     "offscreen",
-    "management"
+    "management",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "https://eclass.krs.co.kr/*",

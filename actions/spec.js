@@ -15,6 +15,7 @@ export const ACTIONS = {
         "health",
         "cancel",
         "doc",
+        "commute",
         "welfare"
       ],
       "preset": {
@@ -1919,6 +1920,97 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "보낸 뒤 confirmInList 로 목록을 다시 읽는다 — 삭제는 목록에서 사라져야 하고 상신·회수는 상태가 바뀌어야 한다(패널이 outcome 으로 판정)"
+    },
+    "attend.commute": {
+      "id": "attend.commute",
+      "domain": "attend",
+      "kind": "commute",
+      "title": "출퇴근기록 변경신청",
+      "hint": "출퇴근 변경",
+      "status": "live",
+      "confirm": true,
+      "effect": "write",
+      "log": "attend",
+      "summary": "출퇴근기록 변경 {date} {start}~{end} · {reason}",
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 날짜 칸의 기본값이고 \"내일\"·\"다음 주 수요일\" 셈의 기준(blankForm(kind, today))"
+        },
+        "me": {
+          "from": "me",
+          "desc": "내 이름(패널 설정의 myName)"
+        }
+      },
+      "fields": {
+        "date": {
+          "type": "date",
+          "required": true,
+          "label": "근무일자",
+          "desc": "고칠 날(출퇴근 위반 줄의 날짜)",
+          "read": "위반 줄의 날짜 그대로. 지어내지 않습니다",
+          "llm": true,
+          "ui": true,
+          "example": "2026-10-21"
+        },
+        "start": {
+          "type": "time",
+          "required": true,
+          "label": "변경 출근",
+          "desc": "고친 출근 시각(HH:MM) — 기본은 지각이면 계획 시작, 아니면 찍힌 출근(src/commute.js fixDefaults)",
+          "read": "사용자가 말한 출근 시각. 말하지 않았으면 null",
+          "llm": true,
+          "ui": true,
+          "example": "08:30"
+        },
+        "end": {
+          "type": "time",
+          "required": true,
+          "label": "변경 퇴근",
+          "desc": "고친 퇴근 시각(HH:MM) — 기본은 조퇴면 계획 끝, 아니면 찍힌 퇴근",
+          "read": "사용자가 말한 퇴근 시각. 말하지 않았으면 null",
+          "llm": true,
+          "ui": true,
+          "example": "17:30"
+        },
+        "nextDay": {
+          "type": "boolean",
+          "label": "익일",
+          "desc": "퇴근이 다음 날이면 참(HR 표의 익일여부 Y)",
+          "read": "자정을 넘겨 퇴근했다고 했으면 true",
+          "llm": true,
+          "ui": true,
+          "default": false,
+          "example": false
+        },
+        "reason": {
+          "type": "string",
+          "required": true,
+          "label": "변경 사유",
+          "desc": "변경 사유(필수 — HR 표의 변경사유)",
+          "read": "사용자가 말한 사유. 지어내지 않습니다",
+          "llm": true,
+          "ui": true,
+          "example": "출근 태깅 누락",
+          "max": 200
+        }
+      },
+      "checks": [],
+      "rules": [],
+      "llm": false,
+      "runner": "attend.commute",
+      "uses": [
+        {
+          "module": "src/attend.js",
+          "export": "buildCommuteJob"
+        },
+        {
+          "module": "src/hr.js",
+          "export": "hrRunJob"
+        }
+      ],
+      "then": [],
+      "next": "결재요청이 끝나면 패널이 그 날을 \"변경 신청함\"으로 적어 두고(attendCommuteFix) 출퇴근 위반을 다시 읽는다. 결재되면 HR 기록이 바뀌어 위반에서 빠진다"
     },
     "attend.welfare": {
       "id": "attend.welfare",

@@ -12,7 +12,8 @@ import {
   FLEX_MODES, FLEX_DAYS, flexModeOf, fillFlexWeek, isWelfare, welfareFormFor, leaveBalance,
   acceptsFile, itemsOfKind, EVIDENCE_ACCEPT, statusLabel, CANCELLING_KEY, CANCELLING_LABEL, CANCELLED_LABEL, cancellingOf, pruneCancelling, isCancelDoc, linkCancel,
 } from './src/attend.js';
-import { hrListDocs, hrGetDoc, hrWeekTimes, hrUserLeaves, hrOpenDoc, hrCloseWorker, hrCancelRefs, HR_SSO_URL } from './src/hr.js';
+import { hrListDocs, hrGetDoc, hrWeekTimes, hrUserLeaves, hrCommutes, hrOpenDoc, hrCloseWorker, hrCancelRefs, HR_SSO_URL } from './src/hr.js';
+import { commuteBreaches, faultText, fixDefaults, pruneFixes, COMMUTE_FIX_KEY } from './src/commute.js';
 import {
   WFA_LIST_URL, WFA_SAVE_URL, WFA_INTRO_URL, WFA_PER_YEAR, WFA_FILES, welfareFill, parseWelfareList, welfareYearCount, describeWelfare, injected as wfaInjected,
 } from './src/welfare.js';
@@ -158,6 +159,8 @@ export function createAttendPanel({
     listWrap: $('atListWrap'), list: $('atList'), empty: $('atEmpty'),
     rangeBtn: $('atRangeBtn'), rangeBox: $('atRangeBox'), rangeFrom: $('atRangeFrom'), rangeTo: $('atRangeTo'),
     rangeGo: $('atRangeGo'), rangeHint: $('atRangeHint'),
+    commute: $('atCommute'), commuteTitle: $('atCommuteTitle'), commuteCount: $('atCommuteCount'), commuteRange: $('atCommuteRange'),
+    commuteWrap: $('atCommuteWrap'), commuteList: $('atCommuteList'), commuteEmpty: $('atCommuteEmpty'),
   };
 
   const st = {
@@ -177,6 +180,12 @@ export function createAttendPanel({
     halfOk: '',
     // 연차현황(HR 홈 카드의 연차·체력관리·저축연차 — src/hr.js 의 hrUserLeaves): { data } 또는 { error }. 휴가 폼을 그릴 때 읽고, 탭을 다시 열면 다시 읽는다.
     leaves: null, leavesWait: null,
+    // 출퇴근 위반(유연 종류에서만 — HR 자율출퇴근 체크리스트, src/hr.js 의 hrCommutes): { span, today, rows } 또는 { span, today, error }.
+    // commuteSpan 은 4W·8W·3M·6M·12M 로 고른 기간('4w' … '12m'), commuteWait 는 읽는 중인 { span, run }. 탭을 다시 열면 다시 읽는다.
+    commute: null, commuteWait: null, commuteSpan: '4w',
+    // 위반 줄의 출/퇴근기록 변경신청(2026-10-27) — cmFix 는 편 칸 하나 { date, start, end, nextDay, reason, armed, busy }, cmFixed 는 올린 것
+    // (저장소 attendCommuteFix — { [날짜]: { at, docNo, start, end } }), cmSeek 은 홈 카드의 `변경`에서 온 부탁 { date, at }(읽은 뒤 그 날 칸을 편다).
+    cmFix: null, cmFixed: {}, cmSeek: null,
     // 기념일 지원(휴가의 기념일 갈래)의 신청 현황 — eclass 목록 화면에서 읽은 줄들: { rows } 또는 { error }.
     wfa: null, wfaWait: null,
     // 신청 내역의 연차 카드에서 "기념일 지원"을 눌러 연 폼이면 그 연차({ docNo, summary }) — 연차는 이미 올라가 있어 결재요청·임시저장을 숨긴다.
@@ -506,6 +515,8 @@ export function createAttendPanel({
   /** 칸을 새로 그린다. 종류·하루 전체가 바뀌거나 밖에서 값을 채웠을 때만 부른다 — 치는 중에 부르면 커서가 날아간다. */
   function paintForm() {
     const kind = KINDS[st.form.kind];
+    // 출퇴근 위반은 폼 밖(신청 내역 위)에 있어 폼을 접어도 보인다 — 유연 종류에서만 선다.
+    paintCommute();
     // "내역"(모든 종류 보기)에서는 폼을 숨긴다 — 종류를 고르면 다시 보인다.
     el.form.classList.toggle('hidden', !kind || st.view === 'all');
     if (!kind || st.view === 'all') return;
@@ -898,6 +909,184 @@ export function createAttendPanel({
       paintLeaves();
     })();
     return st.leavesWait;
+  }
+
+  /* ---------------------------------------------------------------- 출퇴근 위반(유연) */
+
+  /**
+   * 출퇴근 위반 한 줄 — 날짜·요일 | 출근 → 퇴근 | 무엇을 어겼나 · `변경`, 그 아래 계획 시간과 그 날의 근태. 기록이 없는 쪽은 — 로 적는다.
+   * 어긴 시각은 붉다 — 지각이면 출근, 조퇴면 퇴근(2026-10-27 사용자 지정: "조퇴면.. 조퇴 표기를 해줘 시간을 알수 없네"). 변경신청을 올린 날은
+   * `변경` 대신 "변경 신청함", `변경`을 누른 날은 그 아래에 변경 칸(출근 · 퇴근 · 익일 · 사유 · 결재요청)이 선다.
+   */
+  function commuteRowHtml(d) {
+    const sub = `계획 ${d.plan}${d.status ? ` · ${d.status}` : ''}`;
+    const bad = (kind, time) => (d.faults.some((f) => f.kind === kind) && time
+      ? `<b class="at-cm-bad" title="${kind === 'late' ? '지각' : '조퇴'}">${escapeHtml(time)}</b>` : escapeHtml(time || '—'));
+    const sent = st.cmFixed[d.date];
+    const open = st.cmFix?.date === d.date;
+    const act = sent
+      ? `<span class="at-cm-sent" title="${escapeHtml(`출/퇴근기록 변경신청 ${sent.docNo || ''} — ${sent.start}~${sent.end}. 결재되면 HR 기록이 바뀌어 여기서 빠집니다`)}">변경 신청함</span>`
+      : `<button type="button" class="at-cm-fix${open ? ' active' : ''}" data-cmfix="${escapeHtml(d.date)}" aria-expanded="${open}" title="출/퇴근기록 변경신청 — 변경 출근·퇴근 시각과 사유를 넣고 결재요청">변경</button>`;
+    return `<li class="at-cm${open ? ' editing' : ''}" data-date="${escapeHtml(d.date)}" title="${escapeHtml(`${d.date} (${d.dow}) — ${sub}`)}">`
+      + `<span class="at-cm-date">${escapeHtml(`${md(d.date)} ${d.dow}`)}</span>`
+      + `<span class="at-cm-times">${bad('late', d.start)} → ${bad('early', d.end)}</span>`
+      + `<span class="at-cm-why">${faultText(d).map((t) => `<em>${escapeHtml(t)}</em>`).join('')}${act}</span>`
+      + `<span class="at-cm-plan">${escapeHtml(sub)}</span>${open && !sent ? commuteFormHtml(st.cmFix) : ''}</li>`;
+  }
+
+  /** 변경 칸 — 출근 · 퇴근 · 익일 · 사유, 결재요청(두 번 누름) · 닫기. 값은 st.cmFix 에 있어 다시 그려도 그대로다. */
+  function commuteFormHtml(f) {
+    const dis = f.busy ? ' disabled' : '';
+    return `<div class="at-cm-form" title="">`
+      + `<label>출근 <input type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" data-cm="start" value="${escapeHtml(f.start)}"${dis}></label>`
+      + `<label>퇴근 <input type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" data-cm="end" value="${escapeHtml(f.end)}"${dis}></label>`
+      + `<label class="at-cm-next" title="퇴근이 다음 날이면"><input type="checkbox" data-cm="nextDay"${f.nextDay ? ' checked' : ''}${dis}>익일</label>`
+      + `<input type="text" data-cm="reason" maxlength="200" placeholder="변경 사유(필수)" value="${escapeHtml(f.reason)}"${dis}>`
+      + `<button type="button" class="at-cm-send${f.armed ? ' armed' : ''}" data-cmsend${dis}>${f.busy ? '올리는 중…' : f.armed ? '한 번 더 누르면 결재요청' : '결재요청'}</button>`
+      + `<button type="button" class="at-cm-close" data-cmclose aria-label="닫기" title="닫기"${dis}>×</button></div>`;
+  }
+
+  /** 그 날의 변경 칸을 편다(다시 누르면 닫는다) — 기본 시각은 어긴 쪽만 계획 시각(src/commute.js fixDefaults). */
+  function openCommuteFix(date) {
+    if (st.cmFix?.busy) return;
+    if (st.cmFix?.date === date) { st.cmFix = null; paintCommute(); return; }
+    const day = commuteDays().find((d) => d.date === date);
+    if (!day) return;
+    st.cmFix = { date, ...fixDefaults(day), reason: '', armed: false, busy: false };
+    paintCommute();
+    el.commuteList.querySelector('[data-cm="reason"]')?.focus();
+  }
+
+  /** 지금 보이는 위반한 날들. */
+  const commuteDays = () => (st.commute?.rows ? commuteBreaches(st.commute.rows, { today: attendToday() }).days : []);
+
+  /**
+   * 변경 칸의 결재요청 — 처음 누르면 한 번 더 누르라고 하고, 두 번째에 행위 attend.commute 로 HR 「출/퇴근기록 변경신청」을 올린다
+   * (사람이 누른 핸들러 안 — 확인 증거는 기록의 지문). 올렸으면 그 날을 "변경 신청함"으로 적어 두고(attendCommuteFix — 홈 카드도 그 날을 뺀다) 다시 읽는다.
+   */
+  async function sendCommuteFix() {
+    const f = st.cmFix;
+    if (!f || f.busy) return;
+    if (!f.armed) {
+      f.armed = true;
+      paintCommute();
+      return;
+    }
+    f.busy = true;
+    paintCommute();
+    const input = { date: f.date, start: f.start, end: f.end, nextDay: !!f.nextDay, reason: f.reason.trim() };
+    try {
+      const record = await buildRecord('attend.commute', input);
+      let docNo = '';
+      await runRecord(record, {
+        onStage: setStatus, text: `출퇴근기록 변경신청 실패: ${f.date}`, data: { date: f.date },
+        outcome: async (r) => {
+          if (!r.ok) throw new Error(failText(r));
+          docNo = r.docNo || '';
+          return { ok: true, text: `출퇴근기록 변경신청: ${f.date} ${input.start}~${input.end}${docNo ? ` · ${docNo}` : ''}`, data: { ...input, docNo, row: r.read?.commuteRow } };
+        },
+      });
+      st.cmFixed = pruneFixes({ ...st.cmFixed, [f.date]: { at: Date.now(), docNo, start: input.start, end: input.end } }, attendToday());
+      await chrome.storage.local.set({ [COMMUTE_FIX_KEY]: st.cmFixed }).catch(() => {});
+      st.cmFix = null;
+      setStatus(`출/퇴근기록 변경신청을 결재요청했습니다 — ${md(input.date)} ${input.start}~${input.end}${docNo ? ` · ${docNo}` : ''}. 결재되면 위반에서 빠집니다.`);
+      onChanged();
+    } catch (err) {
+      Object.assign(f, { busy: false, armed: false });
+      setError(err, '출/퇴근기록 변경신청 실패');
+    }
+    paintCommute();
+  }
+
+  /**
+   * 홈 WORKSPACE 카드의 `변경`에서 왔다 — 유연 종류로 가서 그 날의 변경 칸을 편다(2026-10-27 사용자 지정: "출퇴근 위반이 발생하면 여기에 뜨고 수정할 수 있도록").
+   * 출퇴근 기록을 아직 안 읽었으면 다 읽은 뒤에 편다(paintCommute 가 cmSeek 을 본다).
+   */
+  function seekCommute(date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return;
+    if (st.form.kind !== 'flex' || st.view === 'all') setKind('flex');
+    if (st.form.kind !== 'flex') { setStatus('신청서를 고치는 중이라 출퇴근 위반을 열지 못했습니다 — 고치기를 마친 뒤 유연에서 그 날의 `변경`을 누르세요.', 'error'); return; }
+    st.cmSeek = { date, at: Date.now() };
+    paintCommute();
+  }
+
+  /**
+   * 유연 종류를 고르면 신청 내역 위에 출퇴근 위반이 선다(2026-10-27 사용자 지정) — HR 자율출퇴근 체크리스트의 날마다 출근·퇴근을 그 날의
+   * 근무시간(계획)과 맞춰 위반한 날만(src/commute.js 의 commuteBreaches). 다른 종류·"내역"에서는 숨는다. 아직 안 읽었으면 읽는다.
+   */
+  function paintCommute() {
+    const on = st.form.kind === 'flex' && st.view !== 'all';
+    el.commute.classList.toggle('hidden', !on);
+    if (!on) return;
+    const span = st.commuteSpan;
+    for (const b of el.commute.querySelectorAll('button[data-commute]')) {
+      const pressed = b.dataset.commute === span;
+      b.classList.toggle('active', pressed);
+      b.setAttribute('aria-pressed', String(pressed));
+    }
+    const today = attendToday();
+    el.commuteRange.textContent = spanText(commuteFrom(today, span), today, today);
+    const c = st.commute?.span === span && st.commute.today === today ? st.commute : null;
+    if (!c) loadCommute();
+    el.commuteWrap.setAttribute('aria-busy', String(!c));
+    const found = c?.rows ? commuteBreaches(c.rows, { today }) : null;
+    el.commuteCount.textContent = found?.days.length ? String(found.days.length) : '';
+    // HR 은 근태로 비운 날도 위반(O)으로 표시한다 — 여기서 뺀 날이 있으면 그 수를 제목의 풍선말에 적는다.
+    el.commuteTitle.title = '출근·퇴근 기록을 그 날의 근무시간(계획)과 비교합니다 — 근태(출장·연차·외근 …)와 점심 12~13시로 비운 시간은 위반이 아닙니다.'
+      + ' 기록이 없는 출근·퇴근은 보지 않습니다(2~3일 늦게 올라옵니다).'
+      + (found?.excused ? ` HR 이 위반으로 표시한 날 가운데 ${found.excused}일은 근태로 비웠거나 기록이 아직 없어 뺐습니다.` : '');
+    // 변경 칸에 쓰는 중에 다시 그려도(읽기가 끝났다 등) 커서는 그 칸에 남는다 — 값은 st.cmFix 에 있다.
+    const active = el.commuteList.contains(el.commuteList.ownerDocument.activeElement) ? el.commuteList.ownerDocument.activeElement.dataset?.cm : '';
+    if (st.cmFix && !found?.days.some((d) => d.date === st.cmFix.date) && !st.cmFix.busy) st.cmFix = null;
+    el.commuteList.innerHTML = found ? found.days.map(commuteRowHtml).join('') : '';
+    if (active) el.commuteList.querySelector(`[data-cm="${active}"]`)?.focus();
+    if (found && st.cmSeek) {
+      // 홈 카드의 `변경`에서 왔다 — 그 날 칸을 펴고 보이게 한다. 그 날이 지금 위반이 아니면(이미 고쳐졌다) 알리고 잊는다.
+      const { date } = st.cmSeek;
+      st.cmSeek = null;
+      if (!found.days.some((d) => d.date === date)) setStatus(`${md(date)} 은(는) 지금 출퇴근 위반이 아닙니다 — 이미 고쳐졌거나 기간 밖입니다.`);
+      else {
+        if (!st.cmFixed[date] && st.cmFix?.date !== date) openCommuteFix(date);
+        el.commuteList.querySelector(`li[data-date="${date}"]`)?.scrollIntoView?.({ block: 'nearest' });
+      }
+    }
+    el.commuteEmpty.textContent = !c ? '출퇴근 기록을 읽는 중...'
+      : c.error ? `출퇴근 기록을 읽지 못했습니다 — ${c.error}`
+        : found.days.length ? '' : `위반한 날이 없습니다 (근무일 ${found.judged}일)`;
+    el.commuteEmpty.classList.toggle('hidden', !el.commuteEmpty.textContent);
+    el.commuteEmpty.classList.toggle('at-cm-err', !!c?.error);
+  }
+
+  /** 출퇴근 위반 기간의 첫날 — '4w'·'8w' 는 그 주 수, '3m'·'6m'·'12m' 은 그 달 수만큼 전(2026-10-27 사용자 지정: 3·6·12개월). */
+  const commuteFrom = (today, span) => (span.endsWith('m') ? monthsAgo(today, parseInt(span, 10)) : daysAgo(today, parseInt(span, 10) * 7));
+
+  /** 출퇴근 기록을 HR 에서 읽는다(src/hr.js 의 hrCommutes) — 고른 기간의 첫날부터 오늘까지. 던지지 않는다 — 못 읽으면 까닭을 그 자리에 적는다. */
+  function loadCommute() {
+    const span = st.commuteSpan;
+    if (st.commuteWait?.span === span) return st.commuteWait.run;
+    const today = attendToday();
+    const run = (async () => {
+      let next;
+      try {
+        next = { span, today, rows: await hrCommutes({ from: commuteFrom(today, span), to: today }) };
+      } catch (err) {
+        next = { span, today, error: err.message };
+      }
+      // 그 사이 다른 기간을 읽기 시작했으면 그쪽이 그린다. 다른 기간을 골랐지만 이미 읽어 둔 것이라 읽지 않았으면 이것만 버린다.
+      if (st.commuteWait?.run !== run) return;
+      st.commuteWait = null;
+      if (span === st.commuteSpan) st.commute = next;
+      paintCommute();
+    })();
+    st.commuteWait = { span, run };
+    return run;
+  }
+
+  /** 4W·8W·3M·6M·12M — 그만큼 전부터 오늘까지를 곧바로 읽는다(12개월도 GET 하나 — 2026-10-27 실제 HR 에서 1초 남짓). */
+  function pickCommuteSpan(span) {
+    if (st.commuteSpan === span) return;
+    st.commuteSpan = span;
+    paintCommute();
   }
 
   /**
@@ -3297,10 +3486,11 @@ export function createAttendPanel({
   async function reload() {
     if (st.busy) return;
     disarm();
-    // 연차현황·기념일 신청 현황도 다시 읽는다(휴가 폼이 보이면 그릴 때 읽는다).
+    // 연차현황·기념일 신청 현황·출퇴근 위반도 다시 읽는다(휴가·유연 폼이 보이면 그릴 때 읽는다).
     st.leaves = null;
     st.wfa = null;
-    if (st.form.kind === 'leave') paintForm();
+    st.commute = null;
+    if (st.form.kind === 'leave' || st.form.kind === 'flex') paintForm();
     el.listWrap.setAttribute('aria-busy', 'true');
     setStatus('신청 내역을 읽는 중...');
     try {
@@ -3862,6 +4052,31 @@ export function createAttendPanel({
     el.list.addEventListener('dragleave', onAfterDrag);
     el.list.addEventListener('drop', onAfterDrop);
     el.openHr.addEventListener('click', () => chrome.tabs.create({ url: HR_SSO_URL }));
+    for (const b of el.commute.querySelectorAll('button[data-commute]')) {
+      b.addEventListener('click', () => pickCommuteSpan(b.dataset.commute));
+    }
+    // 위반 줄의 `변경` · 변경 칸(값은 쓰는 대로 st.cmFix 에 — 바꾸면 두 번 누름은 처음부터) · 결재요청 · 닫기.
+    el.commuteList.addEventListener('click', (e) => {
+      const fix = e.target.closest('[data-cmfix]');
+      if (fix) return openCommuteFix(fix.dataset.cmfix);
+      if (e.target.closest('[data-cmsend]')) return sendCommuteFix();
+      if (e.target.closest('[data-cmclose]') && !st.cmFix?.busy) { st.cmFix = null; paintCommute(); }
+      return undefined;
+    });
+    const cmInput = (e) => {
+      const f = st.cmFix;
+      const key = e.target.dataset?.cm;
+      if (!f || f.busy || !key) return;
+      // 시각은 24시간 HH:MM — "0830" 처럼 넣어도 맞춘다.
+      f[key] = key === 'nextDay' ? e.target.checked : key === 'start' || key === 'end' ? e.target.value.trim().replace(/^(\d{1,2})(\d{2})$/, (m, h, mm) => `${h.padStart(2, '0')}:${mm}`) : e.target.value;
+      if (f.armed) { f.armed = false; paintCommute(); }
+    };
+    el.commuteList.addEventListener('input', cmInput);
+    el.commuteList.addEventListener('change', cmInput);
+    el.commuteList.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.dataset?.cm === 'reason') { e.preventDefault(); sendCommuteFix(); }
+      if (e.key === 'Escape' && st.cmFix && !st.cmFix.busy) { st.cmFix = null; paintCommute(); }
+    });
     // 조회 기간. 달력 버튼이 날짜 칸을 편다 — 날짜를 직접 정했으면 조회를 눌러 읽는다. 제목 줄의 4W·8W 는 누르면 그 기간을 곧바로
     // 조회한다(켜진 것을 다시 누르면 기본 보기로 돌아온다).
     el.rangeBtn.addEventListener('click', () => {
@@ -3885,6 +4100,10 @@ export function createAttendPanel({
       // 이 패널이 쥐고 있던 예전 값으로 그것을 덮어쓰지 않게 한다. 이 패널이 적은 것도 같은 값으로 되돌아온다.
       if (changes.attendLegs) st.legs = { ...changes.attendLegs.newValue };
       if (changes.attendLodgeMine) st.lodgeMine = { ...st.lodgeMine, ...changes.attendLodgeMine.newValue };
+      if (changes[COMMUTE_FIX_KEY]) {
+        st.cmFixed = pruneFixes(changes[COMMUTE_FIX_KEY].newValue, attendToday());
+        paintCommute();
+      }
       if (!(MARKS_KEY in changes)) return;
       const it = st.items.find((x) => x.docNo === st.openDoc);
       const trip = it ? tripOf(it) : null;
@@ -3923,8 +4142,10 @@ export function createAttendPanel({
       if (saved?.attendLodgeInfo && typeof saved.attendLodgeInfo === 'object') st.lodgeInfo = { ...saved.attendLodgeInfo, ...st.lodgeInfo };
     }, () => {});
     // 다녀온 출장을 몇 주 뒤까지 보일지 고른 값과, 담아 둔 여비계산서 목록(오늘 읽은 것만 쓴다).
-    const rule = await chrome.storage.local.get([BACK_KEY, STAGES_KEY, ROUTES_KEY, CANCELLING_KEY]);
+    const rule = await chrome.storage.local.get([BACK_KEY, STAGES_KEY, ROUTES_KEY, CANCELLING_KEY, COMMUTE_FIX_KEY]);
     st.cancelKept = rule?.[CANCELLING_KEY] && typeof rule[CANCELLING_KEY] === 'object' ? { ...rule[CANCELLING_KEY], ...st.cancelKept } : st.cancelKept;
+    // 올린 출/퇴근기록 변경신청(그 날 줄은 "변경 신청함"). 오래된 것은 버린다.
+    st.cmFixed = { ...pruneFixes(rule?.[COMMUTE_FIX_KEY], attendToday()), ...st.cmFixed };
     // 출장지마다 기억해 둔 교통편(src/routes.js). 그 사이 이 패널이 새로 기억한 것이 있으면 그것이 먼저다.
     st.routes = { ...(rule?.[ROUTES_KEY] && typeof rule[ROUTES_KEY] === 'object' ? rule[ROUTES_KEY] : {}), ...st.routes };
     st.back = backWeeksOf(rule?.[BACK_KEY]);
@@ -3946,5 +4167,5 @@ export function createAttendPanel({
     el.root.classList.add('hidden');
   }
 
-  return { wire, show, hide, reload, seek, paintReady, authFailed: () => st.authFailed, state: st };
+  return { wire, show, hide, reload, seek, seekCommute, paintReady, authFailed: () => st.authFailed, state: st };
 }

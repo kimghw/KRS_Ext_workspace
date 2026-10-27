@@ -20,6 +20,12 @@
 // 목록이 있으면 머리 줄이나 화살표 버튼으로 접고 편다(2026-10-04 사용자 지정 — 접수 미확인 공문 카드와 같은 버튼). 접은 것은
 // 기억한다(FOLD_KEY) — 홈은 하루에도 여러 번 여는 화면이다. 접혀 있어도 건수 칩과 경고는 보인다.
 //
+// **지난 7일(오늘 포함)의 출퇴근 위반(지각·조퇴)이 목록 맨 위에 선다**(2026-10-27 사용자 지정: "출퇴근 위반이 발생하면 여기에 뜨고
+// 수정할 수 있도록 해줘" · "워크스페이스는 1주일 이전까지만 보이게 해줘" — 1주일은 위반에만). 출퇴근 기록도 HR 에 있어 배경이 하루에
+// 한 번 읽어 담아 주고(src/commuteweek.js), 위반 판정은 패널의 근태 탭과 같다(src/commute.js 의 recentBreaches). 줄의 `변경`은 패널의
+// 근태 탭에서 그 날의 출/퇴근기록 변경신청을 열어 달라는 부탁이다(카드는 HR 을 다루지 못한다). 패널이 변경신청을 올린 날(COMMUTE_FIX_KEY)은
+// 카드에서 빠진다. 위반이 없거나 못 읽었으면 아무것도 적지 않고, 머리 줄의 위반 칩도 셀 것이 있을 때만 선다.
+//
 // **출장 줄은 여비 증빙을 받는다**(2026-10-04 사용자 지정). 줄에 파일을 끌어다 놓거나, 마우스를 올리고 화면 캡처를 붙여 넣으면(Ctrl+V)
 // 그 출장의 증빙으로 들어간다 — 배경이 한 장씩 읽어 증빙으로 쓸 수 있는 것만 보관함에 담는다(src/intake.js). 줄의 오른쪽에는
 // 선 아이콘 여섯이 세 개씩 두 줄로 선다: 가는 편·오는 편(교통편 — 기차·비행기·버스)·숙박 / 항공권·출장증빙·보냄. 들어와 있으면(보냈으면)
@@ -50,6 +56,8 @@ import { MARKS_KEY } from './evidence.js';
 import { INTAKE_LIMIT } from './intake.js';
 import { UP_BUSY_KEY, upBusy } from './afterup.js';
 import { READ_POOL, mapPool } from './pool.js';
+import { COMMUTE_WEEK_KEY, COMMUTE_FIX_KEY, recentBreaches, faultText } from './commute.js';
+import { commuteWeekFresh } from './commuteweek.js';
 
 /** 훑은 결과를 담는 storage 키. 패널은 예약·취소 뒤 이 키를 지워 카드에게 알린다. */
 export const CACHE_KEY = 'homeMine';
@@ -432,6 +440,16 @@ const STYLE = `${CARD_STYLE}
 .krs-mine .krs-mine-list:not(:empty, [hidden]) ~ .krs-mine-warn:not(:empty) { margin-top: 8px; }
 .krs-mine .krs-mine-warn:not(:empty) + .krs-mine-warn:not(:empty) { margin-top: 2px; }
 .krs-mine .krs-mine-login { margin-left: 4px; color: #1f4e9c; text-decoration: underline; }
+.krs-mine .krs-card-chip.krs-mine-alarm { background: #fdecec; cursor: pointer; }
+.krs-mine .krs-card-chip.krs-mine-alarm[hidden] { display: none; }
+.krs-mine .krs-card-chip.krs-mine-alarm > span, .krs-mine .krs-card-chip.krs-mine-alarm > b { color: #c62828; }
+.krs-mine .krs-mine-item.breach { align-items: center; border-left: 3px solid #d73333; }
+.krs-mine .krs-mine-item.breach:hover { border-color: #d73333; background: #fdf6f6; }
+.krs-mine .krs-mine-kind.breach { margin-top: 0; background: #fdecec; color: #c62828; }
+.krs-mine .krs-mine-clock.bad { color: #d73333; }
+.krs-mine .krs-mine-fault { margin-left: 8px; color: #d73333; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.krs-mine .krs-mine-fix { flex: none; padding: 1px 9px; border: 1px solid #d73333; border-radius: 11px; background: #fff; color: #c62828; font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.5; cursor: pointer; }
+.krs-mine .krs-mine-fix:hover { background: #fdecec; }
 `;
 
 /** 근태 칩의 풍선말. 휴가는 연차·체력단련·외출·건강검진이고, 외근에는 같은 신청서로 올리는 교육이 들어간다. */
@@ -440,6 +458,8 @@ const PLAN_CHIP_TITLE = {
   out: '오늘부터의 내 외근·교육 (결재요청·결재완료)',
   leave: '오늘부터의 내 휴가 — 연차·체력단련·외출·건강검진 (결재요청·결재완료)',
 };
+/** 위반 칩의 풍선말. 칩은 위반이 있을 때만 선다. */
+const BREACH_CHIP_TITLE = '지난 7일(오늘 포함)의 출퇴근 위반 — 지각·조퇴 · 변경신청을 올린 날은 뺍니다';
 
 /** 홈 카드의 공통 겉(homecard.js)을 만들고, 안쪽 목록은 우리 것으로 채운다. */
 function buildStrip(doc) {
@@ -455,6 +475,7 @@ function buildStrip(doc) {
         <span class="krs-card-chip" title="오늘부터의 내 회의실 예약"><span>회의실</span><b data-role="rooms"></b></span>
         <span class="krs-card-chip" title="오늘부터의 내 차량 예약"><span>차량</span><b data-role="cars"></b></span>
 ${PLAN_GROUPS.map((g) => `        <span class="krs-card-chip" title="${PLAN_CHIP_TITLE[g.key]}"><span>${g.label}</span><b data-role="${g.key}"></b></span>`).join('\n')}
+        <span class="krs-card-chip krs-mine-alarm" data-act="breach" data-role="breachChip" title="${BREACH_CHIP_TITLE}" hidden><span>위반</span><b data-role="breach"></b></span>
       </span>
       <span class="krs-card-note" data-role="note"></span>
       <span class="krs-card-tools">
@@ -476,7 +497,7 @@ ${PLAN_GROUPS.map((g) => `        <span class="krs-card-chip" title="${PLAN_CHIP
   return {
     root, head: root.querySelector('.krs-mine-head'), body: root.querySelector('.krs-mine-body'), toggle: q('toggle'),
     rooms: q('rooms'), cars: q('cars'), note: q('note'), bar: q('bar'), fill: q('fill'),
-    list: q('list'), warn: q('warn'), planWarn: q('planWarn'),
+    list: q('list'), warn: q('warn'), planWarn: q('planWarn'), breachChip: q('breachChip'), breach: q('breach'),
     plans: Object.fromEntries(PLAN_GROUPS.map((g) => [g.key, q(g.key)])),
     refresh: root.querySelector('[data-act="refresh"]'),
     showAll: root.querySelector('[data-act="all"]'),
@@ -589,6 +610,27 @@ function itemHtml(it, i, today) {
     + '</li>';
 }
 
+const FIX_TITLE = '변경 — 예약 패널의 근태 탭에서 이 날의 출/퇴근기록 변경신청을 엽니다';
+
+/**
+ * 출퇴근 위반 한 날(src/commute.js 의 recentBreaches) — "9/16 (수) 08:42 → 17:15 지각 12분" 과 `변경`. 어긴 쪽 시각이 붉다
+ * (지각이면 출근, 조퇴면 퇴근). 그 날의 근무시간(계획)과 근태는 풍선말에 둔다. 줄 어디를 눌러도 `변경`과 같다.
+ */
+function breachHtml(d, today) {
+  const late = d.faults.some((f) => f.kind === 'late');
+  const early = d.faults.some((f) => f.kind === 'early');
+  const clock = (value, bad) => `<span class="krs-mine-clock${bad ? ' bad' : ''}">${escapeHtml(value || '—')}</span>`;
+  const date = escapeHtml(d.date);
+  return `<li class="krs-mine-item breach" data-act="commute-fix" data-date="${date}" title="${escapeHtml(`계획 ${d.plan}${d.status ? ` · ${d.status}` : ''}`)}">`
+    + '<span class="krs-mine-kind breach">출퇴근</span>'
+    + '<span class="krs-mine-main">'
+    + `<span class="krs-mine-when">${escapeHtml(dayLabel(d.date, today))} ${clock(d.start, late)} → ${clock(d.end, early)}</span>`
+    + `<span class="krs-mine-fault">${escapeHtml(faultText(d).join(' · '))}</span>`
+    + '</span>'
+    + `<button type="button" class="krs-mine-fix" data-act="commute-fix" data-date="${date}" title="${FIX_TITLE}" aria-label="${FIX_TITLE}">변경</button>`
+    + '</li>';
+}
+
 /* ------------------------------------------------------------ 붙이기 */
 
 /** 배경(서비스 워커)에게 이 탭에 패널을 열어 달라고 한다. 콘텐츠 스크립트는 sidePanel API 를 직접 못 부른다. */
@@ -605,6 +647,16 @@ async function defaultOpenPanel() {
 async function defaultLoadPlans({ force = false } = {}) {
   const r = await chrome.runtime.sendMessage({ type: 'hrPlans', force });
   return r || { items: [], error: '응답이 없습니다' };
+}
+
+/**
+ * 배경(서비스 워커)에게 지난 7일의 출퇴근 기록을 읽어 달라고 한다(src/commuteweek.js) — 근태와 같은 까닭이다.
+ * 배경은 읽은 것을 storage(COMMUTE_WEEK_KEY)에도 담는다.
+ * @returns {Promise<{rows: object[], error: string}>}
+ */
+async function defaultLoadCommutes({ force = false } = {}) {
+  const r = await chrome.runtime.sendMessage({ type: 'hrCommuteWeek', force });
+  return r || { rows: [], error: '응답이 없습니다' };
 }
 
 /**
@@ -749,6 +801,7 @@ export function createHomeCard(doc, deps = {}) {
   const debounceMs = deps.debounceMs ?? RESCAN_DEBOUNCE_MS;
   const openPanel = deps.openPanel || defaultOpenPanel;
   const loadPlans = deps.loadPlans || defaultLoadPlans;
+  const loadCommutes = deps.loadCommutes || defaultLoadCommutes;
   const listTrips = deps.listTrips || defaultListTrips;
   const preDetail = deps.preDetail || defaultPreDetail;
   const keepEvidence = deps.keepEvidence || defaultKeepEvidence;
@@ -768,8 +821,11 @@ export function createHomeCard(doc, deps = {}) {
 
   // items 는 회의실·차량 예약, plans 는 근태. 아직 모르면 null 이다 — 못 읽은 것을 0 건이라고 하지 않는다.
   // all 은 둘을 날짜순으로 섞은, 화면에 그린 그대로의 목록이다. raw 는 읽어 둔 근태 그대로({ items, start, end }) —
-  // 다녀온 출장을 고르는 규칙이 바뀌면 여기서 다시 고른다.
-  const view = { items: null, plans: null, all: [], raw: null };
+  // 다녀온 출장을 고르는 규칙이 바뀌면 여기서 다시 고른다. week 는 지난 7일의 출퇴근 기록(오늘 읽은 체크리스트 줄 — 모르면 null)이고,
+  // 위반 줄은 그릴 때마다 여기서 고른다(all 에 섞지 않고 목록 맨 위에 선다).
+  const view = { items: null, plans: null, all: [], raw: null, week: null };
+  // 패널이 출/퇴근기록 변경신청을 올린 날들(COMMUTE_FIX_KEY — { 날짜: { at, docNo, start, end } }) — 그 날은 위반 줄에서 뺀다.
+  let fixes = {};
   // 다녀온 출장을 고르는 규칙(src/settling.js): 며칠 뒤까지 남기는가, 증빙을 보낸 기록, 읽어 둔 여비계산서 목록(모르면 null).
   let back = TRIP_LOOKBACK_DAYS;
   let sent = {};
@@ -805,6 +861,10 @@ export function createHomeCard(doc, deps = {}) {
   let planRerun = false;
   let needPlans = false;
   let planDebounce = null;
+  let commuteRun = null;   // 지금 도는 출퇴근 기록 읽기. 근태와 따로 돈다.
+  let commuteRerun = false;
+  let needCommutes = false;
+  let commuteDebounce = null;
   let disposed = false;    // 카드를 뗐다. 그 뒤로는 아무것도 하지 않는다
   const stopper = new AbortController();
 
@@ -860,12 +920,19 @@ export function createHomeCard(doc, deps = {}) {
     });
   }
 
+  /** 카드에 띄울 출퇴근 위반 — 지난 7일(오늘 포함), 최근 날이 위. 패널이 변경신청을 올린 날은 뺀다. 기록을 못 읽었으면 없다. */
+  const breachesNow = () => (view.week ? recentBreaches(view.week, today()).filter((d) => !fixes[d.date]) : []);
+
   /**
    * 예약과 근태를 한 목록에 날짜순으로 섞어 그리고, 칩에 건수를 적는다. 숨긴 "다녀온 출장"은 빼고 그린다 —
    * 숨긴 것이 있으면 머리 줄에 눈 아이콘(전체 보기)이 나오고, 켜면 숨긴 것까지 흐리게 보인다. 칩은 숨기지 않은 건수다.
+   * 출퇴근 위반은 그 위에 따로 선다 — 위반 칩은 위반이 있을 때만 보인다(0 이나 못 읽은 것은 적지 않는다).
    */
   function paint() {
     const t = today();
+    const breaches = breachesNow();
+    ui.breach.textContent = breaches.length ? String(breaches.length) : '';
+    ui.breachChip.hidden = !breaches.length;
     const items = view.items || [];
     const every = (view.plans || []).map((p) => ({
       ...p, tucked: p.past && hidden.has(p.docNo),
@@ -886,7 +953,7 @@ export function createHomeCard(doc, deps = {}) {
     for (const g of PLAN_GROUPS) {
       setChip(ui.plans[g.key], view.plans ? plans.filter((p) => p.group === g.key && !p.tucked).length : null);
     }
-    ui.list.innerHTML = view.all.map((it, i) => itemHtml(it, i, t)).join('');
+    ui.list.innerHTML = breaches.map((d) => breachHtml(d, t)).join('') + view.all.map((it, i) => itemHtml(it, i, t)).join('');
     wantUp();
   }
 
@@ -1426,6 +1493,55 @@ export function createHomeCard(doc, deps = {}) {
     planDebounce = setTimeout(() => runPlans(), debounceMs);
   }
 
+  /**
+   * 지난 7일의 출퇴근 기록을 읽어 위반한 날을 그린다(2026-10-27 사용자 지정). 근태와 같은 차례이고 그것과 따로 돈다.
+   *   오늘 읽어 둔 것이 있다(배경이 담았다) → 그것만 보여준다
+   *   없다 · force(새로고침)               → 배경에게 읽어 달라고 한다
+   * 못 읽으면 아무것도 적지 않는다 — 위반 칩도 줄도 서지 않는다(못 읽은 것을 위반 0 으로 보이지 않게 칩은 셀 것이 있을 때만 선다).
+   * HR 이 막힌 사정은 근태 경고 줄이 이미 말한다.
+   */
+  function runCommutes({ force = false } = {}) {
+    if (disposed || !alive()) return undefined;
+    if (commuteRun) {
+      if (force) commuteRerun = true;
+      return commuteRun;
+    }
+    commuteRun = (async () => {
+      const saved = await storage.get([COMMUTE_WEEK_KEY, COMMUTE_FIX_KEY]);
+      if (disposed) return;
+      fixes = objectOr(saved[COMMUTE_FIX_KEY], {});
+      const cache = saved[COMMUTE_WEEK_KEY];
+      const fresh = commuteWeekFresh(cache, today());
+      if (fresh) {
+        view.week = cache.rows;
+        paint();
+      }
+      if (fresh && !force) return;
+      const r = await loadCommutes({ force });
+      if (disposed || r?.error || !Array.isArray(r?.rows)) return;
+      view.week = r.rows;
+      paint();
+    })().catch(() => { /* 못 읽은 것은 그리지 않을 뿐이다 */ }).finally(() => {
+      commuteRun = null;
+      if (commuteRerun && !disposed) {
+        commuteRerun = false;
+        runCommutes({ force: true });
+      }
+    });
+    return commuteRun;
+  }
+
+  /** 출퇴근 기록을 다시 읽어야 한다(누가 담아 둔 것을 지웠다). 보이면 곧 읽고, 안 보이면 보일 때 읽는다. */
+  function wantCommutes() {
+    if (disposed) return;
+    if (!visible()) {
+      needCommutes = true;
+      return;
+    }
+    clearTimeout(commuteDebounce);
+    commuteDebounce = setTimeout(() => runCommutes(), debounceMs);
+  }
+
   /** 예약이 바뀌었을 수 있다. 보이면 곧(몰려오는 알림은 모아서) 훑고, 안 보이면 보일 때 훑는다. */
   function wantRescan() {
     if (disposed) return;
@@ -1456,6 +1572,20 @@ export function createHomeCard(doc, deps = {}) {
       if (changes[PLANS_KEY].newValue === undefined) wantPlans();
       else runPlans();
     } else if ('spanDays' in changes) runPlans();
+    // 출퇴근 위반: 누가 지난 7일의 기록을 새로 담았으면(배경·다른 창) 그것을 그리고, 지웠으면 다시 읽는다.
+    // 패널이 변경신청을 올렸으면 그 날을 뺀다.
+    if (COMMUTE_WEEK_KEY in changes) {
+      const value = changes[COMMUTE_WEEK_KEY].newValue;
+      if (value === undefined) wantCommutes();
+      else if (commuteWeekFresh(value, today())) {
+        view.week = value.rows;
+        paint();
+      }
+    }
+    if (COMMUTE_FIX_KEY in changes) {
+      fixes = objectOr(changes[COMMUTE_FIX_KEY].newValue, {});
+      paint();
+    }
     // 다녀온 출장을 고르는 규칙이 바뀌었다 — 패널에서 기간(4주·8주·안 봄)을 바꿨거나, 증빙을 보냈거나, 여비계산서 목록을 새로 읽었다.
     if (BACK_KEY in changes) {
       back = backWeeksOf(changes[BACK_KEY].newValue) * 7;
@@ -1520,6 +1650,10 @@ export function createHomeCard(doc, deps = {}) {
       needPlans = false;
       runPlans();
     }
+    if (needCommutes) {
+      needCommutes = false;
+      runCommutes();
+    }
     // 안 보이는 사이에는 남은 증빙을 올리지 않았다 — 보이면 올린다.
     wantUp();
   };
@@ -1542,9 +1676,26 @@ export function createHomeCard(doc, deps = {}) {
       try { await storage.set({ [FOLD_KEY]: !open }); } catch { /* 다음에 열면 펴져 있을 뿐이다 */ }
       return;
     }
+    // 머리 줄의 위반 칩 — 접어 두었으면 편다(위반 줄은 목록 맨 위에 있다). 펴져 있으면 그대로 둔다.
+    if (act === 'breach') {
+      if (open) return;
+      foldChosen = true;
+      setOpen(true);
+      try { await storage.set({ [FOLD_KEY]: false }); } catch { /* 다음에 열면 접혀 있을 뿐이다 */ }
+      return;
+    }
     if ((!act && !li) || orphaned()) return;
-    if (act === 'refresh') { run({ force: true }); runPlans({ force: true }); return; }
+    if (act === 'refresh') { run({ force: true }); runPlans({ force: true }); runCommutes({ force: true }); return; }
     if (act === 'panel') { await askPanel(); return; }
+    // 출퇴근 위반 줄의 `변경`(줄 어디를 눌러도 같다) — 패널의 근태 탭에서 그 날의 출/퇴근기록 변경신청을 열어 달라는 부탁을 남기고 연다.
+    // 신청은 패널에서 사람이 시각을 보고 올린다(카드는 HR 을 다루지 못한다). 올리면 패널이 그 날을 적어 두고(COMMUTE_FIX_KEY) 카드에서 빠진다.
+    if (act === 'commute-fix') {
+      const date = target.closest('[data-date]')?.dataset.date;
+      if (!date) return;
+      await storage.set({ [JUMP_KEY]: { date, mode: 'attend', focus: 'commute', at: now() } });
+      await askPanel();
+      return;
+    }
     // 다녀온 출장 한 건을 숨기거나 다시 보이게 하고(줄 끝의 눈 아이콘), 숨긴 것까지 전체를 보거나 다시 가린다(머리 줄의 눈 아이콘).
     const docNo = target.closest('[data-doc]')?.dataset.doc;
     if (act === 'hide') { await setHidden([...hidden, docNo]); return; }
@@ -1656,6 +1807,7 @@ export function createHomeCard(doc, deps = {}) {
     stopper.abort();
     clearTimeout(debounce);
     clearTimeout(planDebounce);
+    clearTimeout(commuteDebounce);
     offChanged?.();
     doc.removeEventListener('visibilitychange', onVisible);
     doc.removeEventListener('paste', onPaste);
@@ -1664,8 +1816,8 @@ export function createHomeCard(doc, deps = {}) {
 
   return {
     root: ui.root,
-    ready: Promise.all([run(), runPlans()]),
-    refresh: (opts) => Promise.all([run({ force: true, ...opts }), runPlans({ force: true })]),
+    ready: Promise.all([run(), runPlans(), runCommutes()]),
+    refresh: (opts) => Promise.all([run({ force: true, ...opts }), runPlans({ force: true }), runCommutes({ force: true })]),
     destroy,
     get destroyed() { return disposed; },
   };

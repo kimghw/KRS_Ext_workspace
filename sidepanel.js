@@ -36,6 +36,7 @@ import { createRndPanel } from './rndpanel.js';
 import { createMailPanel } from './mailtrack/index.js';
 import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
+import { createDwrBox } from './dwrbox.js';
 import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
 import { hrListDocs } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
@@ -1871,6 +1872,9 @@ const isMail = () => state.mode === 'mail';
 /** 날짜 격자를 쓰지 않고 제 화면만 두는 탭(근태·공문·R&D·메일). */
 const isPanelTab = () => isAttend() || isGongmun() || isRnd() || isMail();
 
+/** 현황 탭 목록 위의 일일 업무 카드(e-Class 일일업무통계 대시보드의 내 것 — dwrbox.js). 현황을 읽을 때(loadMine) 같이 받는다. */
+const dwr = createDwrBox();
+
 /** 근태 탭. 화면 조각은 attendpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const attend = createAttendPanel({
   $, escapeHtml, logEvent, actions, openSetting: jumpToSetting,
@@ -2046,6 +2050,7 @@ function applyMode(mode, { keepSettings = false } = {}) {
   el.spanControl?.toggleAttribute('hidden', !mineTab);
   el.grid.classList.toggle('hidden', mineTab);
   el.mineWrap.classList.toggle('hidden', !mineTab);
+  dwr.toggle(mineTab);
 
   chrome.storage.local.set({ mode });
   if (!gongmunTab) gongmun.hide();
@@ -2411,6 +2416,8 @@ async function loadMine(sequence, { force = false } = {}) {
   const dates = datesFrom(start, spanDays());
   const span = `${shortLabel(start)}~${shortLabel(addDays(start, spanDays() - 1))}`;
 
+  // 일일 업무 카드는 예약 훑기와 따로 받는다 — 기다리지 않는다. 10분 안이면 받아 둔 것을 그리고, ↻ 면 다시 받는다.
+  dwr.show({ force });
   el.mineWrap.setAttribute('aria-busy', 'true');
   el.refresh.disabled = true;
   el.refresh.classList.add('spin');
@@ -2545,6 +2552,8 @@ async function takeHomeJump() {
  * 출장 줄의 `보내기`에서 왔으면 그 출장 카드의 여비증빙 송부 칸까지 간다(attendpanel.js 의 seek).
  */
 function applyHomeJump(jump) {
+  // 출퇴근 위반 줄의 `변경`(2026-10-27) — 근태 탭의 유연으로 가서 그 날의 변경 칸을 편다.
+  if (jump.mode === 'attend' && jump.focus === 'commute') return Promise.resolve(applyMode('attend')).then(() => attend.seekCommute(jump.date));
   if (jump.mode === 'attend') return openAttend(jump.docNo, { send: jump.focus === 'send' });
   el.date.value = jump.date;
   return applyMode(jump.mode === 'car' ? 'car' : 'room');
@@ -3127,6 +3136,7 @@ async function init() {
   el.tabRoom.addEventListener('click', () => setMode('room'));
   el.tabCar.addEventListener('click', () => setMode('car'));
   el.tabMine.addEventListener('click', () => setMode('mine'));
+  dwr.wire();
   el.mineList.addEventListener('click', async (e) => {
     const editBtn = e.target instanceof HTMLElement ? e.target.closest('[data-edit]') : null;
     if (editBtn) {

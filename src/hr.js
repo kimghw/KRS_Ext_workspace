@@ -215,6 +215,31 @@ async function frameRun(job) {
         out.read.cancelRows = set.length;
         continue;
       }
+      if (op.op === 'commuteRow') {
+        // 출/퇴근기록 변경신청 — "출퇴근시간 선택" 창이 읽는 그 달 목록에서 그 날 줄을 사이트의 insertGridRow 로 넣고, 변경 시각·익일·사유를 적는다.
+        // 근무시간은 사람이 칸을 고칠 때 사이트가 fn_TimeCal 로 채우는데(onEditRowChanged) setValue 로는 돌지 않아 같은 함수로 채운다.
+        const g = window[op.grid];
+        if (!g || typeof window.insertGridRow !== 'function' || typeof window.fn_TimeCal !== 'function') { out.errors.push('출퇴근기록 변경 표를 찾지 못했습니다'); continue; }
+        let rows = null;
+        $.ajax({ url: op.pop, type: 'GET', async: false, data: { emplNo: $('input[name=userId]').val(), baseMonth: op.month }, success: function (d) { rows = d; } });
+        const hit = (rows || []).find(function (r) { return String(r.workDate) === op.workDate; });
+        if (!hit) throw new Error(op.workDate + ' 의 출퇴근 기록을 HR 의 변경 목록에서 찾지 못했습니다.');
+        window.insertGridRow(hit);
+        const row = g.getData().find(function (r) { return String(r.workDate).replace(/-/g, '') === op.workDate; });
+        if (!row) { out.errors.push('출퇴근기록 줄이 들어가지 않았습니다'); continue; }
+        const hm = function (s) { return [s.slice(0, 2), s.slice(3, 5)]; };
+        const t = window.fn_TimeCal(hm(op.start)[0], hm(op.start)[1], hm(op.end)[0], hm(op.end)[1], op.nextDay);
+        const want = { chngStartTime: op.start, chngEndTime: op.end, nextDayInd: op.nextDay, chngRsn: op.reason, chngWorkHour: t.workHour, workHourTotal: t.workHourTotal };
+        for (const key of Object.keys(want)) g.setValue(row.rowKey, key, want[key]);
+        try { g.getGrid().commit(true); } catch (e) { /* 편집 중이 아니면 할 일이 없다 */ }
+        const now = g.getData().find(function (r) { return r.rowKey === row.rowKey; }) || {};
+        for (const key of ['chngStartTime', 'chngEndTime', 'chngRsn']) {
+          if (String(now[key]).replace(':', '') !== String(want[key]).replace(':', '')) out.errors.push('출퇴근기록 변경 칸(' + key + ')이 들어가지 않았습니다');
+        }
+        if (!(Number(now.workHourTotal) > 0)) out.errors.push('변경 근무시간을 셈하지 못했습니다');
+        out.read.commuteRow = { workDate: op.workDate, startTime: hit.startTime, endTime: hit.endTime, chngStartTime: now.chngStartTime, chngEndTime: now.chngEndTime, workHourTotal: now.workHourTotal };
+        continue;
+      }
       out.errors.push('모르는 작업: ' + op.op);
     }
 
@@ -499,6 +524,25 @@ export function hrUserLeaves(opts) {
     const { text } = await request(`/main/main/userleaves?${query({ emplNo: s.user.emplNo })}`, null, opts);
     const data = parseJson(text, '연차현황');
     return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  });
+}
+
+/**
+ * 자율출퇴근 체크리스트(근태 > 개인근태현황) — 날마다 근무시간(계획 planTime "0830 ~ 1730")·출근·퇴근(startTime·endTime "0826")·
+ * 근태내역(workStatus)·HR 의 위반 표시(isPlanNotFollowed 'O'). 화면의 조회 버튼과 같은 GET 이다(2026-10-27 실제 화면에서 확인 —
+ * 같은 주소의 POST 는 오늘 기록, /work·/leave 는 출근·퇴근을 **적는** 요청이라 부르지 않는다). 최근 날이 위로 온다.
+ * 읽는 쪽은 src/commute.js 의 commuteBreaches.
+ * @param {{from:string,to:string}} range 근무일 기준 YYYY-MM-DD
+ * @returns {Promise<object[]>}
+ */
+export function hrCommutes({ from, to }, opts) {
+  return serial(async () => {
+    const s = await hrSession(opts);
+    const q = query({ fromDate: from, toDate: to, emplNo: s.user.emplNo, viewName: 'month' });
+    const { text } = await request(`/wrk/wrkcommute/wrkcommute100?${q}`, null, opts);
+    const rows = parseJson(text, '출퇴근 기록');
+    if (!Array.isArray(rows)) throw new HrError('출퇴근 기록 응답의 모양이 다릅니다.');
+    return rows;
   });
 }
 

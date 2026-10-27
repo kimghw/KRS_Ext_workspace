@@ -649,6 +649,53 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .mi-title::before { content: "·"; margin-right: 6px; color: var(--faint); }
 .mi-why { flex: none; margin-top: 3px; color: var(--faint); font-size: 11px; white-space: nowrap; }
 
+/* 현황의 일일 업무 카드(dwrbox.js — e-Class 일일업무통계 대시보드의 내 것). 접힌 머리 줄은 R&D 카드와 같은 꼴, 아이콘은 머리 줄 오른쪽. */
+.dwr-box { margin-bottom: 10px; padding: 0 14px; border-radius: 14px; }
+.dwr-box[aria-busy="true"] .dwr-body { opacity: .7; }
+.dwr-box > summary { display: flex; align-items: center; gap: 9px; min-height: 43px; color: var(--muted); font-size: 14px; cursor: pointer; list-style: none; }
+.dwr-box > summary::-webkit-details-marker { display: none; }
+.dwr-box > summary > svg { width: 15px; height: 15px; }
+.dwr-box > summary > span:first-of-type { flex: none; color: var(--fg); font-weight: 600; }
+.dwr-box > summary .summary-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dwr-box > summary::after { content: ""; flex: none; width: 5px; height: 5px; margin: 0 3px; border-right: 1.4px solid var(--faint); border-bottom: 1.4px solid var(--faint); transform: rotate(-45deg); transition: transform .15s; }
+.dwr-box[open] > summary::after { transform: rotate(45deg); }
+.dwr-icon { flex: none; width: 24px; min-height: 24px; padding: 0; border-radius: 6px; background: transparent; color: var(--faint); }
+.dwr-icon:hover { color: var(--pick); background: var(--pick-soft); }
+.dwr-icon svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.dwr-body { padding: 0 0 12px; font-size: 13px; }
+.dwr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dwr-ranges { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface-soft); }
+.dwr-ranges button { min-height: 0; padding: 2px 9px; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; }
+.dwr-ranges button[aria-pressed="true"] { background: var(--surface); color: var(--pick); font-weight: 600; box-shadow: var(--shadow); }
+.dwr-last { margin-left: auto; color: var(--faint); font-size: 11px; white-space: nowrap; }
+.dwr-sub { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.dwr-sub small { color: var(--faint); font-weight: 400; }
+/* 업무 비율 — 이름 · 막대(실제, 세로 금은 목표) · 실제 / 목표 %. 더한 업무는 목표가 입력칸, 끝에 지우기, 그 아래 더하기 줄(늘). 차이가 5%p 넘으면 실제가 붉다. */
+.dwr-top { display: grid; grid-template-columns: minmax(0, 1fr) 28% auto; column-gap: 8px; list-style: none; margin: 0 0 4px; padding: 0; }
+.dwr-top li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; min-height: 22px; padding: 1px 0; }
+.dwr-top li.dwr-none { display: block; color: var(--faint); }
+.dwr-top li.dwr-k-rnd .dwr-top-name, .dwr-top li.dwr-k-etc .dwr-top-name { color: var(--muted); }
+.dwr-top-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dwr-bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-soft); }
+.dwr-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--pick); }
+.dwr-bar > b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); opacity: .6; }
+.dwr-num { display: flex; align-items: center; justify-content: flex-end; gap: 3px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dwr-num strong { color: var(--fg); font-weight: 650; }
+.dwr-top li.dwr-off .dwr-num strong { color: var(--danger); }
+.dwr-box .dwr-top input { min-height: 0; height: 22px; padding: 0 5px; border-radius: 6px; }
+.dwr-box .dwr-top input:focus-visible { outline-width: 2px; outline-offset: 1px; }
+.dwr-rate { width: 38px; text-align: right; -moz-appearance: textfield; }
+.dwr-rate::-webkit-inner-spin-button, .dwr-rate::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.dwr-item-name { width: 100%; min-width: 0; }
+.dwr-top .dwr-icon { width: 18px; min-height: 18px; }
+.dwr-top .dwr-icon svg { width: 12px; height: 12px; }
+.dwr-hint { margin: 4px 0 0; color: var(--faint); font-size: 11px; }
+.dwr-hint:empty { display: none; }
+.dwr-msg { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.dwr-msg:empty { display: none; }
+.dwr-msg.error { color: var(--danger); }
+.dwr-msg a { color: var(--pick); }
+
 
 /* 선택 상황에 따라 바뀌는 실행 버튼들 */
 .actions { display: flex; flex-direction: column; gap: 6px; }
@@ -821,7 +868,7 @@ button.danger:hover { filter: brightness(1.08); }
 .attend button.armed { background: var(--danger); color: #fff; }
 .attend button.armed:hover:not(:disabled) { background: var(--danger); filter: brightness(1.08); }
 
-.attend .at-list-head { margin-top: 20px; }
+.attend .at-list-head, .attend .at-commute-head { margin-top: 20px; }
 .attend .at-list { list-style: none; margin: 0; padding: 0; }
 .attend .at-list li { margin-bottom: 6px; border: 1px solid var(--line); border-radius: 11px; font-size: 14px; }
 .attend .at-list li:last-child { margin-bottom: 0; }
@@ -1054,11 +1101,11 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .status:not(:empty) { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .attend .status.error:not(:empty) { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
 .attend[aria-busy="true"] .status:not(:empty), .attend:has(#atListWrap[aria-busy="true"]) .status:not(:empty) { border-color: var(--pick); color: var(--pick); background: var(--pick-soft); }
-.attend .at-list-head { justify-content: flex-start; gap: 6px; }
-.attend .at-list-head h2 { flex: 1; min-width: 0; }
-.attend .at-list-head .head-date { display: block; margin: 3px 0 0; color: var(--faint); font-size: 12px; font-weight: 400; }
+.attend .at-list-head, .attend .at-commute-head { justify-content: flex-start; gap: 6px; }
+.attend .at-list-head h2, .attend .at-commute-head h2 { flex: 1; min-width: 0; }
+.attend .at-list-head .head-date, .attend .at-commute-head .head-date { display: block; margin: 3px 0 0; color: var(--faint); font-size: 12px; font-weight: 400; }
 .attend .at-list-head .selection-hint { flex-basis: 100%; }
-.attend .at-list-head .count { vertical-align: baseline; }
+.attend .at-list-head .count, .attend .at-commute-head .count { vertical-align: baseline; }
 .attend .at-acts button { min-height: 34px; font-size: 12px; padding: 6px 10px; }
 .attend button.at-request:not(.armed) { color: var(--pick); background: var(--pick-soft); font-weight: 600; }
 .attend button.at-request:hover:not(:disabled):not(.armed) { background: color-mix(in srgb, var(--pick) 18%, var(--surface)); }
@@ -1184,6 +1231,29 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .open-inline.active { color: var(--pick); border-color: var(--pick); background: var(--pick-soft); }
 /* 제목 줄의 4W · 8W(2026-10-05 사용자 지정) — 달력 버튼과 같은 높이의 글 버튼이다. 켜진 것이 지금 조회하는 기간이다. */
 .attend .open-inline.at-back { width: auto; min-width: 30px; padding: 0 5px; font-size: 11px; font-weight: 600; letter-spacing: -.2px; font-variant-numeric: tabular-nums; }
+/* 출퇴근 위반(유연 종류에서만 — 2026-10-27 사용자 지정). 한 날이 두 줄이다: 날짜 · 출근 → 퇴근 · 어긴 것(붉은 딱지), 그 아래 계획 시간과 그 날의 근태. */
+.attend .at-commute-list { list-style: none; margin: 0; padding: 0; }
+.attend .at-cm { display: grid; grid-template-columns: auto auto minmax(0, 1fr); column-gap: 10px; align-items: baseline; padding: 7px 8px; border-bottom: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; }
+.attend .at-cm:last-child { border-bottom: 0; }
+.attend .at-cm-date { font-weight: 600; }
+.attend .at-cm-why { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.attend .at-cm-why em { padding: 1px 6px; border-radius: 6px; background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); font-size: 12px; font-style: normal; font-weight: 650; }
+.attend .at-cm-plan { grid-column: 1 / -1; margin-top: 1px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 어긴 시각(지각이면 출근, 조퇴면 퇴근)은 붉다 · `변경`은 위반 딱지 옆의 작은 단추, 올린 날은 "변경 신청함" · 변경 칸은 줄 아래 한 줄(좁으면 접힌다). */
+.attend .at-cm-bad { color: var(--danger); font-weight: 650; }
+.attend .at-cm-fix { min-height: 0; padding: 1px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--pick); font-size: 12px; font-weight: 600; }
+.attend .at-cm-fix:hover, .attend .at-cm-fix.active { border-color: var(--pick); background: var(--pick-soft); }
+.attend .at-cm-sent { padding: 1px 6px; border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-size: 12px; }
+.attend .at-cm.editing { background: color-mix(in srgb, var(--pick) 5%, var(--surface)); }
+.attend .at-cm-form { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px; font-size: 12px; }
+.attend .at-cm-form label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.attend .at-cm-form input:not([type="checkbox"]) { min-height: 0; height: 28px; padding: 0 7px; border-radius: 7px; font-size: 13px; }
+.attend .at-cm-form input[data-cm="start"], .attend .at-cm-form input[data-cm="end"] { width: 58px; text-align: center; }
+.attend .at-cm-form input[data-cm="reason"] { flex: 1 1 140px; }
+.attend .at-cm-form .at-cm-send { min-height: 28px; padding: 3px 10px; background: var(--pick); color: #fff; font-size: 12px; font-weight: 600; }
+.attend .at-cm-form .at-cm-send.armed { background: var(--danger); }
+.attend .at-cm-form .at-cm-close { min-height: 28px; width: 28px; padding: 0; background: transparent; color: var(--faint); font-size: 16px; }
+.attend .at-commute .hint.at-cm-err { color: var(--danger); }
 .attend .at-range { margin: 0 0 10px; padding: 10px; }
 /* 한 줄이다: 4주 · 8주 · 시작일 ~ 종료일 · 조회. 좁은 패널에서도 한 줄에 들도록 칸의 여백과 글자를 줄였다. */
 .attend .at-range-dates { display: flex; align-items: center; gap: 4px; color: var(--muted); }

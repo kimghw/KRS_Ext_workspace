@@ -768,9 +768,36 @@ export function buildCancelJob(item, reason) {
   };
 }
 
+/**
+ * 출/퇴근기록 변경신청 폼(HR 근태 › 근무신청, 2026-10-27 화면 소스로 확인). 저장 단계가 없고 결재요청이 유일한 쓰기다.
+ * 표(docapprtmchng100Grid)에 그 날의 기록 줄을 넣는 것은 사이트의 insertGridRow 이고, 그 줄은 "출퇴근시간 선택" 창이 읽는 목록
+ * (apprtm-pop?emplNo&baseMonth=YYYY-MM — { workDate 'YYYYMMDD', startTime 'HHMM', endTime, sWorkHour, nextDayInd })에서 고른다.
+ */
+export const COMMUTE_FORM = { route: '/uhr/docappr/apprtmchng100/view', grid: 'docapprtmchng100Grid', pop: '/uhr/docappr/apprtm-pop' };
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * 출퇴근 위반 줄의 변경신청 일감(2026-10-27 사용자 지정: "출퇴근 시간 변경 기능을 추가해줘").
+ * @param {{ date: string, start: string, end: string, nextDay?: boolean, reason: string }} fix  date YYYY-MM-DD, 시각 "HH:MM"
+ */
+export function buildCommuteJob({ date, start, end, nextDay = false, reason }) {
+  if (!DATE_RE.test(date || '')) throw new Error(`근무일자가 날짜가 아닙니다: ${date || '빈칸'}`);
+  if (!HHMM_RE.test(start || '') || !HHMM_RE.test(end || '')) throw new Error('변경 출근·퇴근 시각을 HH:MM 으로 적어 주세요.');
+  if (!nextDay && end <= start) throw new Error('변경 퇴근 시각이 출근 시각보다 늦어야 합니다(다음 날 퇴근이면 익일을 고르세요).');
+  const why = String(reason || '').trim();
+  if (!why) throw new Error('변경 사유를 적어 주세요.');
+  const f = COMMUTE_FORM;
+  return {
+    route: f.route, ready: { global: f.grid, fn: 'apprRequest' }, formId: '', open: null,
+    ops: [{ op: 'commuteRow', grid: f.grid, pop: f.pop, month: date.slice(0, 7), workDate: date.replace(/-/g, ''), start, end, nextDay: nextDay ? 'Y' : 'N', reason: why }],
+    expect: [], read: { formId: '#formId' }, action: 'request', fn: 'apprRequest',
+    summary: `출퇴근기록 변경 ${date} ${start}~${end}${nextDay ? '(익일)' : ''}`,
+  };
+}
+
 /* ------------------------------------------------------------ 신청 내역 */
 
-const dashed = (s) => (/^\d{8}$/.test(s || '') ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}` : (DATE_RE.test(s || '') ? s : ''));
+const dashed =(s) => (/^\d{8}$/.test(s || '') ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}` : (DATE_RE.test(s || '') ? s : ''));
 const colon = (s) => (/^\d{4}$/.test(s || '') ? `${s.slice(0, 2)}:${s.slice(2)}` : '');
 
 /** 결재 상태 코드(SY02). */

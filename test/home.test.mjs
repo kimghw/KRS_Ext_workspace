@@ -12,6 +12,7 @@ import { MARKS_KEY } from '../src/evidence.js';
 import { UP_BUSY_KEY } from '../src/afterup.js';
 import { PLANS_KEY } from '../src/plans.js';
 import { BACK_KEY, SENT_KEY, STAGES_KEY } from '../src/settling.js';
+import { COMMUTE_WEEK_KEY, COMMUTE_FIX_KEY } from '../src/commute.js';
 import { AuthError } from '../src/net.js';
 import { MONTH_DAYS } from '../src/monthcache.js';
 import { datesFrom } from '../src/mine.js';
@@ -125,6 +126,21 @@ function fakePlans(items = [], { error = '', storage = null } = {}) {
 }
 
 /**
+ * 배경이 읽어 주는 지난 7일의 출퇴근 기록 흉내(src/commuteweek.js). calls 에 부탁마다 force 였는지를 적는다.
+ * storage 를 주면 진짜 배경처럼 읽은 것을 거기에도 담는다. 기본은 위반 없는 한 주다(줄 없음).
+ */
+function fakeCommutes(rows = [], { error = '', storage = null } = {}) {
+  const fn = async ({ force = false } = {}) => {
+    fn.calls.push(force);
+    if (error) return { ok: true, rows: [], error };
+    if (storage) await storage.set({ [COMMUTE_WEEK_KEY]: { day: TODAY, at: NOW, rows } });
+    return { ok: true, rows, error: '' };
+  };
+  fn.calls = [];
+  return fn;
+}
+
+/**
  * 여비계산서 목록(eclass /BusinessTrip) 읽기 흉내. calls 에 읽은 기간을 적는다. fail 을 주면 못 읽는다.
  * 다녀온 출장이 남아 있을 때만 불린다 — 사후정산이 완료된 것을 가리려고.
  */
@@ -206,13 +222,14 @@ async function mount({
   storage = fakeStorage(), rooms = fakeScan('room'), cars = fakeScan('car'), plans = fakePlans(), trips = fakeTrips(),
   now = () => NOW, visible = () => true, openPanel = null, doc = homeDoc(), debounceMs = 5, alive = () => true,
   pre = fakePre(), keep = fakeKeep({}, { storage }), up = fakeUp(undefined, { storage }), marks = null, lookup = fakeLookup(),
+  commutes = fakeCommutes(),
 } = {}) {
   const panelCalls = [];
   const syncCalls = [];
   const billCalls = [];
   const ctl = await mountHome(doc, {
     storage, onChanged: storage.onChanged, now, today: () => TODAY,
-    scanRooms: rooms, scanCars: cars, loadPlans: plans, listTrips: trips, visible, debounceMs, alive, lookupName: lookup,
+    scanRooms: rooms, scanCars: cars, loadPlans: plans, loadCommutes: commutes, listTrips: trips, visible, debounceMs, alive, lookupName: lookup,
     openPanel: openPanel || (async () => { panelCalls.push(1); return { ok: true }; }),
     preDetail: pre, keepEvidence: keep, afterUp: up, readFile: async (f) => f.dataUrl || `data:${f.type};base64,AAAA`,
     // 출장 줄의 `계산서 보기`가 여는 계산서(번호, 내 출장자 번호).
@@ -223,7 +240,7 @@ async function mount({
   const root = doc.getElementById(ROOT_ID);
   const text = (role) => (root?.querySelector(`[data-role="${role}"]`)?.textContent || '').trim();
   return {
-    ctl, doc, root, storage, rooms, cars, plans, trips, panelCalls, syncCalls, billCalls, pre, keep, up, lookup, text,
+    ctl, doc, root, storage, rooms, cars, plans, commutes, trips, panelCalls, syncCalls, billCalls, pre, keep, up, lookup, text,
     items: () => [...(root?.querySelectorAll('li.krs-mine-item') || [])],
   };
 }
@@ -681,11 +698,12 @@ console.log('근태(출장·외근·휴가)도 예약과 같은 모양으로 섞
     ]);
     assert.equal(got[1].gubun, '전일');
   });
-  await ta('제목은 WORKSPACE 이고 칩은 회의실·차량·출장·외근·휴가다', async () => {
+  await ta('제목은 WORKSPACE 이고 칩은 회의실·차량·출장·외근·휴가다(위반 칩은 위반이 있을 때만 선다)', async () => {
     const m = await mount();
     assert.equal(m.root.querySelector('.krs-card-title').textContent, 'WORKSPACE');
-    assert.deepEqual([...m.root.querySelectorAll('.krs-card-chip > span')].map((s) => s.textContent),
+    assert.deepEqual([...m.root.querySelectorAll('.krs-card-chip:not([hidden]) > span')].map((s) => s.textContent),
       ['회의실', '차량', '출장', '외근', '휴가']);
+    assert.equal(m.root.querySelector('[data-role="breachChip"]').hidden, true);
     assert.match(m.root.querySelector('[data-role="leave"]').closest('.krs-card-chip').title, /연차·체력단련·외출·건강검진/);
   });
   await ta('오늘 읽어 둔 근태가 없으면 배경에 부탁하고, 예약과 날짜순으로 섞어 건수를 칩에 적는다', async () => {
@@ -1567,7 +1585,7 @@ console.log('근태(출장·외근·휴가)도 예약과 같은 모양으로 섞
     const card = createHomeCard(doc, {
       storage, onChanged: storage.onChanged, now: () => NOW, today: () => TODAY,
       scanRooms: fakeScan('room'), scanCars: fakeScan('car'), visible: () => true, debounceMs: 5,
-      loadPlans: async () => { await gate; return { items: HR, error: '' }; },
+      loadPlans: async () => { await gate; return { items: HR, error: '' }; }, loadCommutes: fakeCommutes(),
       openPanel: async () => ({ ok: true }),
     });
     await tick();
@@ -1576,6 +1594,146 @@ console.log('근태(출장·외근·휴가)도 예약과 같은 모양으로 섞
     await card.ready;
     assert.equal(doc.getElementById(ROOT_ID), null);
     assert.equal(card.root.querySelectorAll('li.krs-mine-item').length, 1, '뗀 카드에 뒤늦게 온 근태를 그렸다');
+  });
+}
+
+console.log('출퇴근 위반 — 지난 7일(오늘 포함)만 목록 맨 위에, 변경은 패널에서 (2026-10-27 사용자 지정)');
+{
+  // HR 자율출퇴근 체크리스트의 줄(src/commute.js 가 읽는 모양). 계획은 08:30~17:30. 오늘(9/17 목)부터 엿새 전(9/11)까지가 창이다.
+  const cm = (workDate, days, startTime, endTime, workStatus = '') => ({
+    workDate, days, planTime: '0830 ~ 1730', startTime, endTime, workStatus, isPlanNotFollowed: '', nextDayInd: '',
+  });
+  const WEEK = [
+    cm('2026-09-17', '목', '0842', ''),                          // 오늘 — 12분 지각(아직 퇴근 전)
+    cm('2026-09-16', '수', '0825', '1715'),                      // 15분 조퇴
+    cm('2026-09-15', '화', '0826', '1740'),                      // 위반 없음
+    cm('2026-09-14', '월', '0840', '1200', '외근(13:00~18:00)'),  // 10분 지각 — 오후는 외근, 12~13시는 점심
+    cm('2026-09-11', '금', '0845', '1720'),                      // 엿새 전 — 지각 15분 · 조퇴 10분
+    cm('2026-09-10', '목', '0900', '1730'),                      // 이레 전 — 창 밖
+  ];
+  const week = (rows = WEEK, day = TODAY) => ({ [COMMUTE_WEEK_KEY]: { day, at: NOW - 60_000, rows } });
+  const breaches = (m) => [...m.root.querySelectorAll('li.krs-mine-item.breach')];
+  const chip = (m) => m.root.querySelector('[data-role="breachChip"]');
+  const body = (m) => m.root.querySelector('.krs-mine-body');
+
+  await ta('오늘 읽어 둔 기록이 있으면 배경에 묻지 않고, 위반한 날만 최근 날부터 목록 맨 위에 세운다 — 이레 전 것은 없다', async () => {
+    const rooms = fakeScan('room', { [TODAY]: day('room', TODAY, [room({ mine: true })]) });
+    const commutes = fakeCommutes();
+    const m = await mount({ storage: fakeStorage(week()), rooms, commutes });
+    assert.deepEqual(commutes.calls, [], '오늘 읽은 것이 있는데 배경에 부탁했다');
+    assert.deepEqual(breaches(m).map((li) => li.dataset.date), ['2026-09-17', '2026-09-16', '2026-09-14', '2026-09-11']);
+    assert.deepEqual(m.items().map((li) => li.classList.contains('breach')), [true, true, true, true, false], '예약은 위반 줄 아래다');
+    assert.deepEqual([chip(m).hidden, m.text('breach'), chip(m).querySelector('span').textContent], [false, '4', '위반']);
+    assert.match(chip(m).title, /지난 7일/);
+    assert.equal(m.text('rooms'), '1', '다른 칩은 그대로다');
+  });
+  await ta('줄은 "날짜 출근 → 퇴근 어긴 것"과 변경 — 어긴 쪽 시각만 붉고, 계획과 근태는 풍선말에 있다', async () => {
+    const m = await mount({ storage: fakeStorage(week()) });
+    const [today, early, , both] = breaches(m);
+    const when = (li) => li.querySelector('.krs-mine-when').textContent;
+    const red = (li) => [...li.querySelectorAll('.krs-mine-clock.bad')].map((s) => s.textContent);
+    assert.deepEqual([when(today), red(today), today.querySelector('.krs-mine-fault').textContent], ['오늘 (목) 08:42 → —', ['08:42'], '지각 12분']);
+    assert.deepEqual([when(early), red(early), early.querySelector('.krs-mine-fault').textContent], ['9/16 (수) 08:25 → 17:15', ['17:15'], '조퇴 15분']);
+    assert.deepEqual([red(both), both.querySelector('.krs-mine-fault').textContent], [['08:45', '17:20'], '지각 15분 · 조퇴 10분']);
+    assert.equal(early.title, '계획 08:30~17:30');
+    assert.equal(breaches(m)[2].title, '계획 08:30~17:30 · 외근(13:00~18:00)');
+    const fix = early.querySelector('button[data-act="commute-fix"]');
+    assert.deepEqual([fix.textContent, fix.dataset.date], ['변경', '2026-09-16']);
+    assert.ok(fix.title && fix.getAttribute('aria-label'), '변경 버튼이 무엇을 하는지 말하지 않는다');
+  });
+  await ta('위반이 있으면 본문이 머리 한 줄로 접히지 않는다 — 예약도 근태도 없어도 위반 줄이 목록에 선다', async () => {
+    const m = await mount({ storage: fakeStorage({ myName: '홍길동', ...week() }) });
+    assert.equal(m.items().length, 4);
+    const folded = '.krs-mine:not(:has(.krs-mine-list:not([hidden]) .krs-mine-item, .krs-mine-warn:not(:empty), .krs-mine-bar:not([hidden])))';
+    assert.match(m.root.querySelector('style').textContent, new RegExp(folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '접는 규칙이 바뀌었다 — 이 검사도 고친다');
+    assert.equal(m.root.matches(folded), false, '위반 줄이 있는데 본문이 접히는 모양이다');
+    const none = await mount({ storage: fakeStorage({ myName: '홍길동' }) });
+    assert.equal(none.root.matches(folded), true, '아무것도 없는 카드는 머리 한 줄이다');
+  });
+  await ta('읽어 둔 것이 어제 것이면 배경에 부탁해 그리고, 새로고침은 다시 읽게 한다(force)', async () => {
+    const storage = fakeStorage(week(WEEK, '2026-09-16'));
+    const commutes = fakeCommutes(WEEK, { storage });
+    const m = await mount({ storage, commutes });
+    assert.deepEqual(commutes.calls, [false]);
+    assert.equal(breaches(m).length, 4);
+    assert.equal(storage.data[COMMUTE_WEEK_KEY].day, TODAY);
+    m.root.querySelector('[data-act="refresh"]').click();
+    await tick();
+    assert.deepEqual(commutes.calls, [false, true]);
+  });
+  await ta('위반이 없으면 아무것도 적지 않는다 — 칩도 줄도 없고 0 이라고도 하지 않는다', async () => {
+    const m = await mount({ storage: fakeStorage({ myName: '홍길동', ...week([WEEK[2]]) }) });
+    assert.deepEqual([breaches(m).length, chip(m).hidden, m.text('breach')], [0, true, '']);
+    assert.equal(body(m).textContent.trim(), '');
+  });
+  await ta('못 읽으면 아무것도 적지 않는다 — 칩도 줄도 없다(못 읽은 것을 위반 0 으로 보이지 않는다)', async () => {
+    const commutes = fakeCommutes([], { error: 'HR 에 들어가지 못했습니다.' });
+    const m = await mount({ storage: fakeStorage({ myName: '홍길동', ...week(WEEK, '2026-09-10') }), commutes });
+    assert.deepEqual(commutes.calls, [false]);
+    assert.deepEqual([breaches(m).length, chip(m).hidden, m.text('breach')], [0, true, ''], '어제 읽은 것을 오늘 것처럼 보였다');
+    assert.doesNotMatch(m.root.textContent, /HR 에 들어가지 못했습니다/, '근태 경고 줄이 HR 사정을 말한다 — 같은 말을 두 번 적지 않는다');
+  });
+  await ta('변경신청을 올린 날은 뺀다 — 패널이 적으면 열린 카드에서도 곧 빠지고, 다 빠지면 칩도 사라진다', async () => {
+    const fix = (date) => ({ [date]: { at: NOW, docNo: 'C-1', start: '08:30', end: '17:30' } });
+    const storage = fakeStorage({ ...week(), [COMMUTE_FIX_KEY]: fix('2026-09-16') });
+    const m = await mount({ storage });
+    assert.deepEqual(breaches(m).map((li) => li.dataset.date), ['2026-09-17', '2026-09-14', '2026-09-11']);
+    assert.equal(m.text('breach'), '3');
+    await storage.set({ [COMMUTE_FIX_KEY]: { ...fix('2026-09-16'), ...fix('2026-09-17'), ...fix('2026-09-14'), ...fix('2026-09-11') } });
+    assert.deepEqual([breaches(m).length, chip(m).hidden], [0, true]);
+    await storage.remove(COMMUTE_FIX_KEY);
+    assert.equal(breaches(m).length, 4);
+  });
+  await ta('변경을 누르면 근태 탭에서 그 날의 출/퇴근기록 변경신청을 열어 달라는 부탁을 남기고 패널을 연다 — 줄을 눌러도 같다', async () => {
+    const m = await mount({ storage: fakeStorage(week()) });
+    breaches(m)[1].querySelector('button[data-act="commute-fix"]').click();
+    await tick();
+    assert.deepEqual(m.storage.data[JUMP_KEY], { date: '2026-09-16', mode: 'attend', focus: 'commute', at: NOW });
+    assert.equal(m.panelCalls.length, 1);
+    breaches(m)[3].querySelector('.krs-mine-when').click();
+    await tick();
+    assert.deepEqual(m.storage.data[JUMP_KEY], { date: '2026-09-11', mode: 'attend', focus: 'commute', at: NOW });
+    assert.equal(m.panelCalls.length, 2);
+  });
+  await ta('접어 둔 카드도 위반 칩은 보이고, 칩을 누르면 편다(펴져 있으면 그대로) — 패널은 열지 않는다', async () => {
+    const m = await mount({ storage: fakeStorage({ ...week(), [FOLD_KEY]: true }) });
+    assert.deepEqual([body(m).hidden, chip(m).hidden, m.text('breach')], [true, false, '4']);
+    chip(m).click();
+    await tick();
+    assert.deepEqual([body(m).hidden, m.storage.data[FOLD_KEY]], [false, false]);
+    chip(m).querySelector('b').click();
+    await tick();
+    assert.deepEqual([body(m).hidden, m.panelCalls.length], [false, 0], '칩을 다시 눌러 접혔다');
+  });
+  await ta('다른 쪽(배경·다른 창)이 새로 담으면 부탁 없이 그것을 그리고, 담아 둔 것을 지우면 다시 읽는다', async () => {
+    const storage = fakeStorage({ ...week([]) });
+    const commutes = fakeCommutes(WEEK);
+    const m = await mount({ storage, commutes });
+    assert.equal(breaches(m).length, 0);
+    await storage.set(week());
+    assert.deepEqual([breaches(m).length, commutes.calls], [4, []]);
+    await storage.set(week(WEEK, '2026-09-16'));
+    assert.equal(breaches(m).length, 4, '어제 것이 담기면 오늘 것을 덮지 않는다');
+    await storage.remove(COMMUTE_WEEK_KEY);
+    await tick(30);
+    assert.deepEqual(commutes.calls, [false]);
+  });
+  await ta('카드를 끄면 읽는 중이던 출퇴근 기록이 뒤늦게 와도 아무것도 하지 않는다', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const doc = homeDoc();
+    const storage = fakeStorage({ [CACHE_KEY]: cached });
+    const card = createHomeCard(doc, {
+      storage, onChanged: storage.onChanged, now: () => NOW, today: () => TODAY,
+      scanRooms: fakeScan('room'), scanCars: fakeScan('car'), visible: () => true, debounceMs: 5, loadPlans: fakePlans(),
+      loadCommutes: async () => { await gate; return { rows: WEEK, error: '' }; },
+      openPanel: async () => ({ ok: true }),
+    });
+    await tick();
+    card.destroy();
+    release();
+    await card.ready;
+    assert.equal(card.root.querySelectorAll('li.krs-mine-item.breach').length, 0, '뗀 카드에 뒤늦게 온 위반을 그렸다');
   });
 }
 
@@ -1638,7 +1796,7 @@ async function start(init = {}, { rooms = fakeScan('room'), cars = fakeScan('car
   const doc = homeDoc();
   const started = startHome(doc, {
     storage, onChanged: storage.onChanged, now: () => NOW, today: () => TODAY,
-    scanRooms: rooms, scanCars: cars, loadPlans: fakePlans(), visible: () => true, debounceMs: 5,
+    scanRooms: rooms, scanCars: cars, loadPlans: fakePlans(), loadCommutes: fakeCommutes(), visible: () => true, debounceMs: 5,
     openPanel: async () => ({ ok: true }),
   });
   const ctl = wait ? await started : null;
@@ -1801,6 +1959,11 @@ console.log('확장 배선');
     assert.match(bg, /from '\.\/src\/plans\.js'/);
     assert.match(bg, /hrListDocs/);
     assert.equal(manifest.background?.type, 'module', '배경이 모듈이 아니면 import 를 못 쓴다');
+  });
+  t('배경이 지난 7일의 출퇴근 기록 읽기 부탁도 받고, 패널과 같은 조회(hrCommutes)를 src/commuteweek.js 로 담는다', () => {
+    assert.match(bg, /'hrCommuteWeek'/);
+    assert.match(bg, /from '\.\/src\/commuteweek\.js'/);
+    assert.match(bg, /hrCommutes/);
   });
 }
 

@@ -436,6 +436,7 @@ export function registerAttend(d)
   'attend.apply' (rec, { op = 'request', doc = null, today, onStage }) → hrRunJob(buildJob(formOf(rec, today), { action: op, doc }), { onStage })   // formOf: blankForm(kind, today) 위에 rec.input 을 얹은 폼(span·end 등 이미 settle 된 값)
   'attend.doc'   (rec, { item, onStage }) → action === 'delete' ? hrDeleteDoc(item) : hrRunJob(buildDocJob(item, rec.input.action))
   'attend.cancel'(rec, { item, onStage }) → hrRunJob(buildCancelJob(item, rec.input.reason))
+  'attend.commute'(rec, { onStage }) → hrRunJob(buildCommuteJob(rec.input))   // 2026-10-27 출/퇴근기록 변경신청 — { date, start, end, nextDay, reason }, 그 날의 기록 줄은 실행기가 HR 목록에서 찾는다(ctx 없음)
 // trip.js
 export function registerTrip(d)
   'trip.create'  (rec, { memo, onStage }) → tripCreate(settlePlan(formOf(rec), memo), { emplNo: rec.preset.hrMe.emplNo, name, onStage })

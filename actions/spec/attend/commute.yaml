@@ -1,0 +1,52 @@
+# 출/퇴근기록 변경신청 — HR 근태 › 근무신청 › 출/퇴근기록 변경신청(/uhr/docappr/apprtmchng100) 한 날 한 줄(2026-10-27 사용자 지정:
+# "지각 3분이면 버튼에 출퇴근 시간 변경 으로 이동할 수 있게 아니고. 출퇴근 시간 변경 기능을 추가해줘").
+# 출퇴근 위반 줄(근태 탭 유연 · 홈 WORKSPACE 카드에서 온 것)의 `변경` 칸에서 사람이 시각·사유를 넣고 결재요청을 두 번 누른 것이 확인이다.
+# 저장 단계가 없고 결재요청이 유일한 쓰기다. 그 날의 기록 줄(원래 출근·퇴근)은 HR 의 "출퇴근시간 선택" 목록에서 실행기가 찾는다(src/hr.js commuteRow) —
+# 기록에는 날짜와 바꿀 값만 둔다. 결재되면 HR 의 체크리스트가 바뀌어 위반에서 저절로 빠진다. 그 전까지 패널은 "변경 신청함"을 적어 둔다(attendCommuteFix — 실행기 밖).
+id: attend.commute
+title: 출퇴근기록 변경신청
+hint: 출퇴근 변경
+summary: '출퇴근기록 변경 {date} {start}~{end} · {reason}'
+fields:
+  date:
+    type: date
+    required: true
+    label: 근무일자
+    desc: 고칠 날(출퇴근 위반 줄의 날짜)
+    read: 위반 줄의 날짜 그대로. 지어내지 않습니다
+    example: '2026-10-21'
+  start:
+    type: time
+    required: true
+    label: 변경 출근
+    desc: 고친 출근 시각(HH:MM) — 기본은 지각이면 계획 시작, 아니면 찍힌 출근(src/commute.js fixDefaults)
+    read: 사용자가 말한 출근 시각. 말하지 않았으면 null
+    example: '08:30'
+  end:
+    type: time
+    required: true
+    label: 변경 퇴근
+    desc: 고친 퇴근 시각(HH:MM) — 기본은 조퇴면 계획 끝, 아니면 찍힌 퇴근
+    read: 사용자가 말한 퇴근 시각. 말하지 않았으면 null
+    example: '17:30'
+  nextDay:
+    type: boolean
+    label: 익일
+    desc: 퇴근이 다음 날이면 참(HR 표의 익일여부 Y)
+    read: 자정을 넘겨 퇴근했다고 했으면 true
+    default: false
+    example: false
+  reason:
+    type: string
+    required: true
+    max: 200
+    label: 변경 사유
+    desc: 변경 사유(필수 — HR 표의 변경사유)
+    read: 사용자가 말한 사유. 지어내지 않습니다
+    example: 출근 태깅 누락
+llm: false
+runner: attend.commute
+uses:
+  - { module: src/attend.js, export: buildCommuteJob }
+  - { module: src/hr.js, export: hrRunJob }
+next: 결재요청이 끝나면 패널이 그 날을 "변경 신청함"으로 적어 두고(attendCommuteFix) 출퇴근 위반을 다시 읽는다. 결재되면 HR 기록이 바뀌어 위반에서 빠진다

@@ -1,5 +1,6 @@
-import { hrListDocs, hrCloseWorker, hrWorkerAlive } from './src/hr.js';
+import { hrListDocs, hrCommutes, hrCloseWorker, hrWorkerAlive } from './src/hr.js';
 import { loadPlans } from './src/plans.js';
+import { loadCommuteWeek } from './src/commuteweek.js';
 import { receiptSmart } from './src/llm.js';
 import { docText } from './doctext/index.js';
 import { todayStr } from './src/parse.js';
@@ -30,28 +31,49 @@ function openSidePanel(sender) {
 
 // 홈 탭이 여럿이면 부탁도 여럿 온다. 읽는 중이면 그 읽기에 같이 태운다.
 let plansRun = null;
+let weekRun = null;
+
+/**
+ * HR 작업 탭을 빌려 일한다. 패널이 쓰던 작업 탭이 있으면 그대로 빌려 쓰고 건드리지 않는다. 없어서 여기서 열었으면 일이 끝난 뒤 닫는다
+ * — 패널이 없으면 그 탭을 치워 줄 것이 없다. 홈 카드는 근태와 출퇴근 기록을 거의 함께 부탁한다 — 둘이 겹치면 처음 일이 연 탭을
+ * 다음 일이 같이 쓰고(HR 일은 src/hr.js 가 한 줄로 세운다), 마지막 일이 끝날 때 한 번 닫는다(앞의 일이 닫으면 뒤의 일이 SSO 부터 다시 연다).
+ */
+let hrBorrowers = 0;
+let hrHad = null;
+async function withHrWorker(work) {
+  if (hrBorrowers++ === 0) hrHad = hrWorkerAlive().catch(() => true);
+  const had = await hrHad;
+  try {
+    return await work();
+  } finally {
+    if (--hrBorrowers === 0 && !had) await hrCloseWorker();
+  }
+}
 
 /**
  * 홈의 WORKSPACE 카드가 근태(출장·외근·휴가)를 읽어 달라고 한다. HR 은 eclass 와 다른 출처이고 HR 작업 탭을
  * 거쳐야 읽히는데, 콘텐츠 스크립트에는 탭을 다루는 API 가 없다. 패널의 현황 탭과 같은 길(src/plans.js)로 읽어
  * 같은 자리에 담는다 — 오늘 읽어 둔 것이 있으면 HR 을 열지 않는다.
- *
- * 패널이 쓰던 작업 탭이 있으면 그대로 빌려 쓰고 건드리지 않는다. 없어서 여기서 열었으면 읽은 뒤 닫는다
- * — 패널이 없으면 그 탭을 치워 줄 것이 없다.
  */
 function readPlans(force) {
-  plansRun ||= (async () => {
-    const had = await hrWorkerAlive().catch(() => true);
-    try {
-      return await loadPlans(todayStr(), { force, listDocs: hrListDocs });
-    } finally {
-      if (!had) await hrCloseWorker();
-    }
-  })().then(
+  plansRun ||= withHrWorker(() => loadPlans(todayStr(), { force, listDocs: hrListDocs })).then(
     (r) => ({ ok: true, ...r }),
     (err) => ({ ok: false, items: [], error: err?.message || String(err) }),
   ).finally(() => { plansRun = null; });
   return plansRun;
+}
+
+/**
+ * 홈의 WORKSPACE 카드가 지난 7일의 출퇴근 기록을 읽어 달라고 한다(2026-10-27 사용자 지정 — 위반한 날이 카드에 뜬다).
+ * 근태와 같은 까닭으로 여기서 읽는다 — 패널의 출퇴근 위반과 같은 조회(src/hr.js 의 hrCommutes)를 src/commuteweek.js 가 하루에
+ * 한 번 담는다. 위반 판정은 카드가 한다.
+ */
+function readCommuteWeek(force) {
+  weekRun ||= withHrWorker(() => loadCommuteWeek(todayStr(), { force, commutes: hrCommutes })).then(
+    (r) => ({ ok: true, ...r }),
+    (err) => ({ ok: false, rows: [], error: err?.message || String(err) }),
+  ).finally(() => { weekRun = null; });
+  return weekRun;
 }
 
 /** 서비스 워커는 30초 동안 일이 없으면 잠든다. 증빙 한 장을 읽는 데는 그보다 오래 걸릴 수 있어, 읽는 동안 이 간격으로 깨워 둔다. */
@@ -175,6 +197,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'openSidePanel') openSidePanel(sender).then(sendResponse);
   else if (msg?.type === 'doctextProbe') probeDocText(msg).then(sendResponse);
   else if (msg?.type === 'hrPlans') readPlans(!!msg.force).then(sendResponse);
+  else if (msg?.type === 'hrCommuteWeek') readCommuteWeek(!!msg.force).then(sendResponse);
   else if (msg?.type === 'receiptRead') readReceipt(msg).then(sendResponse);
   else if (msg?.type === 'evidenceKeep') keepEvidence(msg).catch((err) => ({ ok: false, error: err?.message || String(err) })).then(sendResponse);
   else if (msg?.type === 'evidenceMarks') syncMarks().then(sendResponse);
