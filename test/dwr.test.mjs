@@ -150,7 +150,7 @@ const staffOf = (from, to, amt) => ({
 const BOOK = { projects: [{ id: 'a', name: A, alias: 'SSCB', years: { 1: staffOf(3, 9, 300) } }, { id: 'b', name: B, alias: '', years: { 1: staffOf(8, 9, 200) } }] };
 
 /** 패널 HTML 의 카드를 두고 저장소·탭·조회를 흉내 낸다. 저장소에는 처음부터 내 이름과 장부가 있다(saved 로 바꾼다). */
-function boxWith({ saved = { myName: '홍길동', rndBook: BOOK }, api = {}, today = '2026-10-27' } = {}) {
+function boxWith({ saved = { myName: '홍길동', rndBook: BOOK }, api = {}, today = '2026-10-27', fillStaff } = {}) {
   const doc = new JSDOM(html).window.document;
   const store = { ...saved };
   const tabs = [];
@@ -167,20 +167,25 @@ function boxWith({ saved = { myName: '홍길동', rndBook: BOOK }, api = {}, tod
       fetchDashboard: async (id) => { asked.dash++; assert.equal(id, 'hong'); return { rows: rowsOf(RAW) }; },
       ...api,
     },
+    ...(fillStaff ? { fillStaff: () => fillStaff(store) } : {}),
   });
   return { doc, box, store, tabs, asked, tick: (ms) => { clock += ms; } };
 }
 const settle = () => new Promise((r) => setTimeout(r, 0));
 const text = (doc, id) => doc.getElementById(id).textContent;
-/** 업무 비율 줄 — [이름, 실제, 목표(더한 업무는 입력칸의 값), 붉음(5%p 넘게 벌어짐)]. */
-const shares = (doc) => [...doc.querySelectorAll('#dwrTop li:not(.dwr-none):not(.dwr-adding)')].map((li) => {
-  const num = li.querySelector('.dwr-num');
-  const rate = li.querySelector('input[data-rate]');
-  return [li.querySelector('.dwr-top-name').textContent, num.querySelector('strong').textContent, rate ? `${rate.value}%` : (num.textContent.split('/')[1] || '').trim(), li.classList.contains('dwr-off')];
+/** 업무 비율 줄 — [이름, 참여율, 실제, 목표(입력칸의 값), 붉음(5%p 넘게 벌어짐)]. */
+const shares = (doc) => [...doc.querySelectorAll('#dwrTop li[data-key]')].map((li) => {
+  const goal = li.querySelector('input[data-rate], input[data-goal]').value;
+  return [li.querySelector('.dwr-top-name').textContent, li.querySelector('.dwr-need').textContent, li.querySelector('.dwr-real').textContent, goal ? `${goal}%` : '', li.classList.contains('dwr-off')];
 });
+const change = (doc, el, value) => {
+  el.focus();
+  el.value = value;
+  el.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
+};
 const key = (doc, el, k) => el.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: k, bubbles: true }));
 
-test('카드 — 현황에서만 서고, 받으면 머리 줄(기간) · 마지막 작성일 · 업무 비율(실제 / 참여율로 달마다 셈한 목표)을 그린다. 네 칸·진행현황·활동성·최근 업무는 없다', async () => {
+test('카드 — 현황에서만 서고, 받으면 머리 줄(기간) · 마지막 작성일 · 업무 비율(내 과제 참여율 — 올해는 열두 달 평균 · 실제 · 내가 넣는 목표)을 그린다. 네 칸·진행현황·활동성·최근 업무는 없다', async () => {
   const { doc, box, store, asked } = boxWith();
   const card = doc.getElementById('dwrBox');
   assert.ok(card.classList.contains('hidden'), '처음엔 숨어 있다(현황 탭이 세운다)');
@@ -192,14 +197,17 @@ test('카드 — 현황에서만 서고, 받으면 머리 줄(기간) · 마지�
   assert.equal(store[USER_KEY], 'hong');
   assert.equal(text(doc, 'dwrState'), '올해');
   assert.equal(text(doc, 'dwrLast'), '9/30까지 작성');
-  // 3월 A 450 → A 450. 8월 B 480 → A 30 : B 20 → 288 · 192. 9월 1500 가운데 기타 300(C·D) → 남은 1200 을 720 · 480. 기간 2430분.
-  assert.deepEqual(shares(doc), [['SSCB', '48%', '60%', true], [B, '40%', '28%', true], ['기타', '12%', '', false]]);
-  const first = doc.querySelector('#dwrTop li');
+  // 참여율은 열두 달 평균 — A 3~9월 30% → 30 × 7 / 12 = 17.5, B 8~9월 20% → 20 × 2 / 12 = 3.3(2026-10-28 "4월 과제라도 12개월로 나눠야"). 실제는 기간 2430분 가운데.
+  assert.deepEqual([...doc.querySelectorAll('#dwrTop li.dwr-cols > span')].map((x) => x.textContent), ['업무 비율', '', '참여율', '실제', '목표'], '첫 줄은 칸 이름');
+  // 참여율은 과제 줄에만, 목표는 넣기 전엔 비었다(붉음은 참여율과 견준다).
+  assert.deepEqual(shares(doc), [['SSCB', '18%', '48%', '', true], [B, '3%', '40%', '', true], ['기타', '', '12%', '', false]]);
+  const first = doc.querySelector('#dwrTop li[data-key]');
   assert.equal(first.title.split('\n')[0], A, '풍선말 첫 줄은 과제 이름');
-  assert.match(first.title, /실제 19\.5시간 \(48%\) · 목표 24\.3시간 \(60%\)/);
-  assert.match(first.title, /3월 100% \/ 100% {2}8월 0% \/ 60% {2}9월 48% \/ 48%/, '달마다의 실제 / 목표');
-  assert.ok(first.querySelector('.dwr-bar b'), '목표는 막대의 세로 금');
-  assert.equal(doc.querySelector('#dwrTop li.dwr-k-etc .dwr-bar b'), null, '기타는 목표가 없다');
+  assert.match(first.title, /실제 19\.5시간 \(48%\) · 참여율 18%\(열두 달 평균\)/);
+  assert.match(first.title, /3월 100% \/ 30% {2}8월 0% \/ 30% {2}9월 48% \/ 30%/, '달마다의 실제 / 그 달 참여율');
+  assert.ok(first.querySelector('.dwr-bar b:not(.dwr-goal)'), '참여율은 막대의 회색 금');
+  assert.equal(first.querySelector('.dwr-bar b.dwr-goal'), null, '목표를 넣기 전엔 노란 금이 없다');
+  assert.equal(doc.querySelector('#dwrTop li.dwr-k-etc .dwr-bar b'), null, '기타는 참여율이 없다');
   for (const id of ['dwrTotal', 'dwrOver', 'dwrLeave', 'dwrWeek', 'dwrProg', 'dwrYears', 'dwrRecent']) assert.equal(doc.getElementById(id), null, id);
   assert.equal(text(doc, 'dwrHint'), '');
   assert.equal(text(doc, 'dwrMsg'), '');
@@ -215,15 +223,15 @@ test('카드 — 기간 단추를 누르면 그 자리에서 다시 셈한다(�
   assert.equal(store[RANGE_KEY], 'month');
   assert.equal(doc.querySelector('#dwrRanges [data-range="month"]').getAttribute('aria-pressed'), 'true');
   assert.equal(text(doc, 'dwrState'), '한 달');
-  // 9/27~10/27: 9월의 A 480 · B 480 → 960 을 30 : 20.
-  assert.deepEqual(shares(doc), [['SSCB', '50%', '60%', true], [B, '50%', '40%', true]]);
+  // 9/27~10/27: 실제는 9월의 A 480 · B 480, 참여율은 걸친 9·10월의 평균 — A (30 + 0) / 2 · B (20 + 0) / 2.
+  assert.deepEqual(shares(doc), [['SSCB', '15%', '50%', '', true], [B, '10%', '50%', '', true]]);
   doc.querySelector('#dwrRanges [data-range="week"]').click();
   assert.equal(text(doc, 'dwrState'), '7일');
-  assert.equal(doc.querySelector('#dwrTop li').textContent, '이 기간에 적은 업무가 없습니다');
+  assert.equal(doc.querySelector('#dwrTop li.dwr-none').textContent, '이 기간에 적은 업무가 없습니다');
   assert.equal(asked.dash, 1);
 });
 
-test('카드 — 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더하면 저장소에 남고 달마다 그만큼 먼저 뗀다. 목표 칸을 고치면 바뀌고 × 로 뺀다', async () => {
+test('카드 — 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더하면 저장소에 남는다(과제 참여율은 그대로). 목표 칸을 고치면 바뀌고 × 로 뺀다', async () => {
   const { doc, box, store } = boxWith();
   await box.wire();
   await box.show();
@@ -234,17 +242,14 @@ test('카드 — 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더�
   doc.getElementById('dwrNewName').value = 'AIP';
   doc.getElementById('dwrNewRate').value = '5';
   doc.querySelector('#dwrTop [data-save]').click();
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 5 }] });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 5 }], goals: {} });
   assert.deepEqual([doc.getElementById('dwrNewName').value, doc.getElementById('dwrNewRate').value], ['', ''], '더하면 더하기 줄은 비운다');
-  // 달마다 5% 를 먼저 떼고 남은 몫을 나눈다 — SSCB 1376.1분(57%) · B 632.4분(26%) · AIP 121.5분(5%, 적은 것은 없다).
-  assert.deepEqual(shares(doc), [['SSCB', '48%', '57%', true], [B, '40%', '26%', true], ['AIP', '0%', '5%', true], ['기타', '12%', '', false]]);
+  // 더한 업무는 과제 참여율을 바꾸지 않는다(2026-10-28 — 남은 몫을 나누던 셈의 철회). 더한 업무는 과제가 아니라 참여율 칸이 비었다.
+  assert.deepEqual(shares(doc), [['SSCB', '18%', '48%', '', true], [B, '3%', '40%', '', true], ['AIP', '', '0%', '5%', true], ['기타', '', '12%', '', false]]);
 
-  const rate = doc.querySelector('#dwrTop input[data-rate="AIP"]');
-  rate.focus();
-  rate.value = '10';
-  rate.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }] });
-  assert.deepEqual(shares(doc)[2], ['AIP', '0%', '10%', true]);
+  change(doc, doc.querySelector('#dwrTop input[data-rate="AIP"]'), '10');
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }], goals: {} });
+  assert.deepEqual(shares(doc)[2], ['AIP', '', '0%', '10%', true]);
   assert.equal(doc.activeElement?.dataset.rate, 'AIP', '고친 목표 칸에 커서가 남는다(이어서 고친다)');
 
   doc.querySelector('#dwrTop [data-save]').click();
@@ -256,15 +261,43 @@ test('카드 — 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더�
   assert.equal(doc.activeElement, doc.getElementById('dwrNewName'), '커서도');
   doc.getElementById('dwrNewRate').value = '3';
   key(doc, doc.getElementById('dwrNewRate'), 'Enter');
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }, { name: '교육', rate: 3 }] });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }, { name: '교육', rate: 3 }], goals: {} });
   doc.getElementById('dwrNewName').value = '연수';
   key(doc, doc.getElementById('dwrNewName'), 'Escape');
   assert.equal(doc.getElementById('dwrNewName').value, '', 'Esc 는 비우기만');
   assert.equal(store[SHARE_KEY].items.length, 2);
 
   doc.querySelector('#dwrTop [data-del="AIP"]').click();
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: '교육', rate: 3 }] });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: '교육', rate: 3 }], goals: {} });
   assert.deepEqual(shares(doc).map((r) => r[0]), ['SSCB', B, '교육']);
+});
+
+test('카드 — 과제·기타 줄에도 목표 % 를 넣는다(2026-10-28). 저장소에 남고 노란 금으로 서며, 붉음은 목표와 견준다. 참여율 칸은 바뀌지 않는다. 비우면 지운다', async () => {
+  const { doc, box, store } = boxWith();
+  await box.wire();
+  await box.show();
+  await settle();
+  change(doc, doc.querySelector('#dwrTop input[data-goal="prj:a"]'), '50');
+  assert.deepEqual(store[SHARE_KEY], { items: [], goals: { 'prj:a': 50 } });
+  assert.deepEqual(shares(doc)[0], ['SSCB', '18%', '48%', '50%', false], '실제 48% 는 목표 50% 와 2%p — 붉지 않다(참여율 18% 와는 견주지 않는다)');
+  assert.ok(doc.querySelector('#dwrTop li[data-key="prj:a"] .dwr-bar b.dwr-goal'));
+  assert.equal(doc.activeElement?.dataset.goal, 'prj:a', '커서는 그 칸에 남는다');
+  change(doc, doc.querySelector('#dwrTop input[data-goal="etc"]'), '20');
+  assert.deepEqual(shares(doc), [['SSCB', '18%', '48%', '50%', false], [B, '3%', '40%', '', true], ['기타', '', '12%', '20%', true]], '기타의 목표는 견주기만 — 과제들의 참여율은 그대로');
+  change(doc, doc.querySelector('#dwrTop input[data-goal="prj:a"]'), '');
+  assert.deepEqual(store[SHARE_KEY].goals, { etc: 20 });
+  assert.deepEqual(shares(doc)[0], ['SSCB', '18%', '48%', '', true], '비우면 다시 참여율과 견준다');
+});
+
+test('카드 — R&D 탭에서 열지 않아 참여인력이 없던 과제를 그 탭이 받아 오면(fillStaff) 참여율을 다시 그린다(2026-10-28 "rerp 에 보면 참여율 정보가 있잖아 그게 반영이 안된듯 한데")', async () => {
+  const noB = { projects: [BOOK.projects[0], { id: 'b', name: B, alias: '', years: { 1: {} } }] };
+  let filled = 0;
+  const { doc, box } = boxWith({ saved: { myName: '홍길동', rndBook: noB }, fillStaff: async (store) => { filled++; store.rndBook = BOOK; return 1; } });
+  await box.wire();
+  await box.show();
+  await settle();
+  assert.equal(filled, 1, '받을 때 한 번 부른다');
+  assert.deepEqual(shares(doc)[1], [B, '3%', '40%', '', true], 'B 의 참여인력이 들어와 참여율이 선다');
 });
 
 test('카드 — 10분 안이면 다시 받지 않고 장부·내 이름만 다시 읽는다. ↻(force)나 10분 뒤에는 받는다. 저장해 둔 ID·기간·접힘·더한 업무를 쓴다', async () => {
@@ -275,11 +308,11 @@ test('카드 — 10분 안이면 다시 받지 않고 장부·내 이름만 다�
   assert.equal(asked.user, 0, '저장해 둔 ID');
   assert.equal(doc.getElementById('dwrBox').open, false);
   assert.equal(text(doc, 'dwrState'), '7일');
-  assert.deepEqual(shares(doc), [['AIP', '0%', '5%', false]], '기간에 적은 게 없어도 더한 업무 줄은 선다');
+  assert.deepEqual(shares(doc), [['AIP', '', '0%', '5%', false]], '기간에 적은 게 없어도 더한 업무 줄은 선다');
   assert.match(text(doc, 'dwrHint'), /^설정 › 일반의 내 이름이 있어야/);
   Object.assign(store, { myName: '김철수', rndBook: BOOK });
   await box.show();
-  assert.match(text(doc, 'dwrHint'), /김철수 님의 참여율을 찾지 못해/, '열 때마다 장부·내 이름을 다시 읽는다');
+  assert.match(text(doc, 'dwrHint'), /김철수 님의 참여율을 찾지 못했습니다/, '열 때마다 장부·내 이름을 다시 읽는다');
   store.myName = '홍길동';
   tick(9 * 60 * 1000);
   await box.show();
@@ -310,6 +343,6 @@ test('카드 — 로그인이 풀렸으면 까닭과 eclass 열기, 다시 보�
   await settle();
   assert.equal(text(doc, 'dwrState'), '올해');
   assert.equal(text(doc, 'dwrLast'), '작성한 날 없음');
-  assert.equal(doc.querySelector('#dwrTop li').textContent, '이 기간에 적은 업무가 없습니다');
+  assert.equal(doc.querySelector('#dwrTop li.dwr-none').textContent, '이 기간에 적은 업무가 없습니다');
   assert.equal(text(doc, 'dwrMsg'), '');
 });

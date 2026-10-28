@@ -1995,7 +1995,7 @@ const isMail = () => state.mode === 'mail';
 const isPanelTab = () => isAttend() || isGongmun() || isRnd() || isMail();
 
 /** 현황 탭 목록 위의 일일 업무 카드(e-Class 일일업무통계 대시보드의 내 것 — dwrbox.js). 현황을 읽을 때(loadMine) 같이 받는다. */
-const dwr = createDwrBox();
+const dwr = createDwrBox({ fillStaff: () => rnd.fillStaff() });   // 참여인력을 받은 적 없는 과제는 R&D 탭이 받아 온다(참여율 칸 — 2026-10-28)
 
 /** 근태 탭. 화면 조각은 attendpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const attend = createAttendPanel({

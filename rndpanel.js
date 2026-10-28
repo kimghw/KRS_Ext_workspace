@@ -1192,10 +1192,9 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   /**
    * 이어진 rERP 과제의 참여인력(지급계획)을 받아 잇기의 staff 로 둔다 — 참여인력 행(fetchParticipants)을 사람마다 하나로(rerp/staff.js peopleOfErp — 지급기간을 달마다 펼친 월별 지급·월급여 = 지급한도액),
    * 사람마다 다른 과제 월별 참여율(fetchOthers — 지급계획 팝업의 한도 검사 자료)도 받아 100% 초과 알림의 재료로 둔다. 행이 없으면 staff 를 지운다.
-   * force 가 아니면 오늘이 든 차년도가 아니거나 10분 안이면 건너뛴다. 한 번에 하나만 돈다. 던지지 않는다 — 까닭은 칸에 보인다.
+   * force 가 아니면 오늘이 든 차년도가 아니거나 10분 안이면 건너뛴다. 한 번에 하나만 돈다. 던지지 않는다 — 까닭은 칸에 보인다. p 는 보고 있지 않은 과제일 수 있다(fillStaff).
    */
-  function refreshStaff({ force = false, reason = '' } = {}) {
-    const p = cur();
+  function refreshStaff({ force = false, reason = '', p = cur() } = {}) {
     if (!p || !st.set.erp) return Promise.resolve(false);
     const e = curBook(p).erp;
     if (!e) return Promise.resolve(false);
@@ -1207,7 +1206,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     const run = (async () => {
       st.staffBusy = true;
       paintStaff();
-      setStaffMsg(`rERP ${e.prjNo} 참여인력을 받는 중…`);
+      if (cur() === p) setStaffMsg(`rERP ${e.prjNo} 참여인력을 받는 중…`);
       let ok = false;
       try {
         const now = Date.now();
@@ -1240,6 +1239,22 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
     st.staffRun = run;
     run.finally(() => { if (st.staffRun === run) st.staffRun = null; });
     return run;
+  }
+
+  /**
+   * rERP 에 이어졌는데 참여인력을 받은 적이 없는 과제(보고 있는 차년도가 오늘이 든 것)를 차례로 받는다 — 현황 탭 일일 업무 카드의 참여율 재료(dwrbox.js).
+   * R&D 탭에서 그 과제를 열지 않았어도 참여율이 든다(2026-10-28 사용자 지정: "rerp 에 보면 참여율 정보가 있잖아 그게 반영이 안된듯 한데"). 세션에 과제마다 한 번. 받은 과제 수.
+   */
+  async function fillStaff() {
+    await load();
+    let n = 0;
+    for (const p of st.book.projects) {
+      const e = curBook(p).erp;
+      if (!e || e.staff || st.staffTried.has(staffKey(p))) continue;
+      await st.staffRun;
+      if (await refreshStaff({ p, reason: '현황 참여율' })) n++;
+    }
+    return n;
   }
 
   /** 참여연구자 표 복사 — rERP 참여인력이 있으면 월급여·참여기간·지급 합·참여율·월별 지급까지 든 표(rerp/staff.js staffTsv), 아니면 계획서 글의 표. */
@@ -3429,7 +3444,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   return {
     wire, show, hide, showPlus, book: () => st.book, skills: loadManifest, share: () => st.share, shareSync: (reason) => runShare(reason || '지금 동기화'), erp: () => (cur() ? curBook(cur()).erp || null : null), plans: () => st.pl.plans, refreshErp, settings: () => st.set,
     shareTick, shareAuto: () => !!shareEvery,   // 주기 맞춤(2026-10-19) — 검사가 한 번 돌리고(shareTick) 타이머가 도는지(shareAuto) 본다
-    staff: () => (cur() ? curBook(cur()).erp?.staff || null : null), refreshStaff, staffRun: () => st.staffRun,
+    staff: () => (cur() ? curBook(cur()).erp?.staff || null : null), refreshStaff, fillStaff, staffRun: () => st.staffRun,
     // 공유 권한(2026-10-19) — 검사가 형편·반영 약속을 본다.
     perm: () => st.perm, permPeople: () => st.permPeople, togglePerm, applyPerm,
     // rndgen/(과제 더하기·변경사항 카드)의 손잡이 — 2026-10-16. 훅은 하나씩(마지막 등록이 이긴다).

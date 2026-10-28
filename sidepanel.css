@@ -678,20 +678,26 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-ranges button { min-height: 0; padding: 2px 9px; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; }
 .dwr-ranges button[aria-pressed="true"] { background: var(--surface); color: var(--pick); font-weight: 600; box-shadow: var(--shadow); }
 .dwr-last { margin-left: auto; color: var(--faint); font-size: 11px; white-space: nowrap; }
-.dwr-sub { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
-.dwr-sub small { color: var(--faint); font-weight: 400; }
-/* 업무 비율 — 이름 · 막대(실제, 세로 금은 목표) · 실제 / 목표 %. 더한 업무는 목표가 입력칸, 끝에 지우기, 그 아래 더하기 줄(늘). 차이가 5%p 넘으면 실제가 붉다. */
-.dwr-top { display: grid; grid-template-columns: minmax(0, 1fr) 28% auto; column-gap: 8px; list-style: none; margin: 0 0 4px; padding: 0; }
+/* 업무 비율 — 머리 줄 아래 이름 · 막대(실제, 회색 금은 참여율 · 노란 금은 목표) · 참여율 · 실제 · 목표 입력칸(더한 업무는 끝에 지우기), 더한 업무 아래 더하기 줄(늘).
+   실제가 목표(넣지 않았으면 참여율)와 5%p 넘게 벌어지면 붉다. */
+.dwr-top { display: grid; grid-template-columns: minmax(0, 1fr) 22% auto auto auto; column-gap: 7px; list-style: none; margin: 0 0 4px; padding: 0; }
 .dwr-top li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; min-height: 22px; padding: 1px 0; }
 .dwr-top li.dwr-none { display: block; color: var(--faint); }
+.dwr-top li.dwr-cols { min-height: 18px; color: var(--faint); font-size: 11px; }
+.dwr-cols > span:first-child { color: var(--muted); font-weight: 600; }
+.dwr-cols > span:nth-child(3), .dwr-cols > span:nth-child(4) { text-align: right; }
+.dwr-need, .dwr-real { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dwr-need { color: var(--muted); }
+.dwr-real { color: var(--fg); font-weight: 650; }
+.dwr-top li.dwr-off .dwr-real { color: var(--danger); }
+.dwr-adding .dwr-item-name { grid-column: 1 / -2; }
 .dwr-top li.dwr-k-rnd .dwr-top-name, .dwr-top li.dwr-k-etc .dwr-top-name { color: var(--muted); }
 .dwr-top-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dwr-bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-soft); }
 .dwr-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--pick); }
 .dwr-bar > b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); opacity: .6; }
-.dwr-num { display: flex; align-items: center; justify-content: flex-end; gap: 3px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dwr-num strong { color: var(--fg); font-weight: 650; }
-.dwr-top li.dwr-off .dwr-num strong { color: var(--danger); }
+.dwr-bar > b.dwr-goal { background: var(--mine); opacity: 1; }
+.dwr-num { display: flex; align-items: center; gap: 3px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dwr-box .dwr-top input { min-height: 0; height: 22px; padding: 0 5px; border-radius: 6px; }
 .dwr-box .dwr-top input:focus-visible { outline-width: 2px; outline-offset: 1px; }
 .dwr-rate { width: 38px; text-align: right; -moz-appearance: textfield; }
