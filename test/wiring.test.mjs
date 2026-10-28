@@ -1266,6 +1266,44 @@ function scannedToday(extra = {}) {
   return days;
 }
 
+console.log('회의실 이름을 끌어서(Alt+↑↓) 줄 차례를 바꾼다 — 저장하고, 고른 칸은 방을 따라간다 (2026-10-28)');
+{
+  const rooms = ['제1회의실(11층)-56석', '미팅룸1(1층)-8석', '스마트홀(18층)'].map((name, i) => ({ name, value: String(i) }));
+  const today = (date) => ({ [`day|room|${date}`]: {
+    kind: 'room', date, reservations: [], rooms, roomSource: 'select', region: '부산', regions: ['부산'], confident: true, reason: '', at: Date.now(),
+  } });
+  const { window, store, calls } = await boot({ mode: 'room', region: '부산', ...scannedToday({ patch: today }) });
+  await new Promise((r) => setTimeout(r, 150));
+  const doc = window.document;
+  const heads = () => [...doc.querySelectorAll('#grid tbody th.room[data-r]')];
+  const names = () => heads().map((th) => th.title.split(' — ')[0]);
+  const key = (ri, k) => doc.querySelector(`#grid th.room[data-r="${ri}"]`)
+    .dispatchEvent(new window.KeyboardEvent('keydown', { key: k, altKey: true, bubbles: true }));
+
+  t('회의실 이름이 끄는 손잡이다', () => {
+    assert.deepEqual(names(), rooms.map((r) => r.name));
+    assert.ok(heads().every((th) => th.getAttribute('draggable') === 'true' && th.tabIndex === 0));
+  });
+  // 고른 칸이 방을 따라가는지 보려고 미팅룸1 의 첫 칸을 고른다. 살아 있는 조회는 막혀 있어 격자 잠금을 손으로 푼다.
+  doc.getElementById('grid').setAttribute('aria-busy', 'false');
+  doc.querySelector('#grid td.slot[data-r="1"][data-s="0"]').dispatchEvent(new window.MouseEvent('mousedown', { button: 0, bubbles: true }));
+  window.dispatchEvent(new window.MouseEvent('mouseup'));
+  key(1, 'ArrowUp');
+  t('Alt+↑ 로 한 줄 올라가고 그 차례가 저장된다', () => {
+    assert.deepEqual(names(), ['미팅룸1(1층)-8석', '제1회의실(11층)-56석', '스마트홀(18층)']);
+    assert.deepEqual(store.roomOrder, names());
+  });
+  t('고른 칸은 미팅룸1 을 따라 첫 줄로 간다', () =>
+    assert.deepEqual([...doc.querySelectorAll('#grid td.slot.picked')].map((td) => td.dataset.r), ['0']));
+  key(1, 'ArrowDown');
+  t('접는 방(스마트홀) 아래로는 내려가지 않는다', () => assert.equal(names()[1], '제1회의실(11층)-56석'));
+  t('다른 창이 바꾼 차례도 따라 세운다', () => {
+    const order = ['제1회의실(11층)-56석', '미팅룸1(1층)-8석', '스마트홀(18층)'];
+    for (const fn of calls.storageListeners) fn({ roomOrder: { newValue: order } }, 'local');
+    assert.deepEqual(names(), order);
+  });
+}
+
 console.log('오늘 훑어 둔 것이 있으면 패널을 다시 열어도 한 달을 또 훑지 않는다');
 {
   const { window, calls } = await boot({ mode: 'room', ...scannedToday() });

@@ -11,6 +11,8 @@
 const TOP = [
   /^제\s*(\d+)\s*회의실/,   // 제1~제5회의실 (11층)
   /^미팅룸\s*(\d+)/,        // 미팅룸1, 미팅룸2
+  /^(\d+)\s*회의실/,        // 1~3회의실 (2층, 2026-10 추가)
+  /^[소대]회의실\s*\(\s*(\d+)\s*층/,  // 소·대회의실 (7층·12층, 2026-10 추가) — 층 차례, 같은 층은 사이트 차례(소→대)
 ];
 
 /** 평소에 쓸 일이 없어 접어 두는 방. */
@@ -38,15 +40,40 @@ export function foldLabels(rooms) {
   return out;
 }
 
-/** 차례 매기기: [무리, 무리 안 번호, 사이트 차례]. 값이 작을수록 위. */
+/** 사용자가 이름을 끌어 놓아 정한 차례(방 이름). 패널이 저장소(roomOrder)에서 읽어 넣는다. */
+let userOrder = [];
+
+export function setRoomOrder(names) {
+  userOrder = Array.isArray(names) ? names.map(String) : [];
+}
+
+/**
+ * 줄 하나를 from 에서 to 자리로 옮긴 뒤 저장할 차례.
+ * 지금 목록에 없는 방(다른 지역의 방)은 뒤에 그대로 붙여 둔다 — 지역을 바꿔도 그쪽 차례가 남게.
+ */
+export function movedOrder(names, from, to) {
+  const next = names.slice();
+  next.splice(to, 0, ...next.splice(from, 1));
+  return [...next, ...userOrder.filter((n) => !next.includes(n))];
+}
+
+/**
+ * 차례 매기기: [접힘, 무리, 무리 안 번호, 사이트 차례]. 값이 작을수록 위.
+ * 끌어서 정한 방이 먼저 그 차례대로, 처음 보는 방(새로 생긴 방)은 그 아래에 규칙대로.
+ * 접는 방은 끌어서 정했어도 맨 아래다 — 펼침 손잡이 하나가 그 무리 앞에 선다.
+ */
 function rankOf(room, index) {
   const name = nameOf(room);
-  if (isFoldedRoom(room)) return [TOP.length + 1, 0, index];
+  const fold = isFoldedRoom(room) ? 1 : 0;
+  const at = userOrder.indexOf(name);
+  if (at >= 0) return [fold, at, 0, index];
+  const base = userOrder.length;
+  if (fold) return [1, base, 0, index];
   for (let g = 0; g < TOP.length; g++) {
     const m = name.match(TOP[g]);
-    if (m) return [g, +m[1] || 0, index];
+    if (m) return [0, base + g, +m[1] || 0, index];
   }
-  return [TOP.length, 0, index];
+  return [0, base + TOP.length, 0, index];
 }
 
 /**
@@ -58,6 +85,6 @@ function rankOf(room, index) {
 export function sortRooms(rooms) {
   return rooms
     .map((room, index) => ({ room, rank: rankOf(room, index) }))
-    .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.rank[2] - b.rank[2])
+    .sort((a, b) => a.rank.reduce((d, v, i) => d || v - b.rank[i], 0))
     .map((x) => x.room);
 }

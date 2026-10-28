@@ -29,7 +29,7 @@ import {
 import { ENABLE_KEY as UNCFM_ENABLE_KEY, unconfirmedEnabled } from './src/unconfirmed.js';
 import { TABS_KEY, TAB_MODES, TAB_LABELS, hiddenTabs, tabShown, firstShown, toggleTab, visibleTabs, startMode } from './src/tabpick.js';
 import { fmtTime, todayStr, buildGrid, canDelete } from './src/parse.js';
-import { isFoldedRoom, foldLabels } from './src/roomorder.js';
+import { isFoldedRoom, foldLabels, sortRooms, setRoomOrder, movedOrder } from './src/roomorder.js';
 import { createAttendPanel } from './attendpanel.js';
 import { createGongmunPanel } from './gongmunpanel.js';
 import { createRndPanel } from './rndpanel.js';
@@ -93,6 +93,7 @@ const state = { day: null, picks: [], drag: null, loadedAt: 0, timer: null,
   docText: { ok: false, reason: '확인 전' },
   justBooked: [], myName: '', mine: [], editTarget: null, carWho: null,
   foldOpen: false, foundKind: 'room', asking: false,
+  roomOrder: [],   // 회의실 이름을 끌어 놓아 정한 줄 차례(저장소 roomOrder) — src/roomorder.js
   // 현황에 같이 보여줄 근태(출장·휴가 …). HR 에서 읽어 온 것이고, error 는 읽지 못한 까닭이다.
   plans: { items: [], error: '' },
   // 마지막 조회가 로그인 문제로 끝났다. 로그인이 돌아온 신호(eclass 탭 로딩 끝·패널 다시 보임)에 다시 조회한다.
@@ -359,7 +360,10 @@ function render(day) {
     const name = (r.label || r.name).replace(/\s*\(\s*\d+\s*층\s*\)\s*$/, '');
     const meta = [r.floor != null ? `<span>${escapeHtml(r.floor)}층</span>` : '',
       r.seats ? `<span class="seats">${escapeHtml(r.seats)}석</span>` : ''].filter(Boolean).join('<span aria-hidden="true">·</span>');
-    return `<tr${folded[ri] ? ' class="folded"' : ''}><th class="room" scope="row" title="${escapeHtml(r.name)}"><span class="rname">${escapeHtml(name)}</span>` +
+    // 회의실 이름은 끌어서 줄 차례를 바꾸는 손잡이다(Alt+↑↓ 도 같다). 차량 차례는 사이트 그대로.
+    const handle = isCar() ? '' : ` data-r="${ri}" draggable="true" tabindex="0"`;
+    const tipName = isCar() ? r.name : `${r.name} — 끌어서 차례 바꾸기(Alt+↑↓)`;
+    return `<tr${folded[ri] ? ' class="folded"' : ''}><th class="room" scope="row"${handle} title="${escapeHtml(tipName)}"><span class="rname">${escapeHtml(name)}</span>` +
       (meta ? `<span class="room-meta">${meta}</span>` : '') + `</th>${cells}</tr>`;
   });
 
@@ -404,7 +408,84 @@ function render(day) {
   });
 
   attachDrag();
+  if (!isCar()) attachRoomMove(table, folded);
   paintPicks();
+}
+
+/**
+ * 회의실 이름을 끌어 놓아 줄 차례를 바꾼다. 접는 방은 접는 방끼리만 옮긴다 — 정렬이 그 무리를
+ * 맨 아래에 모아 두고 펼침 손잡이를 그 앞에 하나만 끼우기 때문이다.
+ */
+function attachRoomMove(table, folded) {
+  const thOf = (t) => (t instanceof Element ? t.closest('tr')?.querySelector('th.room[data-r]') : null);
+  let from = -1;
+  const clear = () => table.querySelectorAll('.drop-before, .drop-after, .dragging')
+    .forEach((n) => n.classList.remove('drop-before', 'drop-after', 'dragging'));
+
+  table.addEventListener('dragstart', (e) => {
+    // 잡는 곳은 이름 칸뿐이다. 놓는 곳은 그 줄 어디든 된다(아래 thOf).
+    const th = e.target instanceof Element ? e.target.closest('th.room[data-r]') : null;
+    if (!th) return;
+    from = +th.dataset.r;
+    e.dataTransfer.effectAllowed = 'move';
+    th.parentElement.classList.add('dragging');
+  });
+  table.addEventListener('dragover', (e) => {
+    const th = thOf(e.target);
+    if (from < 0 || !th || folded[+th.dataset.r] !== folded[from]) return;
+    e.preventDefault();
+    const to = +th.dataset.r;
+    table.querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
+    // 위로 옮기면 그 줄 앞에, 아래로 옮기면 그 줄 뒤에 들어간다
+    if (to !== from) th.parentElement.classList.add(to < from ? 'drop-before' : 'drop-after');
+  });
+  table.addEventListener('drop', (e) => {
+    const th = thOf(e.target);
+    if (from < 0 || !th) return;
+    e.preventDefault();
+    const at = from;
+    from = -1;
+    moveRoom(at, +th.dataset.r);
+  });
+  table.addEventListener('dragend', () => { from = -1; clear(); });
+
+  table.addEventListener('keydown', (e) => {
+    const th = e.target instanceof Element ? e.target.closest('th.room[data-r]') : null;
+    if (!th || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    const at = +th.dataset.r;
+    const to = at + (e.key === 'ArrowUp' ? -1 : 1);
+    if (to < 0 || to >= folded.length || folded[to] !== folded[at]) return;
+    moveRoom(at, to);
+    el.grid.querySelector(`th.room[data-r="${to}"]`)?.focus();
+  });
+}
+
+/** 줄 하나를 옮기고 그 차례를 저장한다. 다른 창의 패널은 저장소 변경을 받아 따라 세운다. */
+function moveRoom(from, to) {
+  if (from === to || !state.day?.grid) return;
+  state.roomOrder = movedOrder(state.day.grid.map((g) => g.room.name), from, to);
+  setRoomOrder(state.roomOrder);
+  chrome.storage.local.set({ roomOrder: state.roomOrder });
+  regridRooms();
+}
+
+/**
+ * 지금 차례로 보고 있는 격자를 다시 세운다. 고른 칸은 방 이름으로 따라간다 — 줄 번호가 선택의 열쇠다.
+ * 줄은 새로 만들지 않고 자리만 옮긴다(방금 예약한 표시 같은 것이 줄에 묻어 있다).
+ */
+function regridRooms() {
+  const day = state.day;
+  if (!day?.grid?.length || state.mode !== 'room') return;
+  const picked = state.picks.map((p) => ({ p, name: day.grid[p.room]?.room.name }));
+  const rows = new Map(day.grid.map((g) => [g.room.name, g]));
+  day.rooms = sortRooms(day.rooms);
+  day.grid = day.rooms.map((r) => rows.get(r.name)).filter(Boolean);
+  state.picks = picked
+    .map(({ p, name }) => ({ ...p, room: day.grid.findIndex((g) => g.room.name === name) }))
+    .filter((p) => p.room >= 0);
+  state.drag = null;
+  render(day);
 }
 
 /** 같은 회의실에서 겹치거나 맞붙은 선택은 하나로 합친다. */
@@ -947,10 +1028,12 @@ function cachedDay(date) {
 
   // 보고 있는 지역의 방 목록이 있어야 격자를 그린다. 예약은 전 지역이 담겨 있어 그대로 쓴다.
   const region = kind === 'room' ? (state.region || rec.region || null) : null;
-  const rooms = kind === 'room' && region && region !== rec.region
+  const listed = kind === 'room' && region && region !== rec.region
     ? roomsByRegion.get(region)
     : rec.rooms;
-  if (!rooms?.length) return null;
+  if (!listed?.length) return null;
+  // 담아 둔 뒤에 줄 차례를 끌어서 바꿨을 수 있다 — 지금 차례로 다시 세운다(세운 것을 또 세워도 같다).
+  const rooms = sortRooms(listed);
 
   // markMine 이 여기에 '내 예약' 표시를 입히므로 **베껴서** 넘긴다. 담아 둔 것에 그 표시가
   // 묻으면, 이름으로 맞춘 건을 다음번에 "사이트가 붙인 수정·삭제 버튼"으로 읽게 된다.
@@ -3037,7 +3120,7 @@ async function init() {
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
-      'foldOpen', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
+      'foldOpen', 'roomOrder', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
       SPEC_HEIGHT_KEY, CAP_ENABLE_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
@@ -3047,6 +3130,8 @@ async function init() {
   state.justBooked = pruneBooked(saved.justBooked);
   state.myName = saved.myName || '';
   state.foldOpen = !!saved.foldOpen;
+  state.roomOrder = Array.isArray(saved.roomOrder) ? saved.roomOrder : [];
+  setRoomOrder(state.roomOrder);
   el.apiKey.value = state.apiKey;
   el.myName.value = state.myName;
   state.settingsPane = normalizePane(saved[SETTINGS_PANE_KEY]);
@@ -3318,6 +3403,15 @@ async function init() {
     if (area !== 'local') return;
     // 다른 창의 패널이 훑거나 예약·취소로 버린 날을 이 창의 보관소도 따라간다.
     store.sync(changes);
+    // 다른 창의 패널에서 회의실 줄 차례를 끌어서 바꿨다 — 이 창의 격자도 따라 세운다(내가 바꾼 것이 되돌아온 것이면 그대로).
+    if ('roomOrder' in changes) {
+      const next = Array.isArray(changes.roomOrder.newValue) ? changes.roomOrder.newValue : [];
+      if (JSON.stringify(next) !== JSON.stringify(state.roomOrder)) {
+        state.roomOrder = next;
+        setRoomOrder(next);
+        regridRooms();
+      }
+    }
     // 다른 창의 패널에서 바꿨으면 이 창의 체크박스도 따라간다.
     if (HOME_ENABLE_KEY in changes) paintHomeCard(homeEnabled(changes[HOME_ENABLE_KEY].newValue));
     if (TEAMS_ENABLE_KEY in changes) el.teamsButton.checked = teamsEnabled(changes[TEAMS_ENABLE_KEY].newValue);
