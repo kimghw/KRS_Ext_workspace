@@ -9,7 +9,7 @@ const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
 const { JSDOM } = require('jsdom');
 
 import { parseRooms } from '../src/parse.js';
-import { sortRooms, isFoldedRoom, foldLabels, setRoomOrder, movedOrder } from '../src/roomorder.js';
+import { sortRooms, isFoldedRoom, FOLD_LABEL, setRoomOrder, setRoomFold, movedOrder } from '../src/roomorder.js';
 import { buildGrid } from '../src/parse.js';
 
 let pass = 0;
@@ -29,15 +29,14 @@ t('제1~제5회의실이 맨 위', () =>
     ['제1회의실', '제2회의실', '제3회의실', '제4회의실', '제5회의실']));
 t('그 다음이 미팅룸1, 2', () =>
   assert.deepEqual(names.slice(5, 7).map((n) => n.slice(0, 4)), ['미팅룸1', '미팅룸2']));
-t('접는 방은 맨 아래로 모인다', () =>
-  assert.deepEqual(names.slice(-4),
-    ['부산지부 제1회의실', '부산지부 제2회의실', '스마트홀(18층)', '오션홀(3층)']));
+t('타부서 회의실(접는 방)은 맨 아래로 모인다', () =>
+  assert.deepEqual(names.slice(-7),
+    ['부산지부 제1회의실', '부산지부 제2회의실', 'KR ISC 화상회의실(13층)-12석', '스마트홀(18층)', '회의실(9층)', '오션홀(3층)', '세미나실(3층)']));
 t('접힌 것 말고는 접히지 않는다', () =>
-  assert.deepEqual(rooms.filter(isFoldedRoom).map((r) => r.name), names.slice(-4)));
+  assert.deepEqual(rooms.filter(isFoldedRoom).map((r) => r.name), names.slice(-7)));
 t('부산지부 제1회의실은 제1회의실이 아니다', () =>
   assert.equal(names[0], '제1회의실(11층)-56석'));
-t('접힌 무리 이름', () =>
-  assert.deepEqual(foldLabels(rooms), ['부산지부', '스마트홀', '오션홀']));
+t('접힌 무리 이름', () => assert.equal(FOLD_LABEL, '타부서 회의실'));
 t('원본 목록은 건드리지 않는다', () =>
   assert.equal(raw[0].name, '부산지부 제1회의실'));
 
@@ -56,14 +55,33 @@ const OCT = ['소회의실(12층)-10석', '대회의실(12층)-18석', '소회�
   '세미나실(3층)', '제5회의실(11층)-12석', '제4회의실(11층)-12석', '제3회의실(11층)-16석', '제2회의실(11층)-40석',
   '제1회의실(11층)-56석'].map((name) => ({ name }));
 const oct = sortRooms(OCT).map((r) => r.name);
-t('새 방은 미팅룸 아래 — 1→3회의실, 7층 소→대, 12층 소→대', () =>
-  assert.deepEqual(oct.slice(7, 14), ['1회의실(2층)-12석', '2회의실(2층)-10석', '3회의실(2층)-10석',
-    '소회의실(7층)-6석', '대회의실(7층)-24석', '소회의실(12층)-10석', '대회의실(12층)-18석']));
+const OCT_FOLD = ['소회의실(12층)-10석', '대회의실(12층)-18석', '소회의실(7층)-6석', '대회의실(7층)-24석',
+  '부산지부 제1회의실-30석', '부산지부 제2회의실-7석', 'KR ISC 화상회의실(13층)-12석', '스마트홀(18층)', '회의실(9층)',
+  '오션홀(3층)', '세미나실(3층)'];
+t('1→3회의실은 미팅룸 아래에 펼친 채', () =>
+  assert.deepEqual(oct.slice(7, 10), ['1회의실(2층)-12석', '2회의실(2층)-10석', '3회의실(2층)-10석']));
 t('그 위는 그대로 제1~5회의실·미팅룸', () =>
   assert.deepEqual(oct.slice(0, 7).map((n) => n.slice(0, 4)), ['제1회의', '제2회의', '제3회의', '제4회의', '제5회의', '미팅룸1', '미팅룸2']));
-t('새 방은 접히지 않고, 나머지·접는 방은 그 아래', () =>
-  assert.deepEqual(oct.slice(14), ['KR ISC 화상회의실(13층)-12석', '회의실(9층)', '세미나실(3층)',
-    '부산지부 제1회의실-30석', '부산지부 제2회의실-7석', '스마트홀(18층)', '오션홀(3층)']));
+t('그림의 일곱 곳은 부산지부·스마트홀·오션홀과 함께 타부서 회의실로 접힌다 (사이트 차례)', () => {
+  assert.deepEqual(oct.slice(10), OCT_FOLD);
+  assert.ok(OCT.filter(isFoldedRoom).length === OCT_FOLD.length);
+});
+
+console.log('끌어서 타부서 회의실에 넣고 뺀다 (2026-10-28)');
+{
+  setRoomFold({ '1회의실(2층)-12석': true, '세미나실(3층)': false });
+  const s = sortRooms(OCT).map((r) => r.name);
+  t('넣은 방은 접히고, 뺀 방은 펼쳐진다', () => {
+    assert.ok(isFoldedRoom({ name: '1회의실(2층)-12석' }));
+    assert.ok(!isFoldedRoom({ name: '세미나실(3층)' }));
+  });
+  t('뺀 방은 바깥 무리 끝으로, 넣은 방은 접힌 무리 안으로', () => {
+    assert.equal(s.indexOf('세미나실(3층)'), 9);
+    assert.ok(s.indexOf('1회의실(2층)-12석') >= 10);
+  });
+  t('넣고 빼지 않은 방은 규칙대로', () => assert.ok(isFoldedRoom({ name: '스마트홀(18층)' }) && !isFoldedRoom({ name: '미팅룸1(1층)-8석' })));
+  setRoomFold({});
+}
 
 console.log('끌어서 정한 차례 (2026-10-28)');
 {
@@ -81,12 +99,13 @@ console.log('끌어서 정한 차례 (2026-10-28)');
   t('저장된 차례대로 선다', () => assert.deepEqual(after, order.slice(0, -1)));
   t('처음 보는 방(새로 생긴 방)은 끌어서 정한 방 아래, 접는 방 위', () => {
     const fresh = sortRooms([...OCT, { name: '4회의실(2층)-8석' }]).map((r) => r.name);
-    assert.equal(fresh.indexOf('4회의실(2층)-8석'), after.length - 4);
+    assert.equal(fresh.indexOf('4회의실(2층)-8석'), after.length - OCT_FOLD.length);
   });
-  t('접는 방은 저장된 차례가 앞이어도 맨 아래', () => {
+  t('접는 방은 저장된 차례가 앞이어도 맨 아래, 그 안에서는 저장된 차례', () => {
     setRoomOrder(['스마트홀(18층)', ...order]);
-    assert.deepEqual(sortRooms(OCT).map((r) => r.name).slice(-4),
-      ['스마트홀(18층)', '부산지부 제1회의실-30석', '부산지부 제2회의실-7석', '오션홀(3층)']);
+    const s = sortRooms(OCT).map((r) => r.name);
+    assert.equal(s[s.length - OCT_FOLD.length], '스마트홀(18층)');
+    assert.ok(s.slice(-OCT_FOLD.length).every((n) => isFoldedRoom({ name: n })));
   });
   setRoomOrder([]);
   t('차례를 비우면 규칙대로', () => assert.deepEqual(sortRooms(OCT).map((r) => r.name), oct));

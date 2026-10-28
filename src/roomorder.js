@@ -2,8 +2,8 @@
 //
 // 사이트 드롭다운 차례는 **자주 쓰는 방이 아래에 몰려** 있다(부산지부·미팅룸이 먼저 오고
 // 11층 제1~5회의실이 맨 끝). 격자는 위에서부터 읽히므로 자주 쓰는 방을 위로 올린다.
-// 접는 방은 아예 빼지 않는다 — 없는 방으로 보이면 안 되므로 맨 아래에 모아 두고
-// 화면에서 펼칠 수 있게 한다.
+// 접는 방(타부서 회의실)은 아예 빼지 않는다 — 없는 방으로 보이면 안 되므로 맨 아래에 모아 두고
+// 화면에서 펼칠 수 있게 한다. 무엇을 접을지는 사용자가 끌어서 넣고 뺄 수 있다.
 //
 // 이름은 사이트가 주는 그대로다: "제1회의실(11층)-56석", "부산지부 제1회의실".
 
@@ -12,32 +12,31 @@ const TOP = [
   /^제\s*(\d+)\s*회의실/,   // 제1~제5회의실 (11층)
   /^미팅룸\s*(\d+)/,        // 미팅룸1, 미팅룸2
   /^(\d+)\s*회의실/,        // 1~3회의실 (2층, 2026-10 추가)
-  /^[소대]회의실\s*\(\s*(\d+)\s*층/,  // 소·대회의실 (7층·12층, 2026-10 추가) — 층 차례, 같은 층은 사이트 차례(소→대)
 ];
 
-/** 평소에 쓸 일이 없어 접어 두는 방. */
-const FOLD = [/^부산지부/, /^스마트홀/, /^오션홀/];
+/** 접힌 무리의 이름. 평소에 쓸 일이 없는 남의 방을 여기 모아 둔다. */
+export const FOLD_LABEL = '타부서 회의실';
+
+/** 처음부터 타부서 회의실에 넣어 두는 방. 끌어서 넣고 뺀 것(userFold)이 이보다 먼저다. */
+const FOLD = [
+  /^부산지부/, /^스마트홀/, /^오션홀/,
+  /^[소대]회의실/, /^KR ISC/, /^회의실\s*\(/, /^세미나실/,   // 2026-10-28 사용자 지정(그림의 일곱 곳)
+];
 
 const nameOf = (room) => String(room?.name || room?.label || '');
+
+/** 사용자가 끌어서 넣고 뺀 것: 방 이름 → 접는가. 패널이 저장소(roomFold)에서 읽어 넣는다. */
+let userFold = {};
+
+export function setRoomFold(map) {
+  userFold = map && typeof map === 'object' ? { ...map } : {};
+}
 
 /** 접어 둘 방인가. 격자에서는 줄을 지우지 않고 감추기만 한다. */
 export function isFoldedRoom(room) {
   const name = nameOf(room);
+  if (Object.hasOwn(userFold, name)) return !!userFold[name];
   return FOLD.some((re) => re.test(name));
-}
-
-/** 접은 무리를 한 줄로 알리는 이름. 부산지부처럼 여러 개인 것은 하나로 묶는다. */
-export function foldLabels(rooms) {
-  const out = [];
-  for (const room of rooms) {
-    const name = nameOf(room);
-    const hit = FOLD.find((re) => re.test(name));
-    if (!hit) continue;
-    // 규칙이 붙잡은 앞머리("부산지부", "스마트홀")를 무리 이름으로 쓴다
-    const label = name.match(hit)[0];
-    if (!out.includes(label)) out.push(label);
-  }
-  return out;
 }
 
 /** 사용자가 이름을 끌어 놓아 정한 차례(방 이름). 패널이 저장소(roomOrder)에서 읽어 넣는다. */

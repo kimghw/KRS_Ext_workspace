@@ -29,7 +29,7 @@ import {
 import { ENABLE_KEY as UNCFM_ENABLE_KEY, unconfirmedEnabled } from './src/unconfirmed.js';
 import { TABS_KEY, TAB_MODES, TAB_LABELS, hiddenTabs, tabShown, firstShown, toggleTab, visibleTabs, startMode } from './src/tabpick.js';
 import { fmtTime, todayStr, buildGrid, canDelete } from './src/parse.js';
-import { isFoldedRoom, foldLabels, sortRooms, setRoomOrder, movedOrder } from './src/roomorder.js';
+import { isFoldedRoom, FOLD_LABEL, sortRooms, setRoomOrder, setRoomFold, movedOrder } from './src/roomorder.js';
 import { createAttendPanel } from './attendpanel.js';
 import { createGongmunPanel } from './gongmunpanel.js';
 import { createRndPanel } from './rndpanel.js';
@@ -94,6 +94,7 @@ const state = { day: null, picks: [], drag: null, loadedAt: 0, timer: null,
   justBooked: [], myName: '', mine: [], editTarget: null, carWho: null,
   foldOpen: false, foundKind: 'room', asking: false,
   roomOrder: [],   // 회의실 이름을 끌어 놓아 정한 줄 차례(저장소 roomOrder) — src/roomorder.js
+  roomFold: {},    // 끌어서 타부서 회의실에 넣고 뺀 방: 이름 → 접는가(저장소 roomFold)
   // 현황에 같이 보여줄 근태(출장·휴가 …). HR 에서 읽어 온 것이고, error 는 읽지 못한 까닭이다.
   plans: { items: [], error: '' },
   // 마지막 조회가 로그인 문제로 끝났다. 로그인이 돌아온 신호(eclass 탭 로딩 끝·패널 다시 보임)에 다시 조회한다.
@@ -367,19 +368,18 @@ function render(day) {
       (meta ? `<span class="room-meta">${meta}</span>` : '') + `</th>${cells}</tr>`;
   });
 
-  // 접힌 무리 바로 앞에 펼침 손잡이를 끼운다. 정렬이 접는 방을 맨 아래로 몰아 두므로
-  // 손잡이 하나면 된다.
-  const foldFrom = folded.indexOf(true);
-  if (foldFrom >= 0) {
-    const hiddenRooms = grid.filter((_, i) => folded[i]).map((row) => row.room);
-    const names = foldLabels(hiddenRooms).join(' · ');
-    rows.splice(foldFrom, 0,
-      `<tr class="fold-row"><td class="fold-cell" colspan="${1 + grid[0].slots.length}">` +
+  // 접힌 무리(타부서 회의실) 바로 앞에 펼침 손잡이를 끼운다. 정렬이 접는 방을 맨 아래로 몰아 두므로
+  // 손잡이 하나면 된다. 무리가 비어도 줄은 두고 감춘다 — 회의실 이름을 끄는 동안 넣을 곳으로 드러난다.
+  if (!isCar()) {
+    const foldFrom = folded.indexOf(true);
+    const count = folded.filter(Boolean).length;
+    rows.splice(foldFrom >= 0 ? foldFrom : rows.length, 0,
+      `<tr class="fold-row${count ? '' : ' empty'}"><td class="fold-cell" colspan="${1 + grid[0].slots.length}">` +
       `<button type="button" id="foldToggle" class="fold-toggle" aria-expanded="${state.foldOpen}"` +
-      ` title="눌러서 펼치거나 접습니다"><span class="fold-caret" aria-hidden="true">` +
+      ` title="눌러서 펼치거나 접습니다 · 회의실 이름을 끌어 여기 놓으면 넣습니다"><span class="fold-caret" aria-hidden="true">` +
       `<svg viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></svg></span>` +
-      `<span class="fold-names">${escapeHtml(names)}</span>` +
-      `<span class="fold-count">${hiddenRooms.length}곳</span></button></td></tr>`);
+      `<span class="fold-names">${escapeHtml(FOLD_LABEL)}</span>` +
+      `<span class="fold-count">${count}곳</span></button></td></tr>`);
   }
   const body = rows.join('');
 
@@ -413,60 +413,99 @@ function render(day) {
 }
 
 /**
- * 회의실 이름을 끌어 놓아 줄 차례를 바꾼다. 접는 방은 접는 방끼리만 옮긴다 — 정렬이 그 무리를
- * 맨 아래에 모아 두고 펼침 손잡이를 그 앞에 하나만 끼우기 때문이다.
+ * 회의실 이름을 끌어 놓아 줄 차례를 바꾸고, 타부서 회의실(접힌 무리)에 넣고 뺀다.
+ * 접힌 줄에 놓으면 넣고 바깥 줄에 놓으면 뺀다. 손잡이 줄에 놓으면 무리 맨 앞에 넣는다(접혀 있어도).
  */
 function attachRoomMove(table, folded) {
-  const thOf = (t) => (t instanceof Element ? t.closest('tr')?.querySelector('th.room[data-r]') : null);
+  const rowOf = (t) => (t instanceof Element ? t.closest('tbody tr') : null);
+  // 손잡이 줄의 자리 — 접힌 무리의 첫 줄 번호(비었으면 맨 끝)
+  const foldAt = folded.includes(true) ? folded.indexOf(true) : folded.length;
   let from = -1;
-  const clear = () => table.querySelectorAll('.drop-before, .drop-after, .dragging')
-    .forEach((n) => n.classList.remove('drop-before', 'drop-after', 'dragging'));
+  const unmark = () => table.querySelectorAll('.drop-before, .drop-after, .drop-into')
+    .forEach((n) => n.classList.remove('drop-before', 'drop-after', 'drop-into'));
+
+  /** 놓을 곳: { to: 옮긴 뒤 줄 번호, fold: 접는가, after: 그 줄 뒤인가 }. 놓을 수 없으면 null. */
+  const target = (e) => {
+    const tr = rowOf(e.target);
+    if (from < 0 || !tr) return null;
+    if (tr.classList.contains('fold-row')) return { tr, to: from < foldAt ? foldAt - 1 : foldAt, fold: true };
+    const th = tr.querySelector('th.room[data-r]');
+    if (!th) return null;
+    const t = +th.dataset.r;
+    // 줄의 아래쪽 절반이면 그 줄 뒤, 위쪽이면 앞. 끌던 줄을 빼고 나면 뒤쪽 자리가 하나씩 당겨진다.
+    const box = tr.getBoundingClientRect();
+    const after = e.clientY > box.top + box.height / 2;
+    const slot = t + (after ? 1 : 0);
+    return { tr, to: slot > from ? slot - 1 : slot, fold: folded[t], after };
+  };
 
   table.addEventListener('dragstart', (e) => {
-    // 잡는 곳은 이름 칸뿐이다. 놓는 곳은 그 줄 어디든 된다(아래 thOf).
+    // 잡는 곳은 이름 칸뿐이다. 놓는 곳은 그 줄 어디든 된다.
     const th = e.target instanceof Element ? e.target.closest('th.room[data-r]') : null;
     if (!th) return;
     from = +th.dataset.r;
     e.dataTransfer.effectAllowed = 'move';
     th.parentElement.classList.add('dragging');
+    table.classList.add('room-dragging');   // 비어 있는 손잡이 줄도 넣을 곳으로 드러낸다
   });
   table.addEventListener('dragover', (e) => {
-    const th = thOf(e.target);
-    if (from < 0 || !th || folded[+th.dataset.r] !== folded[from]) return;
+    const hit = target(e);
+    if (!hit) return;
     e.preventDefault();
-    const to = +th.dataset.r;
-    table.querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
-    // 위로 옮기면 그 줄 앞에, 아래로 옮기면 그 줄 뒤에 들어간다
-    if (to !== from) th.parentElement.classList.add(to < from ? 'drop-before' : 'drop-after');
+    unmark();
+    if (hit.tr.classList.contains('fold-row')) hit.tr.classList.add('drop-into');
+    else if (hit.to !== from || hit.fold !== folded[from]) hit.tr.classList.add(hit.after ? 'drop-after' : 'drop-before');
   });
   table.addEventListener('drop', (e) => {
-    const th = thOf(e.target);
-    if (from < 0 || !th) return;
+    const hit = target(e);
+    if (!hit) return;
     e.preventDefault();
     const at = from;
     from = -1;
-    moveRoom(at, +th.dataset.r);
+    moveRoom(at, hit.to, hit.fold);
   });
-  table.addEventListener('dragend', () => { from = -1; clear(); });
+  table.addEventListener('dragend', () => {
+    from = -1;
+    unmark();
+    table.querySelector('.dragging')?.classList.remove('dragging');
+    table.classList.remove('room-dragging');
+  });
 
   table.addEventListener('keydown', (e) => {
     const th = e.target instanceof Element ? e.target.closest('th.room[data-r]') : null;
     if (!th || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
     e.preventDefault();
     const at = +th.dataset.r;
-    const to = at + (e.key === 'ArrowUp' ? -1 : 1);
-    if (to < 0 || to >= folded.length || folded[to] !== folded[at]) return;
-    moveRoom(at, to);
-    el.grid.querySelector(`th.room[data-r="${to}"]`)?.focus();
+    const down = e.key === 'ArrowDown';
+    let to = at + (down ? 1 : -1);
+    let fold = folded[at];
+    // 접힌 무리의 경계를 넘으면 자리는 그대로 두고 넣고 빼기만 한다(바깥 맨 끝 ↔ 무리 맨 앞)
+    if (down && at === foldAt - 1) [to, fold] = [at, true];
+    else if (!down && at === foldAt) [to, fold] = [at, false];
+    else if (to < 0 || to >= folded.length) return;
+    moveRoom(at, to, fold);
+    // 접힌 채로 무리에 넣었으면 그 줄은 감춰져 있다 — 손잡이로 간다
+    const next = fold && !state.foldOpen ? '#foldToggle' : `th.room[data-r="${to}"]`;
+    el.grid.querySelector(next)?.focus();
   });
 }
 
-/** 줄 하나를 옮기고 그 차례를 저장한다. 다른 창의 패널은 저장소 변경을 받아 따라 세운다. */
-function moveRoom(from, to) {
-  if (from === to || !state.day?.grid) return;
-  state.roomOrder = movedOrder(state.day.grid.map((g) => g.room.name), from, to);
+/** 줄 하나를 옮기고(타부서 회의실에 넣고 빼기도) 저장한다. 다른 창의 패널은 저장소 변경을 받아 따라 세운다. */
+function moveRoom(from, to, fold) {
+  const grid = state.day?.grid;
+  const room = grid?.[from]?.room;
+  if (!room) return;
+  const refold = fold !== isFoldedRoom(room);
+  if (from === to && !refold) return;
+  state.roomOrder = movedOrder(grid.map((g) => g.room.name), from, to);
   setRoomOrder(state.roomOrder);
-  chrome.storage.local.set({ roomOrder: state.roomOrder });
+  const save = { roomOrder: state.roomOrder };
+  if (refold) {
+    state.roomFold = { ...state.roomFold, [room.name]: fold };
+    setRoomFold(state.roomFold);
+    save.roomFold = state.roomFold;
+  }
+  chrome.storage.local.set(save);
   regridRooms();
 }
 
@@ -3120,7 +3159,7 @@ async function init() {
 
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
-      'foldOpen', 'roomOrder', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
+      'foldOpen', 'roomOrder', 'roomFold', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
       SPEC_HEIGHT_KEY, CAP_ENABLE_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
@@ -3132,6 +3171,8 @@ async function init() {
   state.foldOpen = !!saved.foldOpen;
   state.roomOrder = Array.isArray(saved.roomOrder) ? saved.roomOrder : [];
   setRoomOrder(state.roomOrder);
+  state.roomFold = saved.roomFold && typeof saved.roomFold === 'object' ? saved.roomFold : {};
+  setRoomFold(state.roomFold);
   el.apiKey.value = state.apiKey;
   el.myName.value = state.myName;
   state.settingsPane = normalizePane(saved[SETTINGS_PANE_KEY]);
@@ -3403,15 +3444,26 @@ async function init() {
     if (area !== 'local') return;
     // 다른 창의 패널이 훑거나 예약·취소로 버린 날을 이 창의 보관소도 따라간다.
     store.sync(changes);
-    // 다른 창의 패널에서 회의실 줄 차례를 끌어서 바꿨다 — 이 창의 격자도 따라 세운다(내가 바꾼 것이 되돌아온 것이면 그대로).
+    // 다른 창의 패널에서 회의실 줄 차례를 끌어서 바꿨거나 타부서 회의실에 넣고 뺐다 — 이 창의 격자도 따라 세운다
+    // (내가 바꾼 것이 되돌아온 것이면 그대로).
+    let regrid = false;
     if ('roomOrder' in changes) {
       const next = Array.isArray(changes.roomOrder.newValue) ? changes.roomOrder.newValue : [];
       if (JSON.stringify(next) !== JSON.stringify(state.roomOrder)) {
         state.roomOrder = next;
         setRoomOrder(next);
-        regridRooms();
+        regrid = true;
       }
     }
+    if ('roomFold' in changes) {
+      const next = changes.roomFold.newValue && typeof changes.roomFold.newValue === 'object' ? changes.roomFold.newValue : {};
+      if (JSON.stringify(next) !== JSON.stringify(state.roomFold)) {
+        state.roomFold = next;
+        setRoomFold(next);
+        regrid = true;
+      }
+    }
+    if (regrid) regridRooms();
     // 다른 창의 패널에서 바꿨으면 이 창의 체크박스도 따라간다.
     if (HOME_ENABLE_KEY in changes) paintHomeCard(homeEnabled(changes[HOME_ENABLE_KEY].newValue));
     if (TEAMS_ENABLE_KEY in changes) el.teamsButton.checked = teamsEnabled(changes[TEAMS_ENABLE_KEY].newValue);

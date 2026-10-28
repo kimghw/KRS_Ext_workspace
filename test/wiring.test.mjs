@@ -1295,12 +1295,52 @@ console.log('회의실 이름을 끌어서(Alt+↑↓) 줄 차례를 바꾼다 �
   });
   t('고른 칸은 미팅룸1 을 따라 첫 줄로 간다', () =>
     assert.deepEqual([...doc.querySelectorAll('#grid td.slot.picked')].map((td) => td.dataset.r), ['0']));
+  const foldRow = () => doc.querySelector('#grid tr.fold-row');
+  const foldedNames = () => heads().filter((th) => th.parentElement.classList.contains('folded')).map((th) => th.title.split(' — ')[0]);
+  t('접힌 무리는 타부서 회의실 한 줄', () => {
+    assert.equal(foldRow().querySelector('.fold-names').textContent, '타부서 회의실');
+    assert.equal(foldRow().querySelector('.fold-count').textContent, '1곳');
+  });
   key(1, 'ArrowDown');
-  t('접는 방(스마트홀) 아래로는 내려가지 않는다', () => assert.equal(names()[1], '제1회의실(11층)-56석'));
-  t('다른 창이 바꾼 차례도 따라 세운다', () => {
+  t('바깥 맨 끝에서 Alt+↓ 는 타부서 회의실 맨 앞에 넣는다 — 넣은 것을 저장하고, 접혀 있으니 손잡이로 간다', () => {
+    assert.deepEqual(foldedNames(), ['제1회의실(11층)-56석', '스마트홀(18층)']);
+    assert.deepEqual(store.roomFold, { '제1회의실(11층)-56석': true });
+    assert.equal(foldRow().querySelector('.fold-count').textContent, '2곳');
+    assert.equal(doc.activeElement?.id, 'foldToggle');
+  });
+  key(1, 'ArrowUp');
+  t('무리 맨 앞에서 Alt+↑ 는 꺼낸다', () => {
+    assert.deepEqual(foldedNames(), ['스마트홀(18층)']);
+    assert.deepEqual(store.roomFold, { '제1회의실(11층)-56석': false });
+  });
+
+  // 끌어 놓기 — jsdom 에는 DragEvent 가 없어 이름만 같은 사건에 빈 dataTransfer 를 단다(놓는 곳은 줄의 위쪽 절반).
+  const drag = (src, dst) => {
+    const fire = (type, node) => node.dispatchEvent(Object.assign(new window.Event(type, { bubbles: true, cancelable: true }), { dataTransfer: {}, clientY: 0 }));
+    fire('dragstart', src);
+    fire('dragover', dst);
+    fire('drop', dst);
+    fire('dragend', src);
+  };
+  drag(doc.querySelector('#grid th.room[data-r="0"]'), foldRow().querySelector('button'));
+  t('회의실 이름을 손잡이 줄에 놓으면 타부서 회의실 맨 앞에 들어간다', () => {
+    assert.deepEqual(names(), ['제1회의실(11층)-56석', '미팅룸1(1층)-8석', '스마트홀(18층)']);
+    assert.deepEqual(foldedNames(), ['미팅룸1(1층)-8석', '스마트홀(18층)']);
+    assert.equal(store.roomFold['미팅룸1(1층)-8석'], true);
+  });
+  drag(doc.querySelector('#grid th.room[data-r="2"]'), doc.querySelector('#grid td.slot[data-r="0"]'));
+  t('안쪽 줄을 끌어 바깥 줄에 놓으면 꺼내 그 자리에 선다', () => {
+    assert.deepEqual(names(), ['스마트홀(18층)', '제1회의실(11층)-56석', '미팅룸1(1층)-8석']);
+    assert.deepEqual(foldedNames(), ['미팅룸1(1층)-8석']);
+    assert.equal(store.roomFold['스마트홀(18층)'], false);
+  });
+
+  t('다른 창이 바꾼 차례·넣고 뺀 것도 따라 세운다 — 무리가 비면 손잡이 줄은 감춘다', () => {
     const order = ['제1회의실(11층)-56석', '미팅룸1(1층)-8석', '스마트홀(18층)'];
-    for (const fn of calls.storageListeners) fn({ roomOrder: { newValue: order } }, 'local');
+    for (const fn of calls.storageListeners) fn({ roomOrder: { newValue: order }, roomFold: { newValue: { '미팅룸1(1층)-8석': false, '스마트홀(18층)': false } } }, 'local');
     assert.deepEqual(names(), order);
+    assert.deepEqual(foldedNames(), []);
+    assert.ok(foldRow().classList.contains('empty'));
   });
 }
 
