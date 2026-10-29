@@ -1,4 +1,4 @@
-# 구매 품의 — 부서 구매(100만원 이하, 부가세 포함 합계). 원본: krs-web-agents research_form/purposes/purchase
+# 구매 품의 — 부서 구매(500만원 미만, 부가세 포함 합계). 원본: krs-web-agents research_form/purposes/purchase
 #
 # 이 파일의 값 가운데 read·write·rules·example·context 는 그대로 Claude 에게 가는 지시문이다(인라인 프롬프트). # 주석은 사람만 본다.
 # 고친 뒤 `npm run gen` 을 돌리면 확장이 새 지시문으로 읽는다. Claude 가 받는 지시문 전문은 `node tools/gen-gongmun.mjs --prompt purchase`(사유 쓰기는 `--prompt purchase reason`).
@@ -9,8 +9,9 @@ title: 구매품의
 rule_key: 연구비집행         # registries/delegation.yaml — 과제 예산으로 사는 것이라 연구비 집행이다
 amount_field: total          # 위임전결의 기준 금액을 읽는 초안 칸
 document_setting: 연구품의    # registries/settings.yaml 의 프로파일
-# 합계 한도(원) — 넘으면 본문을 만들지 않는다. 그보다 큰 구매는 결재선·첨부(500만원 이상 비교견적서)가 달라 이 틀로 올리지 않는다(2026-10-07 사용자 지정).
-limit: 1000000
+# 합계 한도(원) — 이 금액 미만만 쓴다(딱 이 금액부터 본문을 만들지 않는다). 500만원 이상은 첨부(비교견적서)가 달라 이 틀로 올리지 않는다
+# (2026-10-07 사용자 지정 100만원 이하 → 2026-10-29 사용자 지정: "500만원 미만까지 구매할 수 있도록").
+limit: 5000000
 account: 연구활동비(연구실운용비)   # 계정의 기본값 — 과제에 계정을 적어 두면 그것이 이긴다
 
 # 문서 읽기 — docs 는 이 갈래에 넣는 문서(지시문 첫머리와 '품의 종류' 줄에 들어간다), rules 는 키 하나로 말할 수 없는 이 갈래만의 규칙.

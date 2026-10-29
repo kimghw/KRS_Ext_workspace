@@ -418,7 +418,7 @@ export const RECIPE = {
       "rule_key": "연구비집행",
       "amount_field": "total",
       "document_setting": "연구품의",
-      "limit": 1000000,
+      "limit": 5000000,
       "account": "연구활동비(연구실운용비)",
       "fields": [
         {

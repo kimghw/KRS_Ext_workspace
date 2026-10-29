@@ -199,7 +199,7 @@
             </div>
             <p class="cli-help" hidden><span>Claude 가 연결되지 않아 문서를 읽을 수 없습니다.</span><button type="button" class="small cli-guide-copy" title="이 PC 의 Claude Code·Codex 같은 코딩 에이전트에 붙여 넣으면 로컬 Claude CLI 를 연결해 줍니다. 확장 폴더 경로와 확장 ID 가 함께 들어갑니다.">연결 지침 복사</button></p>
           </div>
-          <!-- 100만원 한도(구매) — 문서를 읽은 결과라 여기 남는다. 읽은 칸(합계)은 아래 작업 카드의 읽은 내용 탭에 있다. -->
+          <!-- 500만원 한도(구매) — 문서를 읽은 결과라 여기 남는다. 읽은 칸(합계)은 아래 작업 카드의 읽은 내용 탭에 있다. -->
           <div id="gmLimit" class="gm-limit hidden" role="alert"></div>
         </div>
       </div>
@@ -219,7 +219,7 @@
           <button type="button" id="gmWorkspaceToggle" class="ghost small gm-workspace-toggle" aria-expanded="true" aria-controls="gmWorkspaceBody" aria-label="작성 내용 접기" title="작성 내용 접기"><span id="gmWorkspaceFoldLabel">접기</span><svg class="gm-fold-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         </div>
         <div id="gmWorkspaceBody">
-          <!-- 작성 내용 — 용도·사유·에이전트·결재선. 구매는 합계가 100만원을 넘으면 공문을 만들지 않는다(src/gongmun.js 의 PURCHASE_LIMIT). -->
+          <!-- 작성 내용 — 용도·사유·에이전트·결재선. 구매는 합계가 500만원 이상이면 공문을 만들지 않는다(src/gongmun.js 의 PURCHASE_LIMIT). -->
           <div id="gmDraft" class="gm-draft hidden" role="tabpanel" aria-labelledby="gmViewDraft" tabindex="0">
             <!-- 외부활동의 과제 — 구매·교육·출장은 탭 위의 과제 줄(gmProjBar)에서 고르니 이 둘은 숨는다. -->
             <div id="gmProjLabel" class="gm-label">과제 <small>R&amp;D 탭</small></div>

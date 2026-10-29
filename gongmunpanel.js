@@ -28,7 +28,7 @@ import {
   KIND_KEY, PRESET_KEY, PROJECTS_KEY, TEMPLATES_KEY, DRAFT_KEY, RND_EXTRA_KEY,
   templateOf, templatesOf, normalizeTemplates, pickTemplate, addTemplate, editTemplate, removeTemplate, MAX_TEMPLATES, normalizePreset, normalizeProjects, normalizeRndExtra, sameProject, fromRecord, blankDraft, summaryOf,
   overLimit, approvalLine, lineText, compose, needs, attachName, whoOf, DOC_NAMES, won, moneyOf, docNoCandidates, ROLE_LABEL,
-  mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, attachWithCut, rndProjects, projectRefs, moreLead,
+  mergeDraft, applyReason, REASON_KEYS, EMPTY_ROW, eduModeOf, spreadParts, guessParts, attachWithCut, rndProjects, projectRefs, moreLead,
   docSettingOf, settingText, settingPatch, delegationOf, RANKS, RANK_WHY, SETTING_OPTIONS, dotDate, formsFor, fieldForm, hasRows, outsideAuto, orderAuto, orderFromPurchase,
 } from './src/gongmun.js';
 import {
@@ -93,7 +93,7 @@ const PICK_FIRST = KIND_ORDER.filter((k) => KINDS[k].project);
 
 const pad = (n) => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
-/** 100만원처럼 만 단위로 끊어 말한다. */
+/** 500만원처럼 만 단위로 끊어 말한다. */
 const manwon = (n) => (n % 10000 === 0 ? `${(n / 10000).toLocaleString('ko-KR')}만원` : won(n));
 const formLabel = (id) => FORMS.find((f) => f.id === id)?.label || id;
 
@@ -744,6 +744,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     if (!toRead.length && !allText.trim()) {
       if (!prev) return setStatus(`읽을 내용이 없습니다 — ${picked.map((f) => f.name).join(', ')} 은(는) 글자를 읽지 못하는 파일입니다. 요청 메일이나 문서를 함께 넣어 주세요.`, 'error');
       Object.assign(prev, { files: all, source: { ...prev.source, from: filesLine(all) }, notes: [...(prev.notes || []), ...fileNotes] });
+      prev.parts = guessParts(prev.parts, all);
       prev.draft.attach = attachOf(kind, all, prev.parts, prev.cut);
       saveWork();
       if (kind === st.kind) paintDraft();
@@ -768,7 +769,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     let done = false;
     try {
       const got = await gongmunSmart({ files: toRead, text: allText }, { kind, today: today() }, { apiKey, useNative: cli });
-      const rec = { ...got.record, parts: spreadParts(got.record.parts, all) };
+      // 원본 첨부 가운데 읽기가 종류를 가리지 못한 것은 이름(견적)·읽은 문서 종류로 짐작한다 — 견적서면 첨부 목록의 견적서 줄에 든다(guessParts).
+      const rec = { ...got.record, parts: guessParts(spreadParts(got.record.parts, all), all, got.record.docType) };
       if (rec.docType === 'unknown') throw new Error(`품의에 넣을 문서로 보이지 않습니다 — ${rec.summary}`);
       // 구매 — 쇼핑몰 화면이면 읽기가 짚은 가격과 그 둘레(quoteArea)를 오려 견적서 한 장으로 첨부한다(src/quotecut.js, 2026-10-08 사용자 지정).
       // 교육도 온라인 강의 페이지면 수강료 칸을 오려 교육 견적서로 첨부하고, 강의 소개·커리큘럼 장은 교육 내용으로 남긴다(같은 날 사용자 지정).
@@ -1479,10 +1481,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     }
     st.blocked[st.kind] = blocked;
     if (lim.over) {
-      el.limit.innerHTML = `합계 <strong>${won(lim.amount)}</strong> — 부서 ${escapeHtml(KINDS[st.kind].title)}는 <strong>${manwon(lim.limit)} 이하</strong>만 작성합니다. `
+      el.limit.innerHTML = `합계 <strong>${won(lim.amount)}</strong> — 부서 ${escapeHtml(KINDS[st.kind].title)}는 <strong>${manwon(lim.limit)} 미만</strong>만 작성합니다. `
         + '합계를 잘못 읽었으면 읽은 문서의 합계 칸을 고쳐 주세요.';
     } else if (lim.unknown) {
-      el.limit.textContent = `합계(원)를 몰라 ${manwon(lim.limit)} 이하인지 가리지 못했습니다 — 읽은 문서의 합계 칸에 부가세 포함 금액(원)을 적어 주세요.`;
+      el.limit.textContent = `합계(원)를 몰라 ${manwon(lim.limit)} 미만인지 가리지 못했습니다 — 읽은 문서의 합계 칸에 부가세 포함 금액(원)을 적어 주세요.`;
     }
     const account = el.moreFields.querySelector('[data-key="account"]');
     if (account) account.placeholder = projectOf(w)?.account || KINDS[st.kind].account;

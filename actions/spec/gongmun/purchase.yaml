@@ -1,6 +1,6 @@
 # 구매품의(연구업무추진품의) 작성 — 견적서·거래명세서·쇼핑몰 주문 화면을 읽어(gongmun.purchase) 초안을 만들고 과제 내용으로 구매사유를 쓴(gongmunReason.purchase) 뒤,
-# 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc). 부서 구매는 100만원 이하(부가세 포함 합계 — 레시피 purchase/purpose.yaml 의 limit,
-# 2026-10-07 사용자 지정)만 이 틀로 올린다 — 넘으면 패널이 본문을 만들지 않는다(overLimit).
+# 공문 탭의 `공문 작성` 을 누르면 이 기록이 선다(gongmunpanel.js writeDoc). 부서 구매는 500만원 미만(부가세 포함 합계 — 레시피 purchase/purpose.yaml 의 limit,
+# 2026-10-29 사용자 지정)만 이 틀로 올린다 — 넘으면 패널이 본문을 만들지 않는다(overLimit).
 # 어댑터(gongmun.write): writePlan('purchase', { title, body, draft, form, setting, rank, lead, refs } = rec.input, { me: preset.me, preset: preset.setup, project: preset.project, today: preset.today })
 # → writeGongmun(plan, { files: ctx.files, onStep, onTab, dry })(§14.4). 첨부 바이트(읽은 문서를 묶은 PDF·원본 파일 — base64)는 ctx.files 이고 기록의 attach 는 이름 목록이다.
 # 공통 칸(form·title·body·rank·lead·refs·setting·attach)과 공문 설정(setup)은 _domain.yaml 에 있다 — `{ from: domain }` 이 같은 자리에 가져온다. 이 종류만의 것은 초안(draft)이다.

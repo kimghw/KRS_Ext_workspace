@@ -15,7 +15,7 @@ import {
   templateOf, templateEdited, templatesOf, normalizeTemplates, pickTemplate, addTemplate, editTemplate, removeTemplate, MAX_TEMPLATES, VAR_GROUPS, normalizePreset, normalizeProjects, namesOf, josa, hasBatchim, fillTemplate,
   totalOf, gistOf, fromRecord, blankDraft, overLimit, approvalLine, lineText, compose, needs, bodyHtml, draftUrl, attachName,
   moneyOf, won, dotDate, summaryOf, parseSetupLocal, mergeSetup, attachList, attachBlock, mergeDraft, applyReason, reasonInput, REASON_KEYS,
-  eduModeOf, EDU_MODES, spreadParts, attachWithCut, rndContent, rndProjects, REASON_LABEL, missingDocs, moreLead,
+  eduModeOf, EDU_MODES, spreadParts, guessParts, attachWithCut, rndContent, rndProjects, REASON_LABEL, missingDocs, moreLead,
   normalizeRndExtra, sameProject, formsFor, fieldForm, timeOf, minutesTotal, outsideAuto, draftValue, projectRefs,
 } from '../src/gongmun.js';
 import { normalizeBook } from '../src/rnd.js';
@@ -81,8 +81,8 @@ t('외부활동의 양식은 외부강의등 신고서, 구매의뢰는 구매�
   assert.deepEqual(['KR_Outside_Lecture_Report', 'KR_Purchase_Order', 'KR_EA_Research_Task', 'KR_EA_Form2', 'KR_X'].map(fieldForm), [true, true, false, false, false]);
   assert.equal(DEFAULT_TEMPLATES.outside.title, '외부강의등 신고서', '제목은 양식의 기본 제목 그대로(지난 신고서도 그랬다)');
 });
-t('구매만 100만원 한도가 있다', () => {
-  assert.equal(PURCHASE_LIMIT, 1_000_000);
+t('구매만 500만원 한도가 있다', () => {
+  assert.equal(PURCHASE_LIMIT, 5_000_000);
   assert.equal(KINDS.purchase.limit, PURCHASE_LIMIT);
   assert.equal(KINDS.edu.limit, null);
 });
@@ -198,10 +198,11 @@ t('외화 문서는 원화로 고쳐 달라고 알린다', () => {
 });
 
 console.log('한도');
-t('100만원 이하만 작성 — 딱 100만원은 된다', () => {
-  assert.equal(overLimit('purchase', { total: 1_000_000 }).over, false);
-  assert.equal(overLimit('purchase', { total: 1_000_001 }).over, true);
-  assert.equal(overLimit('purchase', { total: '1,239,000' }).over, true, '쉼표 글도 읽는다');
+t('500만원 미만만 작성 — 딱 500만원은 안 된다', () => {
+  assert.equal(overLimit('purchase', { total: 4_999_999 }).over, false);
+  assert.equal(overLimit('purchase', { total: 1_239_000 }).over, false, '100만원을 넘어도 된다');
+  assert.equal(overLimit('purchase', { total: 5_000_000 }).over, true);
+  assert.equal(overLimit('purchase', { total: '5,239,000' }).over, true, '쉼표 글도 읽는다');
 });
 t('합계를 모르거나 원화가 아니면 가리지 못한다(unknown) — 화면이 막는다', () => {
   assert.deepEqual(overLimit('purchase', { total: null }), { over: false, unknown: true, limit: PURCHASE_LIMIT, amount: null });
@@ -948,6 +949,23 @@ t('묶음이 아닌 파일과 가린 것이 없는 묶음은 그대로 둔다 �
   assert.deepEqual(spreadParts([{ file: 'x_2.png', kind: 'content' }], [{ name: 'x_1.png', group: 'g' }, { name: 'x_2.png', group: 'g' }, { name: 'x_3.png', group: 'g' }]),
     [{ file: 'x_2.png', kind: 'content' }, { file: 'x_3.png', kind: 'content' }], '앞 장은 뒤의 것을 거꾸로 받지 않는다');
   assert.deepEqual(spreadParts([{ file: 'a', kind: 'quote' }, { bad: true }, { file: 'b' }], []), [{ file: 'a', kind: 'quote' }], '모양이 틀린 줄은 뺀다');
+});
+
+console.log('원본 첨부의 문서 종류 짐작 (guessParts)');
+t('읽기가 가리지 못한 원본 첨부 — 이름에 견적이 있으면 견적서 줄에 들고, 빈 견적서 줄과 파일 이름 줄로 이중이 되지 않는다', () => {
+  const files = [{ name: '메일본문.png' }, { name: 'OO상사_견적서.xlsx', original: true }, { name: '회사소개.hwp', original: true }];
+  const parts = guessParts([{ file: '메일본문.png', kind: 'other' }], files, 'quote');
+  assert.deepEqual(parts, [{ file: '메일본문.png', kind: 'other' }, { file: 'OO상사_견적서.xlsx', kind: 'quote' }], '이름에 견적이 없는 것은 그대로 — 파일이 여럿이면 docType 을 따르지 않는다');
+  assert.deepEqual(attachList('purchase', parts, files.slice(0, 2).map((f) => f.name)).map((a) => [a.label, a.files]),
+    [['참고 자료', ['메일본문.png']], ['견적서', ['OO상사_견적서.xlsx']]]);
+  assert.deepEqual(guessParts(null, [{ name: 'Quotation_2026.pdf', original: true }, { name: 'a.png' }]), [{ file: 'Quotation_2026.pdf', kind: 'quote' }]);
+});
+t('넣은 것이 이름 모를 원본 첨부 하나뿐이고 읽기가 견적서로 보았으면 견적서 — 다른 종류·이미 가린 것·원본이 아닌 것은 건드리지 않는다', () => {
+  assert.deepEqual(guessParts([], [{ name: '2026-10-29.xlsx', original: true }], 'quote'), [{ file: '2026-10-29.xlsx', kind: 'quote' }]);
+  assert.deepEqual(guessParts([], [{ name: '2026-10-29.xlsx', original: true }], 'other'), [], '견적서가 아니면 짐작하지 않는다');
+  assert.deepEqual(guessParts([], [{ name: '발표자료 양식.docx', original: true }], 'course'), [], '교육 안내 등은 파일 이름 줄로 둔다');
+  assert.deepEqual(guessParts([{ file: '견적.xlsx', kind: 'statement' }], [{ name: '견적.xlsx', original: true }], 'quote'), [{ file: '견적.xlsx', kind: 'statement' }]);
+  assert.deepEqual(guessParts([], [{ name: '견적.png' }], 'quote'), [], '그림·PDF 는 읽기가 가린다');
 });
 
 console.log('구매 — 가격 부분을 오린 견적서(attachWithCut)');

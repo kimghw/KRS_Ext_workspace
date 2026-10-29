@@ -1678,16 +1678,16 @@ console.log('공문 탭');
   });
 
   type(field('gist'), '34인치 모니터');
-  type(field('total'), '1,239,000');
-  t('합계가 100만원을 넘으면 공문을 만들지 않는다', () => {
+  type(field('total'), '5,239,000');
+  t('합계가 500만원 이상이면 공문을 만들지 않는다', () => {
     assert.ok(!doc.getElementById('gmLimit').classList.contains('hidden'));
-    assert.match(doc.getElementById('gmLimit').textContent, /1,239,000원.*100만원 이하/);
+    assert.match(doc.getElementById('gmLimit').textContent, /5,239,000원.*500만원 미만/);
     assert.ok(doc.getElementById('gmDoc').classList.contains('hidden'));
   });
   type(field('total'), '989000');
   type(field('use'), '연구 회의 자료 검토용');
   type(field('reason'), '과제 회의에서 회로도·시험 데이터를 함께 검토할 대화면이 필요함');
-  t('100만원 이하면 양식대로 제목·본문이 만들어진다 — 요약은 품목 요지를 따라간다', () => {
+  t('500만원 미만이면 양식대로 제목·본문이 만들어진다 — 요약은 품목 요지를 따라간다', () => {
     assert.ok(!doc.getElementById('gmDoc').classList.contains('hidden'));
     assert.equal(doc.getElementById('gmTitle').value, '34인치 모니터 구매 품의');
     const body = doc.getElementById('gmBody').value;
@@ -1773,7 +1773,7 @@ console.log('공문 탭');
     window.chrome.tabs.query = async () => [];
   });
   doc.getElementById('gmEvidenceToggle').click();
-  type(field('total'), '1,200,000');
+  type(field('total'), '5,200,000');
   t('공문 선택 중 한도에 걸리면 읽은 내용 탭으로 가고 접힌 참고 문서를 열어 금액을 고치게 한다', () => {
     assert.ok(doc.getElementById('gmDoc').classList.contains('hidden'), '기존 한도 차단은 유지된다');
     assert.ok(doc.getElementById('gmViewDoc').disabled);
@@ -2396,7 +2396,7 @@ console.log('공문 탭 — 비교작성 탭(2026-10-09 사용자 지정: "비�
   const { window } = await boot({
     mode: 'gongmun', gongmunKind: 'purchase',
     gongmunView: { tab: 'doc', evidenceOpen: false, workspaceOpen: false },
-    gongmunDraft: { purchase: { draft: { ...blankDraft('purchase'), gist: '한도 초과 품목', total: 1200000 }, source: { label: '직접 입력' } } },
+    gongmunDraft: { purchase: { draft: { ...blankDraft('purchase'), gist: '한도 초과 품목', total: 5200000 }, source: { label: '직접 입력' } } },
   });
   const doc = window.document;
   t('저장한 공문 선택이 한도로 차단되면 읽은 내용 탭(합계 칸)으로 복원하고 참고 문서를 펼쳐 오류를 보여준다', () => {
@@ -3094,7 +3094,7 @@ console.log('공문 탭 — 구매: 읽은 문서는 읽은 내용 탭에, 작�
   });
 
   doc.getElementById('gmViewDraft').click();
-  type(field('total'), '1,200,000');
+  type(field('total'), '5,200,000');
   t('합계가 한도를 넘으면 읽은 내용 탭이 열린다 — 합계 칸이 그 안에 있다', () => {
     assert.equal(doc.getElementById('gmViewRead').getAttribute('aria-selected'), 'true');
     assert.ok(!doc.getElementById('gmReadView').hidden);
@@ -5071,13 +5071,13 @@ console.log('공문 탭 — 구매·교육·출장의 비용을 R&D 과제의 �
     assert.deepEqual([...budgetEl.querySelectorAll('b')].map((b) => b.textContent), ['23,838,661원', '989,000원', '22,849,661원']);
     assert.match(budgetEl.title, /잔액 23,838,661원 = 예산 43,700,000원 − 승인 19,712,839원 − 승인전 148,500원/);
     assert.match(budgetEl.title, /rERP 2026-0063-01/);
-    assert.ok(doc.getElementById('gmLimit').classList.contains('hidden'), '100만원 안이라 한도 알림은 없다');
+    assert.ok(doc.getElementById('gmLimit').classList.contains('hidden'), '500만원 미만이라 한도 알림은 없다');
   });
   type(field('total'), '30,000,000');
   t('합계가 잔액을 넘으면 붉게 "예산 부족" — 한도 알림과는 따로(한도는 작성을 막고, 예산 줄은 알리기만)', () => {
     assert.ok(budgetEl.classList.contains('short'));
     assert.match(budgetEl.textContent, /^R&D 예산 부족 — 연구활동비 잔액 23,838,661원 < 이번 30,000,000원 · 6,161,339원 모자람 \(집행 45% → 114%\) · rERP /);
-    assert.ok(!doc.getElementById('gmLimit').classList.contains('hidden'), '100만원 한도에도 걸린다');
+    assert.ok(!doc.getElementById('gmLimit').classList.contains('hidden'), '500만원 한도에도 걸린다');
   });
   type(field('total'), '');
   t('합계를 비우면 잔액만 보이고 금액을 적으라고 한다', () => {

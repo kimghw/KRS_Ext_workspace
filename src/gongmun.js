@@ -58,8 +58,8 @@ export const KINDS = Object.fromEntries(KIND_ORDER.map((k) => {
 }));
 
 /**
- * 부서 구매 품의는 100만원 이하(부가세 포함 합계)만 작성한다(2026-10-07 사용자 지정 — 레시피 purchase/purpose.yaml 의 limit). 넘으면 본문을
- * 만들지 않는다 — 그보다 큰 구매는 결재선(원본 ea_rules.yaml 의 구매 구간)과 첨부(500만원 이상 비교견적서)가 달라 이 틀로 올리면 안 된다.
+ * 부서 구매 품의는 500만원 미만(부가세 포함 합계)만 작성한다(2026-10-07 사용자 지정 100만원 이하 → 2026-10-29 사용자 지정: "500만원 미만까지" —
+ * 레시피 purchase/purpose.yaml 의 limit). 한도부터는 본문을 만들지 않는다 — 500만원 이상은 첨부(비교견적서)가 달라 이 틀로 올리면 안 된다.
  */
 export const PURCHASE_LIMIT = KINDS.purchase.limit;
 
@@ -603,6 +603,27 @@ export function spreadParts(parts, files = []) {
   return out;
 }
 
+/** 파일 이름으로 가리는 문서 종류 — 견적서만(견적서_OO상사.xlsx · Quotation.pdf). */
+const QUOTE_NAME = /견적|quotation|estimate/i;
+
+/**
+ * 원본 첨부(메일 첨부·끌어 넣은 엑셀·한글·워드 …) 가운데 읽기가 종류를 가리지 못한 것(parts 에 없음 — 문서 파일은 글만 넘어가니 parts 가 비기 쉽다)의
+ * 종류를 짐작해 parts 에 더한다(2026-10-29 사용자 지정: "참고문서 넣을 때 견적서를 넣었더니. 왜 첨부파일에 이걸 넣지 않지? … 판별해서 견적서면 첨부하도록").
+ * 이름에 '견적'이 있거나, 넣은 파일이 그것 하나뿐이고 읽기가 견적서로 보았으면(docType quote) 견적서다. 그 밖의 종류는 짐작하지 않는다.
+ * 가리지 못한 것은 그대로 둔다 — 첨부 목록에 파일 이름으로 한 줄씩 선다(gongmunpanel.js attachOf).
+ * @param {{file:string, kind:string}[]|null} parts 읽기의 답(spreadParts 뒤)
+ * @param {{name:string, original?:boolean}[]} files 넣은 차례의 파일
+ * @param {string} [docType] 읽기가 본 문서 종류(레시피 reading.yaml 의 docType)
+ * @returns {{file:string, kind:string}[]}
+ */
+export function guessParts(parts, files = [], docType = '') {
+  const out = Array.isArray(parts) ? [...parts] : [];
+  const loose = (files || []).filter((f) => f?.original && !out.some((p) => p?.file === f.name));
+  const alone = loose.length === 1 && (files || []).length === 1;
+  for (const f of loose) if (QUOTE_NAME.test(f.name) || (alone && docType === 'quote')) out.push({ file: f.name, kind: 'quote' });
+  return out;
+}
+
 /** 본문의 첨부 줄 — "    1. 교육 견적서 1부." … 마지막 줄 끝에 "  끝." */
 export function attachBlock(attach) {
   const list = (attach || []).filter((a) => String(a?.label || '').trim());
@@ -872,7 +893,7 @@ export const amountOf = (kind, draft) => {
 };
 
 /**
- * 한도를 넘었는가. 원화가 아니면 가리지 못한다(unknown) — 합계를 원화로 고치면 다시 본다.
+ * 한도에 걸렸는가 — limit 는 미만이다(딱 limit 이면 걸린다). 원화가 아니면 가리지 못한다(unknown) — 합계를 원화로 고치면 다시 본다.
  * @returns {{over: boolean, unknown: boolean, limit: number|null, amount: number|null}}
  */
 export function overLimit(kind, draft) {
@@ -880,7 +901,7 @@ export function overLimit(kind, draft) {
   const amount = moneyOf(amountOf(kind, draft));
   if (!limit) return { over: false, unknown: false, limit, amount };
   if (amount == null || (draft?.currency && draft.currency !== 'KRW')) return { over: false, unknown: true, limit, amount };
-  return { over: amount > limit, unknown: false, limit, amount };
+  return { over: amount >= limit, unknown: false, limit, amount };
 }
 
 /* ------------------------------------------------------------ 채팅으로 공문 설정 채우기 */
