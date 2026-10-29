@@ -7,8 +7,10 @@
 //     날마다 그 목표에 가장 못 미친 업무를 고른다. 실제는 카드가 고른 기간의 것에서 시작한다 — 카드에 보이는 실제가 목표에 다가가게. 목표가 없는 업무와 기타는 고르지 않는다.
 //   출장·외근 날 — 그 근태의 사유(workRsn)에 업무의 별칭(더한 업무는 이름)이 들었거나 과제명에만 있는 낱말이 둘 넘게 들었으면 그 업무로 쓴다.
 //     맞는 업무가 없거나 둘 이상이면 그 날은 짜지 않고 둔다(사람이 고를 수 있다).
-//   업무명 — 더한 업무에 e-Class 업무명을 정해 두었으면 그것(2026-10-29 사용자 지정: "AIP 업무는 이걸로 하게 해줘" — 「시험/인증업무>AIP 기술검토 및 관리」),
-//     아니면 그 업무로 가장 최근에 적은 일일 업무의 업무명(작성 화면 업무 목록의 줄 이름). 적은 적이 없으면 과제명·더한 업무의 이름(작성 화면에서 그 말이 든 줄을 찾는다).
+//   업무명 — 그 줄에 e-Class 업무를 골라 두었으면 그것(2026-10-30 사용자 지정: "저기서 일일업무리스트를 어떤걸 매칭할 건지 선택할 수 있게 해줘" — 업무 번호까지;
+//     2026-10-29 "AIP 업무는 이걸로 하게 해줘" 의 「시험/인증업무>AIP 기술검토 및 관리」도 이것으로 옮겼다), 아니면 그 업무로 가장 최근에 적은 일일 업무의 업무명.
+//     적은 적이 없으면 과제명·더한 업무의 이름. e-Class 업무 목록(작성 화면의 업무 목록 — src/dwrwrite.js fetchWorkList)을 알면 그 목록에서 맞는 업무를 찾아
+//     업무명·번호를 정하고, 맞는 업무가 없는 줄은 짜지 않는다(써도 작성 화면에 그 줄이 없다).
 //   내용 — 그 업무로 최근에 적은 내용(겹치지 않게 열 가지까지)을 차례로 돌려 쓴다. 적은 적이 없으면 R&D 탭 그 과제의 올해 차년도 계획의 개발내용. 출장·외근은 그 사유.
 //     지어내지 않는다 — 없으면 비워 두고 사람이 적는다.
 // 화면도 저장소도 모른다 — 일일 업무 줄은 src/dwr.js rowsOf, 업무 줄은 src/workshare.js workShare 의 꼴이다.
@@ -84,16 +86,16 @@ export function workDays(rows, { from = '', to = '9999-12-31' } = {}) {
 /**
  * 업무마다 지난 일일 업무 — 업무명(가장 최근에 적은 것)과 내용 묶음(최근부터 겹치지 않게 POOL_MAX 개). 열쇠는 src/workshare.js lineKeyOf 와 같다.
  * @param {ReturnType<import('./dwr.js').rowsOf>} rows 날짜 내림차순
- * @param {{items?: {name: string}[], rates?: ReturnType<import('./workshare.js').myRates>}} [q]
+ * @param {{items?: {name: string}[], rates?: ReturnType<import('./workshare.js').myRates>, links?: Record<string, {id, name}>}} [q]
  * @returns {Map<string, {title: string, pool: string[], last: string}>}
  */
-export function historyOf(rows, { items = [], rates = { projects: [] } } = {}) {
+export function historyOf(rows, { items = [], rates = { projects: [] }, links = {} } = {}) {
   const out = new Map();
   const keys = new Map();
   const seen = new Map();
   for (const r of rows || []) {
     const ck = `${r.title}\n${r.category}`;
-    if (!keys.has(ck)) keys.set(ck, lineKeyOf(r, items, rates.projects));
+    if (!keys.has(ck)) keys.set(ck, lineKeyOf(r, items, rates.projects, links));
     const key = keys.get(ck);
     if (!out.has(key)) { out.set(key, { title: r.title, pool: [], last: r.date }); seen.set(key, new Set()); }
     const h = out.get(key);
@@ -200,23 +202,41 @@ export function forecastOf(targets, minutes, days) {
 }
 
 /**
+ * 줄의 e-Class 업무 — 골라 둔 것(links)이 먼저, 아니면 업무명(guess — 가장 최근에 적은 업무명·과제명·이름)으로 저절로. works(e-Class 업무 목록)를 모르면 이름만 정한다.
+ * @param {{id: string, name: string}|undefined} link 그 줄에 골라 둔 업무
+ * @param {string} guess
+ * @param {{id: string, name: string}[]|null} works
+ * @returns {{title: string, work: string, chosen: boolean, missing: boolean}} missing 은 works 에 맞는 업무가 없는 것
+ */
+export function workOf(link, guess, works) {
+  const chosen = !!link?.name;
+  const title = chosen ? link.name : guess;
+  if (!Array.isArray(works)) return { title, work: chosen ? link.id || '' : '', chosen, missing: false };
+  const rows = works.map((w) => ({ row: w.id, name: w.name, id: w.id }));
+  const hit = matchRow(rows, title, chosen ? link.id : '').row;
+  return hit ? { title: hit.name, work: hit.id, chosen, missing: false } : { title, work: chosen ? link.id || '' : '', chosen, missing: true };
+}
+
+/**
  * 짜기.
  * @param {object} q
  * @param {Array} q.lines 카드가 고른 기간의 업무 줄(workShare().lines)
  * @param {number} q.minutes 그 기간에 적은 분(workShare().minutes)
- * @param {{items, goals}} q.share 더한 업무와 줄마다의 목표
- * @param {Array<ReturnType<typeof workDays>[number] & {fixed?: boolean, key?: string|null, content?: string, title?: string, label?: string}>} q.days 근무일(이미 쓴 날은 부른 쪽이 뺀다).
- *   fixed 인 날은 짜지 않는다 — 사람이 고른(두기면 key null)·고친 날, 이 카드가 저장해 둔 날. 그 업무는 다른 날을 짤 때 실제에 먼저 든다. content·title·label 을 주면 그대로 둔다.
+ * @param {{items, goals, links?}} q.share 더한 업무와 줄마다의 목표·고른 e-Class 업무
+ * @param {Array<ReturnType<typeof workDays>[number] & {fixed?: boolean, key?: string|null, content?: string, title?: string, label?: string, work?: string}>} q.days 근무일(이미 쓴 날은 부른 쪽이 뺀다).
+ *   fixed 인 날은 짜지 않는다 — 사람이 고른(두기면 key null)·고친 날, 이 카드가 저장해 둔 날. 그 업무는 다른 날을 짤 때 실제에 먼저 든다. content·title·label·work 를 주면 그대로 둔다.
  * @param {ReturnType<typeof historyOf>} q.history 업무마다 지난 일일 업무
  * @param {(key: string) => string[]} [q.planOf] 과제 줄의 계획 개발내용(적은 적이 없을 때의 내용)
- * @returns {{ targets: ReturnType<typeof targetsOf>, lines: {key, label, title}[], days: Array<{date, hours, trip, kind, reason, status, fixed: boolean, key: string|null, label: string, title: string, content: string, why: string}> }}
- *   lines 는 날마다 고를 수 있는 업무(기타를 뺀 카드의 줄 가운데 업무명을 아는 것). days 의 key 가 null 이면 짜지 않은 날이고 why 가 까닭이다.
+ * @param {{id: string, name: string}[]|null} [q.works] e-Class 업무 목록 — 모르면 null(업무명만으로 짠다)
+ * @returns {{ targets: ReturnType<typeof targetsOf>, lines: {key, label, title, work}[], links: Array<{key, label, title, work, chosen: boolean, missing: boolean}>, days: Array<{date, hours, trip, kind, reason, status, fixed: boolean, key: string|null, label: string, title: string, work: string, content: string, why: string}> }}
+ *   links 는 기타를 뺀 카드의 줄마다 e-Class 업무(골라 두었나 · 목록에 없나), lines 는 그 가운데 날마다 고를 수 있는 업무(목록에 있는 것).
+ *   days 의 key 가 null 이면 짜지 않은 날이고 why 가 까닭이다.
  */
-export function planDays({ lines = [], minutes = 0, share = { items: [], goals: {} }, days = [], history = new Map(), planOf = () => [] }) {
-  // 업무명 — 더한 업무에 정해 둔 e-Class 업무명(2026-10-29 "AIP 업무는 이걸로 하게 해줘")이 먼저, 그다음 가장 최근에 적은 것, 없으면 과제명·업무 이름.
-  const fixedTitle = (L) => (L.kind === 'item' ? share?.items?.find((i) => `item:${i.name}` === L.key)?.title || '' : '');
-  const titleOf = (L) => fixedTitle(L) || history.get(L.key)?.title || (L.kind === 'project' ? L.name : L.label) || '';
-  const pickable = lines.filter((L) => L.kind !== 'etc').map((L) => ({ key: L.key, kind: L.kind, label: L.label, name: L.name, title: titleOf(L) })).filter((L) => L.title);
+export function planDays({ lines = [], minutes = 0, share = { items: [], goals: {} }, days = [], history = new Map(), planOf = () => [], works = null }) {
+  // 업무명 — 줄에 골라 둔 e-Class 업무가 먼저, 그다음 가장 최근에 적은 것, 없으면 과제명·업무 이름. e-Class 업무 목록에 없는 줄은 고르지 않는다.
+  const guess = (L) => history.get(L.key)?.title || (L.kind === 'project' ? L.name : L.label) || '';
+  const links = lines.filter((L) => L.kind !== 'etc').map((L) => ({ key: L.key, kind: L.kind, label: L.label, name: L.name, ...workOf(share?.links?.[L.key], guess(L), works) })).filter((L) => L.title);
+  const pickable = links.filter((L) => !L.missing);
   const known = new Map(pickable.map((L) => [L.key, L]));
   const targets = targetsOf(lines, share);
   const goals = targets.filter((t) => known.has(t.key));
@@ -225,7 +245,7 @@ export function planDays({ lines = [], minutes = 0, share = { items: [], goals: 
   const put = (key, hours) => { actual.set(key, (actual.get(key) || 0) + hours * 60); all += hours * 60; };
 
   const out = days.map((d) => ({
-    ...d, fixed: !!d.fixed, key: d.fixed ? d.key ?? null : null, label: d.fixed ? d.label || '' : '', title: d.fixed ? d.title || '' : '',
+    ...d, fixed: !!d.fixed, key: d.fixed ? d.key ?? null : null, label: d.fixed ? d.label || '' : '', title: d.fixed ? d.title || '' : '', work: d.fixed ? d.work || '' : '',
     content: d.fixed ? d.content ?? null : null, why: d.fixed && !d.key ? '두기' : '',
   }));
   // 정해 둔 날 · 출장·외근 날을 먼저 — 그 날의 업무는 사람이나 사유가 정한다. 남은 날로 목표를 맞춘다.
@@ -251,11 +271,18 @@ export function planDays({ lines = [], minutes = 0, share = { items: [], goals: 
     const L = known.get(d.key);
     d.label ||= L?.label || '';
     d.title ||= L?.title || '';
+    // 번호는 업무명과 짝일 때만 — 저장해 둔 날의 업무명이 지금 고른 업무와 다르면 그 날의 업무명으로 찾는다.
+    if (!d.work && L?.work && d.title === L.title) d.work = L.work;
     // 내용을 정해 둔 날도 차례는 센다 — 그 업무의 다른 날이 같은 내용을 받지 않게.
     const next = contentOf(d, history, planOf, turn);
     d.content ??= next;
   }
-  return { targets, lines: pickable.map(({ key, label, title }) => ({ key, label, title })), days: out };
+  return {
+    targets,
+    lines: pickable.map(({ key, label, title, work }) => ({ key, label, title, work })),
+    links: links.map(({ key, label, title, work, chosen, missing }) => ({ key, label, title, work, chosen, missing })),
+    days: out,
+  };
 }
 
 /**
@@ -280,12 +307,19 @@ export function hourParts(hours) {
 }
 
 /**
- * 작성 화면의 업무 목록 줄 가운데 업무명에 맞는 것 — 공백을 뺀 이름이 같은 줄(같은 이름이 여럿이면 첫 줄 — 원본 러너와 같다, 2026-10-01 사용자 확정 "8번(기존)"),
+ * 작성 화면의 업무 목록 줄 가운데 맞는 것 — 업무 번호(카드에서 고른 e-Class 업무)가 있고 그 줄이 있으면 그 줄. 아니면 업무명으로:
+ * 공백을 뺀 이름이 같은 줄(같은 이름이 여럿이면 첫 줄 — 원본 러너와 같다, 2026-10-01 사용자 확정 "8번(기존)"),
  * 없으면 한쪽이 다른 쪽을 품는 줄이 하나뿐일 때(업무명이 이름을 품으려면 이름이 여덟 자 넘어야 — 원본 러너 _match_row). 없거나 둘 이상이면 null.
- * @param {{row: string, name: string}[]} rows
- * @returns {{row: {row: string, name: string}|null, why: string}}
+ * @param {{row: string, name: string, id?: string}[]} rows
+ * @param {string} title 업무명
+ * @param {string} [work] 업무 번호
+ * @returns {{row: {row: string, name: string, id?: string}|null, why: string}}
  */
-export function matchRow(rows, title) {
+export function matchRow(rows, title, work = '') {
+  if (work) {
+    const byId = (rows || []).find((r) => r.id && r.id === String(work));
+    if (byId) return { row: byId, why: '' };
+  }
   const key = (s) => String(s ?? '').replace(/\s/g, '').toLowerCase();
   // 작성 화면은 긴 업무명을 "시험/인증업무>AIP 기술검토 및 ..." 처럼 줄여 보일 수 있다(2026-10-29 사용자 화면) — 줄인 이름은 앞부분으로 본다.
   const cut = (s) => key(s).replace(/(?:\.{3}|…)$/, '');

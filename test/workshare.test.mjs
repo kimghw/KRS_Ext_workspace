@@ -37,9 +37,9 @@ const brief = (s) => s.lines.map((L) => [L.label, L.kind, Math.round(L.actual), 
 
 test('더한 업무 — 이름이 있고 겹치지 않는 것만(대소문자·띄어쓰기 무시), 목표는 0~100 소수 한 자리, 열 개까지', () => {
   assert.deepEqual(normalizeShare({ items: [{ name: ' AIP ', rate: '5.55' }, { name: 'aip', rate: 9 }, { name: '', rate: 3 }, { name: '교육', rate: 120 }, { name: '지원', rate: -5 }, { name: '검토', rate: 'x' }] }),
-    { items: [{ name: 'AIP', rate: 5.6 }, { name: '교육', rate: 100 }, { name: '지원', rate: 0 }, { name: '검토', rate: 0 }], goals: {} });
+    { items: [{ name: 'AIP', rate: 5.6 }, { name: '교육', rate: 100 }, { name: '지원', rate: 0 }, { name: '검토', rate: 0 }], goals: {}, links: {} });
   assert.equal(normalizeShare({ items: Array.from({ length: 12 }, (_, i) => ({ name: `업무${i}`, rate: 1 })) }).items.length, 10);
-  assert.deepEqual(normalizeShare(null), { items: [], goals: {} });
+  assert.deepEqual(normalizeShare(null), { items: [], goals: {}, links: {} });
 });
 
 test('줄마다 내 목표(2026-10-28) — 과제·참여율이 없는 과제·기타 줄만, 0~100 소수 한 자리, 빈 칸과 숫자가 아닌 것은 뺀다', () => {
@@ -106,12 +106,23 @@ test('더한 업무와 기타는 과제 참여율을 바꾸지 않는다(2026-10
   assert.deepEqual([none.minutes, brief(none)], [0, [['AIP', 'item', 0, 0]]]);
 });
 
-test('더한 업무의 e-Class 업무명(2026-10-29 사용자 지정: "AIP 업무는 이걸로 하게 해줘") — 정했을 때만 남고(120자까지), 그 업무명으로 적은 줄은 이름이 들지 않아도 그 업무다', () => {
-  assert.deepEqual(normalizeShare({ items: [{ name: 'AIP', rate: 6, title: ' 시험/인증업무>AIP 기술검토 및 관리 ' }, { name: '교육', rate: 2, title: '  ' }] }).items,
-    [{ name: 'AIP', rate: 6, title: '시험/인증업무>AIP 기술검토 및 관리' }, { name: '교육', rate: 2 }]);
-  assert.equal(normalizeShare({ items: [{ name: 'x', rate: 1, title: '가'.repeat(200) }] }).items[0].title.length, 120);
-  const items = [{ name: '개념승인', rate: 6, title: '시험/인증업무>AIP 기술검토 및 관리' }];
-  assert.equal(lineKeyOf({ title: '시험/인증업무>AIP 기술검토 및 관리', category: '시험/인증업무-AIP 기술검토' }, items, []), 'item:개념승인');
-  assert.equal(lineKeyOf({ title: '개념승인 회의', category: '' }, items, []), 'item:개념승인', '이름이 든 줄도 그대로');
-  assert.equal(lineKeyOf({ title: '부서소통회', category: '사내 행사' }, items, []), 'etc');
+test('줄마다 고른 e-Class 업무(2026-10-30 "어떤걸 매칭할 건지 선택할 수 있게") — 과제·참여율이 없는 과제·있는 더한 업무 줄, 업무명이 있고 번호는 숫자. 그 업무명으로 적은 줄은 그 줄이다', () => {
+  const s = normalizeShare({
+    items: [{ name: 'AIP', rate: 6 }],
+    links: { 'prj:a': { id: '242546', name: ' MW급 10kV 차단기 ' }, 'rnd:항만': { id: '', name: '스마트항만' }, 'item:AIP': { id: '247920', name: 'AIP 검토' }, 'item:없음': { id: '1', name: 'x' }, etc: { id: '2', name: 'y' }, 'prj:b': { id: 'abc', name: 'z' }, 'prj:c': { id: '3', name: '' } },
+  });
+  assert.deepEqual(s.links, { 'prj:a': { id: '242546', name: 'MW급 10kV 차단기' }, 'rnd:항만': { id: '', name: '스마트항만' }, 'item:AIP': { id: '247920', name: 'AIP 검토' } });
+  // 고른 업무명으로 적은 줄은 이름이 닮지 않아도 그 줄 — 더한 업무의 이름보다 먼저.
+  const links = { 'prj:a': { id: '242546', name: '반도체 차단기 과제' }, 'item:AIP': { id: '247920', name: '시험/인증업무>AIP 기술검토 및 관리' } };
+  assert.equal(lineKeyOf({ title: '반도체 차단기 과제', category: '연구개발' }, [], [], links), 'prj:a');
+  assert.equal(lineKeyOf({ title: '시험/인증업무>AIP 기술검토 및 관리', category: '' }, [{ name: '개념승인', rate: 1 }], [], { 'item:개념승인': links['item:AIP'] }), 'item:개념승인');
+  assert.equal(lineKeyOf({ title: '부서소통회', category: '사내 행사' }, [], [], links), 'etc');
+});
+
+test('2026-10-29 의 더한 업무 e-Class 업무명(items 의 title — "AIP 업무는 이걸로 하게 해줘")은 그 줄의 고른 업무로 옮긴다(번호 없이, 120자까지)', () => {
+  const s = normalizeShare({ items: [{ name: 'AIP', rate: 6, title: ' 시험/인증업무>AIP 기술검토 및 관리 ' }, { name: '교육', rate: 2, title: '  ' }] });
+  assert.deepEqual(s.items, [{ name: 'AIP', rate: 6 }, { name: '교육', rate: 2 }]);
+  assert.deepEqual(s.links, { 'item:AIP': { id: '', name: '시험/인증업무>AIP 기술검토 및 관리' } });
+  assert.equal(normalizeShare({ items: [{ name: 'x', rate: 1, title: '가'.repeat(200) }] }).links['item:x'].name.length, 120);
+  assert.equal(normalizeShare({ items: [{ name: 'AIP', rate: 6, title: '옛 이름' }], links: { 'item:AIP': { id: '247920', name: '새 이름' } } }).links['item:AIP'].name, '새 이름', '고른 것이 이긴다');
 });

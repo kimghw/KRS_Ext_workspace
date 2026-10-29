@@ -690,8 +690,7 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-need { color: var(--muted); }
 .dwr-real { color: var(--fg); font-weight: 650; }
 .dwr-top li.dwr-off .dwr-real { color: var(--danger); }
-.dwr-adding .dwr-item-name, .dwr-titling .dwr-item-name { grid-column: 1 / -2; }
-.dwr-top .dwr-icon.on { color: var(--pick); }
+.dwr-adding .dwr-item-name { grid-column: 1 / -2; }
 .dwr-top li.dwr-k-rnd .dwr-top-name, .dwr-top li.dwr-k-etc .dwr-top-name { color: var(--muted); }
 .dwr-top-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dwr-bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-soft); }
@@ -725,6 +724,15 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-goals li > :not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dwr-goals li.dwr-cols { min-height: 17px; color: var(--faint); font-size: 11px; }
 .dwr-goals strong { color: var(--fg); font-weight: 650; }
+/* e-Class 업무(2026-10-30) — 업무 줄마다 이름 · e-Class 업무 목록에서 고르는 칸. 고른 줄은 이름을 짙게, 맞는 업무가 없는 줄은 붉게. */
+.dwr-links { display: grid; grid-template-columns: fit-content(36%) minmax(0, 1fr); column-gap: 8px; row-gap: 3px; list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+.dwr-links li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
+.dwr-links li.dwr-cols { min-height: 17px; color: var(--faint); font-size: 11px; }
+.dwr-links .dwr-top-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dwr-links select { min-width: 0; min-height: 0; height: 22px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; text-overflow: ellipsis; }
+.dwr-links .dwr-link-on .dwr-top-name { color: var(--fg); font-weight: 600; }
+.dwr-links .dwr-link-none :is(.dwr-top-name, select) { color: var(--danger); }
+.dwr-links .dwr-link-none select { border-color: var(--danger); }
 .dwr-days { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(44px, auto); column-gap: 6px; max-height: 360px; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
 .dwr-day { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; row-gap: 3px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
 .dwr-day-date { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }

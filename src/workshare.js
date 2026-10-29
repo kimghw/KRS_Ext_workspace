@@ -13,14 +13,19 @@
 
 import { nameKey } from './rnderp.js';
 
-/** 더한 업무(이름 · 목표 % · e-Class 업무명)와 줄마다 내가 넣은 목표 %를 담는 storage 키 — { items: [{ name, rate, title? }], goals: { 줄 열쇠: % } }. */
+/**
+ * 더한 업무(이름 · 목표 %), 줄마다 내가 넣은 목표 %, 줄마다 고른 e-Class 업무를 담는 storage 키 —
+ * { items: [{ name, rate }], goals: { 줄 열쇠: % }, links: { 줄 열쇠: { id: e-Class 업무 번호, name: 업무명 } } }.
+ */
 export const SHARE_KEY = 'dwrShare';
 export const SHARE_MAX = 10;
-/** 더한 업무의 e-Class 업무명 한도. */
+/** e-Class 업무명 한도. */
 export const TITLE_MAX = 120;
-/** 내가 넣은 목표는 이만큼까지 — 과제('prj:id')·참여율이 없는 과제('rnd:이름')·기타('etc') 줄. 더한 업무의 목표는 items 의 rate 다. */
+/** 내가 넣은 목표는 이만큼까지 — 과제('prj:id')·참여율이 없는 과제('rnd:이름')·기타('etc') 줄. 더한 업무의 목표는 items 의 rate 다. 고른 e-Class 업무도 이만큼까지. */
 export const GOAL_MAX = 40;
 const GOAL_KEY = /^(?:(?:prj|rnd):.+|etc)$/;
+/** e-Class 업무를 고를 수 있는 줄 — 과제 · 참여율이 없는 과제 · 더한 업무(기타는 아니다). */
+const LINK_KEY = /^(?:prj|rnd|item):.+$/;
 /** 업무명과 과제명이 이만큼 닮으면 같은 과제다 — 일일 업무에 적은 과제명은 조금씩 다르다("통합협 PEMFC" ↔ "통합형 100kW급 PEMFC"). */
 export const LIKE_MIN = 0.75;
 /** 이 업무분류는 연구과제다(국가 R&D 과제 — '국가 R&D 과제 관리'는 아니다). nameKey 를 거친 글에 맞춘다. */
@@ -41,16 +46,19 @@ function monthsOf(from, to) {
 /**
  * 더한 업무 — 이름이 있고 겹치지 않는 것만, 목표는 0~100(소수 한 자리).
  * 줄마다 내가 넣은 목표(goals) — 열쇠가 과제·참여율이 없는 과제·기타 줄인 것만, 빈 칸은 뺀다(2026-10-28 사용자 지정: "3번째는 내가 입력할 수 있는 목표 업무 %").
+ * 줄마다 고른 e-Class 업무(links — 2026-10-30 사용자 지정: "저기서 일일업무리스트를 어떤걸 매칭할 건지 선택할 수 있게 해줘") — 과제·참여율이 없는 과제·있는 더한 업무 줄,
+ * 업무명이 있는 것만(번호는 숫자 — 모르면 빈 글). 2026-10-29 의 더한 업무 e-Class 업무명(items 의 title — "AIP 업무는 이걸로 하게 해줘")은 그 줄의 고른 업무로 옮긴다.
  */
 export function normalizeShare(raw) {
   const items = [];
+  const titles = {};
   for (const x of Array.isArray(raw?.items) ? raw.items : []) {
     const name = String(x?.name ?? '').trim().slice(0, 40);
     const rate = Number(x?.rate);
     if (!nameKey(name) || items.some((y) => nameKey(y.name) === nameKey(name))) continue;
-    // title — e-Class 업무명(작성 화면 업무 목록의 줄 이름, 2026-10-29 사용자 지정: AIP 는 「시험/인증업무>AIP 기술검토 및 관리」). 정했을 때만 둔다.
+    items.push({ name, rate: Number.isFinite(rate) ? clampRate(rate) : 0 });
     const title = String(x?.title ?? '').trim().slice(0, TITLE_MAX);
-    items.push({ name, rate: Number.isFinite(rate) ? clampRate(rate) : 0, ...(title ? { title } : {}) });
+    if (title) titles[`item:${name}`] = { id: '', name: title };
     if (items.length >= SHARE_MAX) break;
   }
   const goals = {};
@@ -59,7 +67,16 @@ export function normalizeShare(raw) {
     goals[k] = clampRate(Number(v));
     if (Object.keys(goals).length >= GOAL_MAX) break;
   }
-  return { items, goals };
+  const links = {};
+  for (const [k, v] of Object.entries({ ...titles, ...(raw?.links && typeof raw.links === 'object' ? raw.links : {}) })) {
+    const name = String(v?.name ?? '').trim().slice(0, TITLE_MAX);
+    const id = String(v?.id ?? '').trim();
+    if (!LINK_KEY.test(k) || k.length > 120 || !name || (id && !/^\d{1,20}$/.test(id))) continue;
+    if (k.startsWith('item:') && !items.some((i) => `item:${i.name}` === k)) continue;
+    links[k] = { id, name };
+    if (Object.keys(links).length >= GOAL_MAX) break;
+  }
+  return { items, goals, links };
 }
 
 /** 두 이름이 얼마나 닮았나(0~1) — nameKey 를 거친 글의 두 글자 묶음 겹침(Dice). */
@@ -108,12 +125,15 @@ export function myRates(book, me) {
  * @param {{title: string, category: string}} row src/dwr.js rowsOf 의 줄
  * @param {{name: string}[]} items 더한 업무
  * @param {ReturnType<typeof myRates>['projects']} projects
+ * @param {Record<string, {id: string, name: string}>} [links] 줄마다 고른 e-Class 업무 — 그 업무명으로 적은 줄은 그 줄이다(무엇보다 먼저)
  */
-export function lineKeyOf(row, items, projects) {
+export function lineKeyOf(row, items, projects, links = {}) {
   const t = nameKey(row.title);
   const c = nameKey(row.category);
-  // 더한 업무 — 업무명·업무분류에 그 이름이 들었거나, 그 업무에 정해 둔 e-Class 업무명과 같은 줄.
-  const item = items.find((i) => { const k = nameKey(i.name); return t.includes(k) || c.includes(k) || (!!i.title && nameKey(i.title) === t); });
+  const linked = t ? Object.keys(links).find((k) => nameKey(links[k].name) === t) : null;
+  if (linked) return linked;
+  // 더한 업무 — 업무명·업무분류에 그 이름이 든 줄.
+  const item = items.find((i) => { const k = nameKey(i.name); return t.includes(k) || c.includes(k); });
   if (item) return `item:${item.name}`;
   let best = null;
   let score = LIKE_MIN;
@@ -129,19 +149,19 @@ export function lineKeyOf(row, items, projects) {
 /**
  * 기간의 업무 비율.
  * @param {ReturnType<import('./dwr.js').rowsOf>} rows
- * @param {{ from: string, to: string, items?: {name, rate}[], rates?: ReturnType<typeof myRates> }} q 참여율은 from~to 가 걸친 달들의 평균 — 올해의 열두 달이면 to 를 12월 31일로
+ * @param {{ from: string, to: string, items?: {name, rate}[], rates?: ReturnType<typeof myRates>, links?: Record<string, {id, name}> }} q 참여율은 from~to 가 걸친 달들의 평균 — 올해의 열두 달이면 to 를 12월 31일로
  * @returns {{ minutes: number, lines: Array<{ key, kind: 'project'|'rnd'|'item'|'etc', label, name, rate, actual, target, months: {ym, actual, target, total}[], titles: [string, number][] }> }}
  *   rate 는 참여율 %(과제 줄 — 참여율이 없는 과제는 0, 그 밖은 null). actual·target 은 분(target 은 달마다 적은 분 × 참여율·정한 %, 기타는 null).
  *   줄 차례: 참여율이 있는 과제(참여율 큰 차례) → 참여율이 없는 과제(적은 차례) → 더한 업무(정한 차례) → 기타.
  */
-export function workShare(rows, { from, to, items = [], rates = { projects: [] } }) {
+export function workShare(rows, { from, to, items = [], rates = { projects: [] }, links = {} }) {
   const keyOf = new Map();
   const byMonth = new Map();
   const titles = new Map();
   for (const r of rows || []) {
     if (!(r.date >= from && r.date <= to) || !(r.minutes > 0)) continue;
     const ck = `${r.title}\n${r.category}`;
-    if (!keyOf.has(ck)) keyOf.set(ck, lineKeyOf(r, items, rates.projects));
+    if (!keyOf.has(ck)) keyOf.set(ck, lineKeyOf(r, items, rates.projects, links));
     const key = keyOf.get(ck);
     const ym = r.date.slice(0, 7);
     const m = byMonth.get(ym) || byMonth.set(ym, new Map()).get(ym);

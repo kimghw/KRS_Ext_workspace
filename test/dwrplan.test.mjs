@@ -5,8 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hrDate, cleanReason, workDays, historyOf, planItems, targetsOf, tripLine, forecastOf, planDays, contentOf, hourParts, matchRow, TRIP_HOURS,
+  hrDate, cleanReason, workDays, historyOf, planItems, targetsOf, tripLine, forecastOf, planDays, contentOf, hourParts, matchRow, workOf, TRIP_HOURS,
 } from '../src/dwrplan.js';
+import { normalizeShare } from '../src/workshare.js';
 
 const A = 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발';
 const B = '전기차 해상운송 중 화재예방을 위한 SOC 기준 설정 및 가이드라인 개발';
@@ -167,14 +168,35 @@ test('짜기 — 목표를 넣은 업무가 없으면 출장·외근 말고는 �
   assert.equal(contentOf({ key: 'x', trip: false }, new Map(), () => []), '');
 });
 
-test('더한 업무에 정해 둔 e-Class 업무명이 먼저 — 지난번에 적은 업무명·이름보다(2026-10-29 "AIP 업무는 이걸로 하게 해줘")', () => {
+test('줄에 고른 e-Class 업무가 먼저 — 지난번에 적은 업무명·이름보다(2026-10-29 "AIP 업무는 이걸로 하게 해줘" 의 업무명도 이것으로 옮겼다)', () => {
   const AIP = '시험/인증업무>AIP 기술검토 및 관리';
   const days = workDays([HR('2026-10-01')]);
-  const share = { items: [{ name: 'AIP', rate: 50, title: AIP }], goals: {} };
-  const history = historyOf([{ date: '2026-09-30', title: 'AIP 회의', category: '', content: '개념승인 검토', minutes: 60 }], { items: share.items });
+  const share = normalizeShare({ items: [{ name: 'AIP', rate: 50, title: AIP }], goals: {} });
+  const history = historyOf([{ date: '2026-09-30', title: 'AIP 회의', category: '', content: '개념승인 검토', minutes: 60 }], { items: share.items, links: share.links });
   const p = planDays({ lines: LINES, minutes: MIN, share, days, history });
-  assert.deepEqual(p.lines.find((L) => L.key === 'item:AIP'), { key: 'item:AIP', label: 'AIP', title: AIP });
+  assert.deepEqual(p.lines.find((L) => L.key === 'item:AIP'), { key: 'item:AIP', label: 'AIP', title: AIP, work: '' }, '목록을 모르면 업무명만');
   assert.deepEqual([p.days[0].label, p.days[0].title, p.days[0].content], ['AIP', AIP, '개념승인 검토'], '내용은 그 업무로 적은 것');
+});
+
+test('e-Class 업무 목록을 알면(2026-10-30 "어떤걸 매칭할 건지 선택할 수 있게") — 저절로 맞추거나 고른 번호로, 같은 이름도 가리고, 맞는 업무가 없는 줄은 짜지 않는다', () => {
+  // 2026-10-30 실측 목록의 꼴 — 차단기는 같은 이름이 둘(번호·시작일이 다르다).
+  const works = [{ id: '242546', name: A, from: '2026-04-01' }, { id: '245852', name: A, from: '상시' }, { id: '209544', name: B }, { id: '247920', name: '시험/인증업무>AIP 기술검토 및 관리' }];
+  const days = workDays([HR('2026-10-01'), HR('2026-10-02'), HR('2026-10-05'), HR('2026-10-06')]);
+  const goals = { 'prj:a': 30, 'prj:b': 30, 'prj:c': 40 };
+  const auto = planDays({ lines: LINES, minutes: MIN, share: { items: [], goals }, days, history: new Map(), works });
+  const link = (k) => auto.links.find((L) => L.key === k);
+  assert.deepEqual(link('prj:a'), { key: 'prj:a', label: 'SSCB', title: A, work: '242546', chosen: false, missing: false }, '같은 이름은 첫 줄');
+  assert.deepEqual([link('prj:c').missing, link('prj:c').work], [true, ''], 'H2HY 는 목록에 없다');
+  assert.ok(!auto.lines.some((L) => L.key === 'prj:c'), '날마다 고를 수 없다');
+  assert.ok(auto.days.every((d) => d.key !== 'prj:c'), '목록에 없는 줄은 짜지 않는다');
+  assert.ok(auto.days.filter((d) => d.key === 'prj:a').every((d) => d.work === '242546'));
+
+  const chosen = planDays({ lines: LINES, minutes: MIN, share: { items: [], goals, links: { 'prj:a': { id: '245852', name: A }, 'prj:c': { id: '247920', name: '시험/인증업무>AIP 기술검토 및 관리' } } }, days, history: new Map(), works });
+  assert.deepEqual(chosen.links.find((L) => L.key === 'prj:a'), { key: 'prj:a', label: 'SSCB', title: A, work: '245852', chosen: true, missing: false }, '고른 번호 — 같은 이름의 둘째 줄');
+  assert.equal(chosen.links.find((L) => L.key === 'prj:c').missing, false, '고르면 이름이 달라도 그 업무');
+  const c = chosen.days.find((d) => d.key === 'prj:c');
+  assert.deepEqual([c.title, c.work], ['시험/인증업무>AIP 기술검토 및 관리', '247920']);
+  assert.deepEqual(workOf({ id: '999', name: '없어진 업무' }, 'x', works), { title: '없어진 업무', work: '999', chosen: true, missing: true }, '고른 업무가 목록에 없으면');
 });
 
 test('투입시간 → 시·분 칸', () => {
@@ -194,4 +216,8 @@ test('업무 목록 줄 찾기 — 같은 이름(여럿이면 첫 줄 — 원본
   const cut = [...rows, { row: '6', name: '시험/인증업무>AIP 기술검토 및 ...' }, { row: '16', name: '스마트항만 자율운항선박 연계기술' }];
   assert.equal(matchRow(cut, '시험/인증업무>AIP 기술검토 및 관리').row.row, '6');
   assert.equal(matchRow([{ row: '1', name: '짧은…' }], '짧은 이름의 업무').row, null, '줄인 앞부분이 여덟 자는 넘어야');
+  // 업무 번호(카드에서 고른 e-Class 업무)가 있으면 그 줄 — 같은 이름의 둘째 줄도. 그 날 목록에 없으면 업무명으로.
+  const ids = [{ row: '8', name: A, id: '242546' }, { row: '9', name: A, id: '245852' }];
+  assert.equal(matchRow(ids, A, '245852').row.row, '9');
+  assert.equal(matchRow(ids, A, '111').row.row, '8');
 });

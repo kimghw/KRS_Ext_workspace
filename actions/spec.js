@@ -2907,6 +2907,16 @@ export const ACTIONS = {
           "example": "MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발",
           "max": 120
         },
+        "work": {
+          "type": "string",
+          "label": "업무 번호",
+          "desc": "카드에서 그 업무 줄에 고른 e-Class 업무의 번호(업무 목록 줄의 이력 단추 hisPop 의 번호) — 있으면 이 번호의 줄에 쓴다(같은 이름의 줄이 둘이어도 가린다). 그 날 목록에 없으면 업무명으로 찾는다",
+          "read": "모르면 null",
+          "llm": true,
+          "ui": true,
+          "example": "241835",
+          "max": 20
+        },
         "label": {
           "type": "string",
           "label": "업무",

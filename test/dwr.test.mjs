@@ -243,13 +243,13 @@ test('카드 — 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더�
   doc.getElementById('dwrNewName').value = 'AIP';
   doc.getElementById('dwrNewRate').value = '5';
   doc.querySelector('#dwrTop [data-save]').click();
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 5 }], goals: {} });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 5 }], goals: {}, links: {} });
   assert.deepEqual([doc.getElementById('dwrNewName').value, doc.getElementById('dwrNewRate').value], ['', ''], '더하면 더하기 줄은 비운다');
   // 더한 업무는 과제 참여율을 바꾸지 않는다(2026-10-28 — 남은 몫을 나누던 셈의 철회). 더한 업무는 과제가 아니라 참여율 칸이 비었다.
   assert.deepEqual(shares(doc), [['SSCB', '18%', '48%', '', true], [B, '3%', '40%', '', true], ['AIP', '', '0%', '5%', true], ['기타', '', '12%', '', false]]);
 
   change(doc, doc.querySelector('#dwrTop input[data-rate="AIP"]'), '10');
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }], goals: {} });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }], goals: {}, links: {} });
   assert.deepEqual(shares(doc)[2], ['AIP', '', '0%', '10%', true]);
   assert.equal(doc.activeElement?.dataset.rate, 'AIP', '고친 목표 칸에 커서가 남는다(이어서 고친다)');
 
@@ -262,14 +262,14 @@ test('카드 — 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더�
   assert.equal(doc.activeElement, doc.getElementById('dwrNewName'), '커서도');
   doc.getElementById('dwrNewRate').value = '3';
   key(doc, doc.getElementById('dwrNewRate'), 'Enter');
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }, { name: '교육', rate: 3 }], goals: {} });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: 'AIP', rate: 10 }, { name: '교육', rate: 3 }], goals: {}, links: {} });
   doc.getElementById('dwrNewName').value = '연수';
   key(doc, doc.getElementById('dwrNewName'), 'Escape');
   assert.equal(doc.getElementById('dwrNewName').value, '', 'Esc 는 비우기만');
   assert.equal(store[SHARE_KEY].items.length, 2);
 
   doc.querySelector('#dwrTop [data-del="AIP"]').click();
-  assert.deepEqual(store[SHARE_KEY], { items: [{ name: '교육', rate: 3 }], goals: {} });
+  assert.deepEqual(store[SHARE_KEY], { items: [{ name: '교육', rate: 3 }], goals: {}, links: {} });
   assert.deepEqual(shares(doc).map((r) => r[0]), ['SSCB', B, '교육']);
 });
 
@@ -279,7 +279,7 @@ test('카드 — 과제·기타 줄에도 목표 % 를 넣는다(2026-10-28). �
   await box.show();
   await settle();
   change(doc, doc.querySelector('#dwrTop input[data-goal="prj:a"]'), '50');
-  assert.deepEqual(store[SHARE_KEY], { items: [], goals: { 'prj:a': 50 } });
+  assert.deepEqual(store[SHARE_KEY], { items: [], goals: { 'prj:a': 50 }, links: {} });
   assert.deepEqual(shares(doc)[0], ['SSCB', '18%', '48%', '50%', false], '실제 48% 는 목표 50% 와 2%p — 붉지 않다(참여율 18% 와는 견주지 않는다)');
   assert.ok(doc.querySelector('#dwrTop li[data-key="prj:a"] .dwr-bar b.dwr-goal'));
   assert.equal(doc.activeElement?.dataset.goal, 'prj:a', '커서는 그 칸에 남는다');
@@ -366,7 +366,7 @@ const HRROWS = [
 ];
 
 /** 짜기를 켠 카드 — HR(workPlan)·디스패처(dwr.write 등록)·작성기를 흉내 낸다. 목표는 SSCB 30 · B 20(합 50 → 60 · 40). */
-function planBox({ hr = async () => HRROWS, writeDay, saved = {} } = {}) {
+function planBox({ hr = async () => HRROWS, writeDay, saved = {}, works = null } = {}) {
   const asked = { hr: [], writes: [], closed: 0, logs: [] };
   const actions = createDispatcher({ log: (e) => asked.logs.push(e) });
   registerDwr(actions);
@@ -380,7 +380,7 @@ function planBox({ hr = async () => HRROWS, writeDay, saved = {} } = {}) {
   });
   const t = boxWith({
     saved: { myName: '홍길동', rndBook: BOOK, [SHARE_KEY]: { items: [], goals: { 'prj:a': 30, 'prj:b': 20 } }, ...saved },
-    extra: { workPlan: async (range) => { asked.hr.push(range); return hr(range); }, actions, createWriter },
+    extra: { workPlan: async (range) => { asked.hr.push(range); return hr(range); }, actions, createWriter, ...(works ? { workList: async () => { asked.works = (asked.works || 0) + 1; return works(); } } : {}) },
   });
   return { ...t, asked };
 }
@@ -502,47 +502,47 @@ test('저장·제출 — 이미 적은 날·실패는 그 날 줄에 적고 다�
   assert.deepEqual(asked.logs.map((e) => e.ok), [false, false, false]);
 });
 
-test('더한 업무의 e-Class 업무명(2026-10-29 "AIP 업무는 이걸로 하게 해줘") — 줄의 고리 아이콘이 그 아래 업무명 칸을 열고, Enter 로 정하면 남고 짜기·쓰기가 그 업무명을 쓴다. 비우면 지운다', async () => {
+test('e-Class 업무(2026-10-30 "어떤걸 매칭할 건지 선택할 수 있게") — 업무 줄마다 e-Class 업무 목록에서 고르는 칸(처음엔 저절로 맞춘 것). 고르면 남고 짜기·쓰기가 그 번호·업무명을 쓴다. 맞는 업무가 없는 줄은 붉고 짜지 않는다', async () => {
   const AIP = '시험/인증업무>AIP 기술검토 및 관리';
-  const { doc, box, store, asked } = planBox({ saved: { [SHARE_KEY]: { items: [{ name: 'AIP', rate: 6 }], goals: { 'prj:a': 30, 'prj:b': 20 } } } });
+  // 2026-10-30 실측 목록의 꼴 — 차단기는 같은 이름이 둘(시작일로 가린다). B 과제는 목록에 없다.
+  const WORKS = [{ id: '242546', name: A, from: '2026-04-01' }, { id: '245852', name: A, from: '상시' }, { id: '247920', name: AIP, from: '2026-10-01' }];
+  // 2026-10-29 에 더한 업무에 적어 둔 업무명(title)은 그 줄의 고른 업무로 이어진다.
+  const { doc, box, store, asked } = planBox({ works: async () => WORKS, saved: { [SHARE_KEY]: { items: [{ name: 'AIP', rate: 6, title: AIP }], goals: { 'prj:a': 30, 'prj:b': 20 } } } });
   await ready(box);
-  const icon = () => doc.querySelector('#dwrTop [data-titling="AIP"]');
-  assert.ok(icon(), '더한 업무 줄에만 고리 아이콘');
-  assert.equal(doc.querySelectorAll('#dwrTop [data-titling]').length, 1);
-  assert.ok(!icon().classList.contains('on'));
-  icon().click();
-  const input = doc.getElementById('dwrItemTitle');
-  assert.ok(input.closest('li').classList.contains('dwr-titling'));
-  assert.equal(input.closest('li').previousElementSibling.dataset.key, 'item:AIP', '그 줄 바로 아래');
-  assert.equal(doc.activeElement, input);
-  input.value = ` ${AIP} `;
-  key(doc, input, 'Enter');
-  assert.deepEqual(store[SHARE_KEY].items, [{ name: 'AIP', rate: 6, title: AIP }]);
-  assert.equal(doc.getElementById('dwrItemTitle'), null, '정하면 칸이 닫힌다');
-  assert.ok(icon().classList.contains('on'));
-  assert.equal(icon().title, `e-Class 업무명 「${AIP}」`);
-  assert.match(doc.querySelector('#dwrTop li[data-key="item:AIP"]').title, /e-Class 업무명 「시험\/인증업무>AIP 기술검토 및 관리」/);
-  // 목표를 고쳐도 업무명은 그대로. 같은 이름을 다시 더해도.
-  change(doc, doc.querySelector('#dwrTop input[data-rate="AIP"]'), '8');
-  doc.getElementById('dwrNewName').value = 'aip';
-  doc.getElementById('dwrNewRate').value = '7';
-  doc.querySelector('#dwrTop [data-save]').click();
-  assert.deepEqual(store[SHARE_KEY].items, [{ name: 'aip', rate: 7, title: AIP }]);
-  // 짜기 — 그 날을 AIP 로 고르면 업무명 풍선말과 쓰는 기록이 그 업무명이다.
-  change(doc, doc.querySelector('#dwrPlan [data-day-key="2026-10-01"]'), 'item:aip');
-  change(doc, doc.querySelector('#dwrPlan [data-day-content="2026-10-01"]'), 'AIP 개념승인 검토');
-  assert.equal(doc.querySelector('#dwrPlan [data-day-key="2026-10-01"]').title, AIP);
+  assert.equal(asked.works, 1, '패널을 연 동안 한 번');
+  const rows = () => [...doc.querySelectorAll('#dwrPlan .dwr-links li:not(.dwr-cols)')].map((li) => [li.querySelector('.dwr-top-name').textContent, li.querySelector('select').selectedOptions[0].textContent, li.className]);
+  assert.deepEqual(rows(), [['SSCB', `${A} (2026-04-01~)`, ''], [B, '맞는 업무 없음', 'dwr-link-none'], ['AIP', AIP, 'dwr-link-on']]);
+  assert.deepEqual([...doc.querySelector('#dwrPlan [data-link="prj:a"]').options].map((o) => [o.value, o.textContent]),
+    [['', '저절로 맞추기'], ['242546', `${A} (2026-04-01~)`], ['245852', `${A} (상시)`], ['247920', AIP]]);
+  assert.ok(planDaysOf(doc).every((d) => d[1] !== B), '목록에 없는 B 는 짜지 않는다');
+  assert.ok(![...doc.querySelectorAll('#dwrPlan [data-day-key="2026-10-01"] option')].some((o) => o.value === 'prj:b'), '날마다 고를 수도 없다');
+
+  // B 에 차단기의 둘째 업무(상시)를 고르면 남고, 그 줄이 짜기에 들며 쓰는 기록이 그 번호·업무명이다.
+  change(doc, doc.querySelector('#dwrPlan [data-link="prj:b"]'), '245852');
+  assert.deepEqual(store[SHARE_KEY].links, { 'item:AIP': { id: '', name: AIP }, 'prj:b': { id: '245852', name: A } });
+  assert.deepEqual(rows()[1], [B, `${A} (상시)`, 'dwr-link-on']);
+  change(doc, doc.querySelector('#dwrPlan [data-day-key="2026-10-01"]'), 'prj:b');
+  change(doc, doc.querySelector('#dwrPlan [data-day-content="2026-10-01"]'), '시제품 회의');
   doc.querySelector('#dwrPlan [data-plan="save"]').click();
   for (let i = 0; i < 6; i++) await settle();
-  assert.deepEqual([asked.writes[0].date, asked.writes[0].title, asked.writes[0].content], ['2026-10-01', AIP, 'AIP 개념승인 검토']);
-  // 비우고 ✓ 면 지운다. Esc 는 닫기만.
-  doc.querySelector('#dwrTop [data-titling="aip"]').click();
-  key(doc, doc.getElementById('dwrItemTitle'), 'Escape');
-  assert.equal(doc.getElementById('dwrItemTitle'), null);
-  doc.querySelector('#dwrTop [data-titling="aip"]').click();
-  doc.getElementById('dwrItemTitle').value = '';
-  doc.querySelector('#dwrTop [data-title-save="aip"]').click();
-  assert.deepEqual(store[SHARE_KEY].items, [{ name: 'aip', rate: 7 }]);
+  const w = asked.writes.find((d) => d.date === '2026-10-01');
+  assert.deepEqual([w.title, w.work, w.content], [A, '245852', '시제품 회의']);
+  assert.equal(store[DONE_KEY]['2026-10-01'].work, '245852');
+
+  // 첫 칸(저절로 맞추기)은 고른 것을 지운다.
+  change(doc, doc.querySelector('#dwrPlan [data-link="prj:b"]'), '');
+  assert.deepEqual(store[SHARE_KEY].links, { 'item:AIP': { id: '', name: AIP } });
+  assert.deepEqual(rows()[1], [B, '맞는 업무 없음', 'dwr-link-none']);
+});
+
+test('e-Class 업무 목록을 못 읽으면 까닭(로그인이면 eclass 열기) — 업무명만으로 짠다. workList 가 없으면 칸이 서지 않는다', async () => {
+  const { doc, box } = planBox({ works: async () => { throw new AuthError(LOGIN_MESSAGE); } });
+  await ready(box);
+  assert.match(doc.querySelector('#dwrPlan .dwr-msg.error').textContent, /^e-Class 업무 목록을 읽지 못했습니다 — 로그인이 필요합니다.*eclass 열기$/);
+  assert.deepEqual(planDaysOf(doc).map((d) => d[1]), ['SSCB', B, '']);
+  const off = planBox();
+  await ready(off.box);
+  assert.equal(off.doc.querySelector('#dwrPlan .dwr-links'), null);
 });
 
 test('짜기 — 근태를 못 읽으면 까닭(로그인이면 eclass 열기). 목표가 없으면 그렇다고 적고, 다 적었으면·HR 이 없으면 칸이 서지 않는다', async () => {

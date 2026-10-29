@@ -8,24 +8,75 @@
 //   그 줄의 업무내용 txtWork{행}, 투입시간은 그 줄(tr) 안의 txtWHour·txtWMin(같은 id 가 줄마다 있다), 전체 근무시간은 drSH·drSM·drEH·drEM(출장·외근 날만 09:00~18:00 —
 //   근태에 실시간이 없다), 저장 btn_save(작성중) · 제출 btn_submit. 날짜를 옮기면 그 날 적어 둔 내용이 업무내용 칸에 뜬다 — 원본은 그것으로 이미 쓴 날을 거르고(이중 작성 방지),
 //   제출 전에 저장된 내용을 다시 읽는다.
-// 확장은 진짜 클릭이 없으니 같은 페이지 함수·요소를 부른다(같은 출처). 날짜는 Telerik 의 날짜 API(set_selectedDate · 옛 SetDate)로 옮기고, 안 되면 원본처럼 캘린더를 열어
-// 달을 넘기고 날짜를 누른다. 어느 쪽이든 날짜 칸을 다시 읽어 맞았는지 본다. 날짜 칸이 이미 그 날이면 하루 앞으로 갔다가 돌아온다 — 날짜를 옮겨야 그 날 적어 둔 내용이
-// 뜨는지 아직 모른다(처음 뜬 화면에 오늘 것이 실리는지 확인하지 못했다).
+// 확장은 진짜 클릭이 없으니 같은 페이지 함수·요소를 부른다(같은 출처). 날짜는 옛 Telerik RadDatePicker 의 txtSDate.SetDate 로 바꾸고 날짜 칸의 자동 포스트백
+// (__doPostBack('txtSDate',''))을 불러 그 날을 불러온다. 안 되면 원본처럼 캘린더를 열어 달을 넘기고 날짜를 누른다(누르면 포스트백이 돈다). 어느 쪽이든 새 화면이 뜨고
+// 날짜 칸이 그 날이어야 옮긴 것이다.
+// 2026-10-29 실측(CDP, 읽기 전용): 이 화면에는 $find(MS AJAX)가 없고 SetDate 는 날짜 칸만 바꾼다 — 포스트백 없이 저장을 누르면 서버가 그 포스트백을 날짜 바꾸기로 받아
+// 빈 그 날 화면을 다시 띄울 뿐 저장하지 않는다(그날 패널의 저장 9건이 그렇게 사라졌다). 날짜를 불러오면 이미 적은 날은 hdnWMode 'E'(hdnEditSeq 에 번호)와 그 줄의 내용,
+// 안 적은 날은 'W' 다. 업무 목록의 행 번호는 날마다 다르다(그 날의 업무 스케줄) — 날짜를 옮긴 뒤에 다시 읽는다.
 //
 // 지키는 것(원본과 같다):
-//   · 그 날 어느 업무에든 이미 내용이 있으면 쓰지 않는다(exists) — 고치기·덮어쓰기는 하지 않는다. 제출만은 그 날 그 줄 하나에 같은 내용이 있을 때(이 패널이 저장해 둔 날) 그대로 제출한다.
+//   · 그 날 어느 업무에든 이미 내용이 있거나 그 날 적은 것이 있으면('E') 쓰지 않는다(exists) — 고치기·덮어쓰기는 하지 않는다. 제출만은 그 날 그 줄 하나에 같은 내용이 있을 때(이 패널이 저장해 둔 날) 그대로 제출한다.
 //   · 저장한 뒤 작성 화면을 처음부터 다시 열어 그 날 그 줄의 내용이 보낸 것과 같은지 본다 — 포스트백 뒤 화면의 칸은 보낸 글을 되돌려 줄 뿐이라 저장의 증거가 아니다. 다르면 됐다고 하지 않는다.
 //   · 제출은 다시 읽기가 맞은 뒤에만 누른다(원본의 제출 전용 모드 — 저장된 그대로 제출). 삭제·확정은 하지 않는다.
 // 뒤 탭 — 작성 화면은 뒤 탭으로 열고(주소 끝 #krsws-dwr) 다 쓰면 닫는다(close). 그 탭의 알림·확인 창은 dwrhook.js 가 받아 둔다(창이 뜨면 뒤 탭의 스크립트가 멈춘다) —
 // 작성기가 열려 있는 동안만 등록한다. 기다리기는 패널 쪽이 한다(뒤 탭의 타이머는 늦춰진다 — src/gmwrite.js 와 같다).
-// 2026-10-29 에는 e-Class 로그인이 풀려 이 화면을 CDP 로 읽어 보지 못했다 — 자리는 원본 러너의 것이고, 처음 실제로 쓰는 것은 사람이 패널에서 한다.
+// 저장 단추의 화면 검사(chkForm)는 확인 창 없이 알림만 띄운다. 저장·제출을 실제로 누르는 것은 사람이 패널에서 한다.
 
-import { AuthError } from './net.js';
+import { ORIGIN } from './config.js';
+import { AuthError, directFetch } from './net.js';
 import { DWR_WRITE, LOGIN_MESSAGE } from './dwr.js';
 import { hourParts, matchRow } from './dwrplan.js';
 
 /** 작성기가 여는 탭의 주소 — 끝의 #krsws-dwr 가 dwrhook.js 에게 이 탭이라고 알린다. */
 export const WRITE_URL = `${DWR_WRITE}#krsws-dwr`;
+/** 작성 화면 그 자체(틀 안의 것) — GET 이면 오늘의 작성 화면이 온다. */
+export const INSERT_URL = `${ORIGIN}/intra/Intranet/VSDotNet/workMan/wmDailyInsert2.aspx`;
+
+/**
+ * 작성 화면의 업무 목록(2026-10-30 실측 — 서버가 그린 줄 tr#trMain{n}: 업무명 .row-title__name a, 이력 단추 hisPop('번호', 사용자),
+ * 업무분류 .col-category, 시작일 td#tdsDate{n} · 끝일 td#tdeDate{n}). 같은 번호는 한 번. 같은 이름의 업무가 둘일 수 있다(번호로 가린다).
+ * @param {Document} doc
+ * @returns {{id: string, name: string, category: string, from: string, to: string}[]}
+ */
+export function workListOf(doc) {
+  const out = [];
+  const clean = (s) => String(s ?? '').trim().replace(/\s+/g, ' ');
+  for (const tr of doc.querySelectorAll('tr[id^="trMain"]')) {
+    const n = tr.id.slice(6);
+    const html = tr.innerHTML;
+    const id = (html.match(/hisPop\(\s*['"](\d+)/) || html.match(/genkey=(\d+)/) || [])[1] || '';
+    const a = tr.querySelector('.row-title__name a') || tr.querySelector('[onclick*=popDoc]');
+    const name = clean(a?.textContent).slice(0, 120);
+    if (!id || !name || out.some((w) => w.id === id)) continue;
+    const cat = tr.querySelector('.col-category [title]') || tr.querySelector('.col-category');
+    out.push({
+      id, name, category: clean(cat?.getAttribute('title') || cat?.textContent),
+      from: clean(doc.getElementById(`tdsDate${n}`)?.textContent), to: clean(doc.getElementById(`tdeDate${n}`)?.textContent),
+    });
+  }
+  return out;
+}
+
+/**
+ * e-Class 업무 목록 — 작성 화면을 GET 으로 받아(오늘의 업무 스케줄) 읽는다. 리다이렉트는 따라가지 않는다(로그인이 풀렸으면 로그인 화면으로 보낸다 — src/dwr.js fetchUserId 와 같다).
+ * @param {{fetchImpl?: Function, parse?: (html: string) => Document}} [opts] 검사용
+ */
+export async function fetchWorkList({ fetchImpl = directFetch, parse = (html) => new DOMParser().parseFromString(html, 'text/html') } = {}) {
+  let res;
+  try {
+    res = await fetchImpl(INSERT_URL, { redirect: 'manual' });
+  } catch (err) {
+    if (err?.status === 0) throw new AuthError(LOGIN_MESSAGE);
+    throw err;
+  }
+  const html = String(res?.html ?? '');
+  if (/id="tbUserId"|name="UserId"/i.test(html)) throw new AuthError(LOGIN_MESSAGE);
+  const doc = parse(html);
+  const works = workListOf(doc);
+  if (!works.length && !doc.getElementById('txtSDate')) throw new Error('일일 업무 작성 화면을 읽지 못했습니다');
+  return works;
+}
 /** dwrhook.js 를 등록하는 이름. */
 export const HOOK_ID = 'krsws-dwr-hook';
 export const HOOK_FILE = 'dwrhook.js';
@@ -54,13 +105,6 @@ export function failOf(dialogs) {
 
 /** 칸의 글이 같은가 — 빈칸·줄바꿈의 차이는 보지 않는다. */
 export const sameText = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim() === String(b ?? '').replace(/\s+/g, ' ').trim();
-
-/** 날짜의 하루 앞(YYYY-MM-DD). */
-const dayBefore = (s) => {
-  const [y, m, d] = s.split('-').map(Number);
-  const t = new Date(y, m - 1, d - 1);
-  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
-};
 
 /* ------------------------------------------------- 작성 화면 틀 안에서 도는 함수들 */
 // chrome.scripting 으로 **글자 그대로** 옮겨져 그 틀의 MAIN 세계에서 돈다. 바깥 변수를 쓰면 안 된다.
@@ -102,26 +146,25 @@ function pageWrite() {
   return false;
 }
 
-/** 업무일자 — 'read' 는 지금 날짜(YYYY-MM-DD), 'set' 은 Telerik 날짜 API 로 옮긴다(되면 via). */
+/** 업무일자 — 'read' 는 지금 날짜(YYYY-MM-DD), 'set' 은 SetDate 로 바꾸고 날짜 칸의 포스트백을 건다(걸었으면 via). */
 function pageDate(op, target) {
   const two = (n) => String(n).padStart(2, '0');
   const norm = (v) => { const m = String(v == null ? '' : v).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1]}-${two(m[2])}-${two(m[3])}` : ''; };
   const ymd = (d) => (d instanceof Date && !isNaN(d) ? `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}` : '');
-  let ajax = null;
-  try { ajax = typeof window.$find === 'function' ? window.$find('txtSDate') : null; } catch (e) { ajax = null; }
-  const classic = window.txtSDate && typeof window.txtSDate.SetDate === 'function' ? window.txtSDate : null;
+  const picker = window.txtSDate && typeof window.txtSDate.SetDate === 'function' ? window.txtSDate : null;
   const box = ['txtSDate_dateInput_TextBox', 'txtSDate_dateInput', 'txtSDate_dateInput_text', 'txtSDate'].map((id) => document.getElementById(id)).find((x) => x && 'value' in x);
-  const read = () => norm(box && box.value) || (ajax && ajax.get_selectedDate ? ymd(ajax.get_selectedDate()) : '') || (classic && classic.GetDate ? ymd(classic.GetDate()) : '');
+  const read = () => norm(box && box.value) || (picker && picker.GetDate ? ymd(picker.GetDate()) : '');
   if (op === 'read') return { value: read() };
+  if (!picker || typeof window.__doPostBack !== 'function') return { via: '' };
   const [y, m, d] = String(target).split('-').map(Number);
-  const date = new Date(y, m - 1, d);
   try {
-    if (ajax && typeof ajax.set_selectedDate === 'function') { ajax.set_selectedDate(date); return { via: 'ajax' }; }
-    if (classic) { classic.SetDate(date); return { via: 'classic' }; }
+    picker.SetDate(new Date(y, m - 1, d));
   } catch (e) {
     return { via: '', error: String((e && e.message) || e) };
   }
-  return { via: '' };
+  // SetDate 는 날짜 칸만 바꾼다 — 그 날을 불러오는 것은 날짜 칸의 자동 포스트백이다. 돌아가서 건다(이 호출을 붙잡지 않게).
+  setTimeout(() => window.__doPostBack('txtSDate', ''), 0);
+  return { via: 'postback' };
 }
 
 /** 업무일자 캘린더(원본 러너 _set_work_date 의 길) — 'state' 보이나·몇 년 몇 월 · 'toggle' 팝업 단추 · 'nav' 달 넘기기(arg +1·-1) · 'pick' 그 달의 arg 일을 누른다. */
@@ -168,7 +211,7 @@ function pageCalendar(op, arg) {
   return { visible: visible(), ...title() };
 }
 
-/** 업무 목록 — 줄마다 행 번호와 업무명, 그리고 이미 내용이 있는 업무내용 칸. */
+/** 업무 목록 — 줄마다 행 번호·업무명·업무 번호(이력 단추 hisPop 의 번호), 이미 내용이 있는 업무내용 칸, 그 날 적은 것이 있는지(hdnWMode 'E'). */
 function pageGrid() {
   const rows = [];
   const seen = new Set();
@@ -182,14 +225,17 @@ function pageGrid() {
     // 줄여 보인 이름("… 기술검토 및 ...")이면 풍선말(title)의 온 이름을 쓴다.
     const full = ((a && a.getAttribute('title')) || '').trim().replace(/\s+/g, ' ');
     const name = (/(?:\.{3}|…)$/.test(text) && full ? full : text).slice(0, 120);
-    rows.push({ row: m[1], name });
+    const html = tr ? tr.innerHTML : '';
+    const id = (html.match(/hisPop\(\s*['"](\d+)/) || html.match(/genkey=(\d+)/) || [])[1] || '';
+    rows.push({ row: m[1], name, id });
   }
   const filled = [];
   for (const t of document.querySelectorAll('textarea')) {
     const m = (t.id || '').match(/^txtWork(\d+)$/);
     if (m && (t.value || '').trim()) filled.push({ row: m[1], text: t.value.trim().slice(0, 600) });
   }
-  return { rows, filled };
+  const mode = document.getElementById('hdnWMode');
+  return { rows, filled, edit: !!mode && mode.value === 'E' };
 }
 
 /** 한 줄 채우기(원본 러너 _fill_row·_set_worktime) — 입력칸을 열고(showHideInput) 업무내용, 그 줄의 투입시간 시·분, 출장·외근이면 근무시간 09:00~18:00. */
@@ -323,7 +369,7 @@ export function createDwrWriter({ api = globalThis.chrome, wait = sleep, now = D
     throw new Error('일일 업무 작성 화면이 뜨지 않았습니다 — e-Class 의 Daily Work Report 가 열리는지 확인해 주세요');
   }
 
-  /** 날짜를 옮긴 뒤 — 포스트백이 돌면 새 화면이 뜰 때까지, 안 돌면 잠잠해질 때까지 기다려 날짜 칸이 date 인 작성 화면 틀. 아니면 null. */
+  /** 날짜를 옮긴 뒤 — 포스트백으로 새 화면이 뜰 때까지 기다려 날짜 칸이 date 인 작성 화면 틀. 새 화면이 안 뜨거나 날짜가 다르면 null(같은 화면은 그 날을 불러오지 않았다). */
   async function landed(mark, date) {
     const t0 = now();
     while (now() - t0 < DATE_MS) {
@@ -331,12 +377,9 @@ export function createDwrWriter({ api = globalThis.chrome, wait = sleep, now = D
       const all = await probe();
       loginIn(all);
       const ins = all.find((r) => r.result.insert);
-      if (!ins || !ins.result.ready || ins.result.posting || ins.result.busy) continue;
-      const same = ins.result.mark === mark;
-      if (same && now() - t0 < QUIET_MS) continue;
+      if (!ins || !ins.result.ready || ins.result.posting || ins.result.busy || ins.result.mark === mark) continue;
       const v = await exec(ins.frameId, pageDate, ['read', '']).catch(() => null);
-      if (v?.value === date) return ins.frameId;
-      return null;
+      return v?.value === date ? ins.frameId : null;
     }
     return null;
   }
@@ -383,17 +426,11 @@ export function createDwrWriter({ api = globalThis.chrome, wait = sleep, now = D
   }
 
   /**
-   * 업무일자를 date 로 — 그 날 적어 둔 내용이 뜬 작성 화면 틀. 이미 그 날이면 하루 앞으로 갔다가 돌아온다(날짜를 옮겨야 그 날 것이 뜨는지 모른다).
+   * 업무일자를 date 로 — 그 날 적어 둔 내용이 뜬 작성 화면 틀. 이미 그 날이어도 포스트백으로 다시 불러온다.
    * @returns {Promise<number>} frameId
    */
   async function setDate(date, opts) {
-    let f = await form(opts);
-    const cur = await exec(f, pageDate, ['read', '']);
-    if (cur?.value === date) {
-      f = await move(f, dayBefore(date));
-      if (f == null) throw new Error(`업무일자를 옮기지 못했습니다(${dayBefore(date)})`);
-    }
-    const got = await move(f, date);
+    const got = await move(await form(opts), date);
     if (got == null) throw new Error(`업무일자를 ${date} 로 옮기지 못했습니다`);
     return got;
   }
@@ -440,30 +477,31 @@ export function createDwrWriter({ api = globalThis.chrome, wait = sleep, now = D
 
   /**
    * 한 날 쓰기.
-   * @param {{date: string, title: string, hours: number, content: string, trip?: boolean, op?: 'save'|'submit'}} day
+   * @param {{date: string, title: string, work?: string, hours: number, content: string, trip?: boolean, op?: 'save'|'submit'}} day work 는 카드에서 고른 e-Class 업무 번호 — 그 줄이 있으면 업무명보다 먼저
    * @param {{onStage?: (text: string) => void, dry?: boolean}} [opts] dry 면 칸만 채우고 저장하지 않는다(실제 화면 검사용)
    * @returns {Promise<{ok: boolean, status: 'saved'|'submitted'|'exists'|'filled'|'unverified', row: string, rowName: string, note: string, dialogs?: object[]}>}
    *   exists 는 그 날 이미 적은 업무가 있어 쓰지 않은 것(ok false). 업무 목록에 맞는 줄이 없거나·날짜를 못 옮기거나·저장이 막히면 던진다.
    */
   async function writeDay(day, { onStage = () => {}, dry = false } = {}) {
-    const { date, title, content, trip = false, op = 'save' } = day;
+    const { date, title, work = '', content, trip = false, op = 'save' } = day;
     const { h, m } = hourParts(day.hours);
     onStage('작성 화면 여는 중…');
     let f = await setDate(date);
     const grid = await exec(f, pageGrid, []);
-    const hit = matchRow(grid?.rows || [], title);
+    const hit = matchRow(grid?.rows || [], title, work);
     if (!hit.row) throw new Error(hit.why);
     const row = hit.row.row;
     const base = { row, rowName: hit.row.name, note: '' };
     const filled = grid.filled || [];
-    if (filled.length) {
+    if (filled.length || grid.edit) {
       const nameOf = (r) => grid.rows.find((x) => x.row === r)?.name || `${r}번 줄`;
       // 이 패널이 저장해 둔 날(그 줄 하나에 같은 내용)이면 제출만 한다 — 저장된 그대로.
       if (op === 'submit' && filled.length === 1 && filled[0].row === row && sameText(filled[0].text, content)) {
         if (dry) return { ...base, ok: true, status: 'filled', note: '저장된 내용이 있어 제출만 할 날입니다' };
         return submit(f, date, base, onStage);
       }
-      return { ...base, ok: false, status: 'exists', note: `그 날 이미 적은 업무가 있어 쓰지 않았습니다(${filled.map((x) => nameOf(x.row)).join(' · ')})` };
+      const names = filled.map((x) => nameOf(x.row)).join(' · ');
+      return { ...base, ok: false, status: 'exists', note: `그 날 이미 적은 업무가 있어 쓰지 않았습니다${names ? `(${names})` : ''}` };
     }
     onStage('칸 채우는 중…');
     const put = await exec(f, pageFill, [{ row, content, h, m, trip }]);

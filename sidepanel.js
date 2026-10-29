@@ -37,6 +37,7 @@ import { createMailPanel } from './mailtrack/index.js';
 import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
 import { createDwrBox } from './dwrbox.js';
+import { fetchWorkList } from './src/dwrwrite.js';
 import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
 import { hrListDocs, hrWorkPlan } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
@@ -1999,7 +2000,7 @@ const isPanelTab = () => isAttend() || isGongmun() || isRnd() || isMail();
 
 /** 현황 탭 목록 위의 일일 업무 카드(e-Class 일일업무통계 대시보드의 내 것 — dwrbox.js). 현황을 읽을 때(loadMine) 같이 받는다. */
 // 참여인력을 받은 적 없는 과제는 R&D 탭이 받아 온다(참여율 칸 — 2026-10-28). 일일 업무 짜기는 HR 근태현황(hrWorkPlan)을 읽고 디스패처로 쓴다(2026-10-29).
-const dwr = createDwrBox({ fillStaff: () => rnd.fillStaff(), workPlan: (range) => hrWorkPlan(range), actions });
+const dwr = createDwrBox({ fillStaff: () => rnd.fillStaff(), workPlan: (range) => hrWorkPlan(range), actions, workList: () => fetchWorkList() });
 
 /** 근태 탭. 화면 조각은 attendpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const attend = createAttendPanel({

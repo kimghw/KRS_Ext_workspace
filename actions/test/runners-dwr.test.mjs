@@ -30,7 +30,7 @@ await ta('명세 — 일일 업무 갈래의 쓰기 하나, 확인이 있어야 
   assert.equal(e.runner, 'dwr.write');
   assert.equal(e.status || 'live', 'live');
   assert.equal(ACTIONS.domains.dwr.log, 'dwr');
-  assert.deepEqual(Object.keys(e.fields), ['date', 'title', 'label', 'hours', 'content', 'trip', 'op']);
+  assert.deepEqual(Object.keys(e.fields), ['date', 'title', 'work', 'label', 'hours', 'content', 'trip', 'op']);
 });
 
 await ta('카드가 넘긴 작성기로 그 날을 쓴다 — 칸 그대로(label 은 기록·로그에만), 작성기는 닫지 않는다(카드가 다 쓰고 닫는다). 결과는 그대로, 로그 한 줄', async () => {
@@ -49,6 +49,10 @@ await ta('카드가 넘긴 작성기로 그 날을 쓴다 — 칸 그대로(labe
   assert.deepEqual(stages, ['저장 중…']);
   assert.equal(w.closed, 0);
   assert.deepEqual([log.length, log[0].kind, log[0].ok, log[0].text, log[0].data.record.action], [1, 'dwr', true, '일일 업무 10/1 SSCB 8시간 저장', 'dwr.write']);
+  // 카드에서 고른 e-Class 업무 번호가 있으면 함께(같은 이름의 줄이 둘이어도 가린다).
+  const { record: r2 } = d.build('dwr.write', { input: { ...INPUT, work: '241830' }, preset: PRESET });
+  await d.run(r2, { confirmed: r2.hash, writer: w });
+  assert.equal(w.calls[1][0].work, '241830');
 });
 
 await ta('작성기가 없으면 어댑터가 하나 열고 그 한 날 뒤에 닫는다(던져도). 이미 적은 날은 ok false 로 남고 던지지 않는다', async () => {

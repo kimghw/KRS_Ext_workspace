@@ -1,14 +1,15 @@
 // 일일 업무 작성기(src/dwrwrite.js) — e-Class 「Daily Work Report」 작성 화면에 한 날을 쓰기(2026-10-29 사용자 지정: "일일 업무 보고서를 이 데이터 기반으로 등록할 수 있도록").
-// 진짜 사이트는 보지 못했다(그날 e-Class 로그인이 풀려 CDP 로 읽지 못함) — 여기의 작성 화면은 krs-web-agents 의 dr_report_run.py 가 쓰는 자리(txtSDate · showHideInput ·
-// txtWork{행} · txtWHour/txtWMin · drSH… · btn_save · btn_submit · wmDailyList 의 btn_write)를 jsdom 으로 흉내 낸 것이다. 날짜를 옮기면 그 날 저장된 내용이 뜨는 새 화면
-// (포스트백)이 오고, 저장·제출도 새 화면을 띄운다. 알림·확인 창은 dwrhook.js 가 받는다. executeScript 는 틀마다 그 창에서 함수를 돌리고 답을 JSON 으로 옮긴다(크롬처럼).
+// 여기의 작성 화면은 krs-web-agents 의 dr_report_run.py 가 쓰는 자리(txtSDate · showHideInput · txtWork{행} · txtWHour/txtWMin · drSH… · btn_save · btn_submit ·
+// wmDailyList 의 btn_write)를 jsdom 으로 흉내 낸 것이다. 날짜 칸은 2026-10-29 실측대로 옛 RadDatePicker — SetDate 는 칸만 바꾸고, 그 날(적은 날은 hdnWMode 'E' 와
+// 내용)을 불러오는 것은 __doPostBack('txtSDate','') 이나 캘린더 누르기의 새 화면이다. 날짜 칸만 바꾼 채 저장을 누르면 서버는 날짜 바꾸기로 받아 저장하지 않는다.
+// 저장·제출도 새 화면을 띄운다. 알림·확인 창은 dwrhook.js 가 받는다. executeScript 는 틀마다 그 창에서 함수를 돌리고 답을 JSON 으로 옮긴다(크롬처럼).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { AuthError } from '../src/net.js';
-import { createDwrWriter, failOf, sameText, WRITE_URL, HOOK_ID, HOOK_FILE } from '../src/dwrwrite.js';
+import { createDwrWriter, failOf, sameText, fetchWorkList, workListOf, WRITE_URL, INSERT_URL, HOOK_ID, HOOK_FILE } from '../src/dwrwrite.js';
 
 const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
 const { JSDOM, VirtualConsole } = require('jsdom');
@@ -19,16 +20,16 @@ const B = '대용량 모듈러 멀티레벨 컨버터 기반 고압 드라이브
 /** 작성 화면의 업무 목록 — 차단기는 같은 이름이 두 줄(2026-10-01 실측). */
 const AIP = '시험/인증업무>AIP 기술검토 및 관리';
 /** 줄여 보인 이름(2026-10-29 사용자 화면의 "시험/인증업무>AIP 기술검토 및 ...")은 풍선말(title)에 온 이름이 있다고 본다. */
-const GRID = [{ row: '4', name: '부서소통회' }, { row: '6', name: '시험/인증업무>AIP 기술검토 및 ...', full: AIP }, { row: '8', name: A }, { row: '9', name: A }, { row: '12', name: B }, { row: '20', name: 'AIP 개념승인 업무' }];
+const GRID = [{ row: '4', name: '부서소통회', id: '226950' }, { row: '6', name: '시험/인증업무>AIP 기술검토 및 ...', full: AIP, id: '247920' }, { row: '8', name: A, id: '242546' }, { row: '9', name: A, id: '245852' }, { row: '12', name: B, id: '242461' }, { row: '20', name: 'AIP 개념승인 업무', id: '250001' }];
 const two = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /**
  * 흉내 낸 e-Class — 뒤 탭 하나(틀 0 은 Common/Default 껍데기, 틀 1 이 wmDailyList ↔ wmDailyInsert2). db 는 { 날짜: { rows: { 행: { text, hour, min } }, time, status } }.
- * picker: 'ajax'(Telerik $find 의 set_selectedDate) · 'none'(날짜 API 가 없어 캘린더를 눌러야 한다).
+ * picker: 'classic'(txtSDate.SetDate — 칸만 바꾼다) · 'none'(SetDate 가 없어 캘린더를 눌러야 한다). postback false 면 __doPostBack 이 아무것도 하지 않는다.
  */
-function fakeEclass({ today = '2026-10-29', db = {}, picker = 'ajax', saveAlert = '저장되었습니다.', saveFails = '', login = false } = {}) {
+function fakeEclass({ today = '2026-10-29', db = {}, picker = 'classic', postback = true, saveAlert = '저장되었습니다.', saveFails = '', login = false } = {}) {
   const frames = new Map();
   const session = new Map();
   const shared = {
@@ -46,11 +47,12 @@ function fakeEclass({ today = '2026-10-29', db = {}, picker = 'ajax', saveAlert 
   const insertHtml = (date) => {
     const day = db[date]?.rows || {};
     return `<!doctype html><html><body><form id="form1">
+      <input type="hidden" id="hdnWMode" value="${db[date] ? 'E' : 'W'}">
       <input id="txtSDate_dateInput_TextBox" value="${date}"><a id="txtSDate_popupButton">달력</a>
       <div id="txtSDate_calendar_wrapper" style="display:none"><div id="txtSDate_calendar"><span id="txtSDate_calendar_Title"></span>
         <a id="txtSDate_calendar_NP">&lt;</a><a id="txtSDate_calendar_NN">&gt;</a><table id="calDays"></table></div></div>
       ${select('drSH', hours, 8)}${select('drSM', mins, 30)}${select('drEH', hours, 17)}${select('drEM', mins, 30)}
-      <table>${GRID.map((r) => `<tr><td><a onclick="popDoc('${r.row}')"${r.full ? ` title="${r.full}"` : ''}>${r.name}</a></td><td><img onclick="showHideInput('${r.row}')"></td>`
+      <table>${GRID.map((r) => `<tr><td><a onclick="popDoc('wmProContent.aspx?genkey=${r.id}O&mode=pop','C')"${r.full ? ` title="${r.full}"` : ''}>${r.name}</a></td><td><button onclick="hisPop('${r.id}','me')">이력</button><img onclick="showHideInput('${r.row}')"></td>`
         + `<td><input id="txtWHour" name="txtWHour" value="${day[r.row]?.hour ?? ''}"><input id="txtWMin" name="txtWMin" value="${day[r.row]?.min ?? ''}"></td></tr>`
         + `<tr id="in${r.row}" style="display:none"><td><textarea id="txtWork${r.row}" name="txtWork${r.row}">${esc(day[r.row]?.text)}</textarea></td></tr>`).join('')}</table>
       <input type="button" id="btn_save" value="저장"><input type="button" id="btn_submit" value="제출">
@@ -74,10 +76,11 @@ function fakeEclass({ today = '2026-10-29', db = {}, picker = 'ajax', saveAlert 
     if (kind === 'list') doc.getElementById('btn_write').addEventListener('click', () => leave(() => mount(id, 'insert', { date: today })));
     if (kind === 'insert') {
       const go = (d) => { site.log.push(['date', d]); leave(() => mount(id, 'insert', { date: d })); };
+      const box = doc.getElementById('txtSDate_dateInput_TextBox');
       win.showHideInput = (row) => { const tr = doc.getElementById(`in${row}`); tr.style.display = tr.style.display === 'none' ? '' : 'none'; };
-      if (picker === 'ajax') {
-        win.$find = (x) => (x === 'txtSDate' ? { set_selectedDate: (dt) => go(ymd(dt)), get_selectedDate: () => new Date(`${date}T00:00:00`) } : null);
-      } else {
+      win.__doPostBack = (target) => { if (postback && target === 'txtSDate') go(box.value); };
+      if (picker === 'classic') win.txtSDate = { SetDate: (dt) => { box.value = ymd(dt); }, GetDate: () => new Date(`${box.value}T00:00:00`) };
+      {
         let [cy, cm] = date.split('-').map(Number);
         const wrap = doc.getElementById('txtSDate_calendar_wrapper');
         const render = () => {
@@ -99,6 +102,8 @@ function fakeEclass({ today = '2026-10-29', db = {}, picker = 'ajax', saveAlert 
       doc.getElementById('btn_save').addEventListener('click', () => {
         if (!win.confirm('저장하시겠습니까?')) { site.log.push(['save-no']); return; }
         if (saveFails) { win.alert(saveFails); return; }
+        // 날짜 칸만 바뀐 채 온 포스트백 — 서버는 날짜 바꾸기로 받아 그 날의 빈 화면을 띄울 뿐 저장하지 않는다(2026-10-29 실물).
+        if (box.value !== date) { site.log.push(['save-lost', box.value]); leave(() => mount(id, 'insert', { date: box.value })); return; }
         const rows = {};
         for (const r of GRID) {
           const text = doc.getElementById(`txtWork${r.row}`).value;
@@ -205,6 +210,9 @@ test('그 날 이미 적은 업무가 있으면 쓰지 않는다(exists — 원�
   assert.ok(!site.log.some(([k]) => k === 'save'));
   const s = await w.writeDay({ ...DAY, op: 'submit' });
   assert.equal(s.status, 'exists', '다른 줄의 내용은 제출하지 않는다');
+  db['2026-10-05'] = { rows: {}, status: 'saved' };
+  const e = await w.writeDay({ ...DAY, date: '2026-10-05' });
+  assert.deepEqual([e.status, e.note], ['exists', '그 날 이미 적은 업무가 있어 쓰지 않았습니다'], '내용 칸이 비어도 그 날 적은 것(hdnWMode E)이 있으면');
 
   db['2026-10-03'] = { rows: { 8: { text: 'MVDC  시험기준 분석', hour: '8', min: '0' } }, status: 'saved' };
   const t = await w.writeDay({ ...DAY, date: '2026-10-03', op: 'submit' });
@@ -226,12 +234,23 @@ test('제출 — 저장하고 처음부터 다시 읽어 맞은 뒤에만 제출
   await w.close();
 });
 
-test('날짜 칸이 이미 그 날이면 하루 앞으로 갔다가 돌아온다(날짜를 옮겨야 그 날 것이 뜨는지 모른다)', async () => {
+test('날짜 칸이 이미 그 날이어도 포스트백으로 그 날을 다시 불러온다', async () => {
   const { api, site } = fakeEclass({ today: '2026-10-29' });
   const w = writerFor(api);
   const r = await w.writeDay({ ...DAY, date: '2026-10-29' });
   assert.equal(r.status, 'saved');
-  assert.deepEqual(site.log.filter(([k]) => k === 'date').map(([, d]) => d).slice(0, 2), ['2026-10-28', '2026-10-29']);
+  assert.equal(site.log.find(([k]) => k === 'date')[1], '2026-10-29');
+  await w.close();
+});
+
+test('SetDate 로 날짜 칸만 바뀌고 새 화면이 안 뜨면 옮긴 것으로 보지 않고 캘린더로 — 날짜 칸만 바꾼 채 저장하면 서버가 날짜 바꾸기로 받아 저장이 사라진다(2026-10-29 실물)', async () => {
+  const { api, site } = fakeEclass({ postback: false });
+  const w = writerFor(api);
+  const r = await w.writeDay(DAY);
+  assert.equal(r.status, 'saved');
+  assert.ok(!site.log.some(([k]) => k === 'save-lost'));
+  assert.deepEqual(site.log.filter(([k]) => k === 'save').map(([, d]) => d), ['2026-10-02']);
+  assert.equal(site.db['2026-10-02'].rows[8].text, DAY.content);
   await w.close();
 });
 
@@ -272,6 +291,39 @@ test('업무 목록이 긴 업무명을 줄여 보여도(풍선말에 온 이름
   assert.deepEqual([r.status, r.row, r.rowName], ['saved', '6', AIP]);
   assert.equal(site.db['2026-10-02'].rows[6].text, 'AIP 개념승인 검토');
   await w.close();
+});
+
+test('카드에서 고른 e-Class 업무 번호(2026-10-30)가 있으면 그 줄 — 같은 이름의 둘째 줄도. 그 날 목록에 없는 번호면 업무명으로', async () => {
+  const { api, site } = fakeEclass();
+  const w = writerFor(api);
+  const r = await w.writeDay({ ...DAY, work: '245852' });
+  assert.deepEqual([r.status, r.row], ['saved', '9']);
+  assert.equal(site.db['2026-10-02'].rows[9].text, DAY.content);
+  const s = await w.writeDay({ ...DAY, date: '2026-10-05', work: '111' });
+  assert.deepEqual([s.status, s.row], ['saved', '8']);
+  await w.close();
+});
+
+test('e-Class 업무 목록 — 작성 화면을 GET 해 서버가 그린 줄(2026-10-30 실측 꼴)에서 번호·업무명·업무분류·시작일·끝일. 로그인 화면이면 AuthError', async () => {
+  const row = (n, id, name, cat, s, e) => `<tr bgcolor="WHITE" id="trMain${n}"><td class="tbl_title" id="tdCnt${n}">${n}<input type="hidden" name="hdnWSeq" value="9${n}"></td>`
+    + `<td class="lcl col-title"><div class="row-title"><span class="row-title__name"><a class="cell-ellipsis" onclick="popDoc('wmProContent.aspx?genkey=${id}O&mode=pop','C')"> ${name} </a></span>`
+    + `<span class="row-title__actions"><button type="button" class="row-act" onclick="hisPop('${id}','kimghw')">이력</button><button type="button" class="row-act" onclick="showHideInput('${n}')">내용</button></span></div></td>`
+    + `<td class="lcl col-category"><span class="cell-ellipsis" title="${cat}">${cat}</span></td><td class="lcc" id="tdsDate${n}">${s}</td><td class="lcc" id="tdeDate${n}">${e}</td></tr>`
+    + `<tr id="tr${n}" style="display:none"><td><textarea id="txtWork${n}"></textarea></td></tr>`;
+  const html = `<html><body><form><input id="txtSDate" value="2026-10-30"><table>${row(9, '242546', A, '연구개발-국가 R&amp;D 과제', '2026-04-01', '2029-12-31')}`
+    + `${row(10, '245852', A, '연구개발-국가 R&amp;D 과제', '상시', '상시')}${row(6, '247920', AIP, '시험/인증업무-AIP 기술검토 및 관리', '2026-10-01', '')}</table></form></body></html>`;
+  const parse = (h) => new JSDOM(h).window.document;
+  const asked = [];
+  const works = await fetchWorkList({ fetchImpl: async (url, init) => { asked.push([url, init.redirect]); return { html }; }, parse });
+  assert.deepEqual(asked, [[INSERT_URL, 'manual']]);
+  assert.deepEqual(works, [
+    { id: '242546', name: A, category: '연구개발-국가 R&D 과제', from: '2026-04-01', to: '2029-12-31' },
+    { id: '245852', name: A, category: '연구개발-국가 R&D 과제', from: '상시', to: '상시' },
+    { id: '247920', name: AIP, category: '시험/인증업무-AIP 기술검토 및 관리', from: '2026-10-01', to: '' },
+  ]);
+  await assert.rejects(fetchWorkList({ fetchImpl: async () => ({ html: '<input id="tbUserId">' }), parse }), (err) => err instanceof AuthError);
+  await assert.rejects(fetchWorkList({ fetchImpl: async () => { throw Object.assign(new Error('redirect'), { status: 0 }); }, parse }), (err) => err instanceof AuthError, '리다이렉트는 로그인이 풀린 것');
+  assert.deepEqual(workListOf(parse('<table></table>')), []);
 });
 
 test('한 작성기로 여러 날 — 탭은 하나', async () => {
