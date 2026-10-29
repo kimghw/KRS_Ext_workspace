@@ -1080,7 +1080,13 @@ HR 은 eclass 와 다른 시스템이고 화면이 `X-Frame-Options: SAMEORIGIN`
 당해 연도 배정액 — 구매 총액이 아님)은 고른 과제에 **회계 I/O 와 회계 예산 스냅샷**(R&D 탭 예산 칸의 회계 예산 줄이 e-accounting 부서 예산 요약에서 받아 둔 것 — 아래 R&D 탭, `src/eacct.js`,
 2026-10-17 사용자 지정: "계정과목코드 계정과목명, 예산부서코드 또는 I/O 입력 예산금액도 같이 조회")이 있으면 **과제의 계정에 맞는 계정 줄**(계정 `연구재료비` → 회계의 `603010311
 수탁과제(국가)_연구재료비`, 예산금액은 기초+전용 예산)로 빈 칸만 채웁니다. 작성 내용 칸 위의 **회계 계정 줄**(`gmAcctRow` — 과제의 계정과목 칩, 계정명 끝마디와 예산)을 누르면 다른 계정으로
-다섯 칸이 바뀝니다(사람이 고른 칸으로 남음). 회계 I/O 가 없는 과제는 전처럼 사람이 적습니다. **납품장소**는 늘 사람이 적습니다. 원본은 `ea_approval/ea_data/registries` 의
+다섯 칸이 바뀝니다(사람이 고른 칸으로 남음). 과제에 회계 I/O 는 있는데 이 해의 스냅샷이 없으면(R&D 탭에서 조회하지 않음) 공문 탭이 그 자리에서 e-accounting 에서 받아
+(읽기만, I/O 마다 한 번 — 받는 동안·못 받은 까닭은 회계 계정 줄에) I/O 명·예산금액을 채우고, 과제의 계정과 맞는 줄이 없어도 적힌 계정과목코드가 있으면 그 줄의 예산금액을 넣습니다
+(2026-10-29 사용자 지정: "요건 네가 못찾냐?"). 계정과목명이 이미 적혀 있으면(선행 품의의 구매계정 `연구활동비(문헌구입비)` 꼴 — 괄호의 세목은 떼고 견줌) 과제의 계정보다
+그 이름의 계정 줄이 먼저라 계정과목코드·예산금액이 그 줄로 채워지고 이름은 적힌 그대로 둡니다. 구매 물품 표의 **단위**가 비면 `EA`, **예상단가**가 비었거나 0 이면 예상금액 ÷ 수량을
+넣습니다(같은 날 사용자 지정: "단위랑 예상단가도 넣어줘야하는데"). 과제의 계정도 적힌 계정과목명도 없으면 **구매에 쓸 수 있는 계정 줄**(예산이 있고 인건비·연구수당·간접비·위탁이 아닌 줄 —
+`src/eacct.js soleOrderRow`)이 **하나뿐일 때만** 그 줄로 계정과목코드·계정과목명·예산금액을 채웁니다(2176NR0126·2175NR0126 은 연구활동비 하나 — 둘 이상이면 회계 계정 줄의 칩으로
+고름, 같은 날 사용자 지정: "각 과제별로 계정명이랑 예산이 어디서 찾는지 조사후 업데이트"). 회계 I/O 가 없는 과제는 전처럼 사람이 적습니다. **납품장소**는 늘 사람이 적습니다. 원본은 `ea_approval/ea_data/registries` 의
 `ea_accounts.yaml`·`ea_projects.yaml` 등록표로 채웠는데(같은 날 사용자 지정: "작성할 수 있는 부분까지만") 이 확장은 등록표 대신 회계를 바로 읽습니다.
 **구매 품의와 잇는 길은 둘**입니다. ① 구매 갈래의 공문 작성 줄 세 번째 단추 **`구매의뢰 작성`**(구매에서만 보임) — 구매 초안의 품목 요지·구매처·합계·품목·견적일·공급가액·부가세·
 첨부·읽은 문서를 그대로 옮기고 사유(용도가 있으면 `사유 (용도: …)`)를 사업내용으로 하여 구매의뢰 갈래로 넘어갑니다(`orderFromPurchase`. 이미 구매의뢰 초안이 있으면 덮어씀 —
@@ -1495,7 +1501,9 @@ Telerik 피커(`$find(control).set_selectedDate`)로 넣고 다시 읽으며, �
   를 받아 과제의 스냅샷(`acct`)으로 두고 **예산 칸 안에 rERP 집행내역과 같은 접힌 한 줄**(`회계 예산 (원)` · 해·I/O·조회 시각 · 꺾쇠 — 펴면 I/O 와 회계 과제명 · `↻` · 표)로 보입니다
   (2026-10-17 사용자 지정: "계정과목코드 및 계정명등 테이블은 예산 안에 rerp 집행내역 처럼 접어서 한줄로" — 회계 I/O 찾기·저장과 과제 정보 표의 회계 I/O 줄은 과제 정보 카드에 그대로.
   차년도가 아니라 과제의 것이라 어느 차년도를 보든 같습니다. 열 때 한 번 · 10분 신선도 · `↻` 다시 조회 — 지난 해 스냅샷은 그렇게 적힘). 공문 탭 **구매의뢰(구매요청서)** 의 예산 내역이
-  이 표로 채워집니다(위 공문 탭). e-accounting 로그인은 eclass 와 **따로**라 풀리면 까닭과 **e-accounting 로그인** 링크가 섭니다. 손으로 고치는 곳은 과제 고치기의 회계 I/O 칸 — 다른 코드로
+  이 표로 채워집니다(위 공문 탭). e-accounting 세션은 **eclass 를 거쳐** 섭니다(2026-10-29 사용자 지정: "eclass를 타고 들어가야지 그냥 직접은 안됨") — 세션이 없으면 회계가
+  로그인 화면이 아니라 빈 답을 주므로, 빈 답이면 내 부서로 세션을 보고 없으면 eclass 홈의 e-Accounting 아이콘과 같은 SSO 로 탭 없이 들어가 한 번 더 묻습니다(`src/eacct.js withSession`·
+  `eaSsoLogin`). eclass 도 로그아웃이면 까닭과 **eclass 로그인** 링크가 섭니다. 손으로 고치는 곳은 과제 고치기의 회계 I/O 칸 — 다른 코드로
   고치면 스냅샷을 버리고 새로 받고, 비우고 저장하면 후보가 다시 보입니다. 요약 복사에 `회계 I/O:` 줄과 `■ 회계 예산` 줄들이 듭니다. 실측은 `node test/cdp/eacct.mjs`(읽기만).
 - **차년도** — 연구기간을 **시작일부터 한 해씩** 자릅니다(`yearsOf`: 2026.04.01~2029.12.31 → 1차년도 2026.04.01~2027.03.31 … 4차년도 2029.04.01~2029.12.31).
   오늘이 든 차년도에 **올해** 표시가 붙고 처음엔 그것이 열립니다(시작 전이면 1차년도, 끝났으면 마지막). 연구기간을 안 적었으면 기간 없는 1차년도 하나입니다.
@@ -2102,7 +2110,7 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 | `src/rnd.js` | R&D 과제의 순수 로직: 연구기간 글 읽기, 차년도 자르기(시작일부터 한 해씩 · 1월 1일 기준)·오늘이 든 차년도, 금액 읽기(만·억)·짧게 적기, 장부 모양 정리(과제 열 개·차년도 스무 개), 예산 합계·잔액·집행률, 저절로 남는 변경이력(계획 바뀜·비목 뺌·책임자·연구기간·차년도 기준), 별칭 겹침(`aliasOwner`), 공문 참조자(`normalizeRefs`·`refsText` — 공문 종류 → 이름들, 계획서 YAML 에서), 계획서에서 온 줄과 진행 기록 나누기(`fileLog`·`noteLogs`), 공문 탭 과제 가져와 보태기, JSON 내보내기·들여오기·얹기, 요약 글 |
 | `src/rndyaml.js` | 연구개발계획서 YAML 을 장부에 넣기: 머리 주석(꼬리표·변경분)·연구기간(달까지만 적힌 것) 읽기, 파일 종류 가리기(스냅샷·개정 레지스트리·예산 이력·참여연구원 이력), 스냅샷 → 과제(찾거나 만듦·1월 1일 기준 가리기)·차년도 예산(천원 → 원)·연구개발 계획·참여연구자·공문 참조자(`공문.참조자` 블록 — 있을 때만 통째로, 변경이력 없이 알림만), 두 번째 스냅샷의 달라진 것 → 변경이력, history 파일 → 변경이력(같은 변경에는 사유만 붙임)·`project:` 값(과제 약어)이 별칭인 과제로·과제명으로 찾은 과제에 별칭 붙이기, 들여온 줄의 꼬리표(key) |
 | `src/rndshare.js` | R&D 장부 ↔ SharePoint 공유 폴더의 연차 파일 변환(2026-10-18, 원노트 공유 `src/rndnote.js` 를 대신함): 저장 형편 `rndShare`(`normalizeShare`), 공유 열쇠(`shareKeyOf` — rERP 과제번호 → Job Id → 장부 id), 과제 → `project` 칸(`projectOf`·`localProjectOf` — 별칭·Job Id·I/O·책임자·전체 기간·비고·wsId·code·calendar), 차년도 → `budget`(계획만)·`changes`·`research`(`yearOf`·`localPlanOf`·`researchOf`·`budgetHash`), 받은 것을 장부에(`applyYear`·`applyProject` — 새 과제 만들기·겹치는 별칭 `-2`·wsId 로 id 맞추기·`deletedAt` 묘비), 과제 찾기(`matchProject` — wsId → prjNo → 과제번호 → 과제명) |
-| `src/eacct.js` | 회계(e-accounting.krs.co.kr) 조회(2026-10-17): 부서 예산 요약 화면(`PageStyle050.aspx?PageID=CO10021`)이 받는 것과 같은 꼴로 컴파일된 처리기(`App_Compile/<CallsUrl>.aspx` — 이름은 화면에서 읽고 404 면 다시 읽음)에 `mode`·`snddata` XML 을 POST — 내 부서 과제(I/O) 목록(`getOrder`)·과제 하나의 계정과목(보조세목)별 기초·전용·실적·가용(`getlist1`)·내 부서(`Load_Basic_Data`). 순수 부분은 XML 읽기(`parseEa`)·I/O 후보(`rankIo` — Job Id 와 같은 유사도 + 잘린 이름 앞머리)·계정 줄(`budgetRows`)·과제 스냅샷(`normalizeAcct`·`acctFresh`)·구매요청서 예산 내역 값(`orderBudgetOf` — 과제의 계정에 맞는 줄)·요약 줄. 로그인이 풀리면(답이 XML 이 아님) `err.login` |
+| `src/eacct.js` | 회계(e-accounting.krs.co.kr) 조회(2026-10-17): 부서 예산 요약 화면(`PageStyle050.aspx?PageID=CO10021`)이 받는 것과 같은 꼴로 컴파일된 처리기(`App_Compile/<CallsUrl>.aspx` — 이름은 화면에서 읽고 404 면 다시 읽음)에 `mode`·`snddata` XML 을 POST — 내 부서 과제(I/O) 목록(`getOrder`)·과제 하나의 계정과목(보조세목)별 기초·전용·실적·가용(`getlist1`)·내 부서(`Load_Basic_Data`). 순수 부분은 XML 읽기(`parseEa`)·I/O 후보(`rankIo` — Job Id 와 같은 유사도 + 잘린 이름 앞머리)·계정 줄(`budgetRows`)·과제 스냅샷(`normalizeAcct`·`acctFresh`)·구매요청서 예산 내역 값(`orderBudgetOf` — 과제의 계정에 맞는 줄, 계정을 모를 때 `soleOrderRow`)·요약 줄. 세션(2026-10-29): 빈 답이면 내 부서(`{D}` 면 세션 없음)로 보고 eclass 홈의 data 속성(`ssoUrlOf`)으로 `SSO/ProcessSSO.aspx` 를 GET 해 들어간 뒤 한 번 더(`withSession`·`eaSsoLogin`), eclass 도 없으면 `err.login` |
 | `src/rnderp.js` | R&D 탭의 예산 칸과 rERP 집행내역을 잇는 이 확장만의 풀(2026-10-11): 차년도 ↔ rERP 과제 잇기(과제번호·과제명의 연차 행 → 연차·기간·하나뿐 차례로 고름, 못 고르면 후보 목록), 받기(`fetchSnapshot` — 비목별 잔액 + 미청구 카드 + 승인전, 로그인 풀리면 SSO 한 번), 스냅샷을 장부 줄에(집행 = 승인액·`erpKey`), 비목 이름 맞추기(재원 합), 살아 있는 차년도·10분 신선도, 칸 머리·요약 글 |
 | `rerp/` | **kr_ext_rerp 에서 옮겨 온 코드**(2026-10-11, 공유 쪽은 2026-10-18 다시 — 정본은 그쪽 — `rerp/README.md`·`rerp/CLAUDE.md`·`rerp/origin.json`): `erp.js`(rERP 호출·과제 목록·비목별 잔액·미청구 카드·SSO), `planui.js`(과제집행비율 표·예상 비용 줄과 폼), `plan.js`(예상 비용 저장소·입력 처리), `plansync.js`(예상 비용 병합 규칙), `spstore.js`(SharePoint 저장소 — 브라우저 쿠키로 읽기·최소화 작업 창에서 쓰기·사람 공유·조직 내 링크·나와 공유), `prjdoc.js`(연차 파일·예상비용.json 문서 v2 의 모양과 병합), `prjdocsync.js`(과제별 차례 `run` — want·pullOnly), `staffsync.js`·`researchsync.js`(사업비·연구내용 병합 규칙), `staff.js`(참여연구원 계산 — 여기서는 보이기만), `research.js`(연구개발계획서 기록), `sharesync.js`(공유 배선 `createShareSync(deps)` — background.js 를 옮김), `mcp.js`(MCP Streamable HTTP — 원본이 지워져 이 저장소 몫, 메일 탭이 씀), `plan.css`(표 모양), `fmt.js` |
 | `mailtrack/` | **메일 탭**(2026-10-15, 패널과 떨어진 폴더 — `mailtrack/README.md`·`mailtrack/CLAUDE.md`): `index.js`(조립 — 패널이 import 하는 유일한 입구), `panel.js`·`panel.css`(화면 — 머리 칩·등록 대화·N/M 목록·상세·양식 병합·설정), `sync.js`(등록·갱신·수동 조작·병합 호출), `model.js`·`match.js`(받을 곳·N/M·회신 분류·점수·잇기 — 순수), `mcp/outlook.js`(Outlook MCP :5001 어댑터 — `rerp/mcp.js` 로 부름), `store/book.js`(`mailtrackBook`)·`store/vault.js`(IndexedDB `krsMailtrack`), `ooxml/`(ZIP 읽기·xlsx·docx 병합 — 쓰기는 `src/zip.js`) |
@@ -2509,7 +2517,11 @@ R&D 탭의 회계 I/O·회계 예산(`src/eacct.js`)이 읽는 곳. `https://e-a
   줄마다 `FISTL`(부서/과제 코드 — 과제는 `2145NR0124` 꼴 I/O) · `BEZEICH`(이름, 20자쯤에서 잘림) · `RCMMTITEM3`/`BEZEI3`(보조세목 코드·계정명 — `603010304 수탁과제(국가)_연구활동비`) ·
   `GICHO` 기초 · `JUNYONG` 전용 · `SIL` 실적 · `YAK` 임시전표 · `GAYONG` 가용(천 단위 쉼표와 앞 공백). 과제 예산/실적(`CO10023`)은 같은 줄에 기간(`PERIOFR`·`PERIOTO`)이 더 있습니다.
 - 콤보 `getOrder`(`<IMPORT FYEAR='2026' />`) — 내 부서 과제(I/O) 목록(`CBOTEXT` 는 `코드-R-이름`, 45자쯤에서 잘림) · `getacct_code`/`getCctr` — 내 부서 · `Load_Basic_Data` → `1000{D}HER`(XML 이 아님).
-- 로그인은 e-accounting 자체 세션(eclass 와 따로). 풀리면 답이 XML 이 아니라 확장은 `로그인이 필요합니다. e-accounting 에 …` 로 알리고 `UsrStart.aspx` 링크를 둡니다. 이 확장은 읽기만 합니다.
+- 세션(2026-10-29 CDP 다시 확인): e-accounting 을 바로 열면(`app_login.aspx`) 들어가지지 않고, eclass 홈의 **e-Accounting** 아이콘(`intraMenu.OpenSSOLink('UAS')` → `OpenUAS`)이 홈 원문의
+  data 속성(`uasLink` = `https://e-accounting.krs.co.kr/SSO/ProcessSSO.aspx` · `user_encrypt_Id` · `user_sid` · `user_lan`)으로 `?uid=&sid=&company=1000&lan=K` 를 엽니다. 확장 출처에서
+  그 주소를 fetch(GET 한 번)해도 `ASP.NET_SessionId` 세션이 섭니다(e-accounting 쿠키를 지운 뒤 이것만으로 다시 조회됨). 세션이 없을 때의 답은 로그인 화면이 아니라 **빈 답** —
+  `getlist1`·`getOrder` 는 줄 없는 `<ROOT><RTNDATA ERR='S' …/>`, `Load_Basic_Data` 는 `{D}`(있으면 `1000{D}HER`). 10-17·10-19·10-27 에 SSCB(2176NR0126)·H2HY(2175NR0126)의 스냅샷이
+  줄 없이 남은 까닭이 이것이었고, 세션이 있으면 두 과제 모두 부서 예산 요약(`GUB=C` 과제 범위)에 계정 줄이 있습니다(신규 과제라 기초 0 · 전용에 배정). 이 확장은 읽기만 합니다.
 
 ## "예약된 건지 어떻게 아느냐"
 

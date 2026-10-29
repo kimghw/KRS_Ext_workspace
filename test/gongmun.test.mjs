@@ -512,6 +512,25 @@ console.log('구매의뢰(구매요청서 KR_Purchase_Order — 총무팀 수신
     assert.deepEqual(pick(noAcct.draft, ['subjectCode', 'subjectName', 'ioCode', 'budgetAmount']), { subjectCode: '', subjectName: '', ioCode: '2145NR0124', budgetAmount: null }, '계정이 없으면 I/O 만');
     const mine = orderAuto({ ...base, subjectCode: '603010303', subjectName: '연구시설·장비비', budgetAmount: 1 }, { project: { ...ACCOUNT, io: '2145NR0124', acct }, today: '2026-10-17' });
     assert.deepEqual(pick(mine.draft, ['subjectCode', 'subjectName', 'budgetAmount', 'ioCode']), { subjectCode: '603010303', subjectName: '연구시설·장비비', budgetAmount: 1, ioCode: '2145NR0124' }, '적힌 칸은 둔다');
+    const byCode = orderAuto({ ...base, subjectCode: '603010304' }, { project: { ...FULL, account: '', io: '2145NR0124', acct }, today: '2026-10-17' });
+    assert.equal(byCode.draft.budgetAmount, 51500000, '과제 계정이 안 맞아도 적힌 계정과목코드의 줄로 예산금액을 채운다');
+    assert.equal(byCode.draft.ioName, acct.ioName);
+    // 계정을 모르는데 구매에 쓸 줄이 하나뿐이면(2176NR0126 꼴 — 인건비·연구활동비·0원 장비비·간접비) 그 줄로(2026-10-29).
+    const sscb = { year: '2026', at: '2026-10-29T11:00:00.000Z', io: '2176NR0126', ioName: 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발', dept: '', deptName: '',
+      rows: [{ code: '603010302', name: '수탁과제(국가)_인건비', base: 0, transfer: 31425000, budget: 31425000, actual: 17465000, pending: 0, available: 13960000 },
+        { code: '603010303', name: '수탁과제(국가)_연구시설·장비비', base: 0, transfer: 0, budget: 0, actual: 0, pending: 0, available: 0 },
+        { code: '603010304', name: '수탁과제(국가)_연구활동비', base: 0, transfer: 43700000, budget: 43700000, actual: 22843002, pending: 0, available: 20856998 },
+        { code: '603010351', name: '간접비(수탁과제)_안전관리비', base: 0, transfer: 300000, budget: 300000, actual: 0, pending: 0, available: 300000 }] };
+    const sole = orderAuto(base, { project: { ...FULL, account: '', io: '2176NR0126', acct: sscb }, today: '2026-10-29' });
+    assert.deepEqual(pick(sole.draft, ['subjectCode', 'subjectName', 'ioCode', 'ioName', 'budgetAmount']),
+      { subjectCode: '603010304', subjectName: '수탁과제(국가)_연구활동비', ioCode: '2176NR0126', ioName: sscb.ioName, budgetAmount: 43700000 });
+    assert.equal(orderAuto({ ...base, subjectName: '연구재료비' }, { project: { ...FULL, account: '', io: '2176NR0126', acct: sscb }, today: '2026-10-29' }).draft.subjectCode, '',
+      '적힌 계정과목명이 있으면(맞는 줄이 없어도) 고르지 않는다');
+    const byName = orderAuto({ ...base, subjectName: '연구활동비(문헌구입비)' }, { project: { ...ACCOUNT, io: '2145NR0124', acct }, today: '2026-10-17' });
+    assert.deepEqual(pick(byName.draft, ['subjectCode', 'subjectName', 'budgetAmount']), { subjectCode: '603010304', subjectName: '연구활동비(문헌구입비)', budgetAmount: 51500000 },
+      '적힌 계정과목명(괄호 세목)의 줄이 과제 계정보다 먼저 — 이름은 둔다');
+    const items = orderAuto({ ...base, items: [{ name: 'IEC 61660', qty: 1, unit: '', unitPrice: 0, amount: 419400 }, { name: 'b', qty: 2, unit: '부', unitPrice: null, amount: 1000 }, { name: 'c', qty: 1, unit: '', unitPrice: 5, amount: 9 }] }, {}).draft.items;
+    assert.deepEqual(items.map((it) => [it.unit, it.unitPrice]), [['EA', 419400], ['부', 500], ['EA', 5]], '빈 단위는 EA, 빈(0) 예상단가는 금액÷수량, 적힌 것은 둔다');
     assert.equal(orderAuto({ ...base, attach: [{ label: '견적서', files: ['a.png'] }, { label: '강의 내용', files: ['b.png'] }] }, {}).draft.attachNote, '1. 견적서 1부.\n2. 강의 내용 1부.');
     assert.equal(orderAuto({ ...base, attach: [] }, {}).draft.attachNote, '1. 견적서 1부.', '첨부 목록이 비면 견적서 한 줄');
   });

@@ -53,6 +53,7 @@ import { cutBoxes, cutDrop, cutName, cutQuote, CUT_PAD, PAD_STEP, MAX_PAD } from
 import { createWebPick, pickButton } from './webpick.js';
 import { memoSuggest } from './src/memo.js';
 import { idbBackend } from './src/evidence.js';
+import { fetchAcct, fiscalYearOf } from './src/eacct.js';
 
 const FILE_LIMIT = 10 * 1024 * 1024;
 /**
@@ -105,7 +106,8 @@ const formLabel = (id) => FORMS.find((f) => f.id === id)?.label || id;
  *   compareTab 은 비교작성 탭일 때의 갈래(sidepanel.html?compare=갈래 — sidepanel.js) — 그 갈래의 초안을 작성 내용(공문)·읽은 내용 두 칸으로 넓게 보인다
  *   actions 는 행위 디스패처(actions/dispatch.js — sidepanel 이 만들어 근태·공문 패널이 같이 쓴다). 없으면(단독 테스트) 여기서 만든다
  */
-export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '', flash = () => {}, webcap = {}, compareTab = '', actions: given = null, openSetting = null, suggest = memoSuggest }) {
+export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '', flash = () => {}, webcap = {}, compareTab = '', actions: given = null, openSetting = null, suggest = memoSuggest,
+  acct = { get: (year, io) => fetchAcct(year, io) } }) {
   const el = {
     root: $('gongmun'), kinds: $('gmKinds'), projBar: $('gmProjBar'), pick: $('gmPick'), projLabel: $('gmProjLabel'),
     intake: $('gmIntake'), evidenceCount: $('gmEvidenceCount'), evidenceToggle: $('gmEvidenceToggle'), evidenceBody: $('gmEvidenceBody'), file: $('gmFile'), dropLead: $('gmDropLead'), capture: $('gmCapture'),
@@ -154,6 +156,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     preset: normalizePreset(null),
     // projects 는 저장된(이름이 있는) 과제, rows 는 공문 설정 칸에 펼쳐 둔 줄(아직 이름을 적지 않은 줄도 있다).
     projects: [], rows: [],
+    // 구매의뢰가 e-accounting 에서 바로 받은 회계 예산(I/O → 스냅샷)과 받는 형편 — R&D 탭에서 조회하지 않은 과제도 채운다(acctAuto, 2026-10-29).
+    acctGot: {}, acctRun: { io: '', busy: false, msg: '' },
     // 초안에서 고르는 과제는 R&D 탭의 과제다(rndBook — src/gongmun.js 의 rndProjects, 2026-10-08 사용자 지정). book 은 탭을 열 때마다 다시 읽는다.
     // R&D 탭에 과제가 없으면 공문 설정의 과제를 고른다. extra 는 R&D 과제마다 공문 설정에서 적은 개요·계정이다(normalizeRndExtra).
     book: null, rnd: [], extra: {},
@@ -1407,7 +1411,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const rows = a?.rows || [];
     const head = `<strong>회계 계정 줄 — I/O ${escapeHtml(p.io)}${a ? ` · ${escapeHtml(a.year)}년` : ''}</strong>`;
     if (!rows.length) {
-      el.acctRow.innerHTML = `${head}<span class="gm-miss">회계 예산을 아직 받지 못했습니다 — R&D 탭의 과제 정보 카드에서 조회하세요</span>`;
+      const run = st.acctRun.io === p.io ? st.acctRun : null;
+      el.acctRow.innerHTML = `${head}<span class="gm-miss">${run?.busy ? 'e-accounting 에서 회계 예산을 받는 중…' : escapeHtml(run?.msg || '회계 예산을 아직 받지 못했습니다 — R&D 탭의 과제 정보 카드에서 조회하세요')}</span>`;
       return;
     }
     const cur = String(w.draft.subjectCode || '').trim();
@@ -1416,6 +1421,43 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       const short = String(r.name || '').split('_').pop() || r.code;
       return `<button type="button" class="gm-acct-chip${on ? ' active' : ''}" data-acct="${escapeHtml(r.code)}" aria-pressed="${on}" title="${escapeHtml(`${r.code} ${r.name} · 예산 ${won(r.budget)} · 실적 ${won(r.actual)} · 가용 ${won(r.available)}`)}">${escapeHtml(short)} <b>${escapeHtml(won(r.budget))}</b></button>`;
     }).join('');
+  }
+
+  /**
+   * 구매의뢰 — 고른 과제에 회계 I/O 가 있는데 이 해의 회계 예산(계정 줄)이 없으면 e-accounting 에서 바로 받는다(2026-10-29 사용자 지정: "요건 네가 못찾냐?" —
+   * R&D 탭의 과제 정보 카드에서 조회하지 않으면 I/O 명·예산금액이 비었다). 읽기만 한다(src/eacct.js fetchAcct). I/O 마다 이 창에서 한 번만 — 못 받았으면 까닭을 계정 줄에 적고
+   * 다시 묻지 않는다(로그인하고 R&D 탭에서 ↻). 받은 것은 이 창의 과제에만 얹는다(R&D 장부는 R&D 탭이 저장한다) — 그 뒤 autoFill 이 빈 칸을 채운다.
+   */
+  function acctAuto(w) {
+    const p = st.kind === 'order' ? projectOf(w) : null;
+    const io = String(p?.io || '').trim();
+    if (!io || st.acctRun.io === io) return;
+    const year = fiscalYearOf(today());
+    const a = p.acct && p.acct.io === io ? p.acct : null;
+    if (a && a.year === year && a.rows?.length) return;
+    st.acctRun = { io, busy: true, msg: '' };
+    (async () => {
+      try {
+        const got = await acct.get(year, io);
+        if (!got?.rows?.length) throw new Error('회계가 계정 줄을 주지 않았습니다');
+        st.acctGot[io] = got;
+        overlayAcct();
+        st.acctRun = { io, busy: false, msg: '' };
+      } catch (err) {
+        st.acctRun = { io, busy: false, msg: `회계 예산을 받지 못했습니다 — ${err?.message || err}${err?.login ? '' : ' · R&D 탭의 과제 정보 카드에서 다시 조회하세요'}` };
+      }
+      if (st.kind === 'order' && cur()) paintLive();
+    })();
+  }
+
+  /** e-accounting 에서 바로 받은 회계 예산을 과제에 얹는다 — 과제의 스냅샷이 없거나 다른 I/O·지난 해의 것일 때만(R&D 탭이 받은 것이 이긴다). */
+  function overlayAcct() {
+    for (const p of st.rnd) {
+      const got = st.acctGot[p.io];
+      if (!got) continue;
+      const a = p.acct && p.acct.io === p.io ? p.acct : null;
+      if (!a || a.year !== got.year || !a.rows?.length) p.acct = got;
+    }
   }
 
   /** 회계 계정 칩 — 예산 내역 다섯 칸(계정과목코드·계정과목명·I/O 코드·I/O 명·예산금액)을 그 줄로. 사람이 고른 것이라 touched 에 든다(문서를 다시 읽어도 둔다). */
@@ -1468,6 +1510,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   function paintLive() {
     const w = cur();
     if (!w) return;
+    acctAuto(w);
     autoFill(w);
     paintAcctRow(w);
     const lim = overLimit(st.kind, w.draft);
@@ -2838,7 +2881,10 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
   function projectsChanged() {
     st.projects = normalizeProjects(st.rows);
     // R&D 탭의 과제도 공문 설정에서 개요·계정(비면 책임자·별칭)을 받는다.
-    if (st.book) st.rnd = rndProjects(st.book, st.projects, today(), st.extra);
+    if (st.book) {
+      st.rnd = rndProjects(st.book, st.projects, today(), st.extra);
+      overlayAcct();
+    }
     savePreset();
     paintPresetState();
     paintProjects();
@@ -3113,6 +3159,7 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
     const saved = await chrome.storage.local.get([BOOK_KEY, RND_SET_KEY, PLAN.KEY]);
     st.book = normalizeBook(saved?.[BOOK_KEY]);
     st.rnd = rndProjects(st.book, st.projects, today(), st.extra);
+    overlayAcct();
     st.rndSet = saved?.[RND_SET_KEY] && typeof saved[RND_SET_KEY] === 'object' ? saved[RND_SET_KEY] : null;
     st.plans = saved?.[PLAN.KEY] && typeof saved[PLAN.KEY] === 'object' ? saved[PLAN.KEY] : {};
   }

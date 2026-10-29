@@ -490,7 +490,7 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
   // 부서/과제명. 과제코드 계정명, 과제명 이런거 e-accounting.krs.co.kr 에 조회할 수 있도록" — Job Id 와 같은 길이다(src/eacct.js). 회계 I/O 가 빈 과제를 고르면 회계(부서 예산 요약 화면이 받는
   // 내 부서 과제 목록 — 읽기만)에서 과제명 유사도 0.5 이상의 후보를 높은 차례로 보이고 가장 높은 것을 고른 채로 둔다. '이 코드로 저장'을 누르면 과제에 남고 묶음은 사라지며, 바로 그 해의
   // 계정과목(보조세목)별 예산(기초·전용·실적·가용)을 받아 과제의 회계 스냅샷(acct)으로 두고 표로 보인다 — 구매요청서(공문 탭 구매의뢰)의 예산 내역이 이것으로 채워진다(src/gongmun.js orderAuto).
-  // 손으로 고치는 곳은 과제 고치기의 회계 I/O 칸 — 비우고 저장하면 후보가 다시 보인다. 로그인(e-accounting 은 eclass 와 따로)이 풀리면 까닭과 로그인 링크.
+  // 손으로 고치는 곳은 과제 고치기의 회계 I/O 칸 — 비우고 저장하면 후보가 다시 보인다. e-accounting 세션은 eclass 를 거쳐 저절로 세우고(src/eacct.js withSession), eclass 도 풀렸으면 까닭과 eclass 로그인 링크.
 
   const ioPicked = () => st.io.list[st.io.pick] || null;
   const fiscal = () => fiscalYearOf(today());
@@ -3462,12 +3462,12 @@ export function createRndPanel({ $, escapeHtml, logEvent, copyText = defaultCopy
 
 /** 공유 (SharePoint)가 OneDrive 를 읽을 fetch — 전역 fetch 그대로(브라우저 로그인 쿠키는 저장소 쪽이 credentials:'include' 로 붙인다, manifest host_permissions *.sharepoint.com). */
 const defaultSpFetch = (url, init) => globalThis.fetch(url, init);
-/** 회계(e-accounting) — 내 부서 과제(I/O) 목록과 과제 하나의 계정과목별 예산 스냅샷(src/eacct.js — 확장에서 바로, host_permissions 로 쿠키가 실린다. 로그인은 e-accounting 자체 세션). */
+/** 회계(e-accounting) — 내 부서 과제(I/O) 목록과 과제 하나의 계정과목별 예산 스냅샷(src/eacct.js — 확장에서 바로, host_permissions 로 쿠키가 실린다. 세션이 없으면 src/eacct.js 가 eclass 를 거쳐 세운다 — 2026-10-29). */
 const defaultAcct = {
   list: (year) => fetchIoList(year),
   get: (year, io, options) => fetchAcct(year, io, { options: options || null }),
 };
-/** 로그인하러 가는 곳 — 과제 정보 카드의 링크가 가리킨다(sidepanel.html 의 href 와 같다). */
+/** 로그인하러 가는 곳(eclass 홈 — e-accounting 은 eclass 를 거쳐 들어간다) — 과제 정보 카드의 링크가 가리킨다(sidepanel.html 의 href 와 같다). */
 export const EA_LOGIN_URL = EA_HOME;
 
 /** R&D PMS 과제 목록(공문 창의 과제 찾기 팝업이 받는 것) — 확장에서 바로(쿠키가 실린다), 안 되면 eclass 탭을 거쳐(src/net.js). */

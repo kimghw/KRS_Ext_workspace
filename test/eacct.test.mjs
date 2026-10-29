@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {
   parseEa, ioOptions, budgetRows, ioSimilarity, rankIo, ioLine, isIoCode, amount, normalizeAcct, acctFresh, acctRowFor, orderBudgetOf, acctSummaryLines,
   callsOf, eaBody, eaCall, fetchIoList, fetchIoBudget, fetchAcct, fetchMyDept, LIST_COLS, EA_PAGE, EA_ORIGIN, LOGIN_MESSAGE, IO_MIN,
+  ssoUrlOf, eaSsoLogin, EA_HOME, EA_SSO_URL, soleOrderRow,
 } from '../src/eacct.js';
 
 const NAME = '대용량 모듈러 멀티레벨 컨버터 기반 고압 드라이브 시제품 개발';
@@ -96,6 +97,7 @@ test('회계 스냅샷 — 모양 맞추기(코드 없는 줄은 버림)·신선
   assert.equal(acctRowFor(acct, '연구재료비')?.code, '603010311');
   assert.equal(acctRowFor(acct, '연구 활동비')?.code, '603010304', '띄어쓰기는 보지 않는다');
   assert.equal(acctRowFor(acct, '수탁과제(국가)_인건비')?.code, '603010302', '회계 이름 그대로도');
+  assert.equal(acctRowFor(acct, '연구활동비(문헌구입비)')?.code, '603010304', '괄호의 세목을 떼고 다시');
   assert.equal(acctRowFor(acct, '장비비'), null);
   assert.equal(acctRowFor(acct, ''), null, '계정이 비면 고르지 않는다');
   assert.deepEqual(acctSummaryLines(acct).slice(0, 3), ['', `■ 회계 예산 (2026년 · I/O 2145NR0124 ${NAME} · 조회 2026-10-17 10:00)`, '- 603010302 수탁과제(국가)_인건비: 예산 70,270,000원 · 실적 26,755,270원 · 가용 43,514,730원']);
@@ -159,4 +161,74 @@ test('조회 — 화면에서 처리기 이름을 읽어 POST 하고(몸은 페�
   answer = () => '<html><body>login</body></html>';
   await assert.rejects(eaCall({ mode: 'getOrder', fetchImpl }), (e) => e.login === true && e.message === LOGIN_MESSAGE);
   await assert.rejects(fetchMyDept({ fetchImpl }), (e) => e.login === true);
+});
+
+// eclass 홈 원문의 e-Accounting 아이콘 값(2026-10-29 실측 꼴 — 값은 지어낸 것).
+const HOME = '<div b-x id="uasLink" data-uasLink="https://e-accounting.krs.co.kr/SSO/ProcessSSO.aspx"></div>'
+  + '<div b-x id="user_encrypt_Id" data-encrypt-Id="AbC12xYz"></div><div b-x id="user_sid" data-usersid="11111111-2222-3333-4444-555555555555"></div><div b-x id="user_lan" data-userlan="K"></div>';
+const EMPTY = "<ROOT><RTNDATA ERR='S' ERRDESC='' /></ROOT>";
+
+test('eclass SSO 주소 — 홈의 data 속성(uasLink·encrypt-Id·usersid·userlan)으로 아이콘과 같은 글, uid·sid 가 없으면(로그아웃) 빈 글, 다른 곳의 uasLink 는 쓰지 않는다', () => {
+  assert.equal(EA_HOME, 'https://eclass.krs.co.kr/eClassVer4/Home/Index');
+  assert.equal(ssoUrlOf(HOME), 'https://e-accounting.krs.co.kr/SSO/ProcessSSO.aspx?uid=AbC12xYz&sid=11111111-2222-3333-4444-555555555555&company=1000&lan=K');
+  assert.equal(ssoUrlOf('<form id="login"><input name="UserId"></form>'), '');
+  assert.equal(ssoUrlOf(HOME.replace(/data-usersid="[^"]*"/, 'data-usersid=""')), '');
+  assert.equal(ssoUrlOf(HOME.replace('https://e-accounting.krs.co.kr/SSO/ProcessSSO.aspx', 'https://evil.example/x')).split('?')[0], EA_SSO_URL);
+  assert.match(ssoUrlOf(HOME.replace(' data-userlan="K"', '')), /&lan=K$/);
+});
+
+test('세션 — 세션이 없으면 회계는 빈 답을 준다: 내 부서({D})로 보고 eclass 로 들어가(SSO GET 한 번) 다시 묻는다, 세션이 있는데 빈 것은 그대로, eclass 도 없으면 로그인 안내', async () => {
+  let session = false;
+  let eclass = true;
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push(url.split('?')[0].split('/').pop().replace(/^CO10021_\d+/, 'CO10021') + (init?.body ? ` ${(init.body.match(/mode=(\w+)/) || [])[1]}` : ''));
+    if (url === EA_HOME) return { html: eclass ? HOME : '<form><input name="UserId"></form>' };
+    if (url.startsWith(EA_SSO_URL)) { session = true; return { html: '<html><form id="form1"></form></html>' }; }
+    if (url.includes('PageStyle050.aspx')) return { html: PAGE };
+    const mode = (init.body.match(/mode=(\w+)/) || [])[1];
+    if (mode === 'Load_Basic_Data') return { html: session ? '1000{D}HER' : '{D}' };
+    if (!session) return { html: EMPTY };
+    return { html: mode === 'getOrder' ? COMBO : LIST };
+  };
+  // 세션이 없다 → 빈 답 → 내 부서 '{D}' → eclass 홈 → SSO → 내 부서 → 다시.
+  const rows = await fetchIoBudget('2026', '2145NR0124', { fetchImpl });
+  assert.equal(rows.length, 4);
+  assert.deepEqual(calls.filter((c) => !/PageStyle050/.test(c)), [
+    'CO10021.aspx getlist1', 'CO10021.aspx Load_Basic_Data', 'Index', 'ProcessSSO.aspx', 'CO10021.aspx Load_Basic_Data', 'CO10021.aspx getlist1',
+  ]);
+  // 세션이 있으면 한 번에.
+  calls.length = 0;
+  assert.equal((await fetchIoList('2026', { fetchImpl })).length, 4);
+  assert.deepEqual(calls, ['CO10021.aspx getOrder']);
+  // 세션이 있는데 그 과제에 계정 줄이 없으면 빈 그대로 — eclass 로 가지 않는다.
+  calls.length = 0;
+  const none = await fetchIoBudget('2026', '9999NR0126', { fetchImpl });
+  assert.deepEqual(none, []);
+  assert.deepEqual(calls, ['CO10021.aspx getlist1', 'CO10021.aspx Load_Basic_Data']);
+  // eclass 도 로그아웃이면 로그인 안내(err.login) — SSO 주소를 못 만들어 가지 않는다.
+  session = false;
+  eclass = false;
+  calls.length = 0;
+  await assert.rejects(fetchIoList('2026', { fetchImpl }), (e) => e.login === true && e.message === LOGIN_MESSAGE);
+  assert.ok(!calls.includes('ProcessSSO.aspx'));
+  assert.equal(await eaSsoLogin({ fetchImpl }), false);
+  // 답이 XML 이 아닌 꼴로 풀려도 같은 길로 들어간다.
+  eclass = true;
+  let html = true;
+  const htmlFetch = async (url, init) => (html && init?.body && !session ? { html: '<html>login</html>' } : fetchImpl(url, init));
+  const acct = await fetchAcct('2026', '2145NR0124', { fetchImpl: htmlFetch });
+  assert.equal(acct.rows.length, 4);
+  assert.equal(acct.ioName, NAME);
+  html = false;
+});
+
+test('계정을 모를 때 구매에 쓸 줄 — 예산이 있고 인건비·연구수당·간접비·위탁이 아닌 줄이 하나뿐이면 그 줄, 둘 이상이거나 없으면 null', () => {
+  const r = (code, name, budget) => ({ code, name, budget });
+  const sscb = { rows: [r('603010302', '수탁과제(국가)_인건비', 31425000), r('603010303', '수탁과제(국가)_연구시설·장비비', 0), r('603010304', '수탁과제(국가)_연구활동비', 43700000), r('603010351', '간접비(수탁과제)_안전관리비', 300000)] };
+  assert.equal(soleOrderRow(sscb).code, '603010304');
+  assert.equal(soleOrderRow({ rows: [...sscb.rows, r('603010311', '수탁과제(국가)_연구재료비', 1)] }), null, '둘이면 사람이 고른다');
+  assert.equal(soleOrderRow({ rows: [r('603010306', '수탁과제(국가)_연구수당', 1), r('603010312', '수탁과제(국가)_위탁연구개발비', 1)] }), null);
+  assert.equal(soleOrderRow(null), null);
+  assert.equal(soleOrderRow(normalizeAcct({ year: 2026, io: '2145NR0124', rows: budgetRows(LIST) })), null, '연구활동비·연구재료비 둘');
 });

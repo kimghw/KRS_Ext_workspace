@@ -12,17 +12,24 @@
 //       · GICHO 기초 예산 · JUNYONG 전용 예산(+/-) · SIL 실적 금액 · YAK 임시전표금액 · GAYONG 가용 예산 (금액은 천 단위 쉼표와 앞 공백).
 //   과제 콤보 getOrder (snddata <ROOT><IMPORT FYEAR='2026' /></ROOT>) → 내 부서의 과제(I/O) 목록 — CBOTEXT 는 '2145NR0124-R-대용량 모듈러 … 개발'(코드-이름, 45자쯤에서 잘린다).
 //   Load_Basic_Data (<ROOT><IMPORT /></ROOT>) → '1000{D}HER' (회사{D}내 부서 코드).
-//   로그인은 e-accounting 자체 세션(eclass 와 따로) — 풀리면 답이 XML 이 아니다(로그인 화면·리다이렉트).
+//
+// 세션(2026-10-29 CDP 실측 — "eclass를 타고 들어가야지 그냥 직접은 안됨"): e-accounting 세션(ASP.NET_SessionId)은 eclass 홈의 e-Accounting 아이콘(intraMenu.OpenUAS)이
+//   만든다 — 홈 원문의 data 속성(uasLink · user_encrypt_Id · user_sid · user_lan)으로 GET /SSO/ProcessSSO.aspx?uid=&sid=&company=1000&lan= 한 번. 확장에서 fetch 해도 같다
+//   (쿠키를 지운 뒤 이것만으로 다시 조회됨). 세션이 없으면 로그인 화면이 아니라 **빈 답**이 온다 — getlist1·getOrder 는 줄 없는 <ROOT><RTNDATA ERR='S' …/>,
+//   Load_Basic_Data 는 '{D}'. 그래서 빈 답이면 내 부서로 세션을 보고, 없으면 eclass 로 들어가 한 번 더 묻는다(withSession). eclass 세션도 없으면 로그인 안내.
 //
 // 순수한 것(parse*·rankIo·budgetRows·normalizeAcct·orderBudgetOf — DOM·fetch 없음)과 조회(fetch*·eaCall — 확장에서 바로, host_permissions 로 쿠키가 실린다)가 같이 있다.
 // 과제 이름 맞추기는 Job Id 찾기(src/jobid.js)와 같은 Dice 유사도에 앞머리 포함(잘린 이름)을 더한 것이다.
 
+import { PORTAL_HOME_URL } from './config.js';
 import { directFetch } from './net.js';
 import { similarity } from './jobid.js';
 
 export const EA_ORIGIN = 'https://e-accounting.krs.co.kr';
-/** 사람이 로그인하러 여는 곳(로그아웃 상태면 로그인 폼으로 보낸다). */
-export const EA_HOME = `${EA_ORIGIN}/App_Usr/UsrStart.aspx`;
+/** eclass 홈 — e-Accounting 아이콘의 SSO 값(data 속성)이 여기 있다. 사람이 로그인하러 여는 곳도 여기다(e-accounting 을 바로 열면 들어가지지 않는다, 2026-10-29). */
+export const EA_HOME = PORTAL_HOME_URL;
+/** e-accounting 의 SSO 받는 곳 — 홈 원문에 uasLink 가 없을 때. */
+export const EA_SSO_URL = `${EA_ORIGIN}/SSO/ProcessSSO.aspx`;
 /** 부서 예산 요약(레포트 > 예산 레포트) — 과제(I/O)·보조세목별 기초·전용·실적·가용 예산. calls 는 2026-10-17 실측의 처리기 이름(페이지에서 읽은 것이 이긴다). */
 export const EA_PAGE = Object.freeze({ id: 'CO10021', grp: 'CO10020', calls: 'CO10021_0000038729' });
 /** jsUsr.js 의 xmlRequestKey(2026-10-17) — 서버가 보지 않지만 페이지와 같은 꼴로 보낸다. */
@@ -32,7 +39,7 @@ export const IO_MIN = 0.5;
 export const IO_LIMIT = 5;
 /** 조회한 지 이만큼 지났으면 다시 받는다(rERP 와 같은 10분). */
 export const ACCT_TTL_MS = 10 * 60 * 1000;
-export const LOGIN_MESSAGE = '로그인이 필요합니다. e-accounting 에 로그인한 뒤 다시 조회하세요.';
+export const LOGIN_MESSAGE = 'e-accounting 에 들어가지 못했습니다 — eclass 에 로그인한 뒤 다시 조회하세요(e-accounting 은 eclass 를 거쳐 들어갑니다).';
 
 /** 회계 I/O 코드 꼴인가 — 2145NR0124 · 2083LR9123 (네 자리 숫자 + 영문 둘 + 네 자리). 부서 코드(HER)는 아니다. */
 export const isIoCode = (s) => /^\d{4}[A-Z]{2}\d{4}$/i.test(String(s ?? '').trim());
@@ -165,10 +172,22 @@ export function acctFresh(acct, { today = '', now = Date.now(), ttl = ACCT_TTL_M
  */
 export function acctRowFor(acct, account) {
   const rows = acct?.rows || [];
-  const k = nameKey(account);
-  if (!k) return null;
   const tail = (r) => nameKey(String(r.name).split('_').pop());
-  return rows.find((r) => tail(r) === k) || rows.find((r) => nameKey(r.name).endsWith(k)) || rows.find((r) => nameKey(r.name).includes(k)) || null;
+  const find = (k) => (k ? rows.find((r) => tail(r) === k) || rows.find((r) => nameKey(r.name).endsWith(k)) || rows.find((r) => nameKey(r.name).includes(k)) || null : null);
+  // 품의의 구매계정은 '연구활동비(문헌구입비)' 꼴(세목을 괄호에) — 그대로 안 맞으면 괄호를 떼고 다시.
+  return find(nameKey(account)) || find(nameKey(String(account ?? '').replace(/[(（][^)）]*[)）]/g, '')));
+}
+
+/** 구매에 쓰지 않는 계정 — 사람에게 주는 것(인건비·연구수당)·간접비·위탁. */
+const NOT_FOR_ORDER = /인건비|연구수당|위탁|^간접비/;
+
+/**
+ * 과제의 계정을 모를 때 구매에 쓸 수 있는 줄 — 예산(기초+전용)이 있고 NOT_FOR_ORDER 가 아닌 줄이 하나뿐이면 그 줄, 아니면 null(고르지 않는다 — 계정 칩으로 사람이).
+ * 2026-10-29 실측: 2176NR0126·2175NR0126 은 인건비·연구활동비·연구수당·안전관리비(간접비)·연구시설·장비비(0원)라 연구활동비 하나.
+ */
+export function soleOrderRow(acct) {
+  const rows = (acct?.rows || []).filter((r) => r.budget > 0 && !NOT_FOR_ORDER.test(String(r.name ?? '')));
+  return rows.length === 1 ? rows[0] : null;
 }
 
 /**
@@ -204,6 +223,23 @@ export function acctSummaryLines(acct) {
 const pageUrl = (p) => `${EA_ORIGIN}/App_Run/App_Style/PageStyle050.aspx?RunMode=RUN&PageID=${p.id}&PageGrpID=${p.grp}&PageVer=&PageVerUp=&subPG=&GotoData=`;
 /** 화면 원문에서 처리기 이름(`CallsUrl = 'CO10021_0000038729'`). 없으면 ''. */
 export const callsOf = (html) => (String(html ?? '').match(/CallsUrl\s*=\s*'([A-Z0-9_]+)'/i) || [])[1] || '';
+/**
+ * eclass 홈 원문 → e-accounting SSO 주소 — 아이콘(intraMenu.OpenUAS)이 data 속성으로 만드는 것과 같은 글(값은 인코딩하지 않고 그대로 붙인다 — 페이지가 그렇게 연다).
+ * uid·sid 가 없으면(eclass 로그아웃 — 로그인 화면 원문) 빈 글. uasLink 가 e-accounting 이 아니면 쓰지 않는다.
+ */
+export function ssoUrlOf(html) {
+  const s = String(html ?? '');
+  const attr = (name) => (s.match(new RegExp(`\\sdata-${name}\\s*=\\s*"([^"]*)"`, 'i')) || [])[1] || '';
+  const uid = attr('encrypt-Id').trim();
+  const sid = attr('usersid').trim();
+  if (!uid || !sid) return '';
+  const link = attr('uasLink').trim();
+  const base = link.startsWith(`${EA_ORIGIN}/`) ? link : EA_SSO_URL;
+  return `${base}?uid=${uid}&sid=${sid}&company=1000&lan=${attr('userlan').trim() || 'K'}`;
+}
+
+const loginError = () => Object.assign(new Error(LOGIN_MESSAGE), { login: true });
+
 /** 조회 하나의 몸(페이지의 Svr_GetListData 와 같은 꼴 — snddata 는 URL 인코딩해 보낸다. 페이지는 날것으로 보내지만 둘 다 받는다, 2026-10-17 실측). */
 export function eaBody({ mode, snddata = '', colName = null, key = EA_KEY }) {
   return `chk=${encodeURIComponent(key)}&mode=${encodeURIComponent(mode)}${colName != null ? `&ColName=${encodeURIComponent(colName)}` : ''}&snddata=${encodeURIComponent(snddata)}`;
@@ -246,40 +282,73 @@ export async function eaCall({ page = EA_PAGE, mode, snddata = '', colName = nul
     res = await fetchImpl(`${EA_ORIGIN}/App_Run/App_Compile/${calls}.aspx`, init);
   }
   const xml = String(res?.html ?? '').trim();
-  if (!xml.startsWith('<ROOT>') && !(raw && !xml.startsWith('<'))) {
-    const err = new Error(LOGIN_MESSAGE);
-    err.login = true;
-    throw err;
-  }
+  if (!xml.startsWith('<ROOT>') && !(raw && !xml.startsWith('<'))) throw loginError();
   return xml;
 }
 
-/** 내 부서 코드(Load_Basic_Data → '1000{D}HER'). 없으면 ''. */
+/** 내 부서 코드(Load_Basic_Data → '1000{D}HER'). 없으면 '' — 세션이 없을 때도 '{D}' 라 ''(withSession 이 이것으로 세션을 본다). */
 export async function fetchMyDept(opts = {}) {
   const got = await eaCall({ ...opts, mode: 'Load_Basic_Data', snddata: '<ROOT><IMPORT /></ROOT>', raw: true }).catch((err) => { if (err.login) throw err; return ''; });
   return text(String(got).split('{D}')[1] || '', 20);
 }
 
-/** 그 해 내 부서의 과제(I/O) 목록 — [{ code, name, text }]. */
+/** 한 번에 하나만 — 목록과 계정 줄을 같이 물어도 eclass 로 한 번만 들어간다. */
+let ssoRun = null;
+
+/**
+ * eclass 세션으로 e-accounting 세션을 세운다 — eclass 홈을 읽어(ssoUrlOf) SSO 주소를 GET 한 번(탭 없이 — 아이콘을 누른 것과 같다). 답은 읽지 않는다.
+ * eclass 세션이 없거나(홈이 로그인 화면) 못 갔으면 false.
+ */
+export function eaSsoLogin({ fetchImpl = directFetch } = {}) {
+  ssoRun ||= (async () => {
+    try {
+      const { html } = await fetchImpl(EA_HOME);
+      const url = ssoUrlOf(html);
+      if (!url) return false;
+      await fetchImpl(url);
+      return true;
+    } catch {
+      return false;
+    }
+  })().finally(() => { ssoRun = null; });
+  return ssoRun;
+}
+
+const LOGGED_OUT = Symbol('logged out');
+
+/**
+ * 조회 하나를 세션과 함께 — 답이 비었으면(empty) 내 부서로 세션을 보고, 세션이 있으면 정말 빈 것(그 과제에 계정 줄이 없음)이라 그대로.
+ * 세션이 없으면(빈 답 · XML 이 아닌 답) eclass 로 들어가(eaSsoLogin) 한 번 더 묻는다. 그래도 세션이 없으면 Error(LOGIN_MESSAGE) — err.login.
+ */
+async function withSession(run, empty, opts) {
+  const first = await run().catch((err) => { if (err?.login) return LOGGED_OUT; throw err; });
+  if (first !== LOGGED_OUT && !empty(first)) return first;
+  const dept = () => fetchMyDept(opts).catch((err) => { if (err?.login) return ''; throw err; });
+  if (first !== LOGGED_OUT && (await dept())) return first;
+  if (!(await eaSsoLogin(opts)) || !(await dept())) throw loginError();
+  return run();
+}
+
+/** 그 해 내 부서의 과제(I/O) 목록 — [{ code, name, text }]. 세션이 없으면 eclass 로 들어가 다시(withSession). */
 export async function fetchIoList(year, opts = {}) {
-  const xml = await eaCall({ ...opts, mode: 'getOrder', snddata: imp({ FYEAR: year }) });
-  return ioOptions(xml);
+  const once = async () => ioOptions(await eaCall({ ...opts, mode: 'getOrder', snddata: imp({ FYEAR: year }) }));
+  return withSession(once, (list) => !list.length, opts);
 }
 
 /**
- * 그 해 과제(I/O) 하나의 계정(보조세목)별 예산 — budgetRows 의 줄(지출 · 세부 · 전체 계정). 과제 범위(GUB C)로 그 과제만 받는다.
+ * 그 해 과제(I/O) 하나의 계정(보조세목)별 예산 — budgetRows 의 줄(지출 · 세부 · 전체 계정). 과제 범위(GUB C)로 그 과제만 받는다. 세션이 없으면 eclass 로 들어가 다시(withSession).
  */
 export async function fetchIoBudget(year, io, opts = {}) {
   const snddata = imp({ GJAHR: year, GUB: 'C', GUB3: 'D', DEPTFR: io, DEPTTO: io, GUB2: 'C', PRINT: '3', HKONT: '' });
-  const xml = await eaCall({ ...opts, mode: 'getlist1', snddata, colName: LIST_COLS });
-  return budgetRows(xml).filter((r) => !r.io || nameKey(r.io) === nameKey(io));
+  const once = async () => budgetRows(await eaCall({ ...opts, mode: 'getlist1', snddata, colName: LIST_COLS })).filter((r) => !r.io || nameKey(r.io) === nameKey(io));
+  return withSession(once, (rows) => !rows.length, opts);
 }
 
 /** 그 해 부서 전체(과제마다 · 계정마다)의 예산 — 부서 예산 요약 화면의 세부 표 그대로. */
 export async function fetchDeptBudget(year, dept, opts = {}) {
   const snddata = imp({ GJAHR: year, GUB: 'A', GUB3: 'D', DEPTFR: dept, DEPTTO: '', GUB2: 'C', PRINT: '3', HKONT: '' });
-  const xml = await eaCall({ ...opts, mode: 'getlist1', snddata, colName: LIST_COLS });
-  return budgetRows(xml);
+  const once = async () => budgetRows(await eaCall({ ...opts, mode: 'getlist1', snddata, colName: LIST_COLS }));
+  return withSession(once, (rows) => !rows.length, opts);
 }
 
 /**

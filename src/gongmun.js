@@ -19,7 +19,7 @@
 import { ORIGIN } from './config.js';
 import { RECIPE } from './gmrecipe.js';
 import { currentYear, fileLog, noteLogs, logLines, periodText, yearLabel, supportRefs, MAX_PROJECTS as RND_MAX_PROJECTS } from './rnd.js';
-import { orderBudgetOf } from './eacct.js';
+import { orderBudgetOf, acctRowFor, soleOrderRow } from './eacct.js';
 
 /* ------------------------------------------------------------ 저장소 키 */
 
@@ -751,6 +751,8 @@ const FILL = {
 
 /** 구매요청서에 비교견적서(업체 2곳 이상)가 드는 구매 총액(원) — 2026-10-17 계약. 막지 않고 알리기만 한다. */
 const ORDER_COMPARE_QUOTE = 5_000_000;
+/** 구매요청서 구매 물품 표에서 단위가 비었을 때 넣는 단위(orderAuto). */
+const ORDER_UNIT = 'EA';
 
 /** 날짜(YYYY-MM-DD)에 며칠을 더한다 — 꼴이 틀리면 빈 글. */
 const plusDays = (ymd, n) => {
@@ -803,14 +805,47 @@ export function orderAuto(draft = {}, { project = null, today = '', touched = []
   if (ea) {
     if (empty('ioCode')) put('ioCode', ea.ioCode);
     if (empty('ioName') && ea.ioName) put('ioName', ea.ioName);
-    if (ea.subjectCode) {
+    // 계정과목명이 이미 적혀 있으면(선행 품의의 구매계정 '연구활동비(문헌구입비)' 꼴) 그 이름의 계정 줄이 과제의 계정보다 먼저다 — 코드·예산금액은 그 줄로
+    // (2026-10-29 사용자 지정: "계정과목코드, 예산부서명 또는 I/O명 예산금액을 갖어와야 하는데"). 이름은 사람이 읽기 좋은 적힌 글 그대로 둔다.
+    const acct = project?.acct?.io === ea.ioCode ? project.acct : null;
+    const named = empty('subjectCode') && !empty('subjectName') ? acctRowFor(acct, out.subjectName) : null;
+    if (named) put('subjectCode', named.code);
+    else if (ea.subjectCode) {
       if (empty('subjectCode')) put('subjectCode', ea.subjectCode);
       if (empty('subjectName')) put('subjectName', ea.subjectName);
       if (empty('budgetAmount') && ea.budgetAmount != null) put('budgetAmount', ea.budgetAmount);
+    } else if (empty('subjectCode') && empty('subjectName') && !String(project?.account ?? '').trim()) {
+      // 과제의 계정도 적힌 계정도 없으면 — 구매에 쓸 수 있는 줄(인건비·연구수당·간접비·위탁이 아니고 예산이 있는 줄)이 하나뿐일 때만 그 줄(src/eacct.js soleOrderRow, 2026-10-29).
+      const sole = soleOrderRow(acct);
+      if (sole) {
+        put('subjectCode', sole.code);
+        put('subjectName', sole.name);
+      }
     }
+    // 과제의 계정과 맞는 줄이 없어도 계정과목코드가 적혀 있으면(선행 품의·사람이 적음) 그 줄의 예산금액(2026-10-29 사용자 지정: "요건 네가 못찾냐?").
+    const code = String(out.subjectCode ?? '').trim();
+    const row = code && project?.acct?.io === ea.ioCode ? (project.acct.rows || []).find((r) => r.code === code) : null;
+    if (row && empty('budgetAmount')) put('budgetAmount', row.budget);
   }
   const account = String(project?.account ?? '').trim();
   if (empty('subjectName') && account) put('subjectName', account);
+  // 구매 물품 표의 단위·예상단가 — 견적서에 없어 비었으면 단위는 EA, 예상단가는 예상금액 ÷ 수량(0 으로 읽힌 것도 빈 것으로). 적힌 값은 둔다(2026-10-29 사용자 지정: "단위랑 예상단가도 넣어줘야하는데").
+  if (Array.isArray(out.items) && out.items.length) {
+    const items = out.items.map((it) => {
+      if (!it || typeof it !== 'object') return it;
+      const qty = Number(it.qty);
+      const amount = Number(it.amount);
+      const price = Number(it.unitPrice);
+      const next = { ...it };
+      if (blank(it.unit)) next.unit = ORDER_UNIT;
+      if ((it.unitPrice == null || it.unitPrice === '' || price === 0) && amount > 0 && qty > 0) next.unitPrice = Math.round(amount / qty);
+      return next;
+    });
+    if (JSON.stringify(out.items) !== JSON.stringify(items)) {
+      out.items = items;
+      changed.push('items');
+    }
+  }
   if (empty('attachNote') || !touched.includes('attachNote')) put('attachNote', attachNoteOf(out.attach));
   return { draft: out, changed };
 }

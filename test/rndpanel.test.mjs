@@ -1724,14 +1724,14 @@ await ta('회계 I/O 저절로 찾기 — 과제 정보 카드가 회계(e-accou
   assert.ok(hidden('rdIoSave') && hidden('rdIoLogin'));
   assert.match(metaText(), /회계 I\/O 없음 — 비슷한 회계 과제가 없습니다\(과제 고치기에서 적으세요\)/);
   assert.match($('rdIoMsg').textContent, /회계 과제 목록이 비었습니다/);
-  // 로그인이 풀려 못 받으면 까닭과 e-accounting 로그인 링크.
+  // 로그인이 풀려 못 받으면 까닭과 eclass 로그인 링크(e-accounting 은 eclass 를 거쳐 들어간다).
   acctFake.fail = '로그인이 필요합니다. e-accounting 에 로그인한 뒤 다시 조회하세요.';
   acctFake.login = true;
   $('rdIoRetry').click();
   await until(() => !hidden('rdIoLogin'));
   assert.match($('rdIoMsg').textContent, /회계 과제 목록을 받지 못했습니다 — 로그인이 필요합니다/);
   assert.match(metaText(), /회계 I\/O 없음 — e-accounting 로그인이 필요합니다/);
-  assert.equal($('rdIoLogin').getAttribute('href'), 'https://e-accounting.krs.co.kr/App_Usr/UsrStart.aspx');
+  assert.equal($('rdIoLogin').getAttribute('href'), 'https://eclass.krs.co.kr/eClassVer4/Home/Index', 'e-accounting 은 eclass 를 거쳐 들어간다(2026-10-29)');
   acctFake.fail = '';
   acctFake.login = false;
   // 목록이 오면 과제명이 같은(잘린 이름도) 것이 먼저 골라져 있고, 전혀 다른 과제는 후보가 아니다.
