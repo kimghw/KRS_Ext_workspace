@@ -100,8 +100,12 @@ export function myRates(book, me) {
 
 /**
  * 줄 하나가 어디에 드나 — 더한 업무('item:이름') · 참여율이 있는 과제('prj:id') · 참여율이 없는 연구과제('rnd:과제 별칭' — R&D 탭 과제면 별칭, 아니면 업무명) · 기타('etc').
+ * 일일 업무 짜기(src/dwrplan.js)도 지난 줄을 업무마다 모으는 데 쓴다.
+ * @param {{title: string, category: string}} row src/dwr.js rowsOf 의 줄
+ * @param {{name: string}[]} items 더한 업무
+ * @param {ReturnType<typeof myRates>['projects']} projects
  */
-function classify(row, items, projects) {
+export function lineKeyOf(row, items, projects) {
   const t = nameKey(row.title);
   const c = nameKey(row.category);
   const item = items.find((i) => { const k = nameKey(i.name); return t.includes(k) || c.includes(k); });
@@ -132,7 +136,7 @@ export function workShare(rows, { from, to, items = [], rates = { projects: [] }
   for (const r of rows || []) {
     if (!(r.date >= from && r.date <= to) || !(r.minutes > 0)) continue;
     const ck = `${r.title}\n${r.category}`;
-    if (!keyOf.has(ck)) keyOf.set(ck, classify(r, items, rates.projects));
+    if (!keyOf.has(ck)) keyOf.set(ck, lineKeyOf(r, items, rates.projects));
     const key = keyOf.get(ck);
     const ym = r.date.slice(0, 7);
     const m = byMonth.get(ym) || byMonth.set(ym, new Map()).get(ym);

@@ -1,0 +1,17 @@
+# 일일 업무 갈래 — e-Class 「Daily Work Report」(개인업무관리 › 일일 업무). 현황 탭의 일일 업무 카드(dwrbox.js)가 아직 쓰지 않은 근무일을 목표에 맞춰 짜고(src/dwrplan.js),
+# 사람이 카드의 저장·제출을 누르면 날마다 dwr.write 기록 하나를 지어 디스패처로 보낸다(2026-10-29 사용자 지정: "여기 목표에 맞도록 일일 업무보고를 신청할 수 있도록 해줘 …
+# 일일 업무 보고서를 이 데이터 기반으로 등록할 수 있도록 기능을 워크스페이스 현황에 넣어줘"). 실행기는 src/dwrwrite.js(작성 화면을 뒤 탭으로 열어 쓴다 — 원본은
+# krs-web-agents 의 dr_report_run.py)이고 이 명세는 그 앞의 기록의 꼴이다(actions/runners/dwr.js).
+#
+# LLM 작업은 만들지 않는다(mode none — 날·업무·시간은 HR 근태와 카드의 목표가 정하고, 내용은 그 업무로 지난번에 적은 것을 돌려 쓴다). 그래도 칸마다 read 는 둔다 —
+# 2단계 통합 명령창에서 LLM 이 칸 값을 제안할 때 쓴다(2026-10-16 사용자 지정: "사용자가 입력하는 칸도 나중에 LLM 을 넣을 수 있게 read 를 준다").
+domain: dwr
+title: 일일 업무
+log: dwr                       # 활동 로그 kind(src/logbook.js KIND_LABEL — '일일업무')
+kinds: [write]
+preset:
+  today: { from: today, desc: 오늘(YYYY-MM-DD) }
+  me:    { from: me, desc: 내 이름(패널 설정의 myName — 기록에만 남는다) }
+llm:
+  task: dwr                    # 이름만 맡아 둔다 — mode none 이라 작업은 만들지 않는다
+  mode: none

@@ -8,7 +8,7 @@
 export const SPEC_DIR = 'actions/spec';
 
 /** 갈래 차례 — 머리의 탭 줄(근태·공문·R&D·메일·회의실·차량)을 따르되 여비계산서는 근태 옆, 탭이 없는 홈 카드·회람은 뒤. 모르는 갈래는 맨 끝(이름 차례). */
-export const DOMAIN_ORDER = ['attend', 'trip', 'gongmun', 'rnd', 'mail', 'room', 'car', 'home', 'circulate'];
+export const DOMAIN_ORDER = ['attend', 'trip', 'gongmun', 'dwr', 'rnd', 'mail', 'room', 'car', 'home', 'circulate'];
 
 /**
  * @param {{ domains?: object, actions?: object }} spec ACTIONS(actions/spec.js)

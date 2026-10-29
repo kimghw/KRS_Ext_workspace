@@ -546,6 +546,24 @@ export function hrCommutes({ from, to }, opts) {
   });
 }
 
+/**
+ * 근태현황(근태 > 근태현황) — 날마다 실근무시간(sWorkHour)·계획 근무시간(planWorkHour)·출근 시각(sStartTime)·근태 종류(workCodeKindName — 국내출장·외근·연차 …)·
+ * 사유(workRsn)·근태내역(workStatus). 기간을 마음대로 준다. krs-web-agents 의 일일 업무보고 러너(dr_report_run.py _fetch_attendance)가 근무일을 고르는 데 쓰는 GET 그대로다
+ * (2026-07~10 그쪽에서 실제로 씀 — 날짜는 'YYYYMMDD' 로 온다). 일일 업무 짜기(src/dwrplan.js workDays)가 읽는다(2026-10-29).
+ * @param {{from:string,to:string}} range 근무일 기준 YYYY-MM-DD
+ * @returns {Promise<object[]>}
+ */
+export function hrWorkPlan({ from, to }, opts) {
+  return serial(async () => {
+    const s = await hrSession(opts);
+    const q = query({ fromDate: from, endDate: to, emplNo: s.user.emplNo, emplNameHan: s.user.name || '' });
+    const { text } = await request(`/wrk/wrkwork/wrkworkplan100?${q}`, null, opts);
+    const rows = parseJson(text, '근태현황');
+    if (!Array.isArray(rows)) throw new HrError('근태현황 응답의 모양이 다릅니다.');
+    return rows;
+  });
+}
+
 /** 문서 한 건의 내용. 수정·복사할 때 폼을 채우는 데 쓴다. */
 export function hrGetDoc(item, opts) {
   return serial(async () => {

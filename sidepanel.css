@@ -711,6 +711,37 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-msg:empty { display: none; }
 .dwr-msg.error { color: var(--danger); }
 .dwr-msg a { color: var(--pick); }
+/* 일일 업무 짜기(dwrbox.js — 2026-10-29). 머리 줄(기간 · 날 수 · 아이콘) · 목표 표(목표를 100% 로 · 지금 · 쓴 뒤) · 날마다 두 줄(날짜 · 업무 · 시간 · 상태 / 업무내용). */
+.dwr-plan { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.dwr-plan:empty { display: none; }
+.dwr-plan-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.dwr-plan-title { flex: none; color: var(--muted); font-size: 12px; font-weight: 600; }
+.dwr-plan-span { min-width: 0; margin: 0 auto 0 4px; overflow: hidden; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.dwr-plan .dwr-icon:disabled { opacity: .4; cursor: default; }
+.dwr-plan .dwr-send.armed { color: #fff; background: var(--danger); }
+.dwr-goals { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+.dwr-goals li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; min-height: 19px; }
+.dwr-goals li > :not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dwr-goals li.dwr-cols { min-height: 17px; color: var(--faint); font-size: 11px; }
+.dwr-goals strong { color: var(--fg); font-weight: 650; }
+.dwr-days { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(44px, auto); column-gap: 6px; max-height: 360px; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+.dwr-day { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; row-gap: 3px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
+.dwr-day-date { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dwr-day select { min-width: 0; min-height: 0; height: 22px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; }
+.dwr-day :is(select, input):disabled { opacity: .7; }
+/* 전역 input 규칙(min-height 40px)을 이기려면 .dwr-box .dwr-top input 처럼 (0,2,1) 이 뒤에 서야 한다. */
+.dwr-box .dwr-plan input { min-height: 0; height: 22px; padding: 0 5px; border-radius: 6px; }
+.dwr-box .dwr-plan input:focus-visible { outline-width: 2px; outline-offset: 1px; }
+.dwr-day-state { max-width: 96px; overflow: hidden; color: var(--faint); font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.dwr-day-text, .dwr-day-why { grid-column: 1 / -1; min-width: 0; }
+.dwr-box .dwr-plan .dwr-day-text { height: 24px; padding: 0 7px; font-size: 12px; }
+.dwr-day-why { overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dwr-day-off .dwr-day-date { color: var(--faint); }
+.dwr-st-saved, .dwr-st-submitted { color: var(--pick); font-weight: 600; }
+.dwr-st-fail, .dwr-st-unverified, .dwr-st-exists { color: var(--danger); }
+.dwr-st-busy { color: var(--muted); }
+.dwr-plan-note { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+.dwr-plan-none { margin: 0 0 6px; color: var(--faint); font-size: 11px; }
 
 
 /* 선택 상황에 따라 바뀌는 실행 버튼들 */

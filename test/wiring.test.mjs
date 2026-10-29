@@ -788,7 +788,7 @@ console.log('설정(일반)의 행위 명세 — 갈래 → 종류 → YAML 원�
   t('일반 갈래 안에 갈래 단추가 탭 차례로 서고, 종류 줄·원본은 닫혀 있다', () => {
     assert.ok(domains.closest('#setGeneral'));
     assert.deepEqual([...domains.children].map((b) => b.firstChild.textContent),
-      ['근태', '여비계산서', '공문', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']);
+      ['근태', '여비계산서', '공문', '일일 업무', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']);
     assert.ok([...domains.children].every((b) => b.type === 'button' && b.getAttribute('aria-pressed') === 'false'));
     assert.ok(kinds.hidden && file.hidden);
   });
@@ -1013,6 +1013,8 @@ console.log('내 예약 모드로 시작 (조기 return 회귀 방지)');
     for (const id of ['dwrRanges', 'dwrWrite', 'dwrOpen', 'dwrMsg', 'dwrTop']) assert.ok(wired.get(id)?.has('click'), id);
     for (const type of ['change', 'keydown']) assert.ok(wired.get('dwrTop')?.has(type), `dwrTop ${type}`);
     assert.ok(wired.get('dwrBox')?.has('toggle'));
+    // 일일 업무 짜기(2026-10-29) — 근태 다시 읽기·저장·제출 아이콘과 날마다의 업무·시간·내용 칸.
+    for (const type of ['click', 'change']) assert.ok(wired.get('dwrPlan')?.has(type), `dwrPlan ${type}`);
   });
   t('근태 화면의 안내 글은 건드리지 않는다 (예약 현황 쪽 안내만 바꾼다)', () => {
     assert.equal(doc.getElementById('atRangeHint').textContent, '오늘부터 전부 · 정산 중인 출장은 다녀온 뒤 4주까지');

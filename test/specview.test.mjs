@@ -11,8 +11,8 @@ const root = new URL('../', import.meta.url);
 const groups = specGroups(ACTIONS);
 
 console.log('갈래');
-t('머리의 탭 줄 차례 — 근태 · 여비계산서 · 공문 · R&D · 메일 · 회의실 · 차량 · 홈 카드 · 회람', () =>
-  assert.deepEqual(groups.map((g) => g.title), ['근태', '여비계산서', '공문', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']));
+t('머리의 탭 줄 차례 — 근태 · 여비계산서 · 공문 · 일일 업무 · R&D · 메일 · 회의실 · 차량 · 홈 카드 · 회람(일일 업무는 2026-10-29)', () =>
+  assert.deepEqual(groups.map((g) => g.title), ['근태', '여비계산서', '공문', '일일 업무', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']));
 t('DOMAIN_ORDER 에 없는 갈래는 맨 끝, 이름 차례', () => {
   const spec = { domains: { zz: { kinds: [] }, aa: { kinds: [] }, attend: { title: '근태', kinds: [] } }, actions: {} };
   assert.deepEqual(specGroups(spec).map((g) => g.domain), ['attend', 'aa', 'zz']);

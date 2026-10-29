@@ -1,0 +1,72 @@
+# 일일 업무 한 날 쓰기 — 일일 업무 카드의 짠 날 하나(dwrbox.js). 저장(save — e-Class 의 '작성중')이나 제출(submit — 저장하고 다시 읽어 맞으면 제출)을 사람이 카드에서 누른 것이 확인이다
+# (제출은 두 번 누름). 한 번 누르면 짠 날마다 이 기록을 하나씩 지어 차례로 돌린다 — 실행기 하나가 한 날이다. 뒤 탭(작성 화면)은 카드가 한 번 열어 ctx.writer 로 넘기고 다 쓰면 닫는다.
+# 실행기(src/dwrwrite.js writeDay)는 그 날로 옮겨 이미 적은 업무가 있으면 쓰지 않고(exists — 원본 러너의 이중 작성 방지), 업무명에 맞는 업무 목록 줄을 찾아
+# 업무내용·투입시간을 넣고(출장·외근이면 근무시간 09:00~18:00) 저장한 뒤, 작성 화면을 처음부터 다시 열어 그 줄의 내용이 같은지 본다. 제출은 그것이 맞은 뒤에만 누른다.
+# 제출만은 이 카드가 저장해 둔 날(그 줄 하나에 같은 내용)이면 저장된 그대로 제출한다. 고치기·지우기·확정은 하지 않는다.
+id: dwr.write
+title: 일일 업무 쓰기
+hint: 일일 업무 저장·제출
+confirm: true                  # 카드의 저장·제출(두 번 누름) 누름이 확인이다
+effect: write
+summary: '일일 업무 {date} · {title} {hours}시간'
+fields:
+  date:
+    type: date
+    required: true
+    label: 업무일자
+    desc: 쓸 날(HR 근태현황에서 실근무가 있거나 출장·외근인 날 — src/dwrplan.js workDays)
+    read: 그 날 그대로(YYYY-MM-DD). 지어내지 않습니다
+    example: '2026-10-01'
+  title:
+    type: string
+    required: true
+    max: 120
+    label: 업무명
+    desc: e-Class 작성 화면 업무 목록의 줄 이름 — 그 업무로 가장 최근에 적은 일일 업무의 업무명(적은 적이 없으면 과제명·더한 업무의 이름 — 그 말이 든 줄이 하나뿐이어야 한다)
+    read: 업무 목록에 있는 업무명 그대로. 모르면 null
+    example: MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발
+  label:
+    type: string
+    max: 40
+    label: 업무
+    desc: 카드에 보이는 업무 이름(과제 별칭·더한 업무의 이름) — 기록과 활동 로그에만
+    read: 과제 별칭이나 업무 이름. 모르면 null
+    example: SSCB
+  hours:
+    type: number
+    required: true
+    min: 0.5
+    max: 24
+    label: 투입시간
+    desc: 시간(8 · 4 · 8.5) — HR 근태의 실근무시간, 출장·외근 날은 8. 작성 화면의 그 줄 시·분 칸에 나눠 넣는다
+    read: 그 날 일한 시간(시간 단위 숫자)
+    example: 8
+  content:
+    type: string
+    required: true
+    max: 500
+    label: 업무내용
+    desc: 그 줄의 업무내용 — 그 업무로 지난번에 적은 내용(차례로 돌려 쓴다)·과제 계획의 개발내용·출장 사유. 사람이 카드에서 고칠 수 있다
+    read: 그 날 한 일. 지어내지 않습니다 — 모르면 null
+    example: 선급규정 및 국제표준 비교를 통한 규정 공백 분석
+  trip:
+    type: boolean
+    label: 출장·외근
+    desc: 출장·외근 날이면 참 — 작성 화면의 전체 근무시간을 09:00~18:00 으로(근태에 실근무시간이 없다)
+    read: 그 날이 출장·외근이면 true
+    default: false
+    example: false
+  op:
+    type: enum
+    required: true
+    values: [save, submit]
+    label: 무엇을
+    desc: save 저장(작성중) · submit 제출(저장하고 다시 읽어 맞으면 제출 — 저장해 둔 날이면 제출만)
+    read: 제출하라면 submit, 아니면 save
+    default: save
+    example: save
+llm: false
+runner: dwr.write
+uses:
+  - { module: src/dwrwrite.js, export: createDwrWriter }
+next: 결과({ ok, status saved·submitted·exists·unverified, row, rowName, note })로 카드가 그 날의 줄에 적고(저장함·제출함·이미 있음·까닭) 저장·제출한 날을 dwrDone 에 적어 둔다. 다 쓰면 대시보드를 다시 받아 실제를 다시 센다

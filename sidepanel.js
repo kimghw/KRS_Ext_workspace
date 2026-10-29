@@ -38,7 +38,7 @@ import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
 import { createDwrBox } from './dwrbox.js';
 import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
-import { hrListDocs } from './src/hr.js';
+import { hrListDocs, hrWorkPlan } from './src/hr.js';
 import { PLANS_KEY, loadPlans as readPlans, plansToShow } from './src/plans.js';
 import { tripRule, loadStages } from './src/settling.js';
 import { tripList } from './src/trip.js';
@@ -50,6 +50,7 @@ import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
 import { ActionError } from './actions/gate.js';
 import { resolvePreset } from './actions/preset.js';
 import { registerBooking, inputOf, cancelInputOf, handleSpan, LIVE_RECORD_GONE } from './actions/runners/booking.js';
+import { registerDwr } from './actions/runners/dwr.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -139,6 +140,8 @@ const modifyOutcome = (r) => (r && {
 const failedText = (e) => (!e.ok && typeof e.data?.result?.error === 'string' && e.data.result.error ? `${e.text} — ${e.data.result.error}` : e.text);
 const actions = createDispatcher({ log: (e) => logEvent(e.kind, e.ok, failedText(e), e.data) });
 registerBooking(actions);
+// 일일 업무 쓰기(dwr.write — 현황의 일일 업무 카드가 짠 날을 e-Class 에 저장·제출, 2026-10-29). 작성기(뒤 탭)는 카드가 열고 닫는다.
+registerDwr(actions);
 
 /** 행위의 사전설정을 채운다 — 저장소·내 이름·오늘·레시피·패널의 ctx(actions/preset.js). 값이 없으면 null 이지만 키는 다 있다. */
 const presetFor = (id, ctx = {}) => resolvePreset(actions.entry(id).preset, {
@@ -1995,7 +1998,8 @@ const isMail = () => state.mode === 'mail';
 const isPanelTab = () => isAttend() || isGongmun() || isRnd() || isMail();
 
 /** 현황 탭 목록 위의 일일 업무 카드(e-Class 일일업무통계 대시보드의 내 것 — dwrbox.js). 현황을 읽을 때(loadMine) 같이 받는다. */
-const dwr = createDwrBox({ fillStaff: () => rnd.fillStaff() });   // 참여인력을 받은 적 없는 과제는 R&D 탭이 받아 온다(참여율 칸 — 2026-10-28)
+// 참여인력을 받은 적 없는 과제는 R&D 탭이 받아 온다(참여율 칸 — 2026-10-28). 일일 업무 짜기는 HR 근태현황(hrWorkPlan)을 읽고 디스패처로 쓴다(2026-10-29).
+const dwr = createDwrBox({ fillStaff: () => rnd.fillStaff(), workPlan: (range) => hrWorkPlan(range), actions });
 
 /** 근태 탭. 화면 조각은 attendpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. */
 const attend = createAttendPanel({

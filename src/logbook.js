@@ -34,6 +34,7 @@ export const KIND_LABEL = {
   trip: '출장',
   rnd: 'R&D',
   gongmun: '공문',
+  dwr: '일일업무',
   'gongmun-setup': '공문설정',
   mail: '메일',
   git: 'GitHub',

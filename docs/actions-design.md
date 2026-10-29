@@ -450,6 +450,9 @@ export function registerGongmun(d)
   'gongmun.prior' (rec, { projects })  → readPrior({ id, form, title } = rec.input) → priorToPurchase(doc) → orderFromPurchase(…, { me, doc }) · priorProject(doc, ctx.projects)   // 조회(confirm false) — 공문 이력 카드의 구매의뢰: 선행 품의의 본문·첨부를 읽어 구매의뢰 초안·첨부·과제를 돌려준다(2026-10-17)
   'gongmun.delete' (rec)               → deleteTemp(id, { date, today: rec.preset.today })   // confirm — 공문 이력의 임시보관 카드 삭제·작성 취소: 임시보관함에서 그 문서번호 줄만 지우고 다시 읽어 확인(2026-10-27)
   // 'gongmun.setup' 은 2026-10-16 걷어냄(머리 메모)
+// dwr.js
+export function registerDwr(d)
+  'dwr.write' (rec, { writer, onStage, dry }) → writer.writeDay({ date, title, hours, content, trip, op } = rec.input, { onStage, dry })   // confirm — 현황 일일 업무 카드의 저장·제출: 짠 날마다 한 기록, 뒤 탭 작성기(src/dwrwrite.js createDwrWriter)는 카드가 열어 ctx.writer 로 넘기고 닫는다(없으면 어댑터가 한 날만 열고 닫는다, 2026-10-29)
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.
@@ -592,6 +595,7 @@ R&D 의 LLM 작업 둘(2026-10-16 사용자 지정: "+ 누르면 Yaml 파일을 
 | gongmun.write | `{tabId, docId, steps}` | `!r.steps.some((x) => x.ok === false)` |
 | gongmun.prior | `{ok, draft(구매의뢰 초안), purchase, project, files(이름·형식·바이트 — 로그에는 들지 않음), notes, doc}` | `r.ok === true` — 던지면(로그인·모양이 다름) 패널이 문서번호·제목만 넣는다 |
 | gongmun.delete | `{ok, absent(처음부터 목록에 없었음), title}` | `r.ok === true` — 보낸 뒤에도 목록에 있으면 던진다 |
+| dwr.write | `{ok, status(saved·submitted·exists·unverified), row, rowName, note, dialogs}` | `r.ok === true` — 이미 적은 날(exists)·제출 뒤 화면이 안 바뀜(unverified)은 ok false 로 돌아온다. 맞는 업무 줄이 없거나·날짜를 못 옮기거나·저장이 막히거나·다시 읽은 내용이 다르면 던진다 |
 
 어댑터 주입: `register<갈래>(d, deps = {})` — deps 의 키는 실제 함수 이름과 같고 기본값은 src 모듈의 진짜 함수다(테스트는 가짜를 넣는다). 갈래별 테스트 파일은 §9 대로 `actions/test/runners-<갈래>.test.mjs` 다(§8 의 공용 runners.test.mjs 는 없다).
 
