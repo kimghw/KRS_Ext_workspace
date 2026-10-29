@@ -178,7 +178,10 @@ function pageGrid() {
     seen.add(m[1]);
     const tr = e.closest('tr');
     const a = tr && tr.querySelector('[onclick*=popDoc],a');
-    const name = ((a ? a.innerText || a.textContent : tr ? tr.innerText || tr.textContent : '') || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    const text = ((a ? a.innerText || a.textContent : tr ? tr.innerText || tr.textContent : '') || '').trim().replace(/\s+/g, ' ');
+    // 줄여 보인 이름("… 기술검토 및 ...")이면 풍선말(title)의 온 이름을 쓴다.
+    const full = ((a && a.getAttribute('title')) || '').trim().replace(/\s+/g, ' ');
+    const name = (/(?:\.{3}|…)$/.test(text) && full ? full : text).slice(0, 120);
     rows.push({ row: m[1], name });
   }
   const filled = [];

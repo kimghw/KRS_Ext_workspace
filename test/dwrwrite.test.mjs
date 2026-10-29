@@ -17,7 +17,9 @@ const HOOK = fs.readFileSync(new URL(`../${HOOK_FILE}`, import.meta.url), 'utf8'
 const A = 'MW급 10kV 고전압 직류 시스템용 반도체 차단기 개발';
 const B = '대용량 모듈러 멀티레벨 컨버터 기반 고압 드라이브 시제품 개발';
 /** 작성 화면의 업무 목록 — 차단기는 같은 이름이 두 줄(2026-10-01 실측). */
-const GRID = [{ row: '4', name: '부서소통회' }, { row: '8', name: A }, { row: '9', name: A }, { row: '12', name: B }, { row: '20', name: 'AIP 개념승인 업무' }];
+const AIP = '시험/인증업무>AIP 기술검토 및 관리';
+/** 줄여 보인 이름(2026-10-29 사용자 화면의 "시험/인증업무>AIP 기술검토 및 ...")은 풍선말(title)에 온 이름이 있다고 본다. */
+const GRID = [{ row: '4', name: '부서소통회' }, { row: '6', name: '시험/인증업무>AIP 기술검토 및 ...', full: AIP }, { row: '8', name: A }, { row: '9', name: A }, { row: '12', name: B }, { row: '20', name: 'AIP 개념승인 업무' }];
 const two = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -48,7 +50,7 @@ function fakeEclass({ today = '2026-10-29', db = {}, picker = 'ajax', saveAlert 
       <div id="txtSDate_calendar_wrapper" style="display:none"><div id="txtSDate_calendar"><span id="txtSDate_calendar_Title"></span>
         <a id="txtSDate_calendar_NP">&lt;</a><a id="txtSDate_calendar_NN">&gt;</a><table id="calDays"></table></div></div>
       ${select('drSH', hours, 8)}${select('drSM', mins, 30)}${select('drEH', hours, 17)}${select('drEM', mins, 30)}
-      <table>${GRID.map((r) => `<tr><td><a onclick="popDoc('${r.row}')">${r.name}</a></td><td><img onclick="showHideInput('${r.row}')"></td>`
+      <table>${GRID.map((r) => `<tr><td><a onclick="popDoc('${r.row}')"${r.full ? ` title="${r.full}"` : ''}>${r.name}</a></td><td><img onclick="showHideInput('${r.row}')"></td>`
         + `<td><input id="txtWHour" name="txtWHour" value="${day[r.row]?.hour ?? ''}"><input id="txtWMin" name="txtWMin" value="${day[r.row]?.min ?? ''}"></td></tr>`
         + `<tr id="in${r.row}" style="display:none"><td><textarea id="txtWork${r.row}" name="txtWork${r.row}">${esc(day[r.row]?.text)}</textarea></td></tr>`).join('')}</table>
       <input type="button" id="btn_save" value="저장"><input type="button" id="btn_submit" value="제출">
@@ -261,6 +263,15 @@ test('e-Class 로그인이 풀려 있으면 AuthError', async () => {
   await assert.rejects(w.writeDay(DAY), (err) => err instanceof AuthError);
   await w.close();
   assert.equal(site.closed, 1);
+});
+
+test('업무 목록이 긴 업무명을 줄여 보여도(풍선말에 온 이름) 정해 둔 e-Class 업무명의 줄에 쓴다 — AIP 는 「시험/인증업무>AIP 기술검토 및 관리」', async () => {
+  const { api, site } = fakeEclass();
+  const w = writerFor(api);
+  const r = await w.writeDay({ ...DAY, title: AIP, content: 'AIP 개념승인 검토' });
+  assert.deepEqual([r.status, r.row, r.rowName], ['saved', '6', AIP]);
+  assert.equal(site.db['2026-10-02'].rows[6].text, 'AIP 개념승인 검토');
+  await w.close();
 });
 
 test('한 작성기로 여러 날 — 탭은 하나', async () => {

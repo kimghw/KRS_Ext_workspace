@@ -690,7 +690,8 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-need { color: var(--muted); }
 .dwr-real { color: var(--fg); font-weight: 650; }
 .dwr-top li.dwr-off .dwr-real { color: var(--danger); }
-.dwr-adding .dwr-item-name { grid-column: 1 / -2; }
+.dwr-adding .dwr-item-name, .dwr-titling .dwr-item-name { grid-column: 1 / -2; }
+.dwr-top .dwr-icon.on { color: var(--pick); }
 .dwr-top li.dwr-k-rnd .dwr-top-name, .dwr-top li.dwr-k-etc .dwr-top-name { color: var(--muted); }
 .dwr-top-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dwr-bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-soft); }

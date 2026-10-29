@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeShare, likeness, myRates, workShare, LIKE_MIN } from '../src/workshare.js';
+import { normalizeShare, likeness, myRates, workShare, lineKeyOf, LIKE_MIN } from '../src/workshare.js';
 
 const ME = '홍길동';
 /** 참여인력 한 사람 — 월급여 1000 에 달마다 지급(amt)이면 참여율은 amt / 10 %. others 는 rERP 의 다른 과제 참여율(달마다 여러 줄일 수 있다). */
@@ -104,4 +104,14 @@ test('더한 업무와 기타는 과제 참여율을 바꾸지 않는다(2026-10
   assert.deepEqual(at([{ name: 'AIP', rate: 5 }]), { SSCB: 30, '고압 드라이브 시제품 개발': 20, AIP: null, 기타: null });
   const none = workShare(rows, { from: '2026-10-01', to: '2026-10-27', items: [{ name: 'AIP', rate: 5 }] });
   assert.deepEqual([none.minutes, brief(none)], [0, [['AIP', 'item', 0, 0]]]);
+});
+
+test('더한 업무의 e-Class 업무명(2026-10-29 사용자 지정: "AIP 업무는 이걸로 하게 해줘") — 정했을 때만 남고(120자까지), 그 업무명으로 적은 줄은 이름이 들지 않아도 그 업무다', () => {
+  assert.deepEqual(normalizeShare({ items: [{ name: 'AIP', rate: 6, title: ' 시험/인증업무>AIP 기술검토 및 관리 ' }, { name: '교육', rate: 2, title: '  ' }] }).items,
+    [{ name: 'AIP', rate: 6, title: '시험/인증업무>AIP 기술검토 및 관리' }, { name: '교육', rate: 2 }]);
+  assert.equal(normalizeShare({ items: [{ name: 'x', rate: 1, title: '가'.repeat(200) }] }).items[0].title.length, 120);
+  const items = [{ name: '개념승인', rate: 6, title: '시험/인증업무>AIP 기술검토 및 관리' }];
+  assert.equal(lineKeyOf({ title: '시험/인증업무>AIP 기술검토 및 관리', category: '시험/인증업무-AIP 기술검토' }, items, []), 'item:개념승인');
+  assert.equal(lineKeyOf({ title: '개념승인 회의', category: '' }, items, []), 'item:개념승인', '이름이 든 줄도 그대로');
+  assert.equal(lineKeyOf({ title: '부서소통회', category: '사내 행사' }, items, []), 'etc');
 });

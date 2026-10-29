@@ -13,9 +13,11 @@
 
 import { nameKey } from './rnderp.js';
 
-/** 더한 업무(이름 · 목표 %)와 줄마다 내가 넣은 목표 %를 담는 storage 키 — { items: [{ name, rate }], goals: { 줄 열쇠: % } }. */
+/** 더한 업무(이름 · 목표 % · e-Class 업무명)와 줄마다 내가 넣은 목표 %를 담는 storage 키 — { items: [{ name, rate, title? }], goals: { 줄 열쇠: % } }. */
 export const SHARE_KEY = 'dwrShare';
 export const SHARE_MAX = 10;
+/** 더한 업무의 e-Class 업무명 한도. */
+export const TITLE_MAX = 120;
 /** 내가 넣은 목표는 이만큼까지 — 과제('prj:id')·참여율이 없는 과제('rnd:이름')·기타('etc') 줄. 더한 업무의 목표는 items 의 rate 다. */
 export const GOAL_MAX = 40;
 const GOAL_KEY = /^(?:(?:prj|rnd):.+|etc)$/;
@@ -46,7 +48,9 @@ export function normalizeShare(raw) {
     const name = String(x?.name ?? '').trim().slice(0, 40);
     const rate = Number(x?.rate);
     if (!nameKey(name) || items.some((y) => nameKey(y.name) === nameKey(name))) continue;
-    items.push({ name, rate: Number.isFinite(rate) ? clampRate(rate) : 0 });
+    // title — e-Class 업무명(작성 화면 업무 목록의 줄 이름, 2026-10-29 사용자 지정: AIP 는 「시험/인증업무>AIP 기술검토 및 관리」). 정했을 때만 둔다.
+    const title = String(x?.title ?? '').trim().slice(0, TITLE_MAX);
+    items.push({ name, rate: Number.isFinite(rate) ? clampRate(rate) : 0, ...(title ? { title } : {}) });
     if (items.length >= SHARE_MAX) break;
   }
   const goals = {};
@@ -108,7 +112,8 @@ export function myRates(book, me) {
 export function lineKeyOf(row, items, projects) {
   const t = nameKey(row.title);
   const c = nameKey(row.category);
-  const item = items.find((i) => { const k = nameKey(i.name); return t.includes(k) || c.includes(k); });
+  // 더한 업무 — 업무명·업무분류에 그 이름이 들었거나, 그 업무에 정해 둔 e-Class 업무명과 같은 줄.
+  const item = items.find((i) => { const k = nameKey(i.name); return t.includes(k) || c.includes(k) || (!!i.title && nameKey(i.title) === t); });
   if (item) return `item:${item.name}`;
   let best = null;
   let score = LIKE_MIN;

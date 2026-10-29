@@ -28,7 +28,7 @@ import { todayStr } from './src/parse.js';
 import { BOOK_KEY } from './src/rnd.js';
 import { nameKey } from './src/rnderp.js';
 import { DWR_HOME, DWR_WRITE, USER_KEY, RANGE_KEY, OPEN_KEY, RANGES, DWR_TTL_MS, rangeOf, hoursText, fetchUserId, fetchDashboard } from './src/dwr.js';
-import { SHARE_KEY, normalizeShare, myRates, workShare } from './src/workshare.js';
+import { SHARE_KEY, TITLE_MAX, normalizeShare, myRates, workShare } from './src/workshare.js';
 import { HOURS_MAX, CONTENT_MAX, workDays, historyOf, planItems, planDays, forecastOf } from './src/dwrplan.js';
 import { createDwrWriter } from './src/dwrwrite.js';
 
@@ -52,6 +52,7 @@ const pctText = (v) => `${Math.round(v)}%`;
 const OFF_PCT = 5;
 const X_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const OK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
 const RELOAD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>';
 const SAVE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg>';
 const SEND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/></svg>';
@@ -90,6 +91,7 @@ export function createDwrBox({
   const st = {
     range: 'year', id: '', data: null, at: 0, error: null, loading: false, run: null, share: { items: [], goals: {} }, me: '', rates: null, adding: false,
     book: null, days: null, daysError: null, daysLoading: false, done: {}, edits: new Map(), progress: new Map(), writing: null, armed: false, note: '',
+    titling: null,   // 업무명 칸이 열린 더한 업무의 이름
   };
   const planOn = () => !!(workPlan && actions && $('dwrPlan'));
   // 저장해 둔 사용자 ID·기간을 읽기 전에 받기 시작하면 홈을 괜히 한 번 더 읽는다 — load 는 이것을 기다린다(wire 가 바꾼다).
@@ -134,7 +136,10 @@ export function createDwrBox({
   /** 줄의 풍선말 — 이름 · 기간의 실제/참여율(더한 업무는 목표 — 시간과 %) · 달마다의 그 둘 % · 이 줄에 든 업무명. */
   function tipOf(L, all) {
     const head = [L.name];
-    if (L.kind === 'item') head.push(`일일 업무의 업무명·업무분류에 "${L.label}" 이 든 줄 — 달마다 적은 시간의 목표 %`);
+    if (L.kind === 'item') {
+      const title = itemOf(L)?.title;
+      head.push(`일일 업무의 업무명·업무분류에 "${L.label}" 이 든 줄${title ? ` · e-Class 업무명 「${title}」` : ''} — 달마다 적은 시간의 목표 %`);
+    }
     if (L.kind === 'rnd') head.push('내 참여율이 없는 연구과제(R&D 탭에 없거나 참여인력에 내가 없다) — 참여율 0');
     if (L.kind === 'etc') head.push('연구과제도 더한 업무도 아닌 것');
     const by = L.kind === 'item' ? `목표 ${hours(L.target)}시간 (${pctText(pct(L.target, all))})` : `참여율 ${pctText(L.rate)}${st.range === 'year' ? '(열두 달 평균)' : ''}`;
@@ -146,7 +151,8 @@ export function createDwrBox({
 
   /** 참여율 칸 — 내 과제 참여율(과제 줄만). 목표 칸 — 내가 넣은 %(더한 업무는 그 업무의 %, 넣지 않았으면 null). */
   const needOf = (L) => L.rate ?? null;
-  const goalOf = (L) => (L.kind === 'item' ? st.share.items.find((i) => `item:${i.name}` === L.key)?.rate ?? 0 : st.share.goals[L.key] ?? null);
+  const itemOf = (L) => (L.kind === 'item' ? st.share.items.find((i) => `item:${i.name}` === L.key) || null : null);
+  const goalOf = (L) => (L.kind === 'item' ? itemOf(L)?.rate ?? 0 : st.share.goals[L.key] ?? null);
 
   function rowHtml(L, all, scale) {
     const a = pct(L.actual, all);
@@ -159,10 +165,24 @@ export function createDwrBox({
       + `${need != null ? `<b style="left:${w(need)}%"></b>` : ''}${goal != null ? `<b class="dwr-goal" style="left:${w(goal)}%"></b>` : ''}</span>`;
     const field = L.kind === 'item' ? `data-rate="${esc(L.label)}"` : `data-goal="${esc(L.key)}" placeholder="–"`;
     const input = `<input class="dwr-rate" type="number" min="0" max="100" step="0.5" value="${goal ?? ''}" ${field} aria-label="${esc(L.label)} 목표 %">%`
+      + (L.kind === 'item' ? titleIcon(L) : '')
       + (L.kind === 'item' ? `<button type="button" class="dwr-icon" data-del="${esc(L.label)}" title="${esc(L.label)} 빼기" aria-label="${esc(L.label)} 빼기">${X_ICON}</button>` : '');
     return `<li class="dwr-k-${L.kind}${off ? ' dwr-off' : ''}" data-key="${esc(L.key)}" title="${esc(tipOf(L, all))}"><span class="dwr-top-name">${esc(L.label)}</span>${bar}`
-      + `<span class="dwr-need">${need == null ? '' : pctText(need)}</span><strong class="dwr-real">${pctText(a)}</strong><span class="dwr-num">${input}</span></li>`;
+      + `<span class="dwr-need">${need == null ? '' : pctText(need)}</span><strong class="dwr-real">${pctText(a)}</strong><span class="dwr-num">${input}</span></li>`
+      + (L.kind === 'item' && st.titling === L.label ? titlingHtml(L) : '');
   }
+
+  /** 더한 업무의 e-Class 업무명 아이콘 — 정해 두었으면 켜져 있다(2026-10-29 사용자 지정: "AIP 업무는 이걸로 하게 해줘"). 누르면 그 줄 아래에 업무명 칸이 열리고 닫힌다. */
+  function titleIcon(L) {
+    const title = itemOf(L)?.title || '';
+    const tip = title ? `e-Class 업무명 「${title}」` : `${L.label} 의 e-Class 업무명 정하기`;
+    return `<button type="button" class="dwr-icon${title ? ' on' : ''}" data-titling="${esc(L.label)}" title="${esc(tip)}" aria-label="${esc(L.label)} 의 e-Class 업무명" aria-expanded="${st.titling === L.label}">${LINK_ICON}</button>`;
+  }
+
+  /** 업무명 칸 — 더한 업무 줄 아래. 일일 업무 짜기가 그 업무를 이 업무명의 줄(작성 화면 업무 목록)에 쓴다. 비우고 ✓ 면 지운다. */
+  const titlingHtml = (L) => `<li class="dwr-k-item dwr-titling"><input id="dwrItemTitle" class="dwr-item-name" maxlength="${TITLE_MAX}" value="${esc(itemOf(L)?.title || '')}"`
+    + ` placeholder="e-Class 업무명 (예: 시험/인증업무>AIP 기술검토 및 관리)" aria-label="${esc(L.label)} 의 e-Class 업무명">`
+    + `<span class="dwr-num"><button type="button" class="dwr-icon" data-title-save="${esc(L.label)}" title="업무명 정하기" aria-label="업무명 정하기">${OK_ICON}</button></span></li>`;
 
   const COLS_HTML = '<li class="dwr-cols"><span>업무 비율</span><span></span>'
     + '<span title="R&D 탭 과제(rERP 참여인력)의 내 참여율 — 올해는 열두 달 평균(4월에 시작한 과제도 12로 나눕니다), 한 달·7일은 걸친 달의 평균. 과제 줄에만 있습니다(막대의 회색 금)">참여율</span>'
@@ -184,6 +204,8 @@ export function createDwrBox({
   function paintShare() {
     const top = $('dwrTop');
     const draft = [$('dwrNewName')?.value || '', $('dwrNewRate')?.value || ''];
+    // 업무명 칸에 쓰던 글 — 같은 업무의 칸이 다시 서면 그대로.
+    const titleDraft = $('dwrItemTitle') && $('dwrItemTitle').dataset.for === st.titling ? $('dwrItemTitle').value : null;
     const was = top.contains(doc.activeElement) ? fieldOf(doc.activeElement) : null;
     const s = workShare(st.data.rows, { ...sharePeriod(), items: st.share.items, rates: st.rates || undefined });
     const all = s.minutes;
@@ -193,6 +215,10 @@ export function createDwrBox({
       + lines.filter((L) => L.kind !== 'etc').map((L) => rowHtml(L, all, scale)).join('')
       + addHtml() + lines.filter((L) => L.kind === 'etc').map((L) => rowHtml(L, all, scale)).join('');
     [$('dwrNewName').value, $('dwrNewRate').value] = draft;
+    if ($('dwrItemTitle')) {
+      $('dwrItemTitle').dataset.for = st.titling;
+      if (titleDraft != null) $('dwrItemTitle').value = titleDraft;
+    }
     if (was) [...top.querySelectorAll('input')].find((x) => fieldOf(x) === was)?.focus();
     const known = !!st.rates?.projects.some((p) => p.rates.size);
     $('dwrHint').textContent = !st.me ? '설정 › 일반의 내 이름이 있어야 R&D 탭 과제에서 내 참여율을 찾습니다.'
@@ -470,7 +496,18 @@ export function createDwrBox({
     const rate = $('dwrNewRate').value;
     $('dwrNewName').value = '';
     $('dwrNewRate').value = '';
-    saveShare({ items: [...st.share.items.filter((i) => nameKey(i.name) !== nameKey(name)), { name, rate }] });
+    // 같은 이름을 다시 더하면 목표만 바꾼다 — 정해 둔 e-Class 업무명은 그대로.
+    const title = st.share.items.find((i) => nameKey(i.name) === nameKey(name))?.title;
+    saveShare({ items: [...st.share.items.filter((i) => nameKey(i.name) !== nameKey(name)), { name, rate, ...(title ? { title } : {}) }] });
+  }
+
+  /** 더한 업무의 e-Class 업무명을 정한다(비우면 지운다) — 업무명 칸을 닫는다. */
+  function saveTitle(name) {
+    const title = String($('dwrItemTitle')?.value || '').trim();
+    st.titling = null;
+    saveShare({ items: st.share.items.map((i) => (i.name === name ? { ...i, title } : i)) });
+    if (!st.data) return;
+    [...doc.querySelectorAll('#dwrTop [data-titling]')].find((b) => b.dataset.titling === name)?.focus();
   }
 
   /** 누름을 붙이고 저장해 둔 기간·접힘·사용자 ID·더한 업무를 읽는다. */
@@ -493,8 +530,20 @@ export function createDwrBox({
     });
     $('dwrTop').addEventListener('click', (e) => {
       const del = e.target.closest('[data-del]');
-      if (del) return saveShare({ items: st.share.items.filter((i) => i.name !== del.dataset.del) });
-      if (e.target.closest('[data-save]')) addItem();
+      if (del) {
+        if (st.titling === del.dataset.del) st.titling = null;
+        return saveShare({ items: st.share.items.filter((i) => i.name !== del.dataset.del) });
+      }
+      if (e.target.closest('[data-save]')) return addItem();
+      // 업무명 아이콘 — 그 줄 아래 업무명 칸을 열고 닫는다(2026-10-29 "AIP 업무는 이걸로 하게 해줘").
+      const titling = e.target.closest('[data-titling]');
+      if (titling) {
+        st.titling = st.titling === titling.dataset.titling ? null : titling.dataset.titling;
+        paint();
+        return $('dwrItemTitle')?.focus();
+      }
+      const keep = e.target.closest('[data-title-save]');
+      if (keep) saveTitle(keep.dataset.titleSave);
     });
     $('dwrTop').addEventListener('change', (e) => {
       const rate = e.target.closest('[data-rate]');
@@ -504,6 +553,11 @@ export function createDwrBox({
       if (goal) saveShare({ goals: { ...st.share.goals, [goal.dataset.goal]: goal.value } });
     });
     $('dwrTop').addEventListener('keydown', (e) => {
+      if (e.target.closest('.dwr-titling')) {
+        if (e.key === 'Enter') { e.preventDefault(); saveTitle(st.titling); }
+        if (e.key === 'Escape') { st.titling = null; paint(); }
+        return;
+      }
       if (!e.target.closest('.dwr-adding')) return;
       if (e.key === 'Enter') { e.preventDefault(); addItem(); }
       if (e.key === 'Escape') { $('dwrNewName').value = ''; $('dwrNewRate').value = ''; }

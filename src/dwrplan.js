@@ -7,7 +7,8 @@
 //     날마다 그 목표에 가장 못 미친 업무를 고른다. 실제는 카드가 고른 기간의 것에서 시작한다 — 카드에 보이는 실제가 목표에 다가가게. 목표가 없는 업무와 기타는 고르지 않는다.
 //   출장·외근 날 — 그 근태의 사유(workRsn)에 업무의 별칭(더한 업무는 이름)이 들었거나 과제명에만 있는 낱말이 둘 넘게 들었으면 그 업무로 쓴다.
 //     맞는 업무가 없거나 둘 이상이면 그 날은 짜지 않고 둔다(사람이 고를 수 있다).
-//   업무명 — 그 업무로 가장 최근에 적은 일일 업무의 업무명(작성 화면 업무 목록의 줄 이름). 적은 적이 없으면 과제명·더한 업무의 이름(작성 화면에서 그 말이 든 줄을 찾는다).
+//   업무명 — 더한 업무에 e-Class 업무명을 정해 두었으면 그것(2026-10-29 사용자 지정: "AIP 업무는 이걸로 하게 해줘" — 「시험/인증업무>AIP 기술검토 및 관리」),
+//     아니면 그 업무로 가장 최근에 적은 일일 업무의 업무명(작성 화면 업무 목록의 줄 이름). 적은 적이 없으면 과제명·더한 업무의 이름(작성 화면에서 그 말이 든 줄을 찾는다).
 //   내용 — 그 업무로 최근에 적은 내용(겹치지 않게 열 가지까지)을 차례로 돌려 쓴다. 적은 적이 없으면 R&D 탭 그 과제의 올해 차년도 계획의 개발내용. 출장·외근은 그 사유.
 //     지어내지 않는다 — 없으면 비워 두고 사람이 적는다.
 // 화면도 저장소도 모른다 — 일일 업무 줄은 src/dwr.js rowsOf, 업무 줄은 src/workshare.js workShare 의 꼴이다.
@@ -212,7 +213,9 @@ export function forecastOf(targets, minutes, days) {
  *   lines 는 날마다 고를 수 있는 업무(기타를 뺀 카드의 줄 가운데 업무명을 아는 것). days 의 key 가 null 이면 짜지 않은 날이고 why 가 까닭이다.
  */
 export function planDays({ lines = [], minutes = 0, share = { items: [], goals: {} }, days = [], history = new Map(), planOf = () => [] }) {
-  const titleOf = (L) => history.get(L.key)?.title || (L.kind === 'project' ? L.name : L.label) || '';
+  // 업무명 — 더한 업무에 정해 둔 e-Class 업무명(2026-10-29 "AIP 업무는 이걸로 하게 해줘")이 먼저, 그다음 가장 최근에 적은 것, 없으면 과제명·업무 이름.
+  const fixedTitle = (L) => (L.kind === 'item' ? share?.items?.find((i) => `item:${i.name}` === L.key)?.title || '' : '');
+  const titleOf = (L) => fixedTitle(L) || history.get(L.key)?.title || (L.kind === 'project' ? L.name : L.label) || '';
   const pickable = lines.filter((L) => L.kind !== 'etc').map((L) => ({ key: L.key, kind: L.kind, label: L.label, name: L.name, title: titleOf(L) })).filter((L) => L.title);
   const known = new Map(pickable.map((L) => [L.key, L]));
   const targets = targetsOf(lines, share);
@@ -284,12 +287,17 @@ export function hourParts(hours) {
  */
 export function matchRow(rows, title) {
   const key = (s) => String(s ?? '').replace(/\s/g, '').toLowerCase();
+  // 작성 화면은 긴 업무명을 "시험/인증업무>AIP 기술검토 및 ..." 처럼 줄여 보일 수 있다(2026-10-29 사용자 화면) — 줄인 이름은 앞부분으로 본다.
+  const cut = (s) => key(s).replace(/(?:\.{3}|…)$/, '');
+  const short = (s) => /(?:\.{3}|…)\s*$/.test(String(s ?? ''));
   const k = key(title);
   if (!k) return { row: null, why: '업무명이 없습니다' };
   const exact = (rows || []).filter((r) => key(r.name) === k);
   if (exact.length) return { row: exact[0], why: '' };
+  const head = (rows || []).filter((r) => short(r.name) && cut(r.name).length >= 8 && k.startsWith(cut(r.name)));
+  if (head.length) return { row: head[0], why: '' };
   const part = (rows || []).filter((r) => {
-    const n = key(r.name);
+    const n = cut(r.name);
     return !!n && ((k.length >= 2 && n.includes(k)) || (n.length >= 8 && k.includes(n)));
   });
   if (part.length === 1) return { row: part[0], why: '' };

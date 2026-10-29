@@ -167,6 +167,16 @@ test('짜기 — 목표를 넣은 업무가 없으면 출장·외근 말고는 �
   assert.equal(contentOf({ key: 'x', trip: false }, new Map(), () => []), '');
 });
 
+test('더한 업무에 정해 둔 e-Class 업무명이 먼저 — 지난번에 적은 업무명·이름보다(2026-10-29 "AIP 업무는 이걸로 하게 해줘")', () => {
+  const AIP = '시험/인증업무>AIP 기술검토 및 관리';
+  const days = workDays([HR('2026-10-01')]);
+  const share = { items: [{ name: 'AIP', rate: 50, title: AIP }], goals: {} };
+  const history = historyOf([{ date: '2026-09-30', title: 'AIP 회의', category: '', content: '개념승인 검토', minutes: 60 }], { items: share.items });
+  const p = planDays({ lines: LINES, minutes: MIN, share, days, history });
+  assert.deepEqual(p.lines.find((L) => L.key === 'item:AIP'), { key: 'item:AIP', label: 'AIP', title: AIP });
+  assert.deepEqual([p.days[0].label, p.days[0].title, p.days[0].content], ['AIP', AIP, '개념승인 검토'], '내용은 그 업무로 적은 것');
+});
+
 test('투입시간 → 시·분 칸', () => {
   assert.deepEqual([8, 4, 8.5, 7.75, 0, 30, 'x'].map(hourParts), [{ h: 8, m: 0 }, { h: 4, m: 0 }, { h: 8, m: 30 }, { h: 7, m: 45 }, { h: 0, m: 0 }, { h: 24, m: 0 }, { h: 0, m: 0 }]);
 });
@@ -180,4 +190,8 @@ test('업무 목록 줄 찾기 — 같은 이름(여럿이면 첫 줄 — 원본
   assert.match(matchRow(rows, 'R&D').why, /2개/);
   assert.match(matchRow(rows, 'MMC 드라이브').why, /없습니다 — 작성 화면의 업무추가로/);
   assert.match(matchRow(rows, '').why, /업무명이 없습니다/);
+  // 작성 화면이 긴 업무명을 줄여 보이면(2026-10-29 사용자 화면 "시험/인증업무>AIP 기술검토 및 ...") 앞부분으로 맞춘다.
+  const cut = [...rows, { row: '6', name: '시험/인증업무>AIP 기술검토 및 ...' }, { row: '16', name: '스마트항만 자율운항선박 연계기술' }];
+  assert.equal(matchRow(cut, '시험/인증업무>AIP 기술검토 및 관리').row.row, '6');
+  assert.equal(matchRow([{ row: '1', name: '짧은…' }], '짧은 이름의 업무').row, null, '줄인 앞부분이 여덟 자는 넘어야');
 });
