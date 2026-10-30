@@ -37,6 +37,7 @@ import { createMailPanel } from './mailtrack/index.js';
 import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
 import { createDwrBox } from './dwrbox.js';
+import { createStdBox } from './stdbox.js';
 import { fetchWorkList } from './src/dwrwrite.js';
 import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
 import { hrListDocs, hrWorkPlan } from './src/hr.js';
@@ -52,6 +53,7 @@ import { ActionError } from './actions/gate.js';
 import { resolvePreset } from './actions/preset.js';
 import { registerBooking, inputOf, cancelInputOf, handleSpan, LIVE_RECORD_GONE } from './actions/runners/booking.js';
 import { registerDwr } from './actions/runners/dwr.js';
+import { registerBoard } from './actions/runners/board.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -143,6 +145,8 @@ const actions = createDispatcher({ log: (e) => logEvent(e.kind, e.ok, failedText
 registerBooking(actions);
 // 일일 업무 쓰기(dwr.write — 현황의 일일 업무 카드가 짠 날을 e-Class 에 저장·제출, 2026-10-29). 작성기(뒤 탭)는 카드가 열고 닫는다.
 registerDwr(actions);
+// 국제표준 올리기(board.standard — 공문 탭의 국제표준 업로드 칸이 표준 PDF 하나마다, 2026-10-30).
+registerBoard(actions);
 
 /** 행위의 사전설정을 채운다 — 저장소·내 이름·오늘·레시피·패널의 ctx(actions/preset.js). 값이 없으면 null 이지만 키는 다 있다. */
 const presetFor = (id, ctx = {}) => resolvePreset(actions.entry(id).preset, {
@@ -2026,6 +2030,9 @@ const gongmun = createGongmunPanel({
   flash: (btn, text, ms) => flash(btn, text, ms),
   compareTab: COMPARE_KIND,
 });
+
+/** 공문 탭의 국제표준 업로드 칸(stdbox.js — 표준 PDF·ZIP 을 Standard Documents 게시판에 하나씩, board.standard 기록으로, 2026-10-30). 비교작성 탭에서는 서지 않는다. */
+createStdBox({ actions, me: () => state.myName, compareTab: COMPARE_KIND });
 
 /** R&D 탭. 화면 조각은 rndpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. 공유 (SharePoint)의 fetch·저장소는 기본값(전역 fetch 와 rerp/spstore.js — 브라우저 로그인 쿠키, manifest *.sharepoint.com). */
 const rnd = createRndPanel({

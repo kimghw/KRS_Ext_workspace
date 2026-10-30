@@ -64,6 +64,24 @@ export const ACTIONS = {
         }
       }
     },
+    "board": {
+      "domain": "board",
+      "title": "게시판",
+      "log": "board",
+      "kinds": [
+        "standard"
+      ],
+      "preset": {
+        "me": {
+          "from": "me",
+          "desc": "내 이름(패널 설정의 myName — 기록에만 남는다. 글의 작성자는 로그인한 사람으로 사이트가 정한다)"
+        }
+      },
+      "llm": {
+        "task": "board",
+        "mode": "none"
+      }
+    },
     "car": {
       "domain": "car",
       "title": "차량",
@@ -2248,6 +2266,101 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "새 탭에 신청 화면을 열고 칸을 채운다(pageFillWelfare — 못 채운 칸은 missed). 사람이 증빙을 붙이고 \"저장 및 상신\" 을 누른다"
+    },
+    "board.standard": {
+      "id": "board.standard",
+      "domain": "board",
+      "kind": "standard",
+      "title": "국제표준 올리기",
+      "hint": "Standard Documents 게시판에 표준 하나",
+      "status": "live",
+      "confirm": true,
+      "effect": "write",
+      "log": "board",
+      "summary": "국제표준 {designation} 올리기",
+      "preset": {
+        "me": {
+          "from": "me",
+          "desc": "내 이름(패널 설정의 myName — 기록에만 남는다. 글의 작성자는 로그인한 사람으로 사이트가 정한다)"
+        }
+      },
+      "fields": {
+        "designation": {
+          "type": "string",
+          "required": true,
+          "label": "표준번호",
+          "desc": "표준번호와 연도(IEC TS 63336:2024 · IEEE 2800.2-2026 · ISO 20421-2:2017) — 표지의 참조 번호, 없으면 파일 이름에서. 같은 글이 있는지 이것으로 찾는다",
+          "read": "표지에 적힌 표준번호와 발행 연도 그대로. 지어내지 않습니다",
+          "llm": true,
+          "ui": true,
+          "example": "IEC TS 63336:2024",
+          "max": 80
+        },
+        "title": {
+          "type": "string",
+          "required": true,
+          "label": "표준명",
+          "desc": "영문 표준명 — IEEE 는 PDF 메타데이터의 제목, IEC·ISO 는 표지의 종류 줄(INTERNATIONAL STANDARD·TECHNICAL REPORT …) 다음 영문 줄. 프랑스어 제목은 넣지 않는다",
+          "read": "표지의 영문 표준명 그대로(부·Part 포함). 모르면 null",
+          "llm": true,
+          "ui": true,
+          "example": "Commissioning of VSC HVDC systems",
+          "max": 300
+        },
+        "category": {
+          "type": "enum",
+          "required": true,
+          "label": "분류",
+          "desc": "게시판 분류 표준(standard) 아래 — ISO 108 · IEC 109(IEC/IEEE 공동 포함) · EN 110 · KS 111 · ETC 는 기타 112(IEEE·ASTM 등)",
+          "read": "표준을 낸 기관(ISO·IEC·EN·KS). 그 밖이면 ETC",
+          "llm": true,
+          "ui": true,
+          "default": "ETC",
+          "example": "IEC",
+          "values": [
+            "ISO",
+            "IEC",
+            "EN",
+            "KS",
+            "ETC"
+          ]
+        },
+        "writer": {
+          "type": "enum",
+          "label": "작성자 표시",
+          "desc": "게시판에 보일 작성자 — dept 부서 이름(쓰기 화면의 Indicate as Department, 기본 — 게시판 관례) · me 내 이름. 작성자 자체는 로그인한 사람이다",
+          "read": "내 이름으로 보이라면 me, 아니면 dept",
+          "llm": true,
+          "ui": true,
+          "default": "dept",
+          "example": "dept",
+          "values": [
+            "dept",
+            "me"
+          ]
+        },
+        "file": {
+          "type": "file",
+          "required": true,
+          "label": "표준 파일",
+          "desc": "올릴 PDF 의 참조(이름·형식·크기 — 바이트는 ctx.bytes). ZIP 으로 넣었으면 그 안의 PDF 하나",
+          "read": "표준 PDF 의 이름과 형식. 지어내지 않습니다",
+          "llm": false,
+          "ui": true
+        }
+      },
+      "checks": [],
+      "rules": [],
+      "llm": false,
+      "runner": "board.standard",
+      "uses": [
+        {
+          "module": "src/stdboard.js",
+          "export": "stdUpload"
+        }
+      ],
+      "then": [],
+      "next": "결과({ ok, status posted·exists·unverified, id, url, subject, note })로 칸이 그 파일의 줄에 적는다(올림 — 글 번호 링크 · 이미 있음 — 그 글 링크 · 확인 못 함). 넣은 것을 다 돌리면 칸의 요약에 올린 수를 적는다"
     },
     "car.search": {
       "id": "car.search",

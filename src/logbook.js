@@ -35,6 +35,7 @@ export const KIND_LABEL = {
   rnd: 'R&D',
   gongmun: '공문',
   dwr: '일일업무',
+  board: '게시판',
   'gongmun-setup': '공문설정',
   mail: '메일',
   git: 'GitHub',

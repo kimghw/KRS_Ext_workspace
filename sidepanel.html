@@ -373,6 +373,31 @@
           <ul id="gmHistList" class="gm-hist-list"></ul>
         </div>
       </details>
+      <!-- 국제표준 업로드 — 끌어 놓거나 골라 넣은 표준 PDF·ZIP(풀어서)을 하나씩 e-Class Standard Documents 게시판에 글 하나로 저절로 올린다(2026-10-30 사용자 지정:
+           "양식 공문이력 다음에 국제표준 업로드 할 수 있도록 해주고 … zip 이면 풀어서 업로드 하고, pdf 여러개 주면 자동 업로드 해주고"). 표준번호·표준명은 표지에서 읽고,
+           이미 있는 표준은 올리지 않는다. 작성자 표시(부서 · 내 이름)만 고른다. stdbox.js 가 그리고 board.standard 기록으로 디스패처를 부른다. -->
+      <details id="gmStdBox" class="gm-box card">
+        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg><span>국제표준 업로드</span><span id="gmStdState" class="summary-detail"></span></summary>
+        <div class="gm-box-body">
+          <div id="gmStdIntake" class="gm-intake">
+            <label class="gm-drop" for="gmStdFile">
+              <input type="file" id="gmStdFile" multiple accept=".pdf,.zip,application/pdf,application/zip" />
+              <span class="gm-drop-lead"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg><span>표준 PDF · ZIP 을 넣으세요</span></span>
+              <span class="gm-drop-how">드래그 · 눌러서 고르기 — 넣으면 하나씩 올립니다</span>
+            </label>
+          </div>
+          <div class="gm-std-head">
+            <span class="gm-label">작성자</span>
+            <div id="gmStdWriter" class="gm-std-writer" role="radiogroup" aria-label="작성자 표시">
+              <button type="button" data-writer="dept" role="radio" aria-checked="true" class="active" title="작성자를 부서 이름으로 보입니다(게시판의 Indicate as Department)">부서</button>
+              <button type="button" data-writer="me" role="radio" aria-checked="false" title="작성자를 내 이름으로 보입니다">내 이름</button>
+            </div>
+            <button type="button" id="gmStdClear" class="ghost small" hidden title="끝난 줄을 지웁니다">지우기</button>
+            <button type="button" id="gmStdOpen" class="gm-std-open" title="Standard Documents 게시판 열기" aria-label="Standard Documents 게시판 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg></button>
+          </div>
+          <ul id="gmStdList" class="gm-std-list"></ul>
+        </div>
+      </details>
       <!-- 공문 설정 — 부서(본문 첫 줄)와 문서번호 코드(문서설정 Doc No.), 결재선에 설 사람(부서장·소장·본부장)·참조자, 과제 다섯 개(과제책임자가 합의자).
            2026-10-09 사용자 지정: 이름은 '공문 설정', 말로 채우기(채팅) 칸은 빼고, 부서장·소장·본부장은 한 줄, 문서번호 코드는 부서 옆. -->
       <details id="gmPresetBox" class="gm-box card">

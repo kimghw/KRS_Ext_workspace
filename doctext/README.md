@@ -22,7 +22,7 @@ claude 에게 첨부(출장 증빙·공문 문서)를 넘기기 전에 **글자�
 | 파일 | 하는 일 |
 |---|---|
 | `core.js` | 순수 로직 — 무엇을 보내는가(글자만 · OCR 글자+파일 · 파일째), claude 에게 주는 문구, `read` 의 한 줄, 한도(PDF 6쪽·12000자, OCR 믿음 45, 25초). DOM 도 node API 도 없다 |
-| `browser.js` | 브라우저 엔진 — pdf.js(`pdfText`·`pdfPageImages`)와 tesseract.js(`ocrReady`·`ocrImages`), 꾸러미 확인(`ready`), 진입점 `withText`. 확장 페이지·offscreen 문서에서 돈다 |
+| `browser.js` | 브라우저 엔진 — pdf.js(`pdfText`·`pdfPageImages`, 표지만 `pdfCover` — 국제표준 업로드 칸의 표준번호·표준명)와 tesseract.js(`ocrReady`·`ocrImages`), 꾸러미 확인(`ready`), 진입점 `withText`. 확장 페이지·offscreen 문서에서 돈다 |
 | `index.js` | 어디서 불렸든 한 진입점 `docText` — 페이지면 browser.js 를 바로, 서비스 워커면 offscreen 문서에 맡긴다 |
 | `../offscreen.html` · `../offscreen.js` | 서비스 워커 대신 엔진을 돌리는 offscreen 문서 — `chrome.runtime` 메시지(`target: 'doctext'`)를 받아 browser.js 를 부른다 |
 | `../native/doctext.mjs` | 다리의 node 엔진(pdf.js legacy 빌드·`@napi-rs/canvas`·tesseract.js node 워커) — 셈은 core.js 를 쓴다 |

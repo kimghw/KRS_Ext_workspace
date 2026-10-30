@@ -126,6 +126,26 @@ export async function pdfText(bytes) {
 }
 
 /**
+ * PDF 의 표지 — 정보 사전의 제목(Title)과 글자가 있는 첫 쪽(앞 두 쪽 안)의 글. 국제표준 업로드 칸이 표준번호·표준명을 읽는 데 쓴다(src/stdboard.js stdFromPdf).
+ * @param {Uint8Array} bytes
+ * @returns {Promise<{meta: string, text: string}>}
+ */
+export async function pdfCover(bytes) {
+  const { doc, close } = await openPdf(bytes);
+  try {
+    const meta = String((await doc.getMetadata().catch(() => null))?.info?.Title || '');
+    let text = '';
+    for (let i = 1; i <= Math.min(doc.numPages, 2) && !text; i++) {
+      const { items } = await (await doc.getPage(i)).getTextContent();
+      text = items.map((it) => (it.str || '') + (it.hasEOL ? '\n' : '')).join('').trim();
+    }
+    return { meta, text };
+  } finally {
+    await close();
+  }
+}
+
+/**
  * 스캔한 PDF 의 앞쪽 SCAN_PAGES 쪽을 긴 변 SCAN_SIDE 픽셀의 PNG 로 그린다 — OCR 에 넘길 그림이다.
  * @param {Uint8Array} bytes
  * @returns {Promise<Uint8Array[]>}

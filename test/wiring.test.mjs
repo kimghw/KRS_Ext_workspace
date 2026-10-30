@@ -788,7 +788,7 @@ console.log('설정(일반)의 행위 명세 — 갈래 → 종류 → YAML 원�
   t('일반 갈래 안에 갈래 단추가 탭 차례로 서고, 종류 줄·원본은 닫혀 있다', () => {
     assert.ok(domains.closest('#setGeneral'));
     assert.deepEqual([...domains.children].map((b) => b.firstChild.textContent),
-      ['근태', '여비계산서', '공문', '일일 업무', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']);
+      ['근태', '여비계산서', '공문', '게시판', '일일 업무', 'R&D', '메일', '회의실', '차량', '홈 카드', '회람']);
     assert.ok([...domains.children].every((b) => b.type === 'button' && b.getAttribute('aria-pressed') === 'false'));
     assert.ok(kinds.hidden && file.hidden);
   });

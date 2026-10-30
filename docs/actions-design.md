@@ -453,6 +453,9 @@ export function registerGongmun(d)
 // dwr.js
 export function registerDwr(d)
   'dwr.write' (rec, { writer, onStage, dry }) → writer.writeDay({ date, title, hours, content, trip, op } = rec.input, { onStage, dry })   // confirm — 현황 일일 업무 카드의 저장·제출: 짠 날마다 한 기록, 뒤 탭 작성기(src/dwrwrite.js createDwrWriter)는 카드가 열어 ctx.writer 로 넘기고 닫는다(없으면 어댑터가 한 날만 열고 닫는다, 2026-10-29)
+// board.js
+export function registerBoard(d)
+  'board.standard' (rec, { bytes, onStage, dry }) → stdUpload({ designation, title, category, writer, file } = rec.input, { bytes, onStage, dry })   // confirm — 공문 탭 국제표준 업로드 칸(stdbox.js)에 넣은 PDF 하나마다: 같은 표준 찾기 → 쓰기 화면 → DraftFileUp → TempWrite → 다시 찾아 글 번호(src/stdboard.js, 2026-10-30). 이미 있으면 exists 로 ok false
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.
