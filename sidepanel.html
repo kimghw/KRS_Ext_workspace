@@ -751,22 +751,33 @@
       </div>
       <!-- 일일 업무(2026-10-27 사용자 지정 — "현황에 eclass 에서 내일일 업무 보고 대쉬보드를 갖어와서 보는 기능") — e-Class 「일일업무통계 대시보드」(/dwrdashboard)의 내 것.
            현황 탭에서만 선다. 접힌 머리 줄은 기간 · 작성 화면/대시보드 아이콘. 안은 dwrbox.js 가 그린다(받는 것은 src/dwr.js).
-           안은 업무 비율 하나 — 업무별 실제 비율과 rERP 의 내 과제 참여율 — 올해는 열두 달 평균(src/workshare.js), 목록에 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더한다(2026-10-27 사용자 지정:
+           안은 탭 셋(모니터링 · 계획 · 업무할당 — 2026-10-30). 모니터링은 업무 비율 — 업무별 실제 비율과 rERP 의 내 과제 참여율 — 올해는 열두 달 평균(src/workshare.js), 목록에 늘 있는 더하기 줄로 업무(이름 · 목표 %)를 더한다(2026-10-27 사용자 지정:
            "연구개발 참여율을 월간으로 계산했을 때 해야 되는 업무 시간을 업무별 업무량이랑 같이 보이게 해줘 시간 비율로" — 네 칸·진행현황·활동성·최근 업무는 뺐다). -->
       <details id="dwrBox" class="dwr-box card hidden" open>
         <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>일일 업무</span><span id="dwrState" class="summary-detail"></span><button type="button" id="dwrWrite" class="dwr-icon" title="일일 업무 작성 화면 열기 (e-Class Daily Work Report)" aria-label="일일 업무 작성 화면 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button><button type="button" id="dwrOpen" class="dwr-icon" title="e-Class 일일업무통계 대시보드 열기" aria-label="일일업무통계 대시보드 열기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg></button></summary>
         <div class="dwr-body">
-          <div class="dwr-head">
-            <div id="dwrRanges" class="dwr-ranges" role="group" aria-label="기간">
-              <button type="button" data-range="year" aria-pressed="true" title="올해 1월 1일부터 오늘까지">올해</button><button type="button" data-range="month" aria-pressed="false" title="지난달 오늘부터 오늘까지">한 달</button><button type="button" data-range="week" aria-pressed="false" title="7일 전부터 오늘까지">7일</button>
-            </div>
-            <span id="dwrLast" class="dwr-last" title="마지막으로 적은 일일 업무의 날짜"></span>
+          <!-- 탭 셋(2026-10-30 사용자 지정: "여건 모니털이 계획이랑 탭으로 넣어주고. 업무할당도 탭으로 넣어줘") — 모니터링(기간 · 업무 비율) · 계획(일일 업무 짜기) ·
+               업무할당(업무 줄마다 e-Class 업무 고르기). 계획·업무할당은 짜기가 설 때만 보이고, 고른 탭은 저장소(dwrTab)에. 업무할당의 수는 맞는 업무가 없는 줄. -->
+          <div id="dwrTabs" class="dwr-tabs" role="tablist" aria-label="일일 업무 보기" hidden>
+            <button type="button" id="dwrTabWatch" class="dwr-tab" data-tab="watch" role="tab" aria-selected="true" aria-controls="dwrWatch">모니터링</button>
+            <button type="button" id="dwrTabPlan" class="dwr-tab" data-tab="plan" role="tab" aria-selected="false" aria-controls="dwrPlan">계획</button>
+            <button type="button" id="dwrTabAssign" class="dwr-tab" data-tab="assign" role="tab" aria-selected="false" aria-controls="dwrAssign">업무할당<span id="dwrAssignN" class="dwr-tab-n"></span></button>
           </div>
-          <ol id="dwrTop" class="dwr-top"></ol>
-          <p id="dwrHint" class="dwr-hint"></p>
+          <div id="dwrWatch" class="dwr-pane" role="tabpanel" aria-labelledby="dwrTabWatch">
+            <div class="dwr-head">
+              <div id="dwrRanges" class="dwr-ranges" role="group" aria-label="기간">
+                <button type="button" data-range="year" aria-pressed="true" title="올해 1월 1일부터 오늘까지">올해</button><button type="button" data-range="month" aria-pressed="false" title="지난달 오늘부터 오늘까지">한 달</button><button type="button" data-range="week" aria-pressed="false" title="7일 전부터 오늘까지">7일</button>
+              </div>
+              <span id="dwrLast" class="dwr-last" title="마지막으로 적은 일일 업무의 날짜"></span>
+            </div>
+            <ol id="dwrTop" class="dwr-top"></ol>
+            <p id="dwrHint" class="dwr-hint"></p>
+          </div>
           <!-- 일일 업무 짜기(2026-10-29 사용자 지정 — "여기 목표에 맞도록 일일 업무보고를 신청할 수 있도록 해줘 … 출장/외근의 경우 과제에 맞도록 없거나 모모하면 나두고") —
                마지막으로 적은 날 다음날부터 오늘까지의 근무일(HR 근태현황)을 목표(합 100% 로)에 맞춰 짜고 e-Class 에 저장·제출한다. 안은 dwrbox.js 가 그린다(짜기 src/dwrplan.js · 쓰기 src/dwrwrite.js). -->
-          <div id="dwrPlan" class="dwr-plan"></div>
+          <div id="dwrPlan" class="dwr-plan dwr-pane" role="tabpanel" aria-labelledby="dwrTabPlan" hidden></div>
+          <!-- 업무할당(2026-10-30 — "저기서 일일업무리스트를 어떤걸 매칭할 건지 선택할 수 있게 해줘") — 업무 줄마다 e-Class 업무 목록(작성 화면의 업무 목록)에서 고른다. -->
+          <div id="dwrAssign" class="dwr-assign dwr-pane" role="tabpanel" aria-labelledby="dwrTabAssign" hidden></div>
           <p id="dwrMsg" class="dwr-msg" role="status"></p>
         </div>
       </details>

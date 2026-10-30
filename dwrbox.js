@@ -25,6 +25,12 @@
 // 목표 표 아래에 업무 줄(과제·더한 업무)마다 e-Class 업무 목록(작성 화면의 업무 목록 — workList, src/dwrwrite.js fetchWorkList, 패널을 연 동안 한 번)에서 고르는 칸이 선다.
 // 처음엔 저절로 맞춘 것(그 업무로 적은 업무명·과제명)이 골라져 있고, 고르면 SHARE_KEY 의 links 에 번호·업무명을 둔다 — 짜기는 그 업무 줄에 쓰고, 그 업무명으로 적은 일일 업무는
 // 그 줄에 든다. 맞는 업무가 없는 줄은 붉게 서고 짜지 않는다. (더한 업무의 e-Class 업무명을 글로 적던 고리 아이콘 — 2026-10-29 — 은 이것으로 바뀌었다.)
+// 탭 셋(2026-10-30 사용자 지정: "여건 모니털이 계획이랑 탭으로 넣어주고. 업무할당도 탭으로 넣어줘") — 모니터링(#dwrWatch — 기간 · 업무 비율), 계획(#dwrPlan — 짜기),
+// 업무할당(#dwrAssign — e-Class 업무 고르기). 계획·업무할당은 짜기가 설 때만 보이고(업무할당은 workList 가 있을 때만), 고른 탭은 TAB_KEY 에. 업무할당 탭의 수는 맞는 업무가 없는 줄이다.
+// 더하기 줄과 더한 업무의 × 는 업무할당 탭에 있다("업무할당 추가하고 배제하는게 사라졌어" — 그 탭이 없으면 업무 비율 목록에). 목표 % 고치기는 모니터링에.
+// 매일 자동 저장(2026-10-30 사용자 지정: "매일 5시 이후에 자동으로 실행할건지 옵션 넣어줘") — 계획 머리의 수동 · 매일(AUTO_KEY). 매일이면 오후 5시(AUTO_HOUR) 이후 패널이
+// 열려 있는 동안(5분마다 · 현황을 받은 뒤) 그날 하루를 저장(작성중)만 한다 — 제출·밀린 날은 하지 않고 하루 한 번(같은 날 사용자가 고른 것: 저장만 · 그날만 · 패널이 열려 있을 때만).
+// 이때 dwr.write 의 확인은 사람이 켜 둔 '매일'이다(누름 대신) — 활동 로그에 '(매일 자동)'.
 
 import { PORTAL_HOME_URL } from './src/config.js';
 import { AuthError } from './src/net.js';
@@ -40,6 +46,15 @@ import { createDwrWriter } from './src/dwrwrite.js';
 export const DAYS_KEY = 'dwrDays';
 /** 이 카드가 저장·제출한 날 — { [YYYY-MM-DD]: { status: 'saved'|'submitted', key, label, title, work, hours, content, trip, at } }. */
 export const DONE_KEY = 'dwrDone';
+/** 고른 탭 — 'watch'(모니터링) · 'plan'(계획) · 'assign'(업무할당). */
+export const TAB_KEY = 'dwrTab';
+const TABS = ['watch', 'plan', 'assign'];
+/** 매일 자동 저장 — { mode: 'off'|'daily', last: 해 본 날(YYYY-MM-DD) }. */
+export const AUTO_KEY = 'dwrAuto';
+/** 이 시(오후 5시) 이후에 그날을 저장한다. */
+export const AUTO_HOUR = 17;
+/** 패널이 열려 있는 동안 자동 저장 때가 되었는지 보는 간격. */
+const AUTO_TICK_MS = 5 * 60_000;
 /** 짜는 날은 마지막으로 적은 날 다음날부터 — 그래도 오늘에서 이만큼 앞까지만. */
 export const PLAN_BACK_DAYS = 60;
 /** 적어 둔 저장·제출을 이만큼 지나면 버린다. */
@@ -81,10 +96,12 @@ const STATE_TEXT = { busy: '쓰는 중…', saved: '저장함', submitted: '제�
  * @param {object} [deps.actions] 디스패처(actions/dispatch.js — dwr.write 가 등록된 것). 없으면 짜기가 서지 않는다
  * @param {() => {writeDay: Function, close: Function}} [deps.createWriter] 작성기(src/dwrwrite.js createDwrWriter — 검사는 가짜)
  * @param {() => Promise<{id: string, name: string, from: string}[]>} [deps.workList] e-Class 업무 목록(src/dwrwrite.js fetchWorkList) — 없으면 업무 고르기 칸이 서지 않고 업무명만으로 짠다
+ * @param {(fn: Function) => void} [deps.every] 매일 자동 저장을 볼 때마다 부를 시계(기본 AUTO_TICK_MS 마다 — 검사는 손으로 부른다)
  */
 export function createDwrBox({
   doc = document, storage = chrome.storage.local, openTab = (url) => chrome.tabs.create({ url }), today = todayStr, now = Date.now, api = {}, fillStaff = async () => 0,
   workPlan = null, actions = null, createWriter = createDwrWriter, workList = null,
+  every = (fn) => { const h = setInterval(fn, AUTO_TICK_MS); h?.unref?.(); },
 } = {}) {
   const $ = (id) => doc.getElementById(id);
   const box = $('dwrBox');
@@ -92,11 +109,11 @@ export function createDwrBox({
   // data: 받은 것 { rows } · at: 받은 때 · share: 더한 업무 · me: 내 이름 · rates: 장부에서 찾은 내 참여율(src/workshare.js myRates) · adding: 더하기 줄이 열렸나
   // book: R&D 장부(계획의 개발내용) · days: HR 근태현황 { day, from, to, rows } · daysError · daysLoading · done: 이 카드가 저장·제출한 날(DONE_KEY) ·
   // edits: 사람이 정한 날 { 날짜: { key, hours?, content? } } · progress: 쓰는 동안·쓴 뒤 날마다의 형편 { 날짜: { state, note } } · writing: 'save'|'submit'|null · armed: 제출 첫 누름 ·
-  // works: e-Class 업무 목록(null 이면 아직 모른다) · worksError · worksLoading
+  // works: e-Class 업무 목록(null 이면 아직 모른다) · worksError · worksLoading · tab: 고른 탭(TABS) · auto: 매일 자동 저장(AUTO_KEY) · autoBusy: 그것을 보는 중
   const st = {
     range: 'year', id: '', data: null, at: 0, error: null, loading: false, run: null, share: { items: [], goals: {}, links: {} }, me: '', rates: null, adding: false,
     book: null, days: null, daysError: null, daysLoading: false, done: {}, edits: new Map(), progress: new Map(), writing: null, armed: false, note: '',
-    works: null, worksError: null, worksLoading: false,
+    works: null, worksError: null, worksLoading: false, tab: 'watch', auto: { mode: 'off', last: '' }, autoBusy: false,
   };
   const planOn = () => !!(workPlan && actions && $('dwrPlan'));
   // 저장해 둔 사용자 ID·기간을 읽기 전에 받기 시작하면 홈을 괜히 한 번 더 읽는다 — load 는 이것을 기다린다(wire 가 바꾼다).
@@ -112,6 +129,23 @@ export function createDwrBox({
     $('dwrTop').innerHTML = '';
     $('dwrHint').textContent = '';
     if ($('dwrPlan')) $('dwrPlan').innerHTML = '';
+    if ($('dwrAssign')) $('dwrAssign').innerHTML = '';
+  }
+
+  /** 탭 — 계획·업무할당은 짜기가 설 때만(업무할당은 업무 목록을 읽을 수 있을 때만), 아니면 탭 줄 없이 모니터링만. 고른 탭의 칸만 보인다. */
+  function paintTabs() {
+    const tabs = $('dwrTabs');
+    if (!tabs) return;
+    const on = { watch: true, plan: planOn(), assign: planOn() && !!workList };
+    const tab = on[st.tab] ? st.tab : 'watch';
+    tabs.hidden = !on.plan;
+    for (const b of tabs.querySelectorAll('[data-tab]')) {
+      const k = b.dataset.tab;
+      b.hidden = !on[k];
+      b.setAttribute('aria-selected', String(k === tab));
+      const pane = $(b.getAttribute('aria-controls'));
+      if (pane) pane.hidden = k !== tab;
+    }
   }
 
   function paintMsg() {
@@ -130,12 +164,14 @@ export function createDwrBox({
     for (const b of $('dwrRanges').querySelectorAll('[data-range]')) b.setAttribute('aria-pressed', String(b.dataset.range === st.range));
     box.setAttribute('aria-busy', String(st.loading));
     paintMsg();
+    paintTabs();
     if (!st.data) return paintEmpty(st.loading ? '읽는 중…' : st.error ? '읽지 못함' : '');
     $('dwrState').textContent = RANGES[st.range];
     const last = st.data.rows[0]?.date;
     $('dwrLast').textContent = last ? `${md(last)}까지 작성` : '작성한 날 없음';
     paintShare();
     paintPlan();
+    paintAssign();
   }
 
   /** 줄의 풍선말 — 이름 · 기간의 실제/참여율(더한 업무는 목표 — 시간과 %) · 달마다의 그 둘 % · 이 줄에 든 업무명. */
@@ -159,7 +195,8 @@ export function createDwrBox({
   const itemOf = (L) => (L.kind === 'item' ? st.share.items.find((i) => `item:${i.name}` === L.key) || null : null);
   const goalOf = (L) => (L.kind === 'item' ? itemOf(L)?.rate ?? 0 : st.share.goals[L.key] ?? null);
 
-  function rowHtml(L, all, scale) {
+  /** 업무 비율 한 줄. del 이면 더한 업무 줄 끝에 × (업무할당 탭이 없을 때만 — 있으면 × 는 그 탭에). */
+  function rowHtml(L, all, scale, del) {
     const a = pct(L.actual, all);
     const need = needOf(L);
     const goal = goalOf(L);
@@ -170,7 +207,7 @@ export function createDwrBox({
       + `${need != null ? `<b style="left:${w(need)}%"></b>` : ''}${goal != null ? `<b class="dwr-goal" style="left:${w(goal)}%"></b>` : ''}</span>`;
     const field = L.kind === 'item' ? `data-rate="${esc(L.label)}"` : `data-goal="${esc(L.key)}" placeholder="–"`;
     const input = `<input class="dwr-rate" type="number" min="0" max="100" step="0.5" value="${goal ?? ''}" ${field} aria-label="${esc(L.label)} 목표 %">%`
-      + (L.kind === 'item' ? `<button type="button" class="dwr-icon" data-del="${esc(L.label)}" title="${esc(L.label)} 빼기" aria-label="${esc(L.label)} 빼기">${X_ICON}</button>` : '');
+      + (L.kind === 'item' && del ? delHtml(L.label) : '');
     return `<li class="dwr-k-${L.kind}${off ? ' dwr-off' : ''}" data-key="${esc(L.key)}" title="${esc(tipOf(L, all))}"><span class="dwr-top-name">${esc(L.label)}</span>${bar}`
       + `<span class="dwr-need">${need == null ? '' : pctText(need)}</span><strong class="dwr-real">${pctText(a)}</strong><span class="dwr-num">${input}</span></li>`;
   }
@@ -180,13 +217,22 @@ export function createDwrBox({
     + '<span title="기간에 적은 시간 가운데 그 업무의 비율(막대)">실제</span>'
     + '<span title="내가 정하는 % (막대의 노란 금) — 실제와 견줍니다">목표</span></li>';
 
-  const addHtml = () => '<li class="dwr-k-item dwr-adding"><input id="dwrNewName" class="dwr-item-name" maxlength="40" placeholder="＋ 업무 더하기 (예: AIP)" aria-label="더할 업무 이름"'
+  const delHtml = (name) => `<button type="button" class="dwr-icon" data-del="${esc(name)}" title="${esc(name)} 빼기" aria-label="${esc(name)} 빼기">${X_ICON}</button>`;
+  /** 더하기 줄의 칸(이름 · 목표 % · ✓) — 업무할당 탭(없으면 업무 비율 목록)에 늘 선다. */
+  const addFields = () => '<input id="dwrNewName" class="dwr-item-name" maxlength="40" placeholder="＋ 업무 더하기 (예: AIP)" aria-label="더할 업무 이름"'
     + ' title="과제가 아닌 업무를 목표 % 와 함께 더합니다 — 일일 업무의 업무명·업무분류에 이 말이 든 줄이 이 업무입니다">'
     + '<span class="dwr-num"><input id="dwrNewRate" class="dwr-rate" type="number" min="0" max="100" step="0.5" placeholder="0" aria-label="목표 %">%'
-    + `<button type="button" class="dwr-icon" data-save title="더하기" aria-label="더하기">${OK_ICON}</button></span></li>`;
+    + `<button type="button" class="dwr-icon" data-save title="더하기" aria-label="더하기">${OK_ICON}</button></span>`;
+  const addHtml = () => `<li class="dwr-k-item dwr-adding">${addFields()}</li>`;
+  /** 더하기 줄에 쓰던 글 — 그 줄을 다시 그리기 전에 읽어 두고 그린 뒤에 되돌린다. */
+  const draftOf = () => [$('dwrNewName')?.value || '', $('dwrNewRate')?.value || ''];
+  const putDraft = (d) => { if ($('dwrNewName')) [$('dwrNewName').value, $('dwrNewRate').value] = d; };
+  /** 더하기 줄·× 를 업무할당 탭에 두나(2026-10-30 "업무할당 추가하고 배제하는게 사라졌어") — 그 탭이 없으면(짜기가 서지 않음) 업무 비율 목록에. */
+  const assignOn = () => planOn() && !!workList;
 
-  /** 목록 안의 입력칸 하나를 다시 그린 뒤에도 찾을 이름 — 더하기 줄은 id, 목표 칸은 그 줄. */
-  const fieldOf = (x) => (x?.id ? `#${x.id}` : x?.dataset.rate != null ? `rate:${x.dataset.rate}` : x?.dataset.goal != null ? `goal:${x.dataset.goal}` : null);
+  /** 목록 안의 입력칸 하나를 다시 그린 뒤에도 찾을 이름 — 더하기 줄은 id, 목표 칸·e-Class 업무 칸은 그 줄. */
+  const fieldOf = (x) => (x?.id ? `#${x.id}` : x?.dataset.rate != null ? `rate:${x.dataset.rate}` : x?.dataset.goal != null ? `goal:${x.dataset.goal}`
+    : x?.dataset.link != null ? `link:${x.dataset.link}` : null);
 
   /**
    * 업무 비율 — 머리 줄(참여율 · 실제 · 목표) 아래 업무마다 한 줄, 더한 업무 아래에 더하기 줄(늘). 기간에 적은 것이 없어도 더한 업무 줄과 더하기 줄은 선다.
@@ -194,16 +240,17 @@ export function createDwrBox({
    */
   function paintShare() {
     const top = $('dwrTop');
-    const draft = [$('dwrNewName')?.value || '', $('dwrNewRate')?.value || ''];
+    const here = !assignOn();
+    const draft = draftOf();
     const was = top.contains(doc.activeElement) ? fieldOf(doc.activeElement) : null;
     const s = workShare(st.data.rows, { ...sharePeriod(), items: st.share.items, rates: st.rates || undefined, links: st.share.links });
     const all = s.minutes;
     const scale = Math.max(1, ...s.lines.map((L) => Math.max(pct(L.actual, all), needOf(L) ?? 0, goalOf(L) ?? 0)));
     const lines = all ? s.lines : s.lines.filter((L) => L.kind === 'item');
     top.innerHTML = COLS_HTML + (all ? '' : '<li class="dwr-none">이 기간에 적은 업무가 없습니다</li>')
-      + lines.filter((L) => L.kind !== 'etc').map((L) => rowHtml(L, all, scale)).join('')
-      + addHtml() + lines.filter((L) => L.kind === 'etc').map((L) => rowHtml(L, all, scale)).join('');
-    [$('dwrNewName').value, $('dwrNewRate').value] = draft;
+      + lines.filter((L) => L.kind !== 'etc').map((L) => rowHtml(L, all, scale, here)).join('')
+      + (here ? addHtml() : '') + lines.filter((L) => L.kind === 'etc').map((L) => rowHtml(L, all, scale, here)).join('');
+    if (here) putDraft(draft);
     if (was) [...top.querySelectorAll('input')].find((x) => fieldOf(x) === was)?.focus();
     const known = !!st.rates?.projects.some((p) => p.rates.size);
     $('dwrHint').textContent = !st.me ? '설정 › 일반의 내 이름이 있어야 R&D 탭 과제에서 내 참여율을 찾습니다.'
@@ -249,8 +296,9 @@ export function createDwrBox({
    */
   function show({ force = false, days = force } = {}) {
     if (st.run) return st.run;
-    if (!force && st.data && !st.error && now() - st.at < DWR_TTL_MS) return readBook().then(paint).then(() => { loadDays(); loadWorks(); });
-    const run = load().then(() => { pruneDone(); loadDays({ force: days }); loadWorks({ force: days }); });
+    // 근태·업무 목록을 다 읽으면 매일 자동 저장을 본다(기다리지 않는다).
+    if (!force && st.data && !st.error && now() - st.at < DWR_TTL_MS) return readBook().then(paint).then(() => { Promise.all([loadDays(), loadWorks()]).then(autoTick).catch(() => {}); });
+    const run = load().then(() => { pruneDone(); Promise.all([loadDays({ force: days }), loadWorks({ force: days })]).then(autoTick).catch(() => {}); });
     st.run = run;
     run.finally(() => { if (st.run === run) st.run = null; });
     return run;
@@ -313,12 +361,18 @@ export function createDwrBox({
     }
   }
 
+  /** 업무 줄(업무 비율)과 줄마다 지난 일일 업무 — 계획과 업무할당이 같이 쓴다. */
+  function basis() {
+    const opts = { items: st.share.items, rates: st.rates || undefined, links: st.share.links };
+    return { s: workShare(st.data.rows, { ...sharePeriod(), ...opts }), history: historyOf(st.data.rows, opts) };
+  }
+
   /** 지금 짠 것 — 근태의 근무일 가운데 아직 안 쓴 날(이 카드가 저장만 해 둔 날은 그 내용으로) + 사람이 정한 날, 그리고 목표·쓴 뒤의 실제. */
   function planNow() {
     const span = planSpan();
     if (!span || !st.days) return null;
     const written = new Set(st.data.rows.map((r) => r.date));
-    const s = workShare(st.data.rows, { ...sharePeriod(), items: st.share.items, rates: st.rates || undefined, links: st.share.links });
+    const { s, history } = basis();
     const days = workDays(st.days.rows, span)
       .filter((d) => st.done[d.date]?.status !== 'submitted' && (!written.has(d.date) || st.done[d.date]?.status === 'saved'))
       .map((d) => {
@@ -327,7 +381,6 @@ export function createDwrBox({
         const e = st.edits.get(d.date);
         return e ? { ...d, fixed: true, key: e.key, hours: e.hours ?? d.hours, content: e.content } : d;
       });
-    const history = historyOf(st.data.rows, { items: st.share.items, rates: st.rates || undefined, links: st.share.links });
     const projects = new Map((st.book?.projects || []).filter((p) => p?.id).map((p) => [`prj:${p.id}`, p]));
     const planOf = (key) => (projects.has(key) ? planItems(projects.get(key), today()) : []);
     const plan = planDays({ lines: s.lines, minutes: s.minutes, share: st.share, days, history, planOf, works: st.works });
@@ -363,7 +416,7 @@ export function createDwrBox({
 
   /** 목표(넣은 % 를 합 100 으로) · 지금 실제 · 짠 대로 쓴 뒤의 실제. */
   function goalsHtml(plan) {
-    if (!plan.forecast.length) return '<p class="dwr-plan-none">업무 비율의 목표 칸에 % 를 넣으면 그 비율에 맞춰 짭니다</p>';
+    if (!plan.forecast.length) return '<p class="dwr-plan-none">모니터링의 목표 칸에 % 를 넣으면 그 비율에 맞춰 짭니다</p>';
     const sumGoal = plan.forecast.reduce((a, f) => a + f.goal, 0);
     return `<ol class="dwr-goals"><li class="dwr-cols"><span>목표 ${pctText(sumGoal)} → 100%</span><span>목표</span><span>지금</span><span>쓴 뒤</span></li>`
       + plan.forecast.map((f) => `<li title="넣은 목표 ${f.goal}% — 합 ${Math.round(sumGoal * 10) / 10}% 를 100% 로"><span class="dwr-top-name">${esc(f.label)}</span>`
@@ -373,40 +426,77 @@ export function createDwrBox({
 
   /**
    * e-Class 업무 — 업무 줄마다 e-Class 업무 목록에서 고르는 칸. 골라 두지 않았으면 저절로 맞춘 것이 골라져 있고(첫 칸 '저절로 맞추기'로 되돌린다),
-   * 맞는 것이 없으면 첫 칸이 '맞는 업무 없음'으로 붉게 선다. 같은 이름의 업무는 시작일로 가린다. 목록을 못 읽었으면 까닭.
+   * 맞는 것이 없으면 첫 칸이 '맞는 업무 없음'으로 붉게 선다. 같은 이름의 업무는 시작일로 가린다. 목록을 못 읽었으면 까닭 — 줄(과 더한 업무의 ×)은 그대로 서고
+   * 고르는 칸은 업무명만 보이며 잠긴다.
    */
-  function linksHtml(plan) {
-    if (!workList) return '';
-    if (!st.works) {
-      if (st.worksLoading) return '<p class="dwr-plan-none">e-Class 업무 목록 읽는 중…</p>';
-      if (!st.worksError) return '';
-      const login = st.worksError instanceof AuthError;
-      return `<p class="dwr-msg error">e-Class 업무 목록을 읽지 못했습니다 — ${esc(st.worksError.message)}${login ? ' <a href="#" data-login>eclass 열기</a>' : ''}</p>`;
-    }
-    if (!plan.links.length) return '';
+  function linksHtml(links) {
+    const login = st.worksError instanceof AuthError;
+    const failed = !st.works && st.worksError
+      ? `<p class="dwr-msg error">e-Class 업무 목록을 읽지 못했습니다 — ${esc(st.worksError.message)}${login ? ' <a href="#" data-login>eclass 열기</a>' : ''}</p>` : '';
+    if (!links.length) return failed;
+    const works = st.works || [];
     const many = new Map();
-    for (const w of st.works) many.set(nameKey(w.name), (many.get(nameKey(w.name)) || 0) + 1);
+    for (const w of works) many.set(nameKey(w.name), (many.get(nameKey(w.name)) || 0) + 1);
     const text = (w) => (many.get(nameKey(w.name)) > 1 ? `${w.name} (${/^\d{4}-/.test(w.from) ? `${w.from}~` : w.from || w.id})` : w.name);
-    const lock = st.writing ? ' disabled' : '';
-    return '<ol class="dwr-links"><li class="dwr-cols"><span>e-Class 업무</span></li>'
-      + plan.links.map((L) => {
-        const first = L.missing ? (L.chosen ? `고른 업무가 목록에 없습니다 (${L.title})` : '맞는 업무 없음') : '저절로 맞추기';
-        const opts = st.works.map((w) => `<option value="${esc(w.id)}"${!L.missing && w.id === L.work ? ' selected' : ''}>${esc(text(w))}</option>`).join('');
+    const lock = st.writing || !st.works ? ' disabled' : '';
+    return failed + '<ol class="dwr-links">'
+      + links.map((L) => {
+        const first = !st.works ? L.title || '—' : L.missing ? (L.chosen ? `고른 업무가 목록에 없습니다 (${L.title})` : '맞는 업무 없음') : '저절로 맞추기';
+        const opts = works.map((w) => `<option value="${esc(w.id)}"${!L.missing && w.id === L.work ? ' selected' : ''}>${esc(text(w))}</option>`).join('');
         const tip = L.missing ? `${L.label} 에 맞는 e-Class 업무가 없어 짜지 않습니다 — 고르면 그 업무로 씁니다` : `${L.title}${L.chosen ? '' : ' (저절로 맞춤)'}`;
         return `<li class="${L.missing ? 'dwr-link-none' : L.chosen ? 'dwr-link-on' : ''}"><span class="dwr-top-name">${esc(L.label)}</span>`
-          + `<select data-link="${esc(L.key)}" aria-label="${esc(L.label)} 의 e-Class 업무" title="${esc(tip)}"${lock}><option value=""${L.missing ? ' selected' : ''}>${esc(first)}</option>${opts}</select></li>`;
+          + `<select data-link="${esc(L.key)}" aria-label="${esc(L.label)} 의 e-Class 업무" title="${esc(tip)}"${lock}><option value=""${L.missing ? ' selected' : ''}>${esc(first)}</option>${opts}</select>`
+          + `<span>${L.key.startsWith('item:') ? delHtml(L.label) : ''}</span></li>`;
       }).join('')
       + '</ol>';
   }
 
-  /** 짜기 칸 — 머리(기간 · 날 수 · 근태 다시 읽기 · 저장 · 제출), 목표 표, e-Class 업무, 날마다 한 줄. 다시 그려도 칸의 커서는 그대로. */
+  /**
+   * 업무할당 칸 — 머리(e-Class 업무 수 · 목록 다시 읽기), 업무 줄마다 e-Class 업무 고르기(더한 업무는 끝에 ×), 늘 있는 더하기 줄. 탭의 수는 맞는 업무가 없는 줄(목록을 못 읽었으면 !).
+   * 다시 그려도 더하기 줄에 쓰던 글과 칸의 커서는 그대로.
+   */
+  function paintAssign() {
+    const el = $('dwrAssign');
+    if (!el || !assignOn()) return;
+    const draft = draftOf();
+    const was = el.contains(doc.activeElement) ? fieldOf(doc.activeElement) : null;
+    const { s, history } = basis();
+    const { links } = planDays({ lines: s.lines, minutes: s.minutes, share: st.share, days: [], history, works: st.works });
+    const missing = st.works ? links.filter((L) => L.missing).length : 0;
+    const n = $('dwrAssignN');
+    if (n) {
+      n.textContent = st.worksError && !st.works ? '!' : missing ? String(missing) : '';
+      n.title = n.textContent === '!' ? 'e-Class 업무 목록을 읽지 못했습니다' : missing ? `맞는 e-Class 업무가 없어 짜지 않는 업무 ${missing}줄` : '';
+    }
+    const count = st.works ? `e-Class 업무 ${st.works.length}개` : st.worksLoading ? 'e-Class 업무 목록 읽는 중…' : '';
+    el.innerHTML = `<div class="dwr-plan-head"><span class="dwr-plan-span">${count}</span>`
+      + `<button type="button" class="dwr-icon" data-assign="reload" title="e-Class 업무 목록 다시 읽기" aria-label="e-Class 업무 목록 다시 읽기"${st.writing || st.worksLoading ? ' disabled' : ''}>${RELOAD_ICON}</button></div>`
+      + linksHtml(links)
+      + `<div class="dwr-adding dwr-assign-add">${addFields()}</div>`;
+    putDraft(draft);
+    if (was) [...el.querySelectorAll('input,select')].find((x) => fieldOf(x) === was)?.focus();
+  }
+
+  /** 수동 · 매일(2026-10-30) — 매일이면 오후 5시 이후 그날 하루를 저장(작성중)한다. 풍선말에 마지막으로 해 본 날. */
+  function autoHtml() {
+    const daily = st.auto.mode === 'daily';
+    const last = st.auto.last ? ` · 마지막 ${md(st.auto.last)}` : '';
+    return '<span class="dwr-ranges dwr-auto" role="group" aria-label="자동 저장">'
+      + `<button type="button" data-auto="off" aria-pressed="${!daily}" title="저장·제출 아이콘을 누를 때만 씁니다">수동</button>`
+      + `<button type="button" data-auto="daily" aria-pressed="${daily}" title="매일 오후 ${AUTO_HOUR - 12}시 이후, 패널이 열려 있으면(그 뒤에 열면 그때) 그날 하루를 e-Class 에 저장(작성중)합니다 — 제출은 하지 않고 밀린 날은 쓰지 않습니다${last}">매일</button></span>`;
+  }
+
+  /** 계획 칸 — 머리(기간 · 날 수 · 수동/매일 · 근태 다시 읽기 · 저장 · 제출), 목표 표, 날마다 한 줄. 다시 그려도 칸의 커서는 그대로. */
   function paintPlan() {
     const el = $('dwrPlan');
     if (!el || !planOn()) return;
     const span = planSpan();
-    if (!span) { el.innerHTML = ''; return; }
+    if (!span) {
+      el.innerHTML = `<div class="dwr-plan-head"><span class="dwr-plan-span">오늘까지 다 적었습니다</span>${autoHtml()}</div>${st.note ? `<p class="dwr-plan-note">${esc(st.note)}</p>` : ''}`;
+      return;
+    }
     const was = el.contains(doc.activeElement) ? [...el.querySelectorAll('input,select')].indexOf(doc.activeElement) : -1;
-    const head = (detail, ready) => `<div class="dwr-plan-head"><span class="dwr-plan-title">일일 업무 짜기</span><span class="dwr-plan-span">${detail}</span>`
+    const head = (detail, ready) => `<div class="dwr-plan-head"><span class="dwr-plan-span">${detail}</span>${autoHtml()}`
       + `<button type="button" class="dwr-icon" data-plan="reload" title="근태 다시 읽기" aria-label="근태 다시 읽기"${st.writing || st.daysLoading ? ' disabled' : ''}>${RELOAD_ICON}</button>`
       + (ready ? `<button type="button" class="dwr-icon" data-plan="save" title="짠 날을 e-Class 에 저장(작성중)" aria-label="짠 날 저장"${st.writing ? ' disabled' : ''}>${SAVE_ICON}</button>`
         + `<button type="button" class="dwr-icon dwr-send${st.armed ? ' armed' : ''}" data-plan="submit" title="${st.armed ? '한 번 더 누르면 제출합니다' : '짠 날을 e-Class 에 제출(두 번 누름)'}" aria-label="짠 날 제출"${st.writing ? ' disabled' : ''}>${SEND_ICON}</button>` : '')
@@ -428,7 +518,6 @@ export function createDwrBox({
     el.innerHTML = head(detail, ready)
       + stale
       + (plan.days.length ? goalsHtml(plan) : '')
-      + linksHtml(plan)
       + (plan.days.length ? `<ol class="dwr-days">${plan.days.map((d) => dayHtml(d, plan.lines)).join('')}</ol>` : '')
       + (st.note ? `<p class="dwr-plan-note">${esc(st.note)}</p>` : '');
     if (was >= 0) el.querySelectorAll('input,select')[was]?.focus();
@@ -448,11 +537,15 @@ export function createDwrBox({
     paint();
   }
 
-  /** 저장(save)·제출(submit) — 짠 날마다 dwr.write 기록 하나를 지어 디스패처로 차례로 돌린다. 작성 화면은 뒤 탭 하나로 쓰고 닫는다. 다 쓰면 대시보드를 다시 받는다. */
-  async function writeAll(op) {
+  /**
+   * 저장(save)·제출(submit) — 짠 날마다 dwr.write 기록 하나를 지어 디스패처로 차례로 돌린다. 작성 화면은 뒤 탭 하나로 쓰고 닫는다. 다 쓰면 대시보드를 다시 받는다.
+   * dates 를 주면 그 날만(매일 자동 저장은 오늘 하루). auto 는 매일 자동 저장 — 확인은 사람이 켜 둔 '매일'이고, 활동 로그와 끝 글에 그렇다고 적는다.
+   */
+  async function writeAll(op, { dates = null, auto = false } = {}) {
     const plan = planNow();
-    const todo = (plan?.days || []).filter((d) => d.key && String(d.content || '').trim() && d.hours > 0 && (op === 'submit' || !d.saved));
-    const empty = (plan?.days || []).filter((d) => d.key && !String(d.content || '').trim()).length;
+    const days = (plan?.days || []).filter((d) => !dates || dates.includes(d.date));
+    const todo = days.filter((d) => d.key && String(d.content || '').trim() && d.hours > 0 && (op === 'submit' || !d.saved));
+    const empty = days.filter((d) => d.key && !String(d.content || '').trim()).length;
     if (!todo.length) { st.note = empty ? `업무내용이 빈 날(${empty}일)을 채워 주세요` : '쓸 날이 없습니다'; return paint(); }
     st.writing = op;
     st.note = empty ? `업무내용이 빈 ${empty}일은 건너뜁니다` : '';
@@ -470,7 +563,7 @@ export function createDwrBox({
           const input = { date: d.date, title: d.title, ...(d.work ? { work: d.work } : {}), label: d.label, hours: d.hours, content: String(d.content).trim(), trip: !!d.trip, op };
           const { record } = actions.build('dwr.write', { input, preset: { today: today(), me: st.me } });
           const r = await actions.run(record, {
-            confirmed: record.hash, writer, text: `일일 업무 ${md(d.date)} ${d.label} ${d.hours}시간 ${op === 'submit' ? '제출' : '저장'}`,
+            confirmed: record.hash, writer, text: `일일 업무 ${md(d.date)} ${d.label} ${d.hours}시간 ${op === 'submit' ? '제출' : '저장'}${auto ? ' (매일 자동)' : ''}`,
             onStage: (text) => { st.progress.set(d.date, { state: 'busy', note: text }); paint(); },
           });
           state = r?.status || (r?.ok ? 'saved' : 'fail');
@@ -492,11 +585,48 @@ export function createDwrBox({
     } finally {
       await Promise.resolve(writer.close()).catch(() => {});
       st.writing = null;
-      st.note = [...tally].map(([k, n]) => `${STATE_TEXT[k] || k} ${n}일`).join(' · ');
+      st.note = (auto ? `매일 자동 저장(${md(today())}) — ` : '') + [...tally].map(([k, n]) => `${STATE_TEXT[k] || k} ${n}일`).join(' · ');
       paint();
     }
     // 대시보드를 다시 받아 실제를 다시 센다(근태는 그대로라 다시 읽지 않는다). 로그인이 풀려 멈췄으면 받지 않는다 — 까닭이 지워진다.
     if (!stopped) await show({ force: true, days: false });
+  }
+
+  /** 매일 자동 저장을 할 때인가 — 매일을 골랐고, 오늘 아직 해 보지 않았고, 오후 5시가 지났다. */
+  const autoTime = () => planOn() && st.auto.mode === 'daily' && st.auto.last !== today() && new Date(now()).getHours() >= AUTO_HOUR;
+
+  /**
+   * 매일 자동 저장(2026-10-30 사용자 지정: "매일 5시 이후에 자동으로 실행할건지 옵션 넣어줘. 매일 이라고 하면 자동 5시 이후에") — 패널이 열려 있는 동안 every 마다와
+   * 현황을 받은 뒤에 본다. 대시보드를 다시 받고(그 사이 손으로 적었으면 짜지 않는다) 오늘 읽은 근태로 짠 오늘 하루를 저장(작성중)만 한다 — 제출·밀린 날은 하지 않는다.
+   * 오늘을 짤 수 있었으면(썼든 두기·빈 내용·근무일이 아니어서 쓰지 않았든) 하루 한 번으로 친다(AUTO_KEY 의 last). 로그인이 풀렸거나 근태를 아직 못 읽었으면 다음에 다시 본다.
+   */
+  async function autoTick() {
+    if (!autoTime() || st.writing || st.autoBusy) return;
+    st.autoBusy = true;
+    try {
+      // 방금(1분 안) 받은 것이 아니면 대시보드를 다시 받는다. 업무 목록이 있어야 맞는 업무가 없는 줄을 짜지 않는다.
+      if (st.error || !st.data || now() - st.at > 60_000) await load();
+      if (st.error || !autoTime() || st.writing) return;
+      if (workList && !st.works) { await loadWorks(); if (!st.works) return; }
+      const day = today();
+      // 짤 날이 없으면(오늘까지 다 적음) 근태는 볼 것도 없다. 있으면 근태를 다시 읽는다 — 아침에 담아 둔 뒤 오후에 올린 외근·반차가 있을 수 있다
+      // (못 읽으면 오늘 담아 둔 것으로). 오늘을 덮는 근태가 있어야 오늘을 안다.
+      const span = planSpan();
+      if (span) {
+        await loadDays({ force: true });
+        if (st.daysLoading || !st.days || st.days.to < day || st.writing) return;
+      }
+      const plan = span ? planNow() : null;
+      if (span && !plan) return;
+      st.auto = { ...st.auto, last: day };
+      storage.set({ [AUTO_KEY]: st.auto });
+      const d = plan?.days.find((x) => x.date === day);
+      if (d?.key && String(d.content || '').trim() && !d.saved) return await writeAll('save', { dates: [day], auto: true });
+      st.note = `매일 자동 저장(${md(day)}) — ${!d ? '쓸 날이 아닙니다(이미 적었거나 근무일이 아님)' : d.saved ? '이미 저장해 두었습니다' : !d.key ? '두기라 쓰지 않았습니다' : '업무내용이 비어 쓰지 않았습니다'}`;
+      paint();
+    } finally {
+      st.autoBusy = false;
+    }
   }
 
   /** 저장해 둔 기록 가운데 끝난 것을 버린다 — 제출해서 대시보드에 실린 날, 오래된 날. */
@@ -537,7 +667,7 @@ export function createDwrBox({
     saveShare({ links });
   }
 
-  /** 누름을 붙이고 저장해 둔 기간·접힘·사용자 ID·더한 업무를 읽는다. */
+  /** 누름을 붙이고 저장해 둔 기간·접힘·사용자 ID·더한 업무·탭을 읽는다. */
   function wire() {
     box.addEventListener('toggle', () => storage.set({ [OPEN_KEY]: box.open }));
     $('dwrRanges').addEventListener('click', (e) => {
@@ -555,11 +685,19 @@ export function createDwrBox({
       e.preventDefault();
       openTab(PORTAL_HOME_URL);
     });
-    $('dwrTop').addEventListener('click', (e) => {
-      const del = e.target.closest('[data-del]');
-      if (del) return saveShare({ items: st.share.items.filter((i) => i.name !== del.dataset.del) });
-      if (e.target.closest('[data-save]')) addItem();
-    });
+    // 더하기 줄·× — 업무할당 탭에(그 탭이 없으면 업무 비율 목록에) 선다.
+    for (const el of [$('dwrTop'), $('dwrAssign')].filter(Boolean)) {
+      el.addEventListener('click', (e) => {
+        const del = e.target.closest('[data-del]');
+        if (del) return saveShare({ items: st.share.items.filter((i) => i.name !== del.dataset.del) });
+        if (e.target.closest('[data-save]')) addItem();
+      });
+      el.addEventListener('keydown', (e) => {
+        if (!e.target.closest('.dwr-adding')) return;
+        if (e.key === 'Enter') { e.preventDefault(); addItem(); }
+        if (e.key === 'Escape') { $('dwrNewName').value = ''; $('dwrNewRate').value = ''; }
+      });
+    }
     $('dwrTop').addEventListener('change', (e) => {
       const rate = e.target.closest('[data-rate]');
       if (rate) saveShare({ items: st.share.items.map((i) => (i.name === rate.dataset.rate ? { ...i, rate: rate.value } : i)) });
@@ -567,15 +705,19 @@ export function createDwrBox({
       const goal = e.target.closest('[data-goal]');
       if (goal) saveShare({ goals: { ...st.share.goals, [goal.dataset.goal]: goal.value } });
     });
-    $('dwrTop').addEventListener('keydown', (e) => {
-      if (!e.target.closest('.dwr-adding')) return;
-      if (e.key === 'Enter') { e.preventDefault(); addItem(); }
-      if (e.key === 'Escape') { $('dwrNewName').value = ''; $('dwrNewRate').value = ''; }
-    });
     const plan = $('dwrPlan');
     if (plan) {
       plan.addEventListener('click', (e) => {
         if (e.target.closest('[data-login]')) { e.preventDefault(); return openTab(PORTAL_HOME_URL); }
+        // 수동 · 매일 — 매일로 바꾸면 5시가 지났을 때 곧바로 오늘을 본다.
+        const a = e.target.closest('[data-auto]');
+        if (a) {
+          if (a.dataset.auto === st.auto.mode) return;
+          st.auto = { ...st.auto, mode: a.dataset.auto === 'daily' ? 'daily' : 'off' };
+          storage.set({ [AUTO_KEY]: st.auto });
+          paint();
+          return autoTick().catch(() => {});
+        }
         const b = e.target.closest('[data-plan]');
         if (!b || b.disabled || st.writing) return;
         if (b.dataset.plan === 'reload') { st.edits.clear(); st.progress.clear(); st.note = ''; loadWorks({ force: true }); return loadDays({ force: true }); }
@@ -589,25 +731,45 @@ export function createDwrBox({
       });
       plan.addEventListener('change', (e) => {
         const t = e.target;
-        if (t.dataset.link) saveLink(t.dataset.link, t.value);
-        else if (t.dataset.dayKey) editDay(t.dataset.dayKey, { key: t.value || null });
+        if (t.dataset.dayKey) editDay(t.dataset.dayKey, { key: t.value || null });
         else if (t.dataset.dayHours) {
           const h = Number(t.value);
           if (Number.isFinite(h) && h > 0 && h <= HOURS_MAX) editDay(t.dataset.dayHours, { hours: Math.round(h * 10) / 10 }); else paint();
         } else if (t.dataset.dayContent) editDay(t.dataset.dayContent, { content: t.value.slice(0, CONTENT_MAX) });
       });
     }
-    ready = Promise.resolve(storage.get([USER_KEY, RANGE_KEY, OPEN_KEY, SHARE_KEY, DONE_KEY])).then((saved) => {
+    const assign = $('dwrAssign');
+    if (assign) {
+      assign.addEventListener('click', (e) => {
+        if (e.target.closest('[data-login]')) { e.preventDefault(); return openTab(PORTAL_HOME_URL); }
+        const b = e.target.closest('[data-assign="reload"]');
+        if (b && !b.disabled && !st.writing) { loadWorks({ force: true }); paint(); }
+      });
+      assign.addEventListener('change', (e) => { if (e.target.dataset.link) saveLink(e.target.dataset.link, e.target.value); });
+    }
+    $('dwrTabs')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (!b || b.dataset.tab === st.tab) return;
+      st.tab = b.dataset.tab;
+      storage.set({ [TAB_KEY]: st.tab });
+      paintTabs();
+    });
+    // 매일 자동 저장 — 패널이 열려 있는 동안 every 마다 본다(현황을 받은 뒤에도 — show).
+    if (planOn()) every(() => { autoTick().catch(() => {}); });
+    ready = Promise.resolve(storage.get([USER_KEY, RANGE_KEY, OPEN_KEY, SHARE_KEY, DONE_KEY, TAB_KEY, AUTO_KEY])).then((saved) => {
       if (!st.id) st.id = String(saved?.[USER_KEY] || '');
       if (RANGES[saved?.[RANGE_KEY]]) st.range = saved[RANGE_KEY];
+      if (TABS.includes(saved?.[TAB_KEY])) st.tab = saved[TAB_KEY];
       if (saved?.[OPEN_KEY] === false) box.open = false;
       st.share = normalizeShare(saved?.[SHARE_KEY]);
       const done = saved?.[DONE_KEY];
       st.done = done && typeof done === 'object' && !Array.isArray(done) ? done : {};
+      const auto = saved?.[AUTO_KEY];
+      st.auto = { mode: auto?.mode === 'daily' ? 'daily' : 'off', last: /^\d{4}-\d{2}-\d{2}$/.test(auto?.last || '') ? auto.last : '' };
       paint();
     }, () => {});
     return ready;
   }
 
-  return { wire, show, toggle, state: st, writeAll };
+  return { wire, show, toggle, state: st, writeAll, autoTick };
 }

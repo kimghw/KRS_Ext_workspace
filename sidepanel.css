@@ -673,6 +673,14 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-icon:hover { color: var(--pick); background: var(--pick-soft); }
 .dwr-icon svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .dwr-body { padding: 0 0 12px; font-size: 13px; }
+/* 탭 셋(2026-10-30) — 모니터링 · 계획 · 업무할당. 고른 탭의 칸만 선다(hidden). 업무할당의 수는 맞는 업무가 없는 줄. */
+.dwr-tabs { display: flex; gap: 2px; margin-bottom: 10px; padding: 3px; border-radius: 10px; background: var(--surface-soft); }
+.dwr-tabs[hidden], .dwr-tab[hidden], .dwr-pane[hidden] { display: none; }
+.dwr-tab { display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 28px; padding: 3px 6px; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.dwr-tab:hover:not([aria-selected="true"]) { color: var(--fg); background: var(--line); }
+.dwr-tab[aria-selected="true"] { background: var(--surface); color: var(--pick); box-shadow: var(--shadow); }
+.dwr-tab-n { color: var(--danger); font-size: 11px; font-variant-numeric: tabular-nums; }
+.dwr-tab-n:empty { display: none; }
 .dwr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .dwr-ranges { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface-soft); }
 .dwr-ranges button { min-height: 0; padding: 2px 9px; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; }
@@ -703,31 +711,30 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-rate { width: 38px; text-align: right; -moz-appearance: textfield; }
 .dwr-rate::-webkit-inner-spin-button, .dwr-rate::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .dwr-item-name { width: 100%; min-width: 0; }
-.dwr-top .dwr-icon { width: 18px; min-height: 18px; }
-.dwr-top .dwr-icon svg { width: 12px; height: 12px; }
+.dwr-top .dwr-icon, .dwr-assign :is(.dwr-links, .dwr-assign-add) .dwr-icon { width: 18px; min-height: 18px; }
+.dwr-top .dwr-icon svg, .dwr-assign :is(.dwr-links, .dwr-assign-add) .dwr-icon svg { width: 12px; height: 12px; }
 .dwr-hint { margin: 4px 0 0; color: var(--faint); font-size: 11px; }
 .dwr-hint:empty { display: none; }
 .dwr-msg { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .dwr-msg:empty { display: none; }
 .dwr-msg.error { color: var(--danger); }
 .dwr-msg a { color: var(--pick); }
-/* 일일 업무 짜기(dwrbox.js — 2026-10-29). 머리 줄(기간 · 날 수 · 아이콘) · 목표 표(목표를 100% 로 · 지금 · 쓴 뒤) · 날마다 두 줄(날짜 · 업무 · 시간 · 상태 / 업무내용). */
-.dwr-plan { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
-.dwr-plan:empty { display: none; }
+/* 계획 — 일일 업무 짜기(dwrbox.js — 2026-10-29). 머리 줄(기간 · 날 수 · 아이콘) · 목표 표(목표를 100% 로 · 지금 · 쓴 뒤) · 날마다 두 줄(날짜 · 업무 · 시간 · 상태 / 업무내용). */
 .dwr-plan-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
-.dwr-plan-title { flex: none; color: var(--muted); font-size: 12px; font-weight: 600; }
-.dwr-plan-span { min-width: 0; margin: 0 auto 0 4px; overflow: hidden; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-.dwr-plan .dwr-icon:disabled { opacity: .4; cursor: default; }
+/* 수동 · 매일(2026-10-30) — 기간 단추와 같은 꼴, 아이콘 앞. */
+.dwr-plan-head .dwr-auto { margin-right: 4px; }
+.dwr-plan-head .dwr-auto button { padding: 1px 8px; font-size: 11px; }
+.dwr-plan-span { min-width: 0; margin-right: auto; overflow: hidden; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.dwr-pane .dwr-icon:disabled { opacity: .4; cursor: default; }
 .dwr-plan .dwr-send.armed { color: #fff; background: var(--danger); }
 .dwr-goals { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
 .dwr-goals li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; min-height: 19px; }
 .dwr-goals li > :not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dwr-goals li.dwr-cols { min-height: 17px; color: var(--faint); font-size: 11px; }
 .dwr-goals strong { color: var(--fg); font-weight: 650; }
-/* e-Class 업무(2026-10-30) — 업무 줄마다 이름 · e-Class 업무 목록에서 고르는 칸. 고른 줄은 이름을 짙게, 맞는 업무가 없는 줄은 붉게. */
-.dwr-links { display: grid; grid-template-columns: fit-content(36%) minmax(0, 1fr); column-gap: 8px; row-gap: 3px; list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+/* 업무할당 — e-Class 업무(2026-10-30). 업무 줄마다 이름 · e-Class 업무 목록에서 고르는 칸. 고른 줄은 이름을 짙게, 맞는 업무가 없는 줄은 붉게. */
+.dwr-links { display: grid; grid-template-columns: fit-content(36%) minmax(0, 1fr) auto; column-gap: 6px; row-gap: 3px; list-style: none; margin: 0; padding: 0; font-size: 12px; }
 .dwr-links li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
-.dwr-links li.dwr-cols { min-height: 17px; color: var(--faint); font-size: 11px; }
 .dwr-links .dwr-top-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dwr-links select { min-width: 0; min-height: 0; height: 22px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; text-overflow: ellipsis; }
 .dwr-links .dwr-link-on .dwr-top-name { color: var(--fg); font-weight: 600; }
@@ -739,8 +746,11 @@ body { padding-bottom: var(--helpbar-h, 0px); }
 .dwr-day select { min-width: 0; min-height: 0; height: 22px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; }
 .dwr-day :is(select, input):disabled { opacity: .7; }
 /* 전역 input 규칙(min-height 40px)을 이기려면 .dwr-box .dwr-top input 처럼 (0,2,1) 이 뒤에 서야 한다. */
-.dwr-box .dwr-plan input { min-height: 0; height: 22px; padding: 0 5px; border-radius: 6px; }
-.dwr-box .dwr-plan input:focus-visible { outline-width: 2px; outline-offset: 1px; }
+.dwr-box :is(.dwr-plan, .dwr-assign) input { min-height: 0; height: 22px; padding: 0 5px; border-radius: 6px; }
+.dwr-box :is(.dwr-plan, .dwr-assign) input:focus-visible { outline-width: 2px; outline-offset: 1px; }
+/* 업무할당의 더하기 줄(이름 · 목표 % · ✓) — 업무 줄 아래 늘. */
+.dwr-assign-add { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.dwr-assign-add .dwr-item-name { flex: 1; }
 .dwr-day-state { max-width: 96px; overflow: hidden; color: var(--faint); font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .dwr-day-text, .dwr-day-why { grid-column: 1 / -1; min-width: 0; }
 .dwr-box .dwr-plan .dwr-day-text { height: 24px; padding: 0 7px; font-size: 12px; }
