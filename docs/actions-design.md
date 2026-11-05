@@ -456,6 +456,9 @@ export function registerDwr(d)
 // board.js
 export function registerBoard(d)
   'board.standard' (rec, { bytes, onStage, dry }) → stdUpload({ designation, title, category, writer, file } = rec.input, { bytes, onStage, dry })   // confirm — 공문 탭 국제표준 업로드 칸(stdbox.js)에 넣은 PDF 하나마다: 같은 표준 찾기 → 쓰기 화면 → DraftFileUp → TempWrite → 다시 찾아 글 번호(src/stdboard.js, 2026-10-30). 이미 있으면 exists 로 ok false
+// ktx.js
+export function registerKtx(d)
+  'ktx.search' (rec, { onStage }) → ktxSearch({ from, to, date, hour, adults } = rec.input, { today: rec.preset.today, onStage })   // 조회(confirm false) — 차량 탭 KTX 조회 칸(ktxbox.js): 이 확장의 코레일 뒤 탭에서 결과 화면의 history.state 에 조건을 넣고 새로고침 → 열차 줄(src/ktx.js, 2026-11-05). 막힘(-8002·-8202)은 ok false. 좌석 고르기(ktxPick)는 탐색이라 기록이 아니다
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.

@@ -215,6 +215,24 @@ export const ACTIONS = {
         "mode": "none"
       }
     },
+    "ktx": {
+      "domain": "ktx",
+      "title": "KTX",
+      "log": "ktx",
+      "kinds": [
+        "search"
+      ],
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 코레일이 조회 시작 한계(limitStartDate)로 싣는다"
+        }
+      },
+      "llm": {
+        "task": "ktx",
+        "mode": "none"
+      }
+    },
     "mail": {
       "domain": "mail",
       "title": "메일",
@@ -6223,6 +6241,166 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "{ ok, record, via, note } 를 돌려준다 — 화면 스크립트가 record 로 줄을 더해 칸만 채운다(src/afterpage.js fillPlan). 어느 길(cli·api)로 읽었는지가 via 다"
+    },
+    "ktx.search": {
+      "id": "ktx.search",
+      "domain": "ktx",
+      "kind": "search",
+      "title": "KTX 열차 조회",
+      "hint": "코레일 승차권",
+      "status": "live",
+      "confirm": false,
+      "effect": "none",
+      "log": "ktx",
+      "summary": "KTX {from}→{to} {date} {hour}시~ {adults}명",
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 코레일이 조회 시작 한계(limitStartDate)로 싣는다"
+        }
+      },
+      "fields": {
+        "from": {
+          "type": "enum",
+          "required": true,
+          "label": "출발역",
+          "desc": "출발역 — 코레일 역 목록의 이름(KTX 가 서는 역)",
+          "read": "출발역 이름. 코레일 역 이름 그대로(울산은 울산(통도사), 여수는 여수EXPO)",
+          "llm": true,
+          "ui": true,
+          "default": "부산",
+          "example": "부산",
+          "values": [
+            "서울",
+            "용산",
+            "영등포",
+            "행신",
+            "광명",
+            "수원",
+            "천안아산",
+            "오송",
+            "대전",
+            "서대전",
+            "김천구미",
+            "서대구",
+            "동대구",
+            "경산",
+            "밀양",
+            "구포",
+            "부산",
+            "경주",
+            "울산(통도사)",
+            "포항",
+            "마산",
+            "창원중앙",
+            "논산",
+            "익산",
+            "정읍",
+            "광주송정",
+            "목포",
+            "전주",
+            "순천",
+            "여수EXPO",
+            "강릉",
+            "정동진"
+          ]
+        },
+        "to": {
+          "type": "enum",
+          "required": true,
+          "label": "도착역",
+          "desc": "도착역 — 코레일 역 목록의 이름(KTX 가 서는 역)",
+          "read": "도착역 이름. 코레일 역 이름 그대로",
+          "llm": true,
+          "ui": true,
+          "default": "서울",
+          "example": "서울",
+          "values": [
+            "서울",
+            "용산",
+            "영등포",
+            "행신",
+            "광명",
+            "수원",
+            "천안아산",
+            "오송",
+            "대전",
+            "서대전",
+            "김천구미",
+            "서대구",
+            "동대구",
+            "경산",
+            "밀양",
+            "구포",
+            "부산",
+            "경주",
+            "울산(통도사)",
+            "포항",
+            "마산",
+            "창원중앙",
+            "논산",
+            "익산",
+            "정읍",
+            "광주송정",
+            "목포",
+            "전주",
+            "순천",
+            "여수EXPO",
+            "강릉",
+            "정동진"
+          ]
+        },
+        "date": {
+          "type": "date",
+          "required": true,
+          "label": "출발일",
+          "desc": "출발일 — 차량 탭 날짜 줄의 날짜",
+          "read": "출발일(YYYY-MM-DD). 날짜가 없으면 오늘",
+          "llm": true,
+          "ui": true,
+          "example": "2026-11-12"
+        },
+        "hour": {
+          "type": "integer",
+          "required": true,
+          "label": "출발 시",
+          "desc": "이 시각부터의 열차를 본다 — 차량 탭의 시작 시간",
+          "read": "이 시각 이후 출발 열차를 본다(0~23). 없으면 8",
+          "llm": true,
+          "ui": true,
+          "default": 8,
+          "example": 8,
+          "min": 0,
+          "max": 23
+        },
+        "adults": {
+          "type": "integer",
+          "required": true,
+          "label": "인원",
+          "desc": "어른 인원 — 코레일 조회의 txtPsgFlg_1",
+          "read": "어른 몇 명인지. 없으면 1",
+          "llm": true,
+          "ui": true,
+          "default": 1,
+          "example": 1,
+          "min": 1,
+          "max": 9
+        }
+      },
+      "checks": [],
+      "rules": [
+        "출발역과 도착역이 같으면 조회하지 않는다(checks 의 비교는 크기뿐이라 실행기 ktxSearch 가 막는다)."
+      ],
+      "llm": false,
+      "runner": "ktx.search",
+      "uses": [
+        {
+          "module": "src/ktx.js",
+          "export": "ktxSearch"
+        }
+      ],
+      "then": [],
+      "next": "열차 줄(출발·도착 시각 · 열차 · 소요 · 일반실·특실 운임/매진)을 칸에 그린다 → 좌석을 누르면 코레일 탭이 앞으로 와 그 좌석이 골라진다(ktxPick) → 예매 단추는 사람이"
     },
     "mail.register": {
       "id": "mail.register",

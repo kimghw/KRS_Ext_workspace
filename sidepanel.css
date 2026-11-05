@@ -2340,3 +2340,28 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .status .jump:hover, .gongmun .gm-write-state .jump:hover { background: color-mix(in srgb, var(--pick) 12%, var(--surface)); }
 .status .jump:focus-visible, .gongmun .gm-write-state .jump:focus-visible { outline: 3px solid var(--pick); outline-offset: 2px; }
 .jump-flash { outline: 3px solid var(--pick) !important; outline-offset: 3px; border-radius: 6px; }
+/* KTX 조회(차량 탭, ktxbox.js — 2026-11-05). 머리는 차량 현황과 같은 꼴(제목 옆 열기 아이콘), 칸 줄은 역 · 바꾸기 · 역 · 인원 · 조회, 줄마다 시각 · 열차 · 좌석 단추. */
+.ktx { margin-top: 23px; }
+.ktx .section-heading { justify-content: flex-start; }
+.ktx-card { padding: 12px 14px; }
+.ktx-bar { display: flex; align-items: center; gap: 6px; }
+.ktx-bar select { min-width: 0; min-height: 36px; padding: 4px 6px; border: 0; border-radius: 9px; background: var(--surface-soft); font-size: 14px; cursor: pointer; }
+.ktx-bar #ktxFrom, .ktx-bar #ktxTo { flex: 1; }
+.ktx-bar #ktxSwap { flex: none; width: 30px; min-height: 30px; padding: 6px; background: transparent; color: var(--muted); }
+.ktx-bar #ktxSwap svg { width: 16px; height: 16px; }
+.ktx-bar #ktxGo { flex: none; min-width: 64px; border-radius: 10px; }
+.ktx-note { margin: 8px 2px 0; font-size: 12.5px; color: var(--muted); }
+.ktx-note:empty { display: none; }
+.ktx-note.bad { color: var(--danger); }
+.ktx-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.ktx-list:empty { display: none; }
+.ktx-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px; padding: 7px 2px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.ktx-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ktx-time b { font-weight: 650; }
+.ktx-train { min-width: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ktx-seats { display: flex; gap: 5px; }
+.ktx-seat { flex-direction: column; gap: 0; min-width: 74px; min-height: 36px; padding: 3px 8px; border: 1px solid var(--free-line); background: var(--free); font-size: 11px; line-height: 1.25; }
+.ktx-seat:hover:not(:disabled) { background: var(--free-hover); }
+.ktx-seat b { font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ktx-seat.soon b::after { content: " 임박"; color: var(--danger); font-size: 10.5px; font-weight: 600; }
+.ktx-seat:disabled { border-color: var(--busy-line); background: var(--busy); }

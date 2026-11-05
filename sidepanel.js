@@ -38,6 +38,7 @@ import { createRndGen } from './rndgen/index.js';
 import { createGitSync } from './gitsync.js';
 import { createDwrBox } from './dwrbox.js';
 import { createStdBox } from './stdbox.js';
+import { createKtxBox } from './ktxbox.js';
 import { fetchWorkList } from './src/dwrwrite.js';
 import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
 import { hrListDocs, hrWorkPlan } from './src/hr.js';
@@ -54,6 +55,7 @@ import { resolvePreset } from './actions/preset.js';
 import { registerBooking, inputOf, cancelInputOf, handleSpan, LIVE_RECORD_GONE } from './actions/runners/booking.js';
 import { registerDwr } from './actions/runners/dwr.js';
 import { registerBoard } from './actions/runners/board.js';
+import { registerKtx } from './actions/runners/ktx.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -147,6 +149,8 @@ registerBooking(actions);
 registerDwr(actions);
 // 국제표준 올리기(board.standard — 공문 탭의 국제표준 업로드 칸이 표준 PDF 하나마다, 2026-10-30).
 registerBoard(actions);
+// KTX 열차 조회(ktx.search — 차량 탭의 KTX 조회 칸이 코레일 뒤 탭에서, 2026-11-05). 조회라 확인 없이 돈다.
+registerKtx(actions);
 
 /** 행위의 사전설정을 채운다 — 저장소·내 이름·오늘·레시피·패널의 ctx(actions/preset.js). 값이 없으면 null 이지만 키는 다 있다. */
 const presetFor = (id, ctx = {}) => resolvePreset(actions.entry(id).preset, {
@@ -2034,6 +2038,9 @@ const gongmun = createGongmunPanel({
 /** 공문 탭의 국제표준 업로드 칸(stdbox.js — 표준 PDF·ZIP 을 Standard Documents 게시판에 하나씩, board.standard 기록으로, 2026-10-30). 비교작성 탭에서는 서지 않는다. */
 createStdBox({ actions, me: () => state.myName, compareTab: COMPARE_KIND });
 
+/** 차량 탭의 KTX 조회 칸(ktxbox.js — 코레일 조회, 좌석을 누르면 코레일 탭에서 골라 둔다, 2026-11-05). 날짜·시작 시는 탭 위의 날짜 줄·시작 시간이다. */
+const ktx = createKtxBox({ actions, when: () => ({ date: el.date.value, hour: hours().start }), today: todayStr });
+
 /** R&D 탭. 화면 조각은 rndpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. 공유 (SharePoint)의 fetch·저장소는 기본값(전역 fetch 와 rerp/spstore.js — 브라우저 로그인 쿠키, manifest *.sharepoint.com). */
 const rnd = createRndPanel({
   $, escapeHtml, logEvent,
@@ -2185,6 +2192,7 @@ function applyMode(mode, { keepSettings = false } = {}) {
   el.grid.classList.toggle('hidden', mineTab);
   el.mineWrap.classList.toggle('hidden', !mineTab);
   dwr.toggle(mineTab);
+  ktx.toggle(car);
 
   chrome.storage.local.set({ mode });
   if (!gongmunTab) gongmun.hide();
