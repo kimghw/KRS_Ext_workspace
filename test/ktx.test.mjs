@@ -1,5 +1,6 @@
-// KTX 조회 — 코레일 조건 짓기·결과 화면 읽기·뒤 탭 조회(src/ktx.js), 실행기 어댑터(actions/runners/ktx.js), 차량 탭의 칸(ktxbox.js)
-// (2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음").
+// KTX 조회 — 코레일 조건 짓기·결과 화면 읽기·최소화한 창에서 조회(src/ktx.js), 실행기 어댑터(actions/runners/ktx.js), 차량 탭의 칸(ktxbox.js)
+// (2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음" ·
+// "이걸 차량 현황 이랑 탭으로 해서 선택할 수 있게 해줘. 그리고 백그라운드에서 실행되도록 해줘").
 // 코레일은 흉내 낸다 — 열차 줄의 꼴은 binjari 의 검증된 파서·테스트(li.tckList · .price_box gen/sold_out/sold_out_soon)를 따르고,
 // 막힘 안내는 2026-11-05 이 PC(Azure)에서 실제로 본 -8202 모달의 글이다.
 
@@ -79,19 +80,23 @@ test('좌석 고르기 — 출발 시각·열차 번호로 줄을 찾아 그 좌
   assert.equal(call(injected.pagePick, '07:00', '999', 'gen').ok, false);
 });
 
-/** 가짜 chrome — 탭 하나, executeScript 는 함수 이름으로 답한다(pageRows 는 차례로 준 답). */
+/** 가짜 chrome — 코레일 탭 하나(최소화한 창 3 에), 패널의 창은 1. executeScript 는 함수 이름으로 답한다(pageRows 는 차례로 준 답). */
 function fakeChrome(answers) {
   const calls = [];
   const session = {};
   let tab = null;
   const api = {
-    storage: { session: { get: async (k) => ({ [k]: session[k] }), set: async (o) => Object.assign(session, o) } },
+    storage: { session: { get: async (k) => ({ [k]: session[k] }), set: async (o) => Object.assign(session, o), remove: async (k) => { delete session[k]; } } },
     tabs: {
-      create: async (o) => { calls.push(['create', o.url, o.active]); tab = { id: 7, url: o.url, status: 'complete', windowId: 3 }; return tab; },
       get: async (id) => { if (!tab || tab.id !== id) throw new Error('No tab with id'); return tab; },
       update: async (id, o) => { calls.push(['update', id, o.active]); },
+      move: async (id, o) => { calls.push(['move', id, o.windowId]); tab.windowId = o.windowId; },
     },
-    windows: { update: async (id) => { calls.push(['focus', id]); } },
+    windows: {
+      create: async (o) => { calls.push(['window', o.url, o.state]); tab = { id: 7, url: o.url, status: 'complete', windowId: 3 }; return { id: 3, tabs: [tab] }; },
+      getCurrent: async () => ({ id: 1 }),
+      update: async (id) => { calls.push(['focus', id]); },
+    },
     scripting: {
       executeScript: async ({ target, world, func, args }) => {
         calls.push([func.name, target.tabId, world, args]);
@@ -108,13 +113,13 @@ function fakeChrome(answers) {
 const INPUT = { from: '부산', to: '서울', date: '2026-11-12', hour: 5, adults: 1 };
 const fresh = (over) => ({ at: 2, path: '/ticket/search/list', rows: [], notice: '', empty: false, from: '부산', to: '서울', date: '2026-11-12(목) 05:00', ...over });
 
-test('ktxSearch — 뒤 탭을 열고, 결과 화면을 조건으로 새로고침하고, 새 문서의 줄을 읽는다', async () => {
+test('ktxSearch — 최소화한 창을 열고(탭 줄에 서지 않는다), 결과 화면을 조건으로 새로고침하고, 새 문서의 줄을 읽는다', async () => {
   const row = { train: 'KTX', no: '101', dep: '05:13', arr: '07:51' };
   const f = fakeChrome([{ at: 1, path: '/ticket/main', rows: [] }, new Error('Frame removed'), fresh({ rows: [row] })]);
   const stages = [];
   const r = await ktxSearch(INPUT, { api: f.api, today: '2026-11-05', onStage: (s) => stages.push(s) });
   assert.deepEqual(r, { ok: true, rows: [row], tabId: 7 });
-  assert.deepEqual(f.calls[0], ['create', 'https://www.korail.com/ticket/main', false]);
+  assert.deepEqual(f.calls[0], ['window', 'https://www.korail.com/ticket/main', 'minimized']);
   const q = f.calls.find((c) => c[0] === 'pageQuery');
   assert.equal(q[2], 'MAIN');
   assert.deepEqual([q[3][0].txtGoStartCode, q[3][0].txtGoAbrdDt, q[3][1]], ['0020', '20261112', '/ticket/search/list']);
@@ -123,7 +128,12 @@ test('ktxSearch — 뒤 탭을 열고, 결과 화면을 조건으로 새로고�
   // 같은 패널이 다시 조회하면 이 확장의 탭을 다시 쓴다
   const again = await ktxSearch(INPUT, { api: f.api, today: '2026-11-05' });
   assert.equal(again.ok, true);
-  assert.equal(f.calls.filter((c) => c[0] === 'create').length, 1);
+  assert.equal(f.calls.filter((c) => c[0] === 'window').length, 1);
+  // 좌석을 골라 사람에게 넘긴 탭은 다시 쓰지 않는다 — 다음 조회는 새 창
+  await ktxPick({ tabId: 7, row: { dep: '05:13', no: '101' }, seat: 'gen' }, { api: f.api });
+  assert.equal(f.session.ktxTab, undefined);
+  await ktxSearch(INPUT, { api: f.api, today: '2026-11-05' });
+  assert.equal(f.calls.filter((c) => c[0] === 'window').length, 2);
 });
 
 test('ktxSearch — 막힘 안내는 그 글로, 조건이 다른 화면은 줄을 받지 않는다, 같은 역은 탭을 열지 않는다', async () => {
@@ -138,13 +148,18 @@ test('ktxSearch — 막힘 안내는 그 글로, 조건이 다른 화면은 줄�
   assert.equal(f.calls.length, 0);
 });
 
-test('ktxPick — 코레일 탭을 앞으로 가져와 그 줄의 좌석을 누른다, 닫힌 탭이면 다시 조회하라고', async () => {
+test('ktxPick — 최소화한 창의 코레일 탭을 패널의 창으로 옮겨 앞에 두고 그 줄의 좌석을 누른다, 닫힌 탭이면 다시 조회하라고', async () => {
   const f = fakeChrome([]);
-  await f.api.tabs.create({ url: 'https://www.korail.com/ticket/search/list', active: false });
+  await f.api.windows.create({ url: 'https://www.korail.com/ticket/search/list', state: 'minimized' });
+  f.session.ktxTab = 7;
   const r = await ktxPick({ tabId: 7, row: { dep: '05:13', no: '101' }, seat: 'gen' }, { api: f.api });
   assert.deepEqual(r, { ok: true });
-  assert.deepEqual(f.calls.slice(1).map((c) => c.slice(0, 3)), [['update', 7, true], ['focus', 3], ['pagePick', 7, 'ISOLATED']]);
-  assert.deepEqual(f.calls.at(-1)[3], ['05:13', '101', 'gen']);
+  assert.deepEqual(f.calls.slice(1).map((c) => c.slice(0, 3)), [['move', 7, 1], ['update', 7, true], ['focus', 1], ['pagePick', 7, 'ISOLATED']]);
+  assert.equal(f.session.ktxTab, undefined, '넘긴 탭은 잊는다');
+  // 이미 패널의 창에 있으면 옮기지 않는다
+  await ktxPick({ tabId: 7, row: { dep: '05:13', no: '101' }, seat: 'spec' }, { api: f.api });
+  assert.equal(f.calls.filter((c) => c[0] === 'move').length, 1);
+  assert.deepEqual(f.calls.find((c) => c[0] === 'pagePick')[3], ['05:13', '101', 'gen']);
   f.closeTab();
   assert.match((await ktxPick({ tabId: 7, row: {}, seat: 'gen' }, { api: f.api })).error, /닫혔습니다/);
 });
@@ -177,9 +192,18 @@ test('차량 탭의 칸 — 조회하면 줄이 서고, 매진 좌석은 잠기�
   });
   await new Promise((r) => setTimeout(r, 0));
   const $ = (id) => doc.getElementById(id);
-  assert.equal($('ktxBox').hidden, true, '차량 탭이 아니면 숨는다');
+  const app = doc.querySelector('.app');
+  const pressed = () => $('carViewControl').querySelector('[aria-pressed="true"]')?.dataset.view;
+  const choose = (view) => $('carViewControl').querySelector(`[data-view="${view}"]`).querySelector('svg').dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }));
+  assert.deepEqual([$('carViewControl').hidden, $('ktxBox').hidden], [true, true], '차량 탭이 아니면 시간 옆 아이콘도 칸도 숨는다');
   box.toggle(true);
-  assert.equal($('ktxBox').hidden, false);
+  assert.deepEqual([$('carViewControl').hidden, $('ktxBox').hidden, app.classList.contains('ktx-view'), pressed()], [false, true, false, 'car'], '차량 탭은 차량부터');
+  choose('ktx');
+  assert.deepEqual([$('ktxBox').hidden, app.classList.contains('ktx-view'), pressed(), store.ktxView], [false, true, 'ktx', undefined], '아이콘 안을 눌러도 되고, 고른 것은 저장하지 않는다');
+  box.toggle(false);
+  assert.deepEqual([$('carViewControl').hidden, $('ktxBox').hidden, app.classList.contains('ktx-view')], [true, true, false], '다른 탭으로 가면 숨는다');
+  box.toggle(true);
+  assert.equal($('ktxBox').hidden, false, '돌아오면 고른 탭 그대로');
   assert.equal($('ktxPax').value, '2', '저장한 인원');
   $('ktxSwap').click();
   assert.deepEqual([$('ktxFrom').value, $('ktxTo').value], ['서울', '부산']);
@@ -198,11 +222,31 @@ test('차량 탭의 칸 — 조회하면 줄이 서고, 매진 좌석은 잠기�
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(picks, [{ tabId: 7, row: rows[0], seat: 'gen' }]);
   assert.match($('ktxNote').textContent, /05:13 KTX 101 일반실을 골라 두었습니다/);
+  choose('car');
+  assert.deepEqual([$('ktxBox').hidden, app.classList.contains('ktx-view'), store.ktxView], [true, false, undefined]);
 });
 
-test('패널 — KTX 칸은 예약 칸 다음, 설정 화면이면 다른 탭 내용처럼 숨는 자리(.app 바로 아래)', () => {
+test('시간 옆 고르기 — 예전에 저장해 둔 KTX 조회가 있어도 차량으로 연다(2026-11-05 "기본은 차량 조회로")', async () => {
+  const doc = new JSDOM(html).window.document;
+  const box = createKtxBox({ doc, actions: null, storage: { get: async (k) => ({ [k]: k === 'ktxView' ? 'ktx' : undefined }), set: async () => {} } });
+  box.toggle(true);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(doc.getElementById('ktxBox').hidden, true);
+  assert.equal(doc.querySelector('#carViewControl [aria-pressed="true"]').dataset.view, 'car');
+});
+
+test('패널 — 차량·KTX·항공권 아이콘 셋은 날짜 줄의 시간 칸 옆(목록이 아니라 단추), KTX 칸은 예약 칸 다음(.app 바로 아래), 차량 탭 안의 탭 줄은 없다', () => {
   const doc = new JSDOM(html).window.document;
   const box = doc.getElementById('ktxBox');
+  const pick = doc.getElementById('carViewControl');
   assert.equal(box.previousElementSibling.id, 'booking');
+  assert.ok(pick.previousElementSibling.classList.contains('hours-control'));
+  assert.equal(pick.querySelector('svg'), null, '그림은 src/icons.js 의 것을 ktxbox 가 채운다(출장 폼과 같은 아이콘)');
+  createKtxBox({ doc, actions: null, storage: { get: async () => ({}), set: async () => {} } });
+  assert.deepEqual([...pick.querySelectorAll('button[data-view]')].map((b) => b.dataset.view + ':' + b.title + ':' + !!b.querySelector('svg')), ['car:차량 현황:true', 'ktx:KTX 조회:true', 'flight:항공권 조회:true']);
+  assert.equal(pick.querySelector('select'), null, '목록 팝업이 아니다');
+  assert.equal(doc.getElementById('carTabs'), null);
   assert.ok(box.parentElement.classList.contains('app'));
+  const css = fs.readFileSync(new URL('../sidepanel.css', import.meta.url), 'utf8');
+  assert.match(css, /\.app\.ktx-view > \.ask, \.app\.ktx-view > \.schedule, \.app\.ktx-view > #booking \{ display: none; \}/);
 });

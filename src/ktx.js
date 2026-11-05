@@ -1,15 +1,15 @@
-// KTX 조회 — 코레일(www.korail.com) 승차권 예매 화면을 뒤 탭으로 열어 조회하고, 고른 열차·좌석은 그 탭에서 골라 둔다
+// KTX 조회 — 코레일(www.korail.com) 승차권 예매 화면을 최소화한 창에서 열어 조회하고, 고른 열차·좌석은 그 탭을 사람의 창으로 옮겨 골라 둔다
 // (2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음").
 //
 //   ktxSearch(input, { api, onStage })   → { ok, rows, tabId } | { ok: false, error, tabId }      행위 ktx.search 의 실행기(actions/runners/ktx.js)
-//   ktxPick({ tabId, row, seat }, { api }) → { ok, error? }   그 탭을 앞으로 가져와 그 줄의 좌석(일반실·특실)을 누른다 — 줄이 골라질 뿐, 예매 단추는 사람이
+//   ktxPick({ tabId, row, seat }, { api }) → { ok, error? }   그 탭을 패널의 창으로 옮겨 앞에 두고 그 줄의 좌석(일반실·특실)을 누른다 — 줄이 골라질 뿐, 예매 단추는 사람이
 //   korailSearch(input, today)            결과 화면이 스스로 조회하는 조건(history.state.state.search)
 //   KTX_STATIONS                          [역 이름, 코레일 역 코드] — /com/talkLiteStationInfo.do 의 이름·코드(2026-11-05 받아 맞춤)
 //   injected = { pageQuery, pageRows, pagePick }   탭 안에서 도는 함수(테스트가 jsdom 에서 같은 함수를 돌린다)
 //
 // 조회는 사이트의 조회 단추를 누르지 않는다. 코레일 SPA 는 조회 폼이 결과 화면으로 갈 때 조건을 react-router 의 기록
 // (history.push('/ticket/search/list', { search })) 에 싣고, 결과 화면은 열릴 때(새로고침 포함) 그 조건으로 스스로 조회한다(번들 1.0.221 — 간편 예매의 조건 짓기와 같은 칸).
-// 그래서 코레일 화면 하나를 연 뒤 그 탭의 기록을 결과 화면 + 조건으로 바꾸고 새로고침한다 — 사람이 결과 화면에서 F5 를 누른 것과 같다
+// 그래서 코레일 화면 하나를 (최소화한 창에 — 2026-11-05 사용자 지정: "백그라운드에서 실행되도록 해줘") 연 뒤 그 탭의 기록을 결과 화면 + 조건으로 바꾸고 새로고침한다 — 사람이 결과 화면에서 F5 를 누른 것과 같다
 // (binjari 2026-11-04 실측: 매크로 가드 -8002 는 조회 폼의 제출에서 나고, 결과 화면 새로고침은 SUCC). 열차 줄의 꼴은 binjari 의 검증된 파서(li.tckList ·
 // .price_box — gen 이 일반실, sold_out(sold_out_soon 제외)이 매진)를 따른다.
 // 사이트가 막으면(안내 모달의 CODE — -8002 매크로 · -8202 VPN·데이터센터 IP 등) 그 글을 그대로 돌려준다. 2026-11-05 이 저장소의 Azure PC(AS8075)에서는
@@ -118,7 +118,7 @@ export const injected = { pageQuery, pageRows, pagePick };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isKorail = (tab) => String(tab?.url || tab?.pendingUrl || '').startsWith(KORAIL);
 
-/** 이 확장이 연 코레일 탭 — 사람이 따로 연 코레일 탭(결제 중일 수 있다)은 건드리지 않는다. 세션 저장소에 둔다(패널을 다시 열어도 같은 탭). */
+/** 이 확장이 연 코레일 탭 — 사람이 따로 연 코레일 탭(결제 중일 수 있다)과 좌석을 골라 사람에게 넘긴 탭은 건드리지 않는다. 세션 저장소에 둔다(패널을 다시 열어도 같은 탭). */
 async function ownTab(api) {
   const id = (await api.storage?.session?.get?.(TAB_KEY))?.[TAB_KEY];
   if (id == null) return null;
@@ -149,7 +149,7 @@ async function settled(api, tabId, ms = WAIT_MS) {
 const SAME = (a, b) => String(a || '').trim() === String(b || '').trim();
 
 /**
- * KTX 를 조회한다 — 이 확장의 코레일 탭(없으면 뒤 탭으로 연다)에서 결과 화면을 조건으로 새로고침하고, 열차 줄이 서거나 막히거나 없다고 할 때까지 읽는다.
+ * KTX 를 조회한다 — 이 확장의 코레일 탭(없으면 최소화한 창으로 연다 — 사람의 탭 줄에 서지 않는다)에서 결과 화면을 조건으로 새로고침하고, 열차 줄이 서거나 막히거나 없다고 할 때까지 읽는다.
  * @param {{from: string, to: string, date: string, hour: number, adults: number}} input
  * @param {{ api?: typeof chrome, today?: string, onStage?: (text: string) => void }} [opts]
  */
@@ -159,7 +159,7 @@ export async function ktxSearch(input, { api = globalThis.chrome, today = input.
   onStage('코레일 여는 중');
   let tab = await ownTab(api);
   if (!tab) {
-    tab = await api.tabs.create({ url: KORAIL_MAIN, active: false });
+    tab = (await api.windows.create({ url: KORAIL_MAIN, state: 'minimized' })).tabs[0];
     await api.storage?.session?.set?.({ [TAB_KEY]: tab.id });
   }
   const tabId = tab.id;
@@ -180,17 +180,21 @@ export async function ktxSearch(input, { api = globalThis.chrome, today = input.
     }
     return { ok: true, rows: page.rows, tabId };
   }
-  return { ok: false, error: '코레일이 시간 안에 답하지 않았습니다 — 코레일 탭을 열어 확인해 주세요.', tabId };
+  return { ok: false, error: '코레일이 시간 안에 답하지 않았습니다 — 다시 조회해 주세요.', tabId };
 }
 
 /**
- * 고른 열차의 좌석으로 — 코레일 탭을 앞으로 가져와 그 줄의 좌석을 누른다(예매 단추는 사람이 — 누르면 좌석이 잡히는 예약이다).
+ * 고른 열차의 좌석으로 — 최소화한 창의 코레일 탭을 패널이 있는 창으로 옮겨 앞에 두고 그 줄의 좌석을 누른다(예매 단추는 사람이 — 누르면 좌석이 잡히는 예약이다).
+ * 넘긴 탭은 이제 사람의 것이라(예매·결제 중일 수 있다) 잊는다 — 다음 조회는 새 창에서 한다.
  * @param {{ tabId: number, row: {dep: string, no: string}, seat: 'gen'|'spec' }} pick
  */
 export async function ktxPick({ tabId, row, seat }, { api = globalThis.chrome } = {}) {
   const tab = await api.tabs.get(tabId).catch(() => null);
   if (!tab || !isKorail(tab)) return { ok: false, error: '코레일 탭이 닫혔습니다 — 다시 조회해 주세요.' };
+  const win = await api.windows.getCurrent().catch(() => null);
+  if (win && win.id !== tab.windowId) await api.tabs.move(tabId, { windowId: win.id, index: -1 });   // 최소화한 창은 빈 채로 닫힌다
+  await api.storage?.session?.remove?.(TAB_KEY);
   await api.tabs.update(tabId, { active: true });
-  if (tab.windowId != null) await api.windows?.update?.(tab.windowId, { focused: true });
+  await api.windows.update(win?.id ?? tab.windowId, { focused: true });
   return (await run(api, tabId, pagePick, [row.dep, row.no, seat]).catch(() => null)) || { ok: false, error: '코레일 화면을 읽지 못했습니다.' };
 }

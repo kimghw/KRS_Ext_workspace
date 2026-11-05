@@ -787,6 +787,32 @@ t('보낸 기록의 × — 그 출장의 보낸 기록만 지운다(패널의 �
   assert.deepEqual(writes(), []);
 });
 
+console.log('과제·계정은 R&D 탭에 등록된 과제의 약자에서 고른다 — 고르면 그 과제의 행정 담당이 받는 사람이 된다(2026-11-03 사용자 지정)');
+store.rndBook = { projects: [
+  { id: 'p1', name: '선박용 직류 차단기 개발', alias: 'SSCB', support: [{ name: '김연구', role: '연구지원' }, { name: '홍길동', role: '행정 담당', ref: true }] },
+  { id: 'p2', name: 'MVDC 실증', alias: 'MVDC', support: [] },
+] };
+await panel.show();   // 근태 탭을 다시 보이면 송부 칸이 기억한 것(과 R&D 과제)을 다시 읽는다
+await until(() => box()?.querySelector('datalist option'), 'R&D 과제 목록');
+t('과제·계정 칸에 R&D 과제의 약자 목록이 붙는다 — 설명은 과제명과 행정 담당이다. 계정은 그대로 직접 적는다', () => {
+  const input = q('input[data-send="account"]');
+  assert.equal(input.placeholder, '과제 고르기·직접 적기');
+  const list = doc.getElementById(input.getAttribute('list'));
+  assert.deepEqual([...list.querySelectorAll('option')].map((o) => [o.value, o.getAttribute('label')]), [['SSCB', '선박용 직류 차단기 개발 · 행정 홍길동'], ['MVDC', 'MVDC 실증']]);
+  assert.equal(q('.at-send-picked'), null);
+});
+type('input[data-send="account"]', 'sscb');
+await until(() => q('.at-send-picked'), '행정 담당을 받는 사람으로');
+t('약자를 고르면(대소문자는 보지 않는다) 그 과제의 행정 담당(맡은 일에 "행정")을 쪽지 받는 사람 찾기로 찾아 받는 사람에 넣는다 — 이름이 꼭 같은 사람이 하나다', () => {
+  assert.equal(q('.at-send-picked').textContent, '홍길동 책임 · 회계팀×');
+  assert.match(site.calls.at(-1).url, /GetRecipientSuggestions\?query=%ED%99%8D%EA%B8%B8%EB%8F%99$/);
+  assert.equal(q('input[data-send="account"]').value, 'sscb', '치던 칸은 그대로다(카드를 다시 그리지 않는다)');
+  assert.equal(goBtn().disabled, false);
+});
+type('input[data-send="account"]', 'MVDC');
+t('행정지원이 없는 과제를 고르면 받는 사람은 그대로다', () => assert.equal(q('.at-send-picked').textContent, '홍길동 책임 · 회계팀×'));
+delete store.rndBook;
+
 console.log('세트로 기억하기 전의 기록(과제·계정과 받는 사람을 따로 기억하던 때)에서 세트를 짓는다');
 {
   const { createSendBox } = await import('../sendbox.js');

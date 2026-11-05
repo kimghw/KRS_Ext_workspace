@@ -21,6 +21,8 @@
     "https://e-accounting.krs.co.kr/*",
     "https://*.sharepoint.com/*",
     "https://www.korail.com/*",
+    "https://www.koreanair.com/*",
+    "https://www.airbusan.com/*",
     "https://api.anthropic.com/*",
     "http://localhost:5001/*",
     "http://localhost:5003/*",

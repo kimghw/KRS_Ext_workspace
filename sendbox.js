@@ -34,8 +34,10 @@
 // `사후정산 다시하기`가 서고(ctx.redo — 무엇을 하는지는 attendpanel.js), 이전에 보낸 곳의 줄마다 × 가, 보낸 기록(`보냈습니다 — …`)
 // 옆에도 × 가 선다. 지우는 것은 패널이 기억해 둔 것뿐이다. 사후정산을 완료한 출장에 넣은 증빙은 읽어서 사후정산에 반영한다(ctx.read).
 
-import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, calName, sendTitle, sendLines, packCount, SETTLED_LABEL, RECENT_MAX } from './src/send.js';
+import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, calName, sendTitle, sendLines, packCount, SETTLED_LABEL, RECENT_MAX,
+  projectChoices, choiceOf, adminHit } from './src/send.js';
 import { memoSuggest } from './src/memo.js';
+import { BOOK_KEY, normalizeBook } from './src/rnd.js';
 import { teamsState } from './src/teams.js';
 import { EVIDENCE_ACCEPT, acceptsFile, attendToday } from './src/attend.js';
 // 보내는 일(계산서 PDF → 묶기 → Teams·쪽지)은 행위 trip.send 다(actions/runners/trip.js) — 여기서 직접 부르지 않는다. 받는 사람 찾기·Teams 상태 보기는 읽기라 그대로다.
@@ -116,8 +118,10 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
   // by 는 카드마다 고르고 있는 값, pop 은 떠 있는 팝업이다.
   // 카드의 touched 는 사람이 그 카드의 과제·계정이나 받는 사람에 손을 댔는가 — 손대기 전에는 가장 최근 세트를 깔아 준다.
   // 카드의 want 는 그 카드에서 가려는 길(고른 줄의 길이거나 칩으로 고른 길, 없으면 box.want 를 따른다), open 은 직접 고르는 칸을 폈는가.
-  const box = { sets: [], done: {}, teams: null, want: '', probing: null, by: {}, pop: null };
-  const of = (docNo) => box.by[docNo] || (box.by[docNo] = { account: '', person: null, want: '', open: false, query: '', hits: null, hitsError: '', busy: false, stage: '', error: '', timer: null, touched: false });
+  // projects 는 과제·계정 칸에서 고를 R&D 과제(src/send.js projectChoices — R&D 탭의 rndBook 에서), people 은 행정 담당의 이름으로 찾은 받는 사람 후보(이름 → 후보).
+  const box = { sets: [], done: {}, teams: null, want: '', probing: null, by: {}, pop: null, projects: [], people: {} };
+  // 카드의 linked 는 과제·계정 칸에서 마지막으로 받는 사람을 이은 과제(같은 과제로 다시 잇지 않는다).
+  const of = (docNo) => box.by[docNo] || (box.by[docNo] = { account: '', person: null, want: '', open: false, query: '', hits: null, hitsError: '', busy: false, stage: '', error: '', timer: null, touched: false, linked: '' });
   /** 그 카드에서 가려는 길과, 지금 나가는 길 — 가려는 길과 Teams MCP 의 사정으로 정해진다. */
   const wantNow = (s) => s.want || box.want;
   const wayNow = (s) => channelOf(box.teams, wantNow(s));
@@ -140,11 +144,13 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
    * Teams MCP 는 부를 때마다 다시 본다 — 다른 탭에 다녀온 사이에 켰거나 껐을 수 있다.
    */
   async function load() {
-    const saved = await chrome.storage.local.get(['sendSets', 'sendAccounts', 'sendPeople', 'sendDone', 'sendWay']);
+    const saved = await chrome.storage.local.get(['sendSets', 'sendAccounts', 'sendPeople', 'sendDone', 'sendWay', BOOK_KEY]);
     box.sets = Array.isArray(saved?.sendSets)
       ? saved.sendSets.filter((x) => typeof x?.account === 'string' && x.account && x.person?.id).slice(0, RECENT_MAX).map((x) => withWay(x, saved)) : setsFromOld(saved);
     box.done = saved?.sendDone && typeof saved.sendDone === 'object' ? saved.sendDone : {};
     box.want = wantOf(saved?.sendWay);
+    // R&D 탭에 등록된 과제(약자·행정지원) — 과제·계정 칸에서 고른다(2026-11-03 사용자 지정). 근태 탭을 열 때마다 다시 읽는다(R&D 탭에서 고쳤을 수 있다).
+    box.projects = projectChoices(normalizeBook(saved?.[BOOK_KEY]).projects);
     probe();
   }
 
@@ -218,6 +224,40 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
   const hitsHtml = (s) => (s.hitsError ? `<li class="error">${escapeHtml(s.hitsError)}</li>`
     : !s.hits ? '' : !s.hits.length ? '<li class="none">찾는 사람이 없습니다</li>'
       : s.hits.map((p) => `<li><button type="button" class="at-chip" data-act="send-person" data-id="${escapeHtml(p.id)}">${escapeHtml(personText(p))}</button></li>`).join(''));
+
+  /** 받는 사람 칸 — 골랐으면 그 사람(× 로 바꾼다), 아니면 이름·ID 로 찾는 칸과 후보다. */
+  const personHtml = (s, off) => (s.person
+    ? `<span class="at-send-picked" title="${escapeHtml(personText(s.person))}"><span class="at-send-who">${escapeHtml(personText(s.person))}</span><button type="button" class="small ghost at-kept-drop" data-act="send-person-clear" title="받는 사람 바꾸기" aria-label="받는 사람 바꾸기"${off}>×</button></span>`
+    : `<input type="text" data-send="person" value="${escapeHtml(s.query)}" placeholder="이름·ID 로 찾기" aria-label="받는 사람 찾기" autocomplete="off"${off} />`
+      + `<ul class="at-send-hits">${hitsHtml(s)}</ul>`);
+
+  /**
+   * 과제·계정 칸에서 R&D 과제를 골랐을 때 그 과제의 행정 담당을 받는 사람으로 잇는다(2026-11-03 사용자 지정: "과제 선택하면 담당 행정하시는분도
+   * 연결되어 있으니 그분께 보낼 수 있도록"). 쪽지의 받는 사람 찾기로 그 이름을 찾아 꼭 같은 이름이 하나면 받는 사람이 되고, 동명이인이거나
+   * 없으면 그 이름으로 찾은 후보를 받는 사람 칸에 띄운다(사람이 고른다). 카드를 새로 그리지 않고 받는 사람 칸만 바꾼다(치던 커서가 남는다).
+   */
+  async function linkAdmin(node, ctx, s, choice) {
+    s.linked = choice.value;
+    const admin = choice.admin;
+    if (!admin || s.person?.name === admin.name) return;
+    const paint = () => {
+      const row = node.isConnected ? node.querySelector('.at-send-row[aria-label="받는 사람"]') : null;
+      if (row) row.innerHTML = `<span class="at-label">받는 사람</span>${personHtml(s, ctx.locked || s.busy ? ' disabled' : '')}`;
+      sync(node, ctx, s);
+    };
+    let hits;
+    try {
+      hits = box.people[admin.name] || (box.people[admin.name] = (await memoSuggest(admin.name)).slice(0, HITS_MAX));
+    } catch (err) {
+      if (s.linked !== choice.value) return;
+      Object.assign(s, { person: null, query: admin.name, hits: null, hitsError: `행정 담당(${admin.name})을 찾지 못했습니다: ${err.message}` });
+      return paint();
+    }
+    if (s.linked !== choice.value) return;   // 기다리는 사이에 다른 과제를 골랐다
+    const hit = adminHit(hits, admin);
+    Object.assign(s, hit ? { person: hit, query: '', hits: null, hitsError: '' } : { person: null, query: admin.name, hits, hitsError: '' });
+    return paint();
+  }
 
   /**
    * 출장 카드의 송부 칸. 여비계산서가 없으면 빈 글이다.
@@ -297,10 +337,7 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
       + `aria-label="${escapeHtml(`${x.account} · ${whoText(x.person)} 지우기`)}"${off}>×</button>`);
     const fold = `<button type="button" class="at-send-fold" data-act="send-fold" aria-expanded="${open}" aria-label="직접 고르기" title="${FOLD_TITLE}"${anyOn(s) ? '' : ' hidden'}>${FOLD_ICON}</button>`;
     const sets = !rows.length ? '' : `<div class="at-send-sets" role="group" aria-label="이전에 보낸 곳">${rows[0]}${fold}${dels[0]}${rows.slice(1).map((r, i) => r + dels[i + 1]).join('')}</div>`;
-    const person = s.person
-      ? `<span class="at-send-picked" title="${escapeHtml(personText(s.person))}"><span class="at-send-who">${escapeHtml(personText(s.person))}</span><button type="button" class="small ghost at-kept-drop" data-act="send-person-clear" title="받는 사람 바꾸기" aria-label="받는 사람 바꾸기"${off}>×</button></span>`
-      : `<input type="text" data-send="person" value="${escapeHtml(s.query)}" placeholder="이름·ID 로 찾기" aria-label="받는 사람 찾기" autocomplete="off"${off} />`
-        + `<ul class="at-send-hits">${hitsHtml(s)}</ul>`;
+    const person = personHtml(s, off);
     const how = gate.ready ? `${way.label} · ${packCount(kept)} → PDF 1개` : gate.why;
     // 보내는 길(2026-10-04 사용자 지정) — 켜진 칩이 지금 나가는 길이다. Teams 로 못 가는 사정이면 Teams 칩에 까닭이 적혀 있고,
     // 누르면 Teams MCP 를 다시 본다.
@@ -313,9 +350,14 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
     // 저장하기 전에 사람이 정해 줄 것이 남았을 때의 까닭(ctx.hold)만 적는다.
     const settleNote = gate.settle && ctx.hold ? `<p class="at-send-note error">${escapeHtml(ctx.hold)}</p>` : '';
     // 직접 고르는 칸 — 과제·계정과 받는 사람은 한 줄에 나란히 선다(2026-10-04 사용자 지정, 칸이 좁아 과제·계정의 안내 글은 짧게
-    // 적는다). 그 아래가 보내는 길이다.
+    // 적는다). 그 아래가 보내는 길이다. 과제·계정은 R&D 탭에 등록된 과제의 약자 가운데 고르거나 직접 적는다(2026-11-03 사용자 지정 —
+    // 목록은 칸의 datalist, 고르면 그 과제의 행정 담당이 받는 사람이 된다: linkAdmin).
+    const listId = `atSendProj_${String(it.docNo).replace(/[^\w-]/g, '_')}`;
+    const choices = box.projects.length ? `<datalist id="${listId}">${box.projects.map((c) => `<option value="${escapeHtml(c.value)}"${c.label ? ` label="${escapeHtml(c.label)}"` : ''}></option>`).join('')}</datalist>` : '';
+    const accountTip = box.projects.length ? 'R&D 과제의 약자를 고르면 그 과제의 행정 담당이 받는 사람이 됩니다 — 계정은 직접 적습니다' : '과제 또는 계정을 직접 적기';
     const form = !open ? '' : `<div class="at-send-pair"><div class="at-send-row" role="group" aria-label="과제·계정"><span class="at-label">과제·계정</span>`
-      + `<input type="text" data-send="account" value="${escapeHtml(s.account)}" placeholder="직접 적기" title="과제 또는 계정을 직접 적기" aria-label="과제 또는 계정" autocomplete="off"${off} /></div>`
+      + `<input type="text" data-send="account" value="${escapeHtml(s.account)}" placeholder="${box.projects.length ? '과제 고르기·직접 적기' : '직접 적기'}" `
+      + `title="${escapeHtml(accountTip)}" aria-label="과제 또는 계정"${box.projects.length ? ` list="${listId}"` : ''} autocomplete="off"${off} />${choices}</div>`
       + `<div class="at-send-row" role="group" aria-label="받는 사람"><span class="at-label">받는 사람</span>${person}</div></div>`
       + ways;
     // 차례(2026-10-05 사용자 지정: 보낸 기록과 증빙 목록을 가리키며 "이 부분이 보내기 아래에 위치 하도록") — 정산 내역 바로 아래에 보낼 곳과
@@ -384,6 +426,10 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
       // 치는 칸은 펴 둔다 — 친 글이 이전에 보낸 줄과 같아져도 다음에 그릴 때 접히지 않는다.
       Object.assign(s, { account: target.value, touched: true, open: true });
       sync(node, ctx, s);
+      // R&D 과제의 약자와 같아졌으면(목록에서 골랐거나 다 쳤다) 그 과제의 행정 담당을 받는 사람으로 잇는다 — 같은 과제로는 한 번만.
+      const choice = choiceOf(box.projects, target.value);
+      if (!choice) s.linked = '';
+      else if (s.linked !== choice.value) linkAdmin(node, ctx, s, choice);
     } else if (kind === 'person') {
       s.query = target.value;
       suggest(node, s);

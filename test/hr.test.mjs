@@ -198,6 +198,64 @@ await ta('보이면 회수하고 "회수되었습니다" 를 기다린다', asyn
   assert.equal((await injected.frameRun(RECALL)).ok, true);
 });
 
+console.log('근태수정신청(2026-11-03 화면 소스 — modifyRequestYn=Y · #bfDocNo · related-modifications)');
+/**
+ * 결재완료 문서를 수정 모드로 여는 사이트 흉내 — 문서를 앉힌 뒤(#docNo) modifyRequestYn 이 Y 면 조금 뒤 원 번호를 #bfDocNo 로 옮기고
+ * #docNo·#statusCode 를 비운다(사이트의 beginModifyApprovalRequest). 결재요청은 확인 → 새 문서번호 → 알림.
+ */
+const MOD_FORM = `${FORM}<input id="bfDocNo"><input id="statusCode">`;
+const modSite = (related, { begins = true } = {}) => ($, calls, window) => {
+  const q = (s) => window.document.querySelector(s);
+  $.ajax = (o) => { calls.push(['related', o.url, o.data, o.async]); o.success(related); };
+  return {
+    sendMdiParamCallback(p) {
+      calls.push(['open', p]);
+      q('#docNo').value = p.docNo;
+      q('#statusCode').value = p.statusCode;
+      if (begins && p.modifyRequestYn === 'Y') setTimeout(() => { q('#bfDocNo').value = p.docNo; q('#docNo').value = ''; q('#statusCode').value = ''; }, 50);
+    },
+    apprRequest() {
+      calls.push(['request', q('#bfDocNo').value, q('#biztripContent').value]);
+      $.confirm('결재요청 하시겠습니까?', '알림', () => { q('#docNo').value = '202611-11115-0001'; $.alert('결재 요청되었습니다.', '알림'); });
+    },
+  };
+};
+const MOD_JOB = {
+  ...JOB, action: 'request', fn: 'apprRequest',
+  open: { docNo: '202610-11115-0002', statusCode: '5', modify: true, related: '/uhr/docappr/approut100/related-modifications' },
+  expect: [{ sel: '#bfDocNo', value: '202610-11115-0002', label: '원 문서번호(근태수정신청)' }, ...JOB.expect],
+};
+await ta('수정 문서가 없으면 modifyRequestYn=Y 로 열고, 사이트가 수정 모드로 바꾼 뒤(원 번호가 #bfDocNo, #docNo 는 빈칸) 값을 넣고 결재요청한다', async () => {
+  const { calls } = page(MOD_FORM, modSite([]));
+  const r = await injected.frameRun(MOD_JOB);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(calls[0], ['related', '/uhr/docappr/approut100/related-modifications', { docNo: '202610-11115-0002' }, false]);
+  assert.deepEqual(calls[1], ['open', { docNo: '202610-11115-0002', statusCode: '5', modifyRequestYn: 'Y' }]);
+  assert.deepEqual(calls[2], ['request', '202610-11115-0002', '과제 협의']);
+  assert.equal(r.docNo, '202611-11115-0001');
+});
+await ta('이미 수정결재요청 문서가 있으면(MODIFIED 줄) 열지도 누르지도 않는다 — 사이트도 다시 수정하지 못하게 한다', async () => {
+  const { calls } = page(MOD_FORM, modSite([{ relationType: 'MODIFIED', docNo: '202611-11115-0001', statusCode: '3' }]));
+  const r = await injected.frameRun(MOD_JOB);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(' '), /이미 수정결재요청 문서가 있어 다시 수정신청할 수 없습니다/);
+  assert.deepEqual(calls.map((c) => c[0]), ['related']);
+});
+await ta('사이트가 수정 모드로 바꾸지 않으면(원 문서 그대로) 누르지 않는다', async () => {
+  const { calls } = page(MOD_FORM, modSite([], { begins: false }));
+  const real = Date.now;
+  let now = real();
+  Date.now = () => (now += 4000);   // 25초 기다림을 몇 번 만에 넘긴다
+  try {
+    const r = await injected.frameRun(MOD_JOB);
+    assert.equal(r.ok, false);
+    assert.match(r.errors.join(' '), /근태수정신청으로 열지 못했습니다/);
+    assert.ok(!calls.some((c) => c[0] === 'request'));
+  } finally {
+    Date.now = real;
+  }
+});
+
 console.log('출/퇴근기록 변경신청 표(2026-10-27 화면 소스 — docapprtmchng100Grid · insertGridRow · fn_TimeCal · apprtm-pop)');
 /**
  * 변경신청 화면 흉내 — "출퇴근시간 선택" 목록(apprtm-pop, 그 달) · 사이트의 insertGridRow(목록 줄 → 표 줄, 변경 칸은 00:00) ·

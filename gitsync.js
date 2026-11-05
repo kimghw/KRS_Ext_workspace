@@ -85,8 +85,9 @@ export function createGitSync({ button, badge, log = () => {}, say = () => {}, s
 
   function paint() {
     const v = st.reload ? { mode: 'reload', count: '↻', title: st.reloadTitle } : gitView(st.last, { at: st.at });
-    // 다리가 있으면 늘 보인다 — 누르면 확인, 새 커밋이 있으면 받기(2026-10-26 사용자 지정: "깃허브 최신화 커밋있는지 확인할 수 있도록 우측 상단에 버튼").
-    button.hidden = v.mode === 'off';
+    // 받을 것이 있을 때만 보인다 — 귀퉁이 수(새 커밋 수·다시 불러오기 ↻)가 서는 모양(new·blocked·diverged·reload). 같음·ahead·확인 실패·다리 없음은 숨김
+    // (2026-11-05 사용자 지정: "깃허브 업데이트 할게 아니면 아 이이콘 안보여줘도 될듯" — 10-26 의 "늘 보이게"를 뒤집음).
+    button.hidden = !v.count;
     button.dataset.mode = v.mode;
     button.title = v.title;
     button.setAttribute('aria-label', v.title.split('\n')[0] || 'GitHub 새 커밋 확인');

@@ -154,6 +154,24 @@ export const ACTIONS = {
         "mode": "none"
       }
     },
+    "flight": {
+      "domain": "flight",
+      "title": "항공",
+      "log": "flight",
+      "kinds": [
+        "search"
+      ],
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 지난 출발일 검사"
+        }
+      },
+      "llm": {
+        "task": "flight",
+        "mode": "none"
+      }
+    },
     "gongmun": {
       "domain": "gongmun",
       "title": "공문",
@@ -498,42 +516,97 @@ export const ACTIONS = {
         "workplace": {
           "type": "string",
           "label": "근무지",
-          "desc": "떠나는 근무지(서울·부산). 사전정산을 켰을 때 묻고(기차가 끼면 KTX 역을 찾으므로 그때만 필수 — 기존 검증기 몫), 차량 조회만 켰을 때도 받는다(차량의 지역)",
+          "desc": "떠나는 근무지(서울·부산). 사전정산을 켰을 때 묻고(어느 편이든 기차·버스면 그 줄이 근무지에서 떠나므로 그때만 필수 — 기존 검증기 몫), 차량 조회만 켰을 때도 받는다(차량의 지역)",
           "read": "근무지 — 서울 또는 부산",
           "llm": false,
           "ui": true,
           "max": 50
         },
-        "transport": {
-          "type": "tags",
-          "label": "교통편",
-          "desc": "교통편(여럿 — 기차 + 비행기). 사전정산을 켰을 때만 묻는다",
-          "read": "기차(train)·비행기(plane)·버스(bus) 가운데 말한 것",
+        "go": {
+          "type": "object",
+          "label": "가는 편",
+          "desc": "가는 편(출발일)의 교통편과 기차 좌석 등급. 사전정산을 켰을 때만 묻는다",
+          "read": "가는 편의 교통편 — 사용자가 말한 것만",
           "llm": false,
           "ui": true,
           "when": "settle",
-          "default": [
-            "train"
-          ],
-          "values": [
-            "train",
-            "plane",
-            "bus"
-          ]
+          "fields": {
+            "t": {
+              "type": "enum",
+              "required": true,
+              "label": "교통편",
+              "desc": "교통편(src/travel.js TRANSPORTS — references/travel-rules.yaml transport.choices, 기본 transport.default)",
+              "read": "기차(train)·비행기(plane)·버스(bus) 가운데 말한 것",
+              "default": "train",
+              "values": [
+                "train",
+                "plane",
+                "bus"
+              ]
+            },
+            "g": {
+              "type": "enum",
+              "label": "좌석 등급",
+              "desc": "기차 좌석 등급(standard 일반석·first 특실 — travel-rules.yaml transport.train.grade_labels). 기차가 아니면 standard",
+              "read": "기차 특실이라고 했을 때만 first",
+              "default": "standard",
+              "values": [
+                "standard",
+                "first"
+              ]
+            },
+            "fare": {
+              "type": "integer",
+              "label": "버스 요금",
+              "desc": "버스인 편의 요금(원) — 사람이 폼에 적는다(2026-11-03 사용자 지정: \"폼에서 요금을 적게\". eclass 교통비 요금표의 그 구간 버스 항목을 후보로 미리 채운다). 버스가 아니면 없다",
+              "read": "버스 요금을 말했을 때만 그 금액(원)",
+              "min": 1,
+              "max": 10000000
+            }
+          }
         },
-        "trainGrade": {
-          "type": "enum",
-          "label": "좌석 등급",
-          "desc": "기차 좌석 등급(standard 일반석·first 특실) — 교통편 아이콘 안의 값이라 fieldsFor 에는 따로 없다",
-          "read": "특실이라고 했을 때만 first",
+        "back": {
+          "type": "object",
+          "label": "오는 편",
+          "desc": "오는 편(도착일)의 교통편과 기차 좌석 등급. 사전정산을 켰을 때만 묻는다. 화면에서 가는 편을 바꿀 때 오는 편이 같았으면 따라 바뀐다",
+          "read": "오는 편의 교통편 — 사용자가 말한 것만",
           "llm": false,
           "ui": true,
           "when": "settle",
-          "default": "standard",
-          "values": [
-            "standard",
-            "first"
-          ]
+          "fields": {
+            "t": {
+              "type": "enum",
+              "required": true,
+              "label": "교통편",
+              "desc": "교통편(src/travel.js TRANSPORTS — references/travel-rules.yaml transport.choices, 기본 transport.default)",
+              "read": "기차(train)·비행기(plane)·버스(bus) 가운데 말한 것",
+              "default": "train",
+              "values": [
+                "train",
+                "plane",
+                "bus"
+              ]
+            },
+            "g": {
+              "type": "enum",
+              "label": "좌석 등급",
+              "desc": "기차 좌석 등급(standard 일반석·first 특실 — travel-rules.yaml transport.train.grade_labels). 기차가 아니면 standard",
+              "read": "기차 특실이라고 했을 때만 first",
+              "default": "standard",
+              "values": [
+                "standard",
+                "first"
+              ]
+            },
+            "fare": {
+              "type": "integer",
+              "label": "버스 요금",
+              "desc": "버스인 편의 요금(원) — 사람이 폼에 적는다(2026-11-03 사용자 지정: \"폼에서 요금을 적게\". eclass 교통비 요금표의 그 구간 버스 항목을 후보로 미리 채운다). 버스가 아니면 없다",
+              "read": "버스 요금을 말했을 때만 그 금액(원)",
+              "min": 1,
+              "max": 10000000
+            }
+          }
         },
         "expense": {
           "type": "enum",
@@ -561,11 +634,20 @@ export const ACTIONS = {
             "request"
           ]
         },
+        "gcal": {
+          "type": "boolean",
+          "label": "G캘린더",
+          "desc": "결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다",
+          "read": "사용자가 구글 캘린더·일정 등록을 말했을 때만 true",
+          "llm": false,
+          "ui": true,
+          "default": false
+        },
         "doc": {
           "type": "object",
           "label": "고쳐 올리는 문서",
-          "desc": "임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 종류는 못 바꾼다",
-          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서",
+          "desc": "올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03). 종류는 못 바꾼다",
+          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서",
           "llm": false,
           "ui": false,
           "fields": {
@@ -578,7 +660,7 @@ export const ACTIONS = {
             },
             "statusCode": {
               "type": "string",
-              "desc": "결재 상태 코드(임시저장 1)",
+              "desc": "결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청)",
               "read": "그 문서의 상태 코드 그대로",
               "max": 2
             }
@@ -646,7 +728,7 @@ export const ACTIONS = {
           "when": "car"
         }
       ],
-      "next": "결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 trip.create 가, 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다)"
+      "next": "결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 trip.create 가, 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
     },
     "attend.out": {
       "id": "attend.out",
@@ -803,11 +885,20 @@ export const ACTIONS = {
             "request"
           ]
         },
+        "gcal": {
+          "type": "boolean",
+          "label": "G캘린더",
+          "desc": "결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다",
+          "read": "사용자가 구글 캘린더·일정 등록을 말했을 때만 true",
+          "llm": false,
+          "ui": true,
+          "default": false
+        },
         "doc": {
           "type": "object",
           "label": "고쳐 올리는 문서",
-          "desc": "임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 종류는 못 바꾼다",
-          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서",
+          "desc": "올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03). 종류는 못 바꾼다",
+          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서",
           "llm": false,
           "ui": false,
           "fields": {
@@ -820,7 +911,7 @@ export const ACTIONS = {
             },
             "statusCode": {
               "type": "string",
-              "desc": "결재 상태 코드(임시저장 1)",
+              "desc": "결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청)",
               "read": "그 문서의 상태 코드 그대로",
               "max": 2
             }
@@ -843,8 +934,8 @@ export const ACTIONS = {
         "file": "건강검진의 첨부",
         "venue": "출장의 장소 — 외근에는 장소 칸이 없다(place 는 목적 뒤에 붙는다)",
         "settle": "출장의 여비계산서",
-        "transport": "출장의 교통편",
-        "trainGrade": "출장의 좌석 등급",
+        "go": "출장의 가는 편 교통편",
+        "back": "출장의 오는 편 교통편",
         "wfa": "연차의 기념일 지원",
         "wfaName": "연차의 기념일 지원",
         "wfaRelation": "연차의 기념일 지원",
@@ -880,7 +971,7 @@ export const ACTIONS = {
           "when": "car"
         }
       ],
-      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다)"
+      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
     },
     "attend.flex": {
       "id": "attend.flex",
@@ -1091,6 +1182,7 @@ export const ACTIONS = {
       },
       "ignore": {
         "kind": "행위 ID 가 종류다(attend.flex)",
+        "gcal": "G캘린더 — 유연근무는 자리를 비우는 근태가 아니라 없다(src/gcal.js gcalKind)",
         "dateTo": "유연근무에는 기간이 없다(당일 하루 또는 주간)",
         "start": "시각 칸이 없다 — 출근시간(flexStart)이 시간대다",
         "end": "시각 칸이 없다",
@@ -1103,8 +1195,8 @@ export const ACTIONS = {
         "allDay": "건강검진의 칸",
         "file": "건강검진의 첨부",
         "settle": "출장의 여비계산서",
-        "transport": "출장의 교통편",
-        "trainGrade": "출장의 좌석 등급",
+        "go": "출장의 가는 편 교통편",
+        "back": "출장의 오는 편 교통편",
         "car": "출장·외근의 차량 조회",
         "carPlace": "외근의 차량 행선지",
         "sub": "유연근무에는 갈래가 없다",
@@ -1229,11 +1321,20 @@ export const ACTIONS = {
             "request"
           ]
         },
+        "gcal": {
+          "type": "boolean",
+          "label": "G캘린더",
+          "desc": "결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다",
+          "read": "사용자가 구글 캘린더·일정 등록을 말했을 때만 true",
+          "llm": false,
+          "ui": true,
+          "default": false
+        },
         "doc": {
           "type": "object",
           "label": "고쳐 올리는 문서",
-          "desc": "임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc)",
-          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서",
+          "desc": "올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03)",
+          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서",
           "llm": false,
           "ui": false,
           "fields": {
@@ -1246,7 +1347,7 @@ export const ACTIONS = {
             },
             "statusCode": {
               "type": "string",
-              "desc": "결재 상태 코드(임시저장 1)",
+              "desc": "결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청)",
               "read": "그 문서의 상태 코드 그대로",
               "max": 2
             }
@@ -1271,8 +1372,8 @@ export const ACTIONS = {
         "allDay": "건강검진의 칸",
         "file": "건강검진의 첨부",
         "settle": "출장의 여비계산서",
-        "transport": "출장의 교통편",
-        "trainGrade": "출장의 좌석 등급",
+        "go": "출장의 가는 편 교통편",
+        "back": "출장의 오는 편 교통편",
         "car": "출장·외근의 차량 조회",
         "carPlace": "외근의 차량 행선지",
         "sub": "외출에는 갈래가 없다",
@@ -1304,7 +1405,7 @@ export const ACTIONS = {
         }
       ],
       "then": [],
-      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList)"
+      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
     },
     "attend.leave": {
       "id": "attend.leave",
@@ -1534,11 +1635,20 @@ export const ACTIONS = {
             "request"
           ]
         },
+        "gcal": {
+          "type": "boolean",
+          "label": "G캘린더",
+          "desc": "결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다",
+          "read": "사용자가 구글 캘린더·일정 등록을 말했을 때만 true",
+          "llm": false,
+          "ui": true,
+          "default": false
+        },
         "doc": {
           "type": "object",
           "label": "고쳐 올리는 문서",
-          "desc": "임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc)",
-          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서",
+          "desc": "올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03)",
+          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서",
           "llm": false,
           "ui": false,
           "fields": {
@@ -1551,7 +1661,7 @@ export const ACTIONS = {
             },
             "statusCode": {
               "type": "string",
-              "desc": "결재 상태 코드(임시저장 1)",
+              "desc": "결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청)",
               "read": "그 문서의 상태 코드 그대로",
               "max": 2
             }
@@ -1578,8 +1688,8 @@ export const ACTIONS = {
         "allDay": "건강검진의 칸",
         "file": "건강검진의 첨부",
         "settle": "출장의 여비계산서",
-        "transport": "출장의 교통편",
-        "trainGrade": "출장의 좌석 등급",
+        "go": "출장의 가는 편 교통편",
+        "back": "출장의 오는 편 교통편",
         "car": "출장·외근의 차량 조회",
         "carPlace": "외근의 차량 행선지"
       },
@@ -1622,7 +1732,7 @@ export const ACTIONS = {
           "when": "wfa"
         }
       ],
-      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다. 기념일 지원을 켰으면 eclass 의 신청 화면을 채워 연다(attend.welfare — 2단계까지는 attendpanel.js fillWelfare 가 바로 한다)"
+      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다. 기념일 지원을 켰으면 eclass 의 신청 화면을 채워 연다(attend.welfare — 2단계까지는 attendpanel.js fillWelfare 가 바로 한다). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
     },
     "attend.health": {
       "id": "attend.health",
@@ -1732,11 +1842,20 @@ export const ACTIONS = {
             "request"
           ]
         },
+        "gcal": {
+          "type": "boolean",
+          "label": "G캘린더",
+          "desc": "결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다",
+          "read": "사용자가 구글 캘린더·일정 등록을 말했을 때만 true",
+          "llm": false,
+          "ui": true,
+          "default": false
+        },
         "doc": {
           "type": "object",
           "label": "고쳐 올리는 문서",
-          "desc": "임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc)",
-          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서",
+          "desc": "올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03)",
+          "read": "사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서",
           "llm": false,
           "ui": false,
           "fields": {
@@ -1749,7 +1868,7 @@ export const ACTIONS = {
             },
             "statusCode": {
               "type": "string",
-              "desc": "결재 상태 코드(임시저장 1)",
+              "desc": "결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청)",
               "read": "그 문서의 상태 코드 그대로",
               "max": 2
             }
@@ -1772,8 +1891,8 @@ export const ACTIONS = {
         "flexThu": "유연근무의 칸",
         "flexFri": "유연근무의 칸",
         "settle": "출장의 여비계산서",
-        "transport": "출장의 교통편",
-        "trainGrade": "출장의 좌석 등급",
+        "go": "출장의 가는 편 교통편",
+        "back": "출장의 오는 편 교통편",
         "car": "출장·외근의 차량 조회",
         "carPlace": "외근의 차량 행선지",
         "sub": "건강검진에는 갈래가 없다",
@@ -1807,7 +1926,7 @@ export const ACTIONS = {
         }
       ],
       "then": [],
-      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 첨부는 어댑터가 기록의 파일 이름으로 ctx.files 에서 찾아 buildJob 의 file op 에 넣는다"
+      "next": "결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 첨부는 어댑터가 기록의 파일 이름으로 ctx.files 에서 찾아 buildJob 의 file op 에 넣는다. G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
     },
     "attend.cancel": {
       "id": "attend.cancel",
@@ -2268,6 +2387,13 @@ export const ACTIONS = {
                 "2",
                 "3"
               ]
+            },
+            "gcal": {
+              "type": "boolean",
+              "label": "G캘린더",
+              "desc": "결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다",
+              "read": "사용자가 구글 캘린더·일정 등록을 말했을 때만 true",
+              "default": false
             }
           }
         }
@@ -3119,6 +3245,115 @@ export const ACTIONS = {
       ],
       "then": [],
       "next": "결과({ ok, status saved·submitted·exists·unverified, row, rowName, note })로 카드가 그 날의 줄에 적고(저장함·제출함·이미 있음·까닭) 저장·제출한 날을 dwrDone 에 적어 둔다. 다 쓰면 대시보드를 다시 받아 실제를 다시 센다"
+    },
+    "flight.search": {
+      "id": "flight.search",
+      "domain": "flight",
+      "kind": "search",
+      "title": "항공편 조회",
+      "hint": "대한항공·에어부산",
+      "status": "live",
+      "confirm": false,
+      "effect": "none",
+      "log": "flight",
+      "summary": "항공 {airline} {from}→{to} {date} {hour}시~ 성인 {adults}명",
+      "preset": {
+        "today": {
+          "from": "today",
+          "desc": "오늘(YYYY-MM-DD) — 지난 출발일 검사"
+        }
+      },
+      "fields": {
+        "airline": {
+          "type": "enum",
+          "required": true,
+          "label": "항공사",
+          "desc": "두 항공사 또는 대한항공(KE)·에어부산(BX)",
+          "read": "대한항공은 KE, 에어부산은 BX, 둘 다 조회하면 all",
+          "llm": true,
+          "ui": true,
+          "default": "all",
+          "example": "all",
+          "values": [
+            "all",
+            "KE",
+            "BX"
+          ]
+        },
+        "from": {
+          "type": "string",
+          "required": true,
+          "label": "출발 공항",
+          "desc": "출발 공항 IATA 코드",
+          "read": "김해 PUS, 김포 GMP, 인천 ICN, 제주 CJU 등 세 글자 공항 코드",
+          "llm": true,
+          "ui": true,
+          "default": "PUS",
+          "example": "PUS"
+        },
+        "to": {
+          "type": "string",
+          "required": true,
+          "label": "도착 공항",
+          "desc": "도착 공항 IATA 코드",
+          "read": "세 글자 도착 공항 코드",
+          "llm": true,
+          "ui": true,
+          "default": "GMP",
+          "example": "GMP"
+        },
+        "date": {
+          "type": "date",
+          "required": true,
+          "label": "출발일",
+          "desc": "편도 출발일 — 패널 상단 날짜",
+          "read": "출발일(YYYY-MM-DD)",
+          "llm": true,
+          "ui": true,
+          "example": "2026-11-12"
+        },
+        "hour": {
+          "type": "integer",
+          "required": true,
+          "label": "출발 시",
+          "desc": "출발지 현지 시각 기준 결과 필터",
+          "read": "이 시각 이후 출발편을 본다",
+          "llm": true,
+          "ui": true,
+          "default": 8,
+          "example": 8,
+          "min": 0,
+          "max": 23
+        },
+        "adults": {
+          "type": "integer",
+          "required": true,
+          "label": "성인 인원",
+          "desc": "편도 일반석 성인 인원",
+          "read": "성인 인원(1~9)",
+          "llm": true,
+          "ui": true,
+          "default": 1,
+          "example": 1,
+          "min": 1,
+          "max": 9
+        }
+      },
+      "checks": [],
+      "rules": [
+        "공항 코드·같은 구간·지난 날짜를 실행기에서 검사한다.",
+        "좌석 확인 실패와 매진은 구별하며 좌석 수를 추측하지 않는다."
+      ],
+      "llm": false,
+      "runner": "flight.search",
+      "uses": [
+        {
+          "module": "src/flights.js",
+          "export": "flightSearch"
+        }
+      ],
+      "then": [],
+      "next": "항공사별 조회 결과 → 공식 예약 페이지 열기. 예약과 결제는 항공사에서 진행한다."
     },
     "gongmun.purchase": {
       "id": "gongmun.purchase",
@@ -6400,7 +6635,7 @@ export const ACTIONS = {
         }
       ],
       "then": [],
-      "next": "열차 줄(출발·도착 시각 · 열차 · 소요 · 일반실·특실 운임/매진)을 칸에 그린다 → 좌석을 누르면 코레일 탭이 앞으로 와 그 좌석이 골라진다(ktxPick) → 예매 단추는 사람이"
+      "next": "열차 줄(출발·도착 시각 · 열차 · 소요 · 일반실·특실 운임/매진)을 칸에 그린다 → 좌석을 누르면 최소화한 창의 코레일 탭이 패널의 창으로 옮겨 와 그 좌석이 골라진다(ktxPick) → 예매 단추는 사람이"
     },
     "mail.register": {
       "id": "mail.register",
@@ -8433,34 +8668,89 @@ export const ACTIONS = {
           "example": "부산",
           "max": 100
         },
-        "transport": {
-          "type": "tags",
-          "label": "교통편",
-          "desc": "교통편(여럿 — 기차만 골랐을 때만 KTX 줄이 들어간다. 함께 고르면 다녀온 뒤 출장 카드에서 가는 편·오는 편을 고른다. 기본은 기차 — references/travel-rules.yaml transport.default)",
-          "read": "기차(train)·비행기(plane)·버스(bus) 가운데 말한 것. 말하지 않았으면 null(기본 기차)",
+        "go": {
+          "type": "object",
+          "label": "가는 편",
+          "desc": "가는 편의 교통편·기차 좌석 등급(출장 폼의 go 그대로)",
+          "read": "가는 편의 교통편. 말하지 않았으면 null(기본 기차 일반석)",
           "llm": false,
           "ui": true,
-          "default": [
-            "train"
-          ],
-          "values": [
-            "train",
-            "plane",
-            "bus"
-          ]
+          "fields": {
+            "t": {
+              "type": "enum",
+              "required": true,
+              "label": "교통편",
+              "desc": "교통편 — 기차(train)면 KTX 운임표의 정가로 줄이 들어간다",
+              "read": "기차(train)·비행기(plane)·버스(bus) 가운데 말한 것",
+              "default": "train",
+              "values": [
+                "train",
+                "plane",
+                "bus"
+              ]
+            },
+            "g": {
+              "type": "enum",
+              "label": "좌석 등급",
+              "desc": "기차 좌석 등급(standard 일반석·first 특실 — ktx-fares.yaml 의 등급)",
+              "read": "기차 특실이라고 했을 때만 first",
+              "default": "standard",
+              "values": [
+                "standard",
+                "first"
+              ]
+            },
+            "fare": {
+              "type": "integer",
+              "label": "버스 요금",
+              "desc": "버스인 편의 요금(원) — 이 요금으로 그 편의 버스 줄이 들어간다(없으면 그 편은 비운다). 버스가 아니면 없다",
+              "read": "버스 요금을 말했을 때만 그 금액(원)",
+              "min": 1,
+              "max": 10000000
+            }
+          }
         },
-        "trainGrade": {
-          "type": "enum",
-          "label": "좌석 등급",
-          "desc": "기차 좌석 등급(standard 일반석·first 특실 — ktx-fares.yaml 의 등급, 기본 일반석. 기차 아이콘을 한 번 더 누르면 특실)",
-          "read": "특실이라고 했을 때만 first. 그 밖에는 null(일반석)",
+        "back": {
+          "type": "object",
+          "label": "오는 편",
+          "desc": "오는 편의 교통편·기차 좌석 등급(출장 폼의 back 그대로)",
+          "read": "오는 편의 교통편. 말하지 않았으면 null(기본 기차 일반석)",
           "llm": false,
           "ui": true,
-          "default": "standard",
-          "values": [
-            "standard",
-            "first"
-          ]
+          "fields": {
+            "t": {
+              "type": "enum",
+              "required": true,
+              "label": "교통편",
+              "desc": "교통편 — 기차(train)면 KTX 운임표의 정가로 줄이 들어간다",
+              "read": "기차(train)·비행기(plane)·버스(bus) 가운데 말한 것",
+              "default": "train",
+              "values": [
+                "train",
+                "plane",
+                "bus"
+              ]
+            },
+            "g": {
+              "type": "enum",
+              "label": "좌석 등급",
+              "desc": "기차 좌석 등급(standard 일반석·first 특실 — ktx-fares.yaml 의 등급)",
+              "read": "기차 특실이라고 했을 때만 first",
+              "default": "standard",
+              "values": [
+                "standard",
+                "first"
+              ]
+            },
+            "fare": {
+              "type": "integer",
+              "label": "버스 요금",
+              "desc": "버스인 편의 요금(원) — 이 요금으로 그 편의 버스 줄이 들어간다(없으면 그 편은 비운다). 버스가 아니면 없다",
+              "read": "버스 요금을 말했을 때만 그 금액(원)",
+              "min": 1,
+              "max": 10000000
+            }
+          }
         }
       },
       "checks": [

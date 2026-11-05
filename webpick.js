@@ -21,8 +21,13 @@
 //   [전체]  팝업이 떠 있으면 그 팝업 안, 아니고 메일이면 본문 화면(data-krs-cap="mail")을 찍고 본문 글자와 첨부 파일(원본 그대로)을 가져온다
 //   [부분]  막을 씌우기 전에 메일 읽기가 첨부 칸에 표시(data-krs-attach)를 달아 두고, 고른 것 가운데 첨부 칸은 그 파일을 가져오고 나머지는 찍는다
 // 가져온 원본은 결과의 files 로 준다(부른 곳이 첨부로 쓰고 글자는 따로 읽는다 — 출장 카드·송부 칸은 아직 쓰지 않는다). 다 하면 표시를 뗀다.
+//
+// 2026-11-03 사용자 지정: "캡쳐할때 크롬웹은 전체 또는 부분캡쳐가 안됨. 언제 PDF 를 읽을 때 이것도 반영해줘" — 크롬 PDF 뷰어 안은 스크롤·고르기
+// 스크립트가 닿지 않는다. 보고 있는 탭이 PDF 면(웹 주소든 내 PC 파일이든 — src/pagecap.js 의 frontPdf) 찍지 않고 **PDF 파일 그대로**
+// 가져온다. 전체·부분 둘 다(PDF 안은 고를 수 없어 부분도 파일 전체 — PDF_PART_NOTE). 결과는 files 하나와 pdf: true 다 — 공문 탭은 끌어 놓은
+// 파일처럼 읽고, 출장 카드·송부 칸은 그 PDF 를 증빙으로 넣는다(이때만 files 를 쓴다).
 
-import { captureFront, startPick, captureTabParts, watchWindows, clearMarks, MAX_SHOTS } from './src/pagecap.js';
+import { captureFront, startPick, captureTabParts, watchWindows, clearMarks, frontPdf, MAX_SHOTS } from './src/pagecap.js';
 import { buildPdf } from './src/pdf.js';
 
 export const TAB_LABEL = '전체';
@@ -41,6 +46,8 @@ const PART_TITLE = '부분 캡처 — 보고 있는 웹페이지 위에서 캡�
 const PICK_HINT = '웹페이지에서 캡처할 부분(프레임)을 누르세요 — 여러 개 고를 수 있고, ↑ 는 더 큰 칸입니다. 다 고르면 페이지 위쪽 띠의 캡처를 누릅니다.';
 /** 한 장씩 넘기는 미리보기(PowerPoint 읽기 보기)를 찍었을 때의 알림 — 넘기지 않고 보이는 장만 찍는다(src/pagecap.js 의 paged). */
 export const PAGED_NOTE = '슬라이드처럼 한 장씩 넘기는 화면이라 보이는 장만 캡처했습니다 — 파일 전체는 미리보기를 닫고 전체(메일과 첨부)나 부분(첨부 파일 누르기)으로 가져오세요';
+/** PDF 탭에서 부분을 눌렀을 때의 알림 — PDF 안은 고를 수 없어 파일 전체를 가져온다(2026-11-03). */
+export const PDF_PART_NOTE = 'PDF 는 안을 골라 캡처할 수 없어 PDF 파일 전체를 가져왔습니다';
 /** 메일 읽기(src/mailgrab.js — probeTab·grabTab·fetchTab)를 처음 쓸 때 읽는다. 없으면(테스트·아직 없음) 메일인지 보지 않는다. */
 const loadMailgrab = () => import('./src/mailgrab.js');
 /** 출장 증빙으로 묶는 장의 JPEG 품질 — PNG 그대로면 그림이 많은 예약 화면 한 페이지가 10MB 를 넘는다. */
@@ -52,9 +59,10 @@ const JPEG_QUALITY = 0.85;
  *   ({tab, done, cancel} — before 를 받는다), parts 는 고른 부분들을 찍는 길, unmark 는 메일 읽기가 단 표시를 떼는 길, watch 는 창이 앞에
  *   서는 것을 적기 시작하는 길이다(방금 보던 팝업 창을 찍으려고 — 한 번만 돈다, chrome.windows 가 없으면 아무것도 하지 않는다)
  *   (src/pagecap.js). mail 은 메일 읽기({probeTab, grabTab, fetchTab} — src/mailgrab.js) 또는 그것을 주는 함수다(null 이면 메일을 보지 않는다).
+ *   pdf 는 보고 있는 탭이 PDF 면 그 파일을 받는 길({onFound} → {tab, file}|null — src/pagecap.js 의 frontPdf, null 이면 PDF 를 보지 않는다).
  *   테스트가 갈아 끼운다.
  */
-export function createWebPick({ front = captureFront, start = startPick, parts = captureTabParts, mail = loadMailgrab, unmark = clearMarks, watch = watchWindows } = {}) {
+export function createWebPick({ front = captureFront, start = startPick, parts = captureTabParts, mail = loadMailgrab, unmark = clearMarks, watch = watchWindows, pdf = frontPdf } = {}) {
   try {
     watch();
   } catch {
@@ -151,6 +159,26 @@ export function createWebPick({ front = captureFront, start = startPick, parts =
       const again = act === 'part' && st.key === key;
       stop(again ? 'stop' : 'switch');
       if (again) return null;
+    }
+    // 크롬 PDF 뷰어(2026-11-03) — 찍지 않고 PDF 파일 그대로. PDF 인지 보다가 막히면(권한·찍을 수 없는 탭) 여느 때처럼 찍는 길이 까닭을 말한다.
+    if ((act === 'tab' || act === 'part') && typeof pdf === 'function') {
+      let found = false;
+      let doc = null;
+      try {
+        doc = await pdf({
+          onFound: (tab) => {
+            found = true;
+            onStart();
+            onStatus(`PDF「${short(tab?.title || tab?.url)}」를 파일 그대로 가져오는 중입니다…`);
+          },
+        });
+      } catch (err) {
+        if (found) throw err;
+        doc = null;
+      }
+      if (doc?.file) {
+        return { pages: [], failed: [], notes: act === 'part' ? [PDF_PART_NOTE] : [], what: `PDF 파일 ${doc.file.name}`, files: [doc.file], pdf: true };
+      }
     }
     let got;
     if (act === 'tab') {

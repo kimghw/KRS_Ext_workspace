@@ -23,6 +23,11 @@
         </div>
       </div>
       <div class="head-tools">
+        <!-- Teams (나) — 누르면 지금 탭 바로 옆에 Teams 웹의 나와의 채팅을 연다(src/config.js TEAMS_NOTES_URL). 설정 → 일반의 스위치(teamsNotes, 기본 켬)가 끄면 숨는다
+             (2026-11-05 사용자 지정: "상단에 팀즈 아이콘 넣고 클릭하면 옆 탭에 팀즈 (나)로 나오게 … 옵션으로 이 기능 껏다켰다"). 모양은 여비증빙 송부의 Teams 로고(sendbox.js). -->
+        <button id="teamsNotes" class="icon teams-notes" type="button" title="Teams (나) — 옆 탭에 나와의 채팅을 엽니다" aria-label="Teams 나와의 채팅 열기">
+          <svg viewBox="0 0 2228.833 2073.333" aria-hidden="true"><g stroke="none"><path fill="#5059C9" d="M1554.637,777.5h575.713c54.391,0,98.483,44.092,98.483,98.483v524.398c0,199.901-162.051,361.952-361.952,361.952h-1.711c-199.901,0.028-361.975-162-362.004-361.901V828.971C1503.167,800.544,1526.211,777.5,1554.637,777.5z"/><circle fill="#5059C9" cx="1943.75" cy="440.583" r="233.25"/><circle fill="#7B83EB" cx="1218.083" cy="336.917" r="336.917"/><path fill="#7B83EB" d="M1667.323,777.5H717.01c-53.743,1.33-96.257,45.931-95.01,99.676v598.105c-7.505,322.519,247.657,590.16,570.167,598.053c322.51-7.893,577.671-275.534,570.167-598.053V877.176C1763.579,823.431,1721.066,778.83,1667.323,777.5z"/><path fill="#4B53BC" d="M95.01,466.5h950.312c52.473,0,95.01,42.538,95.01,95.01v950.312c0,52.473-42.538,95.01-95.01,95.01H95.01c-52.473,0-95.01-42.538-95.01-95.01V561.51C0,509.038,42.538,466.5,95.01,466.5z"/><path fill="#FFF" d="M820.211,828.193H630.241v517.297H509.211V828.193H320.123V727.844h500.088V828.193z"/></g></svg>
+        </button>
         <!-- 홈 카드 켜고 끄기 — 스위치가 아니라 누를 때마다 바뀌는 단추(2026-10-26 사용자 지정: "홈을 토글 하는것보단 그냥 버튼 누르는 걸로"). 켜져 있으면 눌린 모양(aria-pressed). 저장은 homeCard. -->
         <button id="homeCard" class="icon home-toggle" type="button" aria-pressed="true" aria-label="홈에 WORKSPACE" title="e-Class 홈 맨 위에 WORKSPACE 카드(내 회의실·차량 예약과 출장·외근·휴가)를 붙입니다 — 누를 때마다 켜고 끕니다(파랗면 켬). 끄면 열려 있는 홈에서도 곧바로 사라지고, 홈에서 예약·근태를 읽지도 않습니다.">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7"/></svg>
@@ -35,7 +40,7 @@
           <span class="cli-guide-head-text" aria-hidden="true">B</span>
         </button>
         <!-- GitHub 새 커밋 — 누르면 확인하고, 확장 폴더가 GitHub 보다 뒤졌으면 귀퉁이에 그 수를 띄워 그때 누르면 받는다(git pull --ff-only — 다리가 돌린다, gitsync.js).
-             다리가 없으면 숨는다(2026-10-26 사용자 지정: "깃허브 최신화 커밋있는지 확인할 수 있도록 우측 상단에 버튼"). 모양은 rerp 와 같은 GitHub 로고(Octicons mark-github). -->
+             받을 새 커밋이 있을 때만 보이고 같음·확인 실패·다리 없음이면 숨는다(2026-11-05 사용자 지정: "깃허브 업데이트 할게 아니면 아 이이콘 안보여줘도 될듯"). 모양은 rerp 와 같은 GitHub 로고(Octicons mark-github). -->
         <button id="gitSync" class="icon git-sync" type="button" hidden title="GitHub 새 커밋 확인" aria-label="GitHub 새 커밋 확인">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
           <span id="gitCount" class="git-count" hidden></span>
@@ -744,6 +749,14 @@
           <span class="time-divider" aria-hidden="true">–</span>
           <select id="hourEnd" aria-label="종료 시간"></select>
         </div>
+        <!-- 차량 탭에서 무엇을 볼지 — 차량 현황 · KTX 조회 · 항공권 조회. 시간 칸 옆의 아이콘 셋(2026-11-05 사용자 지정: "차량, kTx, 항공권은 기존 아이템을 시간 옆에 넣어주고 탭은 제거해줘" ·
+             "이거 목록 팝업이 아니라 아이콘으로 클릭하게 해줘"). 꼴은 날짜 이동 단추(.day-nav). ktxbox.js 가 잇는다. -->
+        <div id="carViewControl" class="car-view-control day-nav" role="group" aria-label="차량 탭 보기" hidden>
+          <!-- 그림(승용차·기차·비행기)은 src/icons.js 의 것을 ktxbox.js 가 채운다 — 출장 폼의 옵션 단추와 같은 아이콘. -->
+          <button type="button" class="icon" data-view="car" aria-pressed="true" title="차량 현황" aria-label="차량 현황"></button>
+          <button type="button" class="icon" data-view="ktx" aria-pressed="false" title="KTX 조회" aria-label="KTX 조회"></button>
+          <button type="button" class="icon" data-view="flight" aria-pressed="false" title="항공권 조회" aria-label="항공권 조회"></button>
+        </div>
         <div class="span-control" role="group" aria-label="훑을 기간" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 10h16"/></svg>
           <select id="spanDays" aria-label="훑을 기간">
@@ -846,8 +859,8 @@
       <p id="editNote" class="edit-note hidden"></p>
     </section>
     <!-- KTX 조회(2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음") —
-         차량 탭에서만 선다(ktxbox.js). 날짜·시작 시는 위의 날짜 줄·시작 시간이다. 조회는 코레일 화면을 뒤 탭에 열어 하고(src/ktx.js — 행위 ktx.search),
-         줄의 좌석을 누르면 그 탭이 앞으로 와 그 좌석이 골라진다. 예매 단추(좌석이 잡히는 예약)부터는 사람이 누른다. -->
+         차량 탭에서만 선다(ktxbox.js). 날짜·시작 시는 위의 날짜 줄·시작 시간이다. 조회는 코레일 화면을 최소화한 창에 열어 하고(src/ktx.js — 행위 ktx.search),
+         줄의 좌석을 누르면 그 탭이 패널의 창으로 옮겨 와 그 좌석이 골라진다. 예매 단추(좌석이 잡히는 예약)부터는 사람이 누른다. -->
     <section id="ktxBox" class="ktx" aria-labelledby="ktxTitle" hidden>
       <div class="section-heading">
         <h2 id="ktxTitle">KTX 조회<span id="ktxCount" class="count"></span></h2>
@@ -865,6 +878,25 @@
         </div>
         <p id="ktxNote" class="ktx-note" role="status" aria-live="polite"></p>
         <ul id="ktxList" class="ktx-list"></ul>
+      </div>
+    </section>
+    <!-- 대한항공·에어부산 편도 항공편 조회. 날짜와 시작 시간은 위의 날짜 줄을 따른다. -->
+    <section id="flightBox" class="flight" aria-labelledby="flightTitle" hidden>
+      <div class="section-heading"><h2 id="flightTitle">항공 조회<span id="flightCount" class="count"></span></h2></div>
+      <div class="flight-card card">
+        <div class="flight-route">
+          <select id="flightFrom" aria-label="출발 공항"></select>
+          <button id="flightSwap" class="icon" type="button" title="출발·도착 공항 바꾸기" aria-label="출발·도착 공항 바꾸기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15l-4-4M20 16H5l4 4"/></svg></button>
+          <select id="flightTo" aria-label="도착 공항"></select>
+          <button id="flightGo" class="primary" type="button" title="편도 · 일반석 · 직항 · 성인 1명 · 대한항공과 에어부산 · 위에서 고른 날짜·시작 시간">조회</button>
+        </div>
+        <p id="flightNote" class="flight-note" role="status" aria-live="polite"></p>
+        <div id="flightTabs" class="dwr-tabs flight-tabs" role="tablist" aria-label="항공 조회 결과 보기" hidden>
+          <button type="button" class="dwr-tab" data-view="all" role="tab" aria-selected="true">전체</button>
+          <button type="button" class="dwr-tab" data-view="KE" role="tab" aria-selected="false">대한항공</button>
+          <button type="button" class="dwr-tab" data-view="BX" role="tab" aria-selected="false">에어부산</button>
+        </div>
+        <div id="flightList" class="flight-list"></div>
       </div>
     </section>
     <!-- 설정 화면(2026-10-16 사용자 지정: "설정을 클릭하면 전체 설정만 볼 수 있게 … 설정 아래 일반/LLM/연결 이렇게 3가지로"). 머리의 톱니(settingsShortcut)를 누르면
@@ -905,6 +937,10 @@
             <label class="check-row" title="Help Chat 줄(입력칸 왼쪽)에 캡처 단추를 둡니다. 누르면 패널 위에 고르기 막이 씌워지고, 칸·단추를 눌러 하나 이상 고른 뒤 그 부분의 코드(HTML — 입력칸의 값 포함)나 이미지(PNG)를 클립보드에 복사합니다. 끄면 단추가 사라지고 고르던 것도 끝납니다.">
               <span>Help Chat 줄에 <strong>패널 캡처</strong> 단추</span>
               <input type="checkbox" id="panelCapture" role="switch" checked />
+            </label>
+            <label class="check-row" title="머리 단추 줄에 Teams 단추를 둡니다. 누르면 지금 탭 바로 옆에 Teams 웹의 나와의 채팅(○○(나))이 열립니다. 끄면 단추가 사라집니다.">
+              <span>머리에 <strong>Teams (나)</strong> 단추</span>
+              <input type="checkbox" id="teamsNotesOn" role="switch" checked />
             </label>
           </div>
         </section>

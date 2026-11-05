@@ -134,10 +134,26 @@ async function frameRun(job) {
     if (job.open) {
       out.stage = 'open';
       if (typeof window.sendMdiParamCallback !== 'function') throw new Error('문서를 여는 사이트 함수를 찾지 못했습니다.');
-      window.sendMdiParamCallback({ docNo: job.open.docNo, statusCode: job.open.statusCode });
-      const t0 = Date.now();
-      while (Date.now() - t0 < 25000 && !($.active === 0 && docNoNow() === job.open.docNo)) await wait(300);
-      if (docNoNow() !== job.open.docNo) throw new Error('문서 ' + job.open.docNo + ' 을(를) 열지 못했습니다.');
+      if (job.open.modify) {
+        // 근태수정신청(2026-11-03) — HR 「근태수정신청」 목록의 [수정]과 같은 길: 결재완료 문서를 modifyRequestYn=Y 로 연다. 사이트가 문서를 앉힌 뒤
+        // 스스로 수정 모드로 바꾼다(#bfDocNo ← 원 문서번호, #docNo·#statusCode 비움, 폼 풀림). 이미 수정 문서가 있으면 사이트처럼 멈춘다.
+        let rel = null;
+        $.ajax({ url: job.open.related, type: 'GET', async: false, data: { docNo: job.open.docNo }, success: function (d) { rel = d; } });
+        if (!Array.isArray(rel)) throw new Error('문서 ' + job.open.docNo + ' 의 수정 문서를 HR 에서 확인하지 못했습니다.');
+        if (rel.some(function (r) { return r && r.relationType === 'MODIFIED'; })) {
+          throw new Error('문서 ' + job.open.docNo + ' 에는 이미 수정결재요청 문서가 있어 다시 수정신청할 수 없습니다.');
+        }
+        window.sendMdiParamCallback({ docNo: job.open.docNo, statusCode: job.open.statusCode, modifyRequestYn: 'Y' });
+        const begun = () => $.active === 0 && String($('#bfDocNo').val() || '') === job.open.docNo && docNoNow() === '';
+        const t0 = Date.now();
+        while (Date.now() - t0 < 25000 && !begun()) await wait(300);
+        if (!begun()) throw new Error('문서 ' + job.open.docNo + ' 을(를) 근태수정신청으로 열지 못했습니다.');
+      } else {
+        window.sendMdiParamCallback({ docNo: job.open.docNo, statusCode: job.open.statusCode });
+        const t0 = Date.now();
+        while (Date.now() - t0 < 25000 && !($.active === 0 && docNoNow() === job.open.docNo)) await wait(300);
+        if (docNoNow() !== job.open.docNo) throw new Error('문서 ' + job.open.docNo + ' 을(를) 열지 못했습니다.');
+      }
       // 사이트가 문서를 폼에 앉힌 뒤 0.2~0.5초 뒤에 값을 한 번 더 덮는다. 그게 끝난 뒤에 손댄다.
       await wait(1800);
     }

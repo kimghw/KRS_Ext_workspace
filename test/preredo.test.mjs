@@ -396,7 +396,7 @@ t('목록을 다시 읽어 지금 단계(사전정산 작성)대로 카드를 �
 t('사전정산을 쓰는 중에도 `사전정산 다시하기`는 남는다(또 고칠 수 있다) — `사후정산 다시하기`는 없다. 그 출장지의 교통편으로도 기억한다', () => {
   assert.deepEqual(redo(), [['사전정산 다시하기', 'false']]);
   assert.equal(card().querySelector('.at-send-btns'), null, '아직 보낼 때가 아니다 — 보내기는 없다');
-  assert.deepEqual([store[ROUTES_KEY]['경기도 고양시 킨텍스'].path, store[ROUTES_KEY]['경기도 고양시 킨텍스'].trainGrade], [['부산', '서울'], 'first']);
+  assert.deepEqual([store[ROUTES_KEY]['경기도 고양시 킨텍스'].path, store[ROUTES_KEY]['경기도 고양시 킨텍스'].go], [['부산', '서울'], { t: 'train', g: 'first' }], '가는 편 KTX 특실 — 편마다 기억한다');
 });
 
 /* ------------------------------------------------------------ 일비·식비 한 줄 */

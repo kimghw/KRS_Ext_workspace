@@ -139,7 +139,7 @@ function pageFill(list) {
 /**
  * 칸이 정해진 폼(외부강의등 신고서·구매요청서)의 칸들 — 글 칸은 pageFill 과 같이 넣고, 날짜·시각 칸(Telerik RadDatePicker·RadDateTimePicker)은 $find(control).set_selectedDate
  * 로 넣고 get_selectedDate 로 다시 읽는다(글 칸에 적으면 피커가 모르고, 상신 때 양식이 control 의 값으로 빈칸을 가린다). 피커가 아직 서지 않았으면 ready: false.
- * value 는 날짜면 'YYYY-MM-DD', 시각이면 'YYYY-MM-DD HH:MM'(src/gongmun.js 의 draftValue).
+ * value 는 날짜면 'YYYY-MM-DD', 시각이면 'YYYY-MM-DD HH:MM'(src/gongmun.js 의 draftValue). 다시 읽어 맞춰 보는 것은 날짜 칸은 날짜, 시각 칸은 시·분뿐이다.
  * 체크 칸(check — 구매요청서의 구매대상구분·예산유형)은 꺼져 있으면 el.click() 으로 켠다 — 체크박스는 click 이 checked 를 바꾸고 click·change 이벤트까지 내니
  * 합성 이벤트를 따로 보내지 않는다(켜져 있으면 두 번 눌러 끄지 않는다). 목록에 든 체크 칸은 켤 것뿐이다(값이 빈 칸은 패널이 보내지 않는다 = 체크 안 함).
  */
@@ -160,8 +160,11 @@ function pageForm(list) {
         const want = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0));
         c.set_selectedDate(want);
         const got = c.get_selectedDate();
-        const same = !!got && got.getFullYear() === want.getFullYear() && got.getMonth() === want.getMonth() && got.getDate() === want.getDate()
-          && (f.kind === 'date' || (got.getHours() === want.getHours() && got.getMinutes() === want.getMinutes()));
+        // set_selectedDate 는 값을 칸의 꼴로 적었다가 다시 읽는다(Telerik 2013 RadDateInput — 2026-10-30 실측). 시각 칸은 시각만 적는 꼴이라 날짜가 오늘로
+        // 바뀌어 읽히니 시·분만 맞춰 본다 — 날짜까지 보면 활동일이 오늘이 아닌 신고서마다 '시작 시간 들어가지 않음' 이 났다(창에는 맞게 들어가 있었다).
+        const same = !!got && (f.kind === 'time'
+          ? got.getHours() === want.getHours() && got.getMinutes() === want.getMinutes()
+          : got.getFullYear() === want.getFullYear() && got.getMonth() === want.getMonth() && got.getDate() === want.getDate());
         const input = document.getElementById(f.control);
         return { key: f.key, ok: same && !!(input && input.value), value: input ? input.value : '' };
       }

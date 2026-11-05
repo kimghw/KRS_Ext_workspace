@@ -756,9 +756,24 @@ export function tileRanges(totalHeight, tileHeight) {
   return out;
 }
 
-/** 캡처할 수 있는 주소인가 — 브라우저 안쪽 화면(chrome://·확장 화면)과 파일은 스크립트를 넣지 못한다. */
+/**
+ * 크롬 PDF 뷰어로 연 PDF 인가 — 주소의 경로가 .pdf 로 끝나는 웹 주소·내 PC 파일(2026-11-03 사용자 지정: "캡쳐할때 크롬웹은 전체 또는
+ * 부분캡쳐가 안됨"). PDF 뷰어 안은 스크롤·고르기 스크립트가 닿지 않아 찍지 않고 파일 그대로 가져온다(readPdf). 주소로 모르는 웹 PDF
+ * (내려받기 주소)는 문서의 contentType 으로 본다(tabIsPdf).
+ */
+export function isPdfUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    return /^(https?|file):$/.test(u.protocol) && /\.pdf$/i.test(decodeURIComponent(u.pathname));
+  } catch {
+    return false;
+  }
+}
+
+/** 캡처할 수 있는 주소인가 — 브라우저 안쪽 화면(chrome://·확장 화면)과 파일은 스크립트를 넣지 못한다. PDF(파일도)는 파일 그대로 가져온다(pdf). */
 export function capturable(url) {
   const u = String(url || '');
+  if (isPdfUrl(u)) return { ok: true, why: '', pdf: true };
   if (/^https?:\/\//i.test(u)) return { ok: true, why: '' };
   if (!u) return { ok: false, why: '캡처할 탭이 없습니다 — 읽을 웹페이지를 이 창에서 열어 두세요.' };
   return { ok: false, why: '이 화면은 캡처할 수 없습니다(브라우저 안쪽 화면·파일) — 읽을 웹페이지 탭을 앞에 두고 다시 누르세요.' };
@@ -1337,7 +1352,98 @@ export async function frontTab({ api = globalThis.chrome, log = WATCH.log, now =
   const [tab] = await api.tabs.query({ active: true, windowId: win.id });
   const can = capturable(tab?.url);
   if (!can.ok) throw new Error(can.why);
-  return { id: tab.id, url: tab.url, title: String(tab.title || '').trim() || hostOf(tab.url), host: hostOf(tab.url), active: true, windowId: win.id };
+  return { id: tab.id, url: tab.url, title: String(tab.title || '').trim() || hostOf(tab.url), host: hostOf(tab.url), active: true, windowId: win.id, ...(can.pdf ? { pdf: true } : {}) };
+}
+
+/** 탭 안에서 돈다 — 문서의 MIME(크롬 PDF 뷰어는 application/pdf). */
+export function pdfType() {
+  return document.contentType;
+}
+
+/** PDF 를 보고 있는 탭인가 — 주소로 알면(isPdfUrl) 그대로, 웹 주소면 문서의 contentType 을 본다(pdfType — 크롬 PDF 뷰어는 application/pdf). 못 보면 아니다. */
+export async function tabIsPdf(tab, run) {
+  if (tab?.pdf || isPdfUrl(tab?.url)) return true;
+  if (!/^https?:\/\//i.test(String(tab?.url || ''))) return false;
+  const type = await Promise.resolve().then(() => run(pdfType)).catch(() => '');
+  return type === 'application/pdf';
+}
+
+/** PDF 파일 이름 — 주소의 마지막 조각(한글은 풀어서), 없으면 탭 제목. 늘 .pdf 로 끝난다. */
+export function pdfName(tab) {
+  let name = '';
+  try {
+    name = decodeURIComponent(new URL(tab.url).pathname.split('/').pop() || '');
+  } catch { /* 이름 없음 */ }
+  name = (name || String(tab?.title || '').trim() || `PDF_${hostOf(tab?.url)}`).replace(/[\\/:*?"<>|]+/g, '_');
+  return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
+}
+
+export const FILE_ACCESS_HELP = '내 PC 의 PDF 를 읽으려면 크롬의 확장 프로그램 관리(chrome://extensions)에서 KRS WORKSPACE 의 세부정보를 열고 '
+  + '「파일 URL에 대한 액세스 허용」을 켜세요 — 아니면 그 PDF 파일을 넣는 곳에 끌어다 놓으세요.';
+
+/** 내 PC 파일(file://)을 읽는다 — fetch 는 file: 을 받지 않아 XHR 이다(확장에 파일 URL 액세스가 켜져 있어야 한다). */
+function xhrBytes(url, XHR = globalThis.XMLHttpRequest) {
+  return new Promise((resolve, reject) => {
+    if (typeof XHR !== 'function') { reject(new Error('파일을 읽을 길이 없습니다')); return; }
+    const x = new XHR();
+    x.open('GET', url);
+    x.responseType = 'arraybuffer';
+    x.onload = () => (x.response ? resolve(new Uint8Array(x.response)) : reject(new Error(`읽지 못했습니다(${x.status})`)));
+    x.onerror = () => reject(new Error('읽지 못했습니다'));
+    x.send();
+  });
+}
+
+/**
+ * 탭에 열린 PDF 를 파일 그대로 받는다 — 웹 주소는 로그인 쿠키를 실어 받고(확장의 사이트 접근 권한으로), 내 PC 파일은 파일 URL 액세스가
+ * 켜져 있을 때만 읽는다(꺼져 있으면 FILE_ACCESS_HELP 를 던진다). 받은 것이 PDF(%PDF)가 아니면 던진다(로그인 화면이 왔을 수 있다).
+ * @param {{url: string, title?: string}} tab
+ * @param {{fetchImpl?: Function, readFile?: Function, fileAccess?: () => Promise<boolean>}} [deps] 테스트가 갈아 끼운다
+ * @returns {Promise<File>}
+ */
+export async function readPdf(tab, {
+  fetchImpl = globalThis.fetch,
+  readFile = xhrBytes,
+  fileAccess = () => new Promise((resolve) => {
+    const ext = globalThis.chrome?.extension;
+    if (typeof ext?.isAllowedFileSchemeAccess !== 'function') resolve(true);
+    else ext.isAllowedFileSchemeAccess((ok) => resolve(!!ok));
+  }),
+} = {}) {
+  const url = String(tab?.url || '');
+  let bytes;
+  if (/^file:/i.test(url)) {
+    if (!(await fileAccess())) throw new Error(FILE_ACCESS_HELP);
+    try {
+      bytes = await readFile(url);
+    } catch (err) {
+      throw new Error(`내 PC 의 PDF 를 읽지 못했습니다(${err?.message || err}) — ${FILE_ACCESS_HELP}`);
+    }
+  } else {
+    const res = await fetchImpl(url, { credentials: 'include' }).catch((err) => { throw new Error(`PDF 를 받지 못했습니다 — ${err?.message || err}`); });
+    if (!res.ok) throw new Error(`PDF 를 받지 못했습니다(HTTP ${res.status})`);
+    bytes = new Uint8Array(await res.arrayBuffer());
+  }
+  if (!(bytes?.length > 4) || String.fromCharCode(...bytes.slice(0, 4)) !== '%PDF') {
+    throw new Error('받은 것이 PDF 가 아닙니다 — 로그인이 풀렸거나 주소가 PDF 를 주지 않습니다. 그 PDF 를 내려받아 넣는 곳에 끌어다 놓으세요.');
+  }
+  return new File([bytes], pdfName(tab), { type: 'application/pdf' });
+}
+
+/**
+ * 보고 있는 탭이 PDF(크롬 PDF 뷰어)면 그 파일을 받는다 — "전체·부분" 단추가 찍기 전에 먼저 부른다(webpick.js, 2026-11-03).
+ * PDF 가 아니거나 찍을 탭이 아니면 null(여느 때처럼 찍는다 — 까닭은 그 길이 말한다). PDF 인데 받지 못하면 던진다. onFound 는 받기 전에 그 탭으로 부른다.
+ * 권한은 단추 누름 안에서 먼저 묻는다.
+ */
+export async function frontPdf({ onFound = () => {} } = {}) {
+  needApi();
+  await ensureSites();
+  const tab = await frontTab().catch(() => null);
+  if (!tab) return null;
+  const run = (func) => chrome.scripting.executeScript({ target: { tabId: tab.id }, func }).then((r) => r?.[0]?.result);
+  if (!(await tabIsPdf(tab, run))) return null;
+  onFound(tab);
+  return { tab, file: await readPdf(tab) };
 }
 
 /** 탭에 큰 팝업(첨부 미리보기 창 같은 것)이 떠 있는가 — modalProbe 를 돌려 보고 단 표시는 바로 뗀다. 못 보면 false. */

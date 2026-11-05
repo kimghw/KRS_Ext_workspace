@@ -659,6 +659,34 @@ console.log('구매의뢰(구매요청서 KR_Purchase_Order — 총무팀 수신
       assert.deepEqual(events, ['c0:click', 'c0:change'], '켜진 체크는 건드리지 않는다');
     });
   });
+  await ta('페이지 함수 pageForm date·time — 피커는 칸의 꼴로 적었다가 다시 읽어(시각 칸은 날짜가 오늘이 된다) 시각 칸은 시·분만 맞춰 본다', async () => {
+    await withDom('<input id="d"><input id="s">', async (w) => {
+      // Telerik 2013 RadDateInput.set_selectedDate 처럼 — 꼴(날짜만·시각만)에 없는 부분은 버리고 오늘(파싱 기준일)에서 다시 읽는다.
+      const picker = (id, only) => {
+        let v = null;
+        return {
+          set_selectedDate(d) {
+            const t = new Date(); t.setHours(0, 0, 0, 0);
+            v = only === 'date' ? new Date(d.getFullYear(), d.getMonth(), d.getDate()) : new Date(t.getFullYear(), t.getMonth(), t.getDate(), d.getHours(), d.getMinutes());
+            w.document.getElementById(id).value = only === 'date' ? '2026-11-03' : '오후 2:00';
+          },
+          get_selectedDate: () => v && new Date(v),
+        };
+      };
+      // 30분 단위로만 받는 시각 칸 — 16:45 는 16:30 으로 읽힌다(시·분이 다르면 든 것이 아니다).
+      const half = picker('s', 'time');
+      const pickers = { d: picker('d', 'date'), s: picker('s', 'time'), h: { ...half, set_selectedDate: (d) => half.set_selectedDate(new Date(+d - (d.getMinutes() % 30) * 60e3)) } };
+      w.$find = (id) => pickers[id] || null;
+      const other = new Date(Date.now() + 5 * 86400e3);
+      const day = `${other.getFullYear()}-${String(other.getMonth() + 1).padStart(2, '0')}-${String(other.getDate()).padStart(2, '0')}`;
+      const got = page.pageForm([
+        { key: 'from', kind: 'date', control: 'd', value: day }, { key: 'start', kind: 'time', control: 's', value: `${day} 14:00` },
+        { key: 'end', kind: 'time', control: 'h', value: `${day} 16:45` },
+      ]);
+      assert.deepEqual(got.map((r) => [r.key, r.ok]), [['from', true], ['start', true], ['end', false]], '활동일이 오늘이 아니어도 시각이 맞으면 든 것');
+      assert.deepEqual(page.pageForm([{ key: 'x', kind: 'time', control: 'nope', value: `${day} 14:00` }]), [{ key: 'x', ok: false, ready: false, why: '날짜·시각 칸이 아직 서지 않았습니다' }]);
+    });
+  });
   await ta('페이지 함수 pageRows — count 는 probe 로 센 행 수, add 는 행추가 단추(javascript:__doPostBack 인 a)를 눌러 포스트백을 돌린다', async () => {
     const row = (n) => `<input id="ctl00_ContentPlaceHolder_Content_rptRequet_ctl${String(n).padStart(2, '0')}_txtItemName">`;
     const spec = { add: '#ctl00_ContentPlaceHolder_Content_LinkButton1', probe: "input[id^='ctl00_ContentPlaceHolder_Content_rptRequet_ctl'][id$='_txtItemName']" };

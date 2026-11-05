@@ -34,6 +34,7 @@ krs-web-agents 의 `spec/spec_<주제>.md`(① 질의·요청 히스토리 ② �
 | [rerp.md](rerp.md) | rERP 연동과 인건비 — 집행내역·예상 비용·연구내용 공유·참여율과 월별 지급 | README 「R&D 탭」 · `rerp/README.md` · `rerp/reference.md` |
 | [mail.md](mail.md) | 메일 탭 — 회신 추적 | `mailtrack/README.md` |
 | [room.md](room.md) | 회의실·차량 예약 탭 — 격자의 방 차례·접기 | README 「사용」·「차량 이용」 |
+| [flight.md](flight.md) | 대한항공·에어부산 — 시간표·좌석 조회와 예약 페이지 연결 | `docs/flights.md` |
 | [mine.md](mine.md) | 현황 탭 — 내 예약·근태 목록, 일일 업무 카드(e-Class 일일업무통계 대시보드) | README 「현황 (WORKSPACE 현황)」 |
 | [actions.md](actions.md) | 행위 층 — 사람이 누르든 LLM 이 말하든 명세 → 기록 → 실행기 | `actions/README.md` · `docs/actions-design.md` |
 | [settings.md](settings.md) | 설정·LLM 연결·로컬 다리·첨부 글자 뽑기·패널 캡처·Gmail 시험 | README 「설정」·「로컬 CLI 연결」·「패널 캡처」 |

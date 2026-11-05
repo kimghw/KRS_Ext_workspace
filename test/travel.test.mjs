@@ -15,7 +15,7 @@ import {
   TRANSPORTS, DEFAULT_TRANSPORT, TRAIN_GRADES, DEFAULT_GRADE, stationOf, stationsOf, pathOf, pathKnown, legParts, legTimesAll,
   isWeekend, fareOf, hoursOf, legTimes, mealsOf, dailyOf, settlePlan, describePlan, tripLocation,
   parseTripList, tripListPages, tripUser, tripStage, tripDocFor, formFields, saveBody, parseFeeRows, pickFeeRow,
-  tripIconState, settleLabel, transportsOf, trainGradeOf, nextTransport, nextLegPick, parseTransRows, pickOfRow, legsOfRows, ticketsOf, seatTickets,
+  tripIconState, settleLabel, formLegs, nextFormLegs, fareIn, busFareOf, busEnds, nextLegPick, parseTransRows, pickOfRow, legsOfRows, ticketsOf, seatTickets,
   picksWithTickets, legPlan, describeTrans, sameTrans,
 } from '../src/travel.js';
 import { blankForm, settle } from '../src/attend.js';
@@ -146,19 +146,22 @@ t('기차의 좌석 등급은 일반석(기본)과 특실이다 — 여비계산
   delete rules.transport.train.grade_labels.first;
   assert.deepEqual(checkRules(rules), ['travel-rules.yaml: transport.train.grade_labels.first 이 없습니다']);
 });
-t('교통편 아이콘: 여럿을 함께 고를 수 있다. 기차는 한 번 더 누르면 특실, 또 누르면 꺼진다 — 마지막 하나는 꺼지지 않는다', () => {
-  const press = (form, ...values) => values.reduce((f, v) => ({ ...f, ...nextTransport(f, v) }), form);
-  const start = { transport: ['train'], trainGrade: 'standard' };
-  const show = (f) => [transportsOf(f), trainGradeOf(f)];
-  assert.deepEqual(show(press(start, 'train')), [['train'], 'first'], '한 번 더 누르면 특실');
-  assert.deepEqual(show(press(start, 'train', 'train')), [['train'], 'standard'], '기차 하나뿐이면 꺼지지 않고 일반석으로 돌아간다');
-  assert.deepEqual(show(press(start, 'plane')), [['train', 'plane'], 'standard'], '기차와 비행기를 함께 고른다');
-  assert.deepEqual(show(press(start, 'plane', 'train', 'train')), [['plane'], 'standard'], '다른 것이 켜져 있으면 일반석 → 특실 → 꺼짐');
-  assert.deepEqual(show(press(start, 'plane', 'plane')), [['train'], 'standard'], '비행기는 켜고 끈다');
-  assert.deepEqual(show(press({ transport: ['plane'] }, 'plane')), [['plane'], 'standard'], '마지막 하나는 꺼지지 않는다');
-  assert.deepEqual(show(press(start, 'bus', 'plane')), [['train', 'plane', 'bus'], 'standard'], '고른 차례가 아니라 선택지 차례로 담긴다');
-  assert.deepEqual(show(press(start, 'ship')), [['train'], 'standard'], '모르는 값은 무시한다');
-  assert.deepEqual([transportsOf({ transport: 'bus' }), transportsOf({}), trainGradeOf({ trainGrade: 'x' })], [['bus'], [], 'standard'], '예전 폼의 글 하나도 받는다');
+t('신청 폼의 가는 편·오는 편: 편마다 하나를 고르고, 고른 기차를 한 번 더 누르면 특실 ↔ 일반석이다. 가는 편을 바꿀 때 오는 편이 같았으면 따라 바뀐다 (2026-11-03 사용자 지정)', () => {
+  const press = (form, ...keys) => keys.reduce((f, [key, v]) => ({ ...f, ...nextFormLegs(f, key, v) }), form);
+  const start = { go: { t: 'train', g: 'standard' }, back: { t: 'train', g: 'standard' } };
+  const show = (f) => { const l = formLegs(f); return `${l.go.t}/${l.go.g} ${l.back.t}/${l.back.g}`; };
+  assert.equal(show(press(start, ['go', 'plane'])), 'plane/standard plane/standard', '같았던 오는 편은 가는 편을 따라간다');
+  assert.equal(show(press(start, ['go', 'plane'], ['back', 'train'])), 'plane/standard train/standard', '오는 편만 다시 고른다 — 가는 편 비행기 · 오는 편 기차');
+  assert.equal(show(press(start, ['back', 'plane'], ['go', 'bus'])), 'bus/standard plane/standard', '달랐던 오는 편은 그대로다');
+  assert.equal(show(press(start, ['go', 'train'])), 'train/first train/first', '고른 기차를 다시 누르면 특실 — 오는 편도 같았으므로 따라간다');
+  assert.equal(show(press(start, ['back', 'train'])), 'train/standard train/first', '오는 편만 특실');
+  assert.equal(show(press(start, ['back', 'train'], ['back', 'train'])), 'train/standard train/standard', '또 누르면 일반석 — 꺼지지 않는다');
+  assert.equal(show(press(start, ['go', 'plane'], ['go', 'plane'])), 'plane/standard plane/standard', '비행기는 등급을 고르지 않고 꺼지지도 않는다');
+  assert.equal(show(press(start, ['go', 'ship'], ['side', 'plane'])), 'train/standard train/standard', '모르는 교통편·편은 무시한다');
+  assert.equal(show({}), 'train/standard train/standard', '고르지 않았으면 기차 일반석');
+  assert.equal(show({ go: { t: 'plane', g: 'first' } }), 'plane/standard plane/standard', '한 편만 알면 다른 편도 그것이다 · 비행기의 등급은 일반석');
+  assert.equal(show({ transport: ['train', 'plane'], trainGrade: 'first' }), 'train/first train/first', '예전 꼴(교통편 목록)은 첫 교통편이 두 편이다');
+  assert.equal(show({ transport: 'bus' }), 'bus/standard bus/standard', '예전 폼의 글 하나도 받는다');
 });
 t('틀린 규칙·운임표는 생성기가 받지 않는다', () => {
   const rules = clone(TRAVEL_RULES);
@@ -319,6 +322,8 @@ t('일비는 일수 그대로다', () => assert.deepEqual([dailyOf(1), dailyOf(2
 
 console.log('사전정산 초안');
 const trip = (over) => settle({ ...blankForm('trip', '2026-10-02'), dateFrom: '2026-10-20', purpose: '착수회의 참석', settle: true, place: '대전', workplace: '부산 본사', ...over });
+/** 두 편 모두 같은 교통편(신청 폼의 go·back). */
+const both = (t, g = 'standard') => ({ go: { t, g }, back: { t, g } });
 t('당일 출장: 당일출장(주재국)·사무실소재지외, 일비·식비 내역은 없다. KTX 두 줄이 같은 날이다', () => {
   const p = settlePlan(trip({}));
   assert.deepEqual([p.period, p.periodLabel, p.area, p.sDate, p.eDate, p.sHour, p.eHour, p.stay, p.nation, p.method],
@@ -349,8 +354,8 @@ t('1박 2일: 일반출장, 일수 2·일비 2·식수 6. 가는 길은 출발�
   assert.equal(settlePlan(trip({ days: 2, end: '16:00' })).stay.meal, 5);
 });
 t('교통편 내역을 못 넣으면 비워 두고 까닭을 말한다 — 비행기·버스, 모르는 역, 운임표에 없는 구간', () => {
-  const bus = settlePlan(trip({ transport: 'bus' }));
-  assert.deepEqual([bus.trans, bus.notes], [[], ['버스는 요금이 그때그때 달라 교통편 내역은 비워 둡니다']]);
+  const bus = settlePlan(trip({ ...both('bus') }));
+  assert.deepEqual([bus.trans, bus.notes], [[], ['가는 편 버스 요금을 적지 않아 그 편의 교통편 줄은 비워 둡니다', '오는 편 버스 요금을 적지 않아 그 편의 교통편 줄은 비워 둡니다']]);
   assert.match(settlePlan(trip({ place: '제주' })).notes[0], /출장지 "제주" 에서 내릴 KTX 역을 찾지 못해/);
   assert.match(settlePlan(trip({ workplace: '' })).notes[0], /근무지 "" 에서 탈 KTX 역을 찾지 못해/);
   assert.match(settlePlan(trip({ place: '창원' })).notes[0], /부산↔창원중앙 구간이 없어/, '바로 가는 KTX 도, 갈아타는 길도 없다');
@@ -374,7 +379,7 @@ t('바로 가는 KTX 가 없으면 갈아타는 두 구간씩 넣는다 — 부�
   ], '시각은 구간이 이어진다 — 부산↔오송 3시간, 오송↔목포 2시간');
   assert.deepEqual([p.notes, p.why, p.kept], [[], '', false]);
   assert.equal(describePlan(p), '일반출장 · 전남 목포시 · 일비 2일 · 식비 6식 · KTX 부산↔오송↔목포 일반석 69,500원 × 2');
-  const day = settlePlan(trip({ place: '목포', trainGrade: 'first' }));
+  const day = settlePlan(trip({ place: '목포', ...both('train', 'first') }));
   assert.deepEqual(day.trans.map((r) => [r.date, r.dep, r.arr, r.grade, r.total]), [
     ['2026-10-20', '부산', '오송', '특실', 54800], ['2026-10-20', '오송', '목포', '특실', 46000],
     ['2026-10-20', '목포', '오송', '특실', 46000], ['2026-10-20', '오송', '부산', '특실', 54800],
@@ -398,32 +403,75 @@ t('지난번에 그 출장지로 간 길을 기억해 두었으면 그 길이 �
   for (const memo of [{ path: ['서울', '수원'] }, { path: ['부산', '창원중앙'] }, { path: ['부산'] }, { path: null }, null, {}]) {
     assert.deepEqual(rows(settlePlan(yongin, memo)), rows(settlePlan(yongin)), '다른 역에서 떠난 길 · 운임표로 이어지지 않는 길 · 빈 기억은 쓰지 않는다');
   }
-  assert.deepEqual(settlePlan(trip({ place: '경기도 용인시', transport: ['plane'] }), { path: ['부산', '수원'] }).trans, [], '기차를 고르지 않았으면 길을 쓰지 않는다');
+  assert.deepEqual(settlePlan(trip({ place: '경기도 용인시', ...both('plane') }), { path: ['부산', '수원'] }).trans, [], '기차를 고르지 않았으면 길을 쓰지 않는다');
 });
 t('기차를 특실로 고르면 특실 운임이 들어간다 — 그 구간의 특실 값을 모르면 비워 두고 그렇다고 말한다(짐작으로 채우지 않는다)', () => {
-  const p = settlePlan(trip({ place: '서울', trainGrade: 'first' }));
+  const p = settlePlan(trip({ place: '서울', ...both('train', 'first') }));
   assert.deepEqual(p.trans.map((r) => [r.dep, r.arr, r.transport, r.grade, r.total]), [['부산', '서울', 'Train', '특실', 78900], ['서울', '부산', 'Train', '특실', 78900]]);
   assert.deepEqual([p.transports, p.grade], [['train'], 'first']);
   assert.equal(describePlan(p), '당일출장(주재국) · 서울 · KTX 부산↔서울 특실 78,900원 × 2');
-  assert.equal(describePlan(settlePlan(trip({ trainGrade: 'first' }))), '당일출장(주재국) · 대전 · KTX 부산↔대전 특실 48,000원 × 2');
+  assert.equal(describePlan(settlePlan(trip({ ...both('train', 'first') }))), '당일출장(주재국) · 대전 · KTX 부산↔대전 특실 48,000원 × 2');
   // 특실 값이 빠진 구간(지금 운임표에는 없지만, 손으로 더한 구간이 그럴 수 있다)
   const route = KTX_FARES.routes.find((r) => r.a === '대전' && r.b === '부산');
   const first = route.first;
   route.first = null;
   try {
-    const unknown = settlePlan(trip({ trainGrade: 'first' }));
+    const unknown = settlePlan(trip({ ...both('train', 'first') }));
     assert.deepEqual([unknown.trans, unknown.notes], [[], ['KTX 운임표(ktx-fares.yaml)에 부산↔대전 특실 운임이 없어 교통편 내역은 비워 둡니다']]);
     assert.equal(describePlan(unknown), '당일출장(주재국) · 대전 · 교통편 내역 없음(부산↔대전 특실 운임 모름)');
   } finally {
     route.first = first;
   }
 });
-t('기차와 비행기를 함께 고르면 어느 편이 무엇인지 신청할 때는 알 수 없어 비워 둔다 — 다녀와서 신청 내역에서 고른다', () => {
-  const p = settlePlan(trip({ transport: ['train', 'plane'] }));
-  assert.deepEqual([p.trans, p.transports], [[], ['train', 'plane']]);
-  assert.match(p.notes[0], /^기차\(KTX\)·비행기를 함께 골라 어느 편이 무엇인지 아직 알 수 없어 교통편 내역은 비워 둡니다 — 다녀온 뒤 신청 내역의 출장 카드에서/);
-  assert.equal(describePlan(p), '당일출장(주재국) · 대전 · 교통편 내역 없음(가는 편·오는 편은 다녀와서 신청 내역에서 고름)');
-  assert.deepEqual(settlePlan(trip({ transport: ['plane'] })).notes, ['비행기는 요금이 그때그때 달라 교통편 내역은 비워 둡니다']);
+t('가는 편·오는 편마다 줄을 넣는다 — 기차는 운임표의 정가, 버스는 폼에 적은 요금, 비행기는 사후정산이라 비워 둔다 (2026-11-03 사용자 지정: "올때 갈때 교통편이 다를 수 있는데" · "비행기는 어차피 사후정산이야 ktx /버스는 사전정산이 가능해")', () => {
+  const rows = (p) => p.trans.map((r) => [r.date, r.dep, r.arr, r.transport, r.grade, r.total, r.shr, r.ehr]);
+  // 11/5~11/6 부산 → 일산(킨텍스): 갈 때 비행기, 올 때 KTX(서울→부산).
+  const kintex = { dateFrom: '2026-11-05', days: 2, place: '일산', venue: '킨텍스' };
+  const back = settlePlan(trip({ ...kintex, go: { t: 'plane', g: 'standard' }, back: { t: 'train', g: 'standard' } }));
+  assert.deepEqual(rows(back), [['2026-11-06', '서울', '부산', 'Train', '일반석', 54400, 16, 20]], '오는 편만 도착일에 — 도착 시각에 닿게');
+  assert.deepEqual([back.transports, back.legs.go.t, back.legs.back.t, back.path, back.byLeg.go], [['train', 'plane'], 'plane', 'train', ['부산', '서울'], []]);
+  assert.deepEqual(back.notes, ['가는 편은 비행기라 사전정산에는 그 편의 줄을 넣지 않습니다 — 다녀온 뒤 신청 내역의 출장 카드에 항공권을 넣으면 사후정산에 올라갑니다']);
+  assert.equal(describePlan(back), '일반출장 · 일산(킨텍스) · 일비 2일 · 식비 6식 · 가는 편 비행기 · 오는 편 KTX 서울→부산 일반석 54,400원');
+  // 갈 때 KTX 특실, 올 때 버스 — 버스는 폼에 적은 요금으로 근무지 ↔ 출장지 한 줄이다.
+  const go = settlePlan(trip({ ...kintex, go: { t: 'train', g: 'first' }, back: { t: 'bus', g: 'first', fare: '32,000' } }));
+  assert.deepEqual(rows(go), [['2026-11-05', '부산', '서울', 'Train', '특실', 78900, 7, 11], ['2026-11-06', '일산', '부산', 'Bus', '', 32000, null, 20]],
+    '버스는 소요 시간을 몰라 도착 시각만 적는다(떠나는 시는 저장할 때 0) · 등급은 버스에 없다');
+  assert.deepEqual([go.notes, go.legs.back], [[], { t: 'bus', g: 'standard', fare: 32000 }]);
+  assert.equal(describePlan(go), '일반출장 · 일산(킨텍스) · 일비 2일 · 식비 6식 · 가는 편 KTX 부산→서울 특실 78,900원 · 오는 편 버스 일산→부산 32,000원');
+  const noFare = settlePlan(trip({ ...kintex, go: { t: 'train' }, back: { t: 'bus', fare: '' } }));
+  assert.deepEqual([rows(noFare).length, noFare.notes], [1, ['오는 편 버스 요금을 적지 않아 그 편의 교통편 줄은 비워 둡니다']]);
+  // 두 편 모두 버스.
+  const coach = settlePlan(trip({ place: '창원', go: { t: 'bus', fare: 7400 }, back: { t: 'bus', fare: 7400 } }));
+  assert.deepEqual(rows(coach).map((r) => r.slice(1, 6)), [['부산', '창원', 'Bus', '', 7400], ['창원', '부산', 'Bus', '', 7400]]);
+  assert.equal(describePlan(coach), '당일출장(주재국) · 창원 · 가는 편 버스 부산→창원 7,400원 · 오는 편 버스 창원→부산 7,400원');
+  // 두 편 모두 기차인데 등급이 다르면 편마다 적는다.
+  const mixed = settlePlan(trip({ place: '서울', go: { t: 'train', g: 'first' }, back: { t: 'train', g: 'standard' } }));
+  assert.deepEqual(rows(mixed).map((r) => r.slice(1, 6)), [['부산', '서울', 'Train', '특실', 78900], ['서울', '부산', 'Train', '일반석', 54400]]);
+  assert.equal(describePlan(mixed), '당일출장(주재국) · 서울 · KTX 부산↔서울 특실 78,900원 + 일반석 54,400원');
+  // 두 편 모두 비행기면 줄이 없다.
+  const air = settlePlan(trip({ ...both('plane') }));
+  assert.deepEqual([air.trans, air.path, air.notes], [[], null, ['비행기는 사후정산에서 넣어 교통편 내역은 비워 둡니다 — 다녀온 뒤 신청 내역의 출장 카드에 항공권을 넣으면 사후정산에 올라갑니다']]);
+  // 기차인 편의 줄을 못 넣으면(역을 못 찾았다) 까닭을 말한다 — 비행기 편의 말도 같이.
+  const lost = settlePlan(trip({ workplace: '제주', go: { t: 'plane' }, back: { t: 'train' } }));
+  assert.deepEqual([lost.trans, lost.notes.length], [[], 2]);
+  assert.match(lost.notes[0], /근무지 "제주" 에서 탈 KTX 역을 찾지 못해/);
+});
+t('버스 요금 후보는 eclass 교통비 요금표의 그 구간 버스 항목이다 — 이름이 꼭 같은 것, 그다음 나중에 등록한 것. 거꾸로 적힌 것도 쓴다', () => {
+  const fee = (trseq, dep, arr, fee, transport = 'Bus') => ({ trseq, revno: `r${trseq}`, dep, arr, transport, grade: '', fee });
+  const rows = [fee('6464', '부산', '창원', 6700), fee('7125', '부산', '창원', 7400), fee('7036', '부산(서부)', '창원', 6200), fee('7500', '부산', '창원', 9900, 'Train'),
+    fee('6766', '부산', '울산', 4600), fee('6285', '부산', '울산', 8800), fee('7300', '울산', '부산사상', 5000)];
+  assert.deepEqual(busFareOf(rows, '부산', '창원'), rows[1], '같은 이름 가운데 나중에 등록한 것 — 기차 항목은 보지 않는다');
+  assert.deepEqual(busFareOf(rows, '창원', '부산'), rows[1], '거꾸로 적힌 것도 쓴다');
+  assert.deepEqual(busFareOf(rows, '부산', '울산'), rows[4], '부산사상→울산(7300)보다 이름이 꼭 같은 것이 먼저');
+  assert.deepEqual([busFareOf(rows, '부산', '일산'), busFareOf(rows, '', '창원'), busFareOf(null, '부산', '창원')], [null, null, null]);
+  assert.deepEqual(busEnds({ workplace: '부산 본사', place: ' 창원 ' }), { home: '부산', dest: '창원' });
+});
+t('신청 폼의 버스 요금은 편 안에 담긴다 — 버스를 다시 눌러도 남고, 다른 교통편으로 바꾸면 없어진다', () => {
+  const start = { go: { t: 'bus', fare: 7400 }, back: { t: 'bus', fare: 7400 } };
+  assert.deepEqual(nextFormLegs(start, 'go', 'bus').go, { t: 'bus', g: 'standard', fare: 7400 });
+  assert.deepEqual(nextFormLegs(start, 'back', 'train').back, { t: 'train', g: 'standard' });
+  assert.deepEqual([fareIn('49,500원'), fareIn(' 7400 '), fareIn(0), fareIn('-3'), fareIn('1.5'), fareIn('')], [49500, 7400, null, null, null, null]);
+  assert.deepEqual(formLegs({ go: { t: 'train', fare: 5000 } }).go, { t: 'train', g: 'standard' }, '요금은 버스에만');
 });
 
 console.log('가는 편·오는 편 — 신청 내역의 출장 카드에서 고르는 것(사후정산의 교통비 내역)');

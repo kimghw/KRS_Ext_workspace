@@ -1,6 +1,6 @@
 // 여비계산서 증빙 송부의 규칙(src/send.js)과 Teams MCP 확인(src/teams.js) — 언제 보내는지, 어느 길로, 무슨 글로, 최근 과제·계정.
 import assert from 'node:assert/strict';
-import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, sendTitle, sendLines, evidenceCount, RECENT_MAX } from '../src/send.js';
+import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, sendTitle, sendLines, evidenceCount, RECENT_MAX, projectChoices, adminOf, choiceOf, adminHit } from '../src/send.js';
 import { teamsState, teamsSendFile, rpcReply, FILE_TOOL, TEAMS_MCP_URL } from '../src/teams.js';
 
 let pass = 0;
@@ -157,6 +157,27 @@ await ta('파일을 보내는 도구가 있으면 Teams 로 — 받는 사람 �
   assert.equal(r.messageId, 'm-9');
   assert.deepEqual(calls.at(-1).params, { name: FILE_TOOL,
     arguments: { recipient_email: 'hong@krs.co.kr', content: '<p>글</p>', content_type: 'html', file_name: '여비증빙_1.pdf', file_base64: 'JVBERg==' } });
+});
+
+console.log('과제·계정을 R&D 과제에서 고르기(2026-11-03 사용자 지정)');
+t('고를 것은 과제의 약자(없으면 과제명)이고, 설명은 과제명과 행정 담당이다 — 이름 없는 과제·같은 약자는 한 번만', () => {
+  const projects = [
+    { alias: 'SSCB', name: '선박용 직류 차단기', support: [{ name: '김연구', role: '연구지원' }, { name: '홍길동', role: '행정 담당' }] },
+    { alias: '', name: 'MVDC 실증', support: [{ name: '이지원', role: '' }] },
+    { alias: 'sscb', name: '다른 과제', support: [] },
+    { alias: '', name: '', support: [] },
+  ];
+  assert.deepEqual(projectChoices(projects), [
+    { value: 'SSCB', label: '선박용 직류 차단기 · 행정 홍길동', admin: { name: '홍길동', role: '행정 담당' } },
+    { value: 'MVDC 실증', label: '행정 이지원', admin: { name: '이지원', role: '' } },
+  ]);
+  assert.deepEqual([adminOf({ support: [] }), adminOf(null)], [null, null]);
+  const choices = projectChoices(projects);
+  assert.deepEqual([choiceOf(choices, ' sscb ')?.value, choiceOf(choices, 'MVDC실증')?.value, choiceOf(choices, '일반관리비'), choiceOf(choices, '')], ['SSCB', 'MVDC 실증', null, null]);
+  const hong = { id: 'hong', name: '홍길동' };
+  assert.deepEqual(adminHit([hong, { id: 'hongs', name: '홍사랑' }], { name: '홍길동' }), hong, '이름이 꼭 같은 사람이 하나면 그 사람');
+  assert.equal(adminHit([hong, { id: 'hong2', name: '홍길동' }], { name: '홍길동' }), null, '동명이인이면 사람이 고른다');
+  assert.equal(adminHit([], { name: '홍길동' }), null);
 });
 
 console.log(`\n통과 ${pass}건`);

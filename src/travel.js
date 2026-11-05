@@ -34,34 +34,81 @@ export const DEFAULT_GRADE = RULES.transport.train.grade;
 const gradeLabel = (g) => RULES.transport.train.grade_labels[g] || RULES.transport.train.grade_labels[DEFAULT_GRADE];
 const labelOf = (value) => TRANSPORTS.find((t) => t.value === value)?.label || value;
 
+const isTransport = (t) => TRANSPORTS.some((x) => x.value === t);
 /**
- * 폼에 고른 교통편을 선택지 차례(기차·비행기·버스)의 목록으로. 여럿을 함께 고를 수 있다(기차 + 비행기).
- * 예전 폼의 글 하나('train')도 받는다. 고른 것이 없으면 빈 목록이다.
+ * 요금을 신청 폼에서 사람이 적는 교통편 — 버스다(2026-11-03 사용자 지정: "ktx /버스는 사전정산이 가능해" · 요금은 "폼에서 요금을 적게").
+ * KTX 는 운임표(ktx-fares.yaml)의 정가가 저절로 들어가고, 비행기는 늘 사후정산이라 사전정산에 줄을 넣지 않는다.
  */
-export function transportsOf(form) {
-  const v = form?.transport;
-  const picked = Array.isArray(v) ? v : typeof v === 'string' && v ? [v] : [];
-  return TRANSPORTS.map((t) => t.value).filter((x) => picked.includes(x));
+export const FARE_BY_HAND = 'bus';
+/** 적은 요금 — 1원 이상의 정수(쉼표·"원"은 뗀다). 아니면 null. */
+export const fareIn = (v) => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.replace(/[,\s원]/g, '')) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+/**
+ * 편 하나의 선택({t, g, fare?})을 고른다. 모르는 교통편이면 null. 등급은 기차에만 있다 — 신청 폼은 비행기의 등급을 고르지 않는다.
+ * 요금(fare)은 버스에만 있다 — 적지 않았으면 키가 없다.
+ */
+const formPick = (p) => {
+  if (!isTransport(p?.t)) return null;
+  const out = { t: p.t, g: p.t === GRADED && TRAIN_GRADES.some((x) => x.value === p.g) ? p.g : DEFAULT_GRADE };
+  const fare = p.t === FARE_BY_HAND ? fareIn(p.fare) : null;
+  return fare ? { ...out, fare } : out;
+};
+
+/**
+ * 신청 폼의 가는 편·오는 편(2026-11-03 사용자 지정: "올때 갈때 교통편이 다를 수 있는데 이게 반영이 안됨") — 편마다 교통편 하나와
+ * 기차의 좌석 등급({t, g} — 출장 카드의 가는 편·오는 편과 같은 꼴)이다. 비행기·버스의 등급은 늘 일반석이고, 버스는 사람이 적은 요금(fare)이 붙는다.
+ *
+ * 한 편만 알면 다른 편도 그것이다(출장지마다의 기억에서 사전정산에 줄이 없던 편 — src/routes.js). 둘 다 모르면 기본(기차 일반석)이다.
+ * 예전 꼴(교통편 목록 transport · 기차 등급 trainGrade — 출장지마다의 기억에 남아 있다)도 받는다: 그 목록의 첫 교통편이 두 편이다.
+ * @returns {{go: {t: string, g: string}, back: {t: string, g: string}}}
+ */
+export function formLegs(form) {
+  const go = formPick(form?.go);
+  const back = formPick(form?.back);
+  const old = formPick({ t: [].concat(form?.transport ?? []).find(isTransport), g: form?.trainGrade });
+  const base = go || back || old || { t: DEFAULT_TRANSPORT, g: DEFAULT_GRADE };
+  return { go: go || { ...base }, back: back || { ...base } };
 }
 
-/** 폼에 고른 기차 좌석 등급. 모르는 값이면 기본(일반석)이다. */
-export const trainGradeOf = (form) => (TRAIN_GRADES.some((g) => g.value === form?.trainGrade) ? form.trainGrade : DEFAULT_GRADE);
+/**
+ * 신청 폼의 편 아이콘을 눌렀을 때의 다음 가는 편·오는 편. 편마다 하나를 고른다 — 다른 교통편을 누르면 그것으로 바뀌고, 고른 기차를
+ * 한 번 더 누르면 특실, 또 누르면 일반석이다(꺼지지 않는다 — 편마다 하나는 골라져 있다). **가는 편을 바꿀 때 오는 편이 가는 편과
+ * 같았으면 오는 편도 따라 바뀐다** — 대개는 같은 교통편으로 다녀오므로 한 번 누르면 되고, 다르면 오는 편을 한 번 더 누른다.
+ * @param {'go'|'back'} key
+ * @returns {{go: {t: string, g: string}, back: {t: string, g: string}}}
+ */
+export function nextFormLegs(form, key, value) {
+  const legs = formLegs(form);
+  if ((key !== 'go' && key !== 'back') || !isTransport(value)) return legs;
+  // 버스를 다시 누르면 적어 둔 요금은 그대로다.
+  const pick = { ...nextLegPick(legs[key], value, [GRADED]), ...(value === FARE_BY_HAND && legs[key].fare ? { fare: legs[key].fare } : {}) };
+  const follow = key === 'go' && legs.back.t === legs.go.t && legs.back.g === legs.go.g;
+  return { ...legs, [key]: pick, ...(follow ? { back: { ...pick } } : {}) };
+}
 
 /**
- * 교통편 아이콘을 눌렀을 때의 다음 선택(2026-10-03 사용자 지정). 기차는 한 번 누르면 일반석, 한 번 더 누르면 특실,
- * 또 누르면 꺼진다. 비행기·버스는 켜고 끈다. 하나는 골라져 있어야 하므로 마지막 하나는 꺼지지 않는다(기차는 일반석으로 돌아간다).
- * @returns {{transport: string[], trainGrade: string}}
+ * eclass 교통비 요금표(parseFeeRows)에서 버스 편의 요금 후보를 고른다 — 신청 폼의 버스 요금 칸을 미리 채울 때 쓴다(사람이 확인·고친다).
+ * 버스 항목 가운데 떠나는 곳에 from 이, 닿는 곳에 to 가 들어 있는 것이고("부산(서부)" 도 부산이다), 없으면 거꾸로 적힌 것이다(요금은 방향이 없다).
+ * 그 가운데 이름이 꼭 같은 것이 먼저, 그다음 나중에 등록한 것이다(요금표는 사람들이 등록해 같은 구간에도 요금이 여럿이다). 없으면 null.
+ * @returns {{fee:number, trseq:string, revno:string, dep:string, arr:string, grade:string}|null}
  */
-export function nextTransport(form, value) {
-  const now = transportsOf(form);
-  const grade = trainGradeOf(form);
-  if (!TRANSPORTS.some((t) => t.value === value)) return { transport: now, trainGrade: grade };
-  if (!now.includes(value)) return { transport: transportsOf({ transport: [...now, value] }), trainGrade: grade };
-  if (value === GRADED && grade !== 'first') return { transport: now, trainGrade: 'first' };
-  const others = now.filter((x) => x !== value);
-  if (!others.length) return { transport: now, trainGrade: DEFAULT_GRADE };
-  return { transport: others, trainGrade: value === GRADED ? DEFAULT_GRADE : grade };
+export function busFareOf(rows, from, to) {
+  const [a, b] = [String(from || '').trim(), String(to || '').trim()];
+  if (!a || !b) return null;
+  const bus = (rows || []).filter((r) => r.transport === SITE_OF[FARE_BY_HAND] && r.fee > 0);
+  const way = (x, y) => bus.filter((r) => r.dep.includes(x) && r.arr.includes(y));
+  const hits = way(a, b).length ? way(a, b) : way(b, a);
+  const exact = (r) => (r.dep.trim() === a && r.arr.trim() === b) || (r.dep.trim() === b && r.arr.trim() === a);
+  return [...hits].sort((x, y) => exact(y) - exact(x) || +y.trseq - +x.trseq)[0] || null;
 }
+
+/**
+ * 버스 편의 떠나는 곳·닿는 곳 이름 — 근무지는 KTX 역 이름(그 도시 이름이다 — "부산 본사" → 부산)이 있으면 그것, 출장지는 적은 글 그대로다.
+ * 사전정산의 버스 줄과 요금표를 찾는 말이 같은 이름을 쓴다(요금표에 같은 이름의 항목이 있으면 그 항목과 잇는다 — src/trip.js linkFees).
+ */
+export const busEnds = (form) => ({ home: stationOf(form?.workplace) || String(form?.workplace || '').trim(), dest: String(form?.place || '').trim() });
 
 /* ------------------------------------------------------------ 역과 운임 */
 
@@ -262,17 +309,20 @@ export function tripLocation(form) {
  * 출장 폼에서 여비계산서(사전정산) 초안을 짓는다.
  *
  * 당일이면 당일출장(주재국), 1박 이상이면 일반출장이다. 당일출장은 사이트가 일비·식비 내역을 받지 않으므로
- * stay 가 null 이다. 교통편 내역은 **기차(KTX)만** 골랐고 운임표에 그 구간·그 등급의 값이 있을 때만 두 줄(가는 길·오는 길)이
- * 들어간다 — 줄마다 출발·도착 시(shr·ehr)도 적는다(legTimes). 못 넣으면 notes 에 까닭을, why 에 그것을 줄인 말을 적는다. 기차와 비행기를 함께 골랐으면 어느 편이 무엇인지
- * 신청할 때는 알 수 없어 비워 둔다(다녀온 뒤 신청 내역의 출장 카드에서 가는 편·오는 편을 골라 사후정산에 올린다 — legPlan).
+ * stay 가 null 이다. 교통편 내역은 가는 편·오는 편마다다(2026-11-03 사용자 지정: 가는 편·오는 편이 다를 수 있다 — 가는 편은 출발일,
+ * 오는 편은 도착일). **기차(KTX)인 편**은 운임표의 정가로, **버스인 편**은 사람이 폼에 적은 요금(fare)으로 줄이 들어가고, **비행기인 편**은
+ * 늘 사후정산이라 줄을 넣지 않는다(다녀온 뒤 신청 내역의 출장 카드에서 항공권을 넣으면 사후정산에 올라간다 — legPlan). 줄마다 출발·도착 시
+ * (shr·ehr)도 적는다(legTimes). 기차인 편의 줄을 못 넣으면(역을 못 찾았다, 운임표에 없다) 기차인 편을 모두 비우고 notes 에 까닭을, why 에 그것을
+ * 줄인 말을 적는다. byLeg 는 편마다 들어간 줄이다(trans 는 가는 편 → 오는 편 차례로 그것을 이은 것).
  *
  * 내릴 역(2026-10-04 사용자 지정): 출장지에 KTX 역이 없으면 가까운 역 가운데 근무지에서 먼 역이고(stationOf), 두 역을 바로 잇는 KTX 가
  * 없으면 갈아타는 길이다(pathOf) — 부산→목포는 부산→오송·오송→목포 두 줄씩 네 줄이 들어간다. **지난번에 그 출장지로 간 길을 기억해
  * 두었으면(memo.path — src/routes.js) 그 길이 먼저다** — 같은 역에서 떠나고 운임표로 이어지는 길일 때만 쓴다(kept 가 참이다).
  *
- * @param {object} form 근태 패널의 출장 폼(dateFrom·dateTo·days·start·end·place·venue·workplace·transport·trainGrade·purpose)
+ * @param {object} form 근태 패널의 출장 폼(dateFrom·dateTo·days·start·end·place·venue·workplace·go·back·purpose — go·back 은 formLegs)
  * @param {{path?: string[]}|null} [memo] 그 출장지에 기억해 둔 교통편(src/routes.js 의 recallRoute)
- * @returns {object} { period, sDate, sHour, eDate, eHour, location, area, purpose, nation, stay, method, transports, grade, trans, notes, why, kept }
+ * @returns {object} { period, sDate, sHour, eDate, eHour, location, area, purpose, nation, stay, method, legs, transports, grade, path, trans, notes, why, kept }
+ *   legs 는 편마다 고른 것(formLegs), transports 는 두 편의 교통편(선택지 차례), grade 는 기차인 편의 등급(가는 편이 먼저), path 는 줄을 넣은 KTX 길(근무지 쪽에서 — 줄이 없으면 null)
  */
 export function settlePlan(form, memo = null) {
   const days = Number.isInteger(form.days) && form.days >= 1 ? form.days : 1;
@@ -280,15 +330,21 @@ export function settlePlan(form, memo = null) {
   const sHour = +String(form.start || '').slice(0, 2);
   const eHour = +String(form.end || '').slice(0, 2);
   const notes = [];
-  const picked = transportsOf(form);
-  const transports = picked.length ? picked : [DEFAULT_TRANSPORT];
-  const grade = trainGradeOf(form);
-  const names = transports.map(labelOf).join('·');
+  const legs = formLegs(form);
+  const transports = TRANSPORTS.map((t) => t.value).filter((v) => v === legs.go.t || v === legs.back.t);
+  // 편을 셋으로 가른다 — 운임표의 정가가 저절로 들어가는 편(기차 — travel-rules.yaml 의 auto), 사람이 적은 요금으로 들어가는 편(버스),
+  // 사전정산에 넣지 않는 편(비행기 — 늘 사후정산이다).
+  const autoLeg = ({ key }) => !!TRANSPORTS.find((t) => t.value === legs[key].t)?.auto;
+  const byFare = LEGS.filter(autoLeg);
+  const byHand = LEGS.filter((l) => !autoLeg(l) && legs[l.key].t === FARE_BY_HAND);
+  const byAfter = LEGS.filter((l) => !autoLeg(l) && legs[l.key].t !== FARE_BY_HAND);
+  const grade = (byFare[0] ? legs[byFare[0].key] : legs.go).g;
   let why = '';
 
-  let trans = [];
+  const rows = { go: [], back: [] };
   let kept = false;
-  if (transports.length === 1 && TRANSPORTS.find((t) => t.value === transports[0]).auto) {
+  let path = null;
+  if (byFare.length) {
     const dep = stationOf(form.workplace);
     // 지난번에 이 출장지로 간 길이 먼저다 — 같은 역에서 떠난 길이고 지금 운임표로 이어질 때만.
     const last = dep && pathKnown(memo?.path) && memo.path[0] === dep && memo.path.at(-1) !== dep ? memo.path : null;
@@ -298,30 +354,45 @@ export function settlePlan(form, memo = null) {
     else if (dep === arr) notes.push(`근무지와 출장지가 같은 역(${dep})이라 교통편 내역은 비워 둡니다`);
     else {
       const auto = pathOf(dep, stationOf(form.place, dep));
-      const path = last || auto;
-      const go = trainRows(form.dateFrom, path, grade);
-      const back = trainRows(form.dateTo, path && [...path].reverse(), grade);
-      if (!go || !back) {
+      const way = last || auto;
+      // 편마다의 KTX 줄 — 가는 편은 출발일에 그 길로, 오는 편은 도착일에 거꾸로.
+      const rowsOf = (key, g) => (key === 'go' ? trainRows(form.dateFrom, way, g) : trainRows(form.dateTo, way && [...way].reverse(), g));
+      const made = byFare.map(({ key }) => ({ key, rows: rowsOf(key, legs[key].g) }));
+      const miss = made.find((m) => !m.rows);
+      if (miss) {
         // 구간은 있는데 그 등급(특실)의 값만 모르는 것과, 구간이 아예 없는 것을 가려 말한다.
-        const known = !!trainRows(form.dateFrom, path, DEFAULT_GRADE);
-        if (known) why = `${dep}↔${arr} ${gradeLabel(grade)} 운임 모름`;
+        const g = legs[miss.key].g;
+        const known = !!rowsOf(miss.key, DEFAULT_GRADE);
+        if (known) why = `${dep}↔${arr} ${gradeLabel(g)} 운임 모름`;
         notes.push(known
-          ? `KTX 운임표(ktx-fares.yaml)에 ${dep}↔${arr} ${gradeLabel(grade)} 운임이 없어 교통편 내역은 비워 둡니다`
+          ? `KTX 운임표(ktx-fares.yaml)에 ${dep}↔${arr} ${gradeLabel(g)} 운임이 없어 교통편 내역은 비워 둡니다`
           : `KTX 운임표(ktx-fares.yaml)에 ${dep}↔${arr} 구간이 없어 교통편 내역은 비워 둡니다`);
       } else {
-        // 줄마다 출발·도착 시 — 가는 편은 출발 시각에 떠나고, 오는 편은 도착 시각에 닿는다(구간의 대략 소요 시간만큼).
-        const timed = (key, rows) => legTimesAll(key, joinLeg(rows), { sHour, eHour }).map((at, i) => ({ ...rows[i], ...at }));
-        trans = [...timed('go', go), ...timed('back', back)];
+        for (const m of made) rows[m.key] = m.rows;
+        path = [...way];
         // 기억해 둔 길이 지금 찾은 길과 다를 때만 그렇다고 말한다(같으면 알릴 것이 없다).
         kept = !!last && String(last) !== String(auto);
       }
     }
-  } else if (transports.length > 1) {
-    why = '가는 편·오는 편은 다녀와서 신청 내역에서 고름';
-    notes.push(`${names}를 함께 골라 어느 편이 무엇인지 아직 알 수 없어 교통편 내역은 비워 둡니다 — 다녀온 뒤 신청 내역의 출장 카드에서 가는 편·오는 편을 고르거나 항공권을 넣으면 사후정산에 올라갑니다`);
-  } else {
-    notes.push(`${names}는 요금이 그때그때 달라 교통편 내역은 비워 둡니다`);
   }
+  // 버스인 편 — 사람이 폼에 적은 요금으로 한 줄(근무지 ↔ 출장지). 요금을 적지 않았으면 그 편은 비운다.
+  const { home, dest } = busEnds(form);
+  for (const { key, label } of byHand) {
+    const fare = legs[key].fare;
+    if (!fare) { notes.push(`${label} 버스 요금을 적지 않아 그 편의 교통편 줄은 비워 둡니다`); continue; }
+    if (!home) { notes.push(`근무지를 적지 않아 ${label} 버스 줄은 비워 둡니다`); continue; }
+    const [dep, arr] = key === 'go' ? [home, dest] : [dest, home];
+    rows[key] = [{ date: key === 'go' ? form.dateFrom : form.dateTo, dep, arr, transport: SITE_OF[FARE_BY_HAND], grade: '', total: fare,
+      currency: RULES.transport.train.currency, trseq: '', revno: '' }];
+  }
+  // 비행기인 편 — 늘 사후정산이다(2026-11-03 사용자 지정: "비행기는 어차피 사후정산이야").
+  const flown = '다녀온 뒤 신청 내역의 출장 카드에 항공권을 넣으면 사후정산에 올라갑니다';
+  if (byAfter.length === 2) notes.push(`비행기는 사후정산에서 넣어 교통편 내역은 비워 둡니다 — ${flown}`);
+  else if (byAfter.length) notes.push(`${byAfter[0].label}은 비행기라 사전정산에는 그 편의 줄을 넣지 않습니다 — ${flown}`);
+  // 줄마다 출발·도착 시 — 가는 편은 출발 시각에 떠나고, 오는 편은 도착 시각에 닿는다(KTX 는 구간의 대략 소요 시간만큼).
+  const timed = (key) => (rows[key].length ? legTimesAll(key, joinLeg(rows[key]), { sHour, eHour }).map((at, i) => ({ ...rows[key][i], ...at })) : []);
+  const byLeg = { go: timed('go'), back: timed('back') };
+  const trans = [...byLeg.go, ...byLeg.back];
 
   return {
     period: dayTrip ? RULES.period.day_trip.code : RULES.period.general.code,
@@ -333,8 +404,8 @@ export function settlePlan(form, memo = null) {
     nation: RULES.nation.code,
     stay: dayTrip ? null : { region: RULES.nation.code, day: days, daily: dailyOf(days), meal: mealsOf({ days, startHour: sHour, endHour: eHour }) },
     method: RULES.transport.method.code,
-    transports, grade,
-    trans, notes, why, kept,
+    legs, transports, grade, path,
+    trans, byLeg, notes, why, kept,
   };
 }
 
@@ -353,15 +424,25 @@ function trainRows(date, path, grade) {
 
 /**
  * 초안을 한 줄로. 누르기 전에 "올릴 내용"에 적어 보여준다. 갈아타는 길은 거치는 역까지 적고 요금은 편마다의 합이다
- * ("KTX 부산↔오송↔목포 일반석 69,500원 × 2"). 지난번에 쓴 길을 다시 썼으면 그렇다고 적는다.
+ * ("KTX 부산↔오송↔목포 일반석 69,500원 × 2"). 지난번에 쓴 길을 다시 썼으면 그렇다고 적는다. 두 편의 등급이 다르면 편마다 적고
+ * ("KTX 부산↔서울 특실 83,700원 + 일반석 59,800원"). 두 편이 모두 기차가 아니면 편마다 무엇이 들어가는지 적는다
+ * ("가는 편 비행기 · 오는 편 KTX 서울→부산 일반석 59,800원", "가는 편 버스 부산→창원 7,400원 · 오는 편 KTX …").
  */
 export function describePlan(plan) {
   const parts = [plan.periodLabel, plan.location];
   if (plan.stay) parts.push(`일비 ${plan.stay.daily}일 · 식비 ${plan.stay.meal}식`);
-  if (plan.trans.length) {
+  const tail = plan.kept ? ' · 지난번에 쓴 길' : '';
+  const perLeg = !!plan.byLeg && !!plan.legs && !(plan.legs.go.t === GRADED && plan.legs.back.t === GRADED);
+  if (plan.trans.length && perLeg) {
+    for (const { key, label } of LEGS) {
+      const rows = plan.byLeg[key];
+      parts.push(rows.length ? `${label} ${describeTrans(joinLeg(rows))}${plan.legs[key].t === GRADED ? tail : ''}` : `${label} ${labelOf(plan.legs[key].t)}`);
+    }
+  } else if (plan.trans.length) {
     const { go, back } = legsOfRows(plan.trans, { from: plan.sDate, to: plan.sDate });
-    const fares = go.total === back.total ? `${won(go.total)}원 × 2` : `${won(go.total)}원 + ${won(back.total)}원`;
-    parts.push(`KTX ${stopsOf(go).join('↔')} ${go.grade} ${fares}${plan.kept ? ' · 지난번에 쓴 길' : ''}`);
+    const fares = go.grade !== back.grade ? `${go.grade} ${won(go.total)}원 + ${back.grade} ${won(back.total)}원`
+      : `${go.grade} ${go.total === back.total ? `${won(go.total)}원 × 2` : `${won(go.total)}원 + ${won(back.total)}원`}`;
+    parts.push(`KTX ${stopsOf(go).join('↔')} ${fares}${tail}`);
   } else {
     parts.push(plan.why ? `교통편 내역 없음(${plan.why})` : '교통편 내역 없음');
   }
@@ -469,13 +550,19 @@ export function legsOfRows(rows, trip) {
     else groups.push([r]);
   }
   const legs = groups.map(joinLeg);
-  if (legs.length === 1 && trip?.to && trip.to !== trip.from && legs[0].date === trip.to) return { go: null, back: legs[0], extra: 0 };
+  // 편이 하나뿐이면 오는 편일 수 있다(가는 편이 비행기·버스라 그 편의 줄이 없는 사전정산 — 2026-11-03). 여러 날이면 그 날짜가 도착일일 때,
+  // 당일이면 낮 12시 뒤에 떠나는 편일 때 오는 편이다(항공권을 편에 앉히는 seatTickets 와 같은 셈).
+  const multi = !!trip?.to && trip.to !== trip.from;
+  if (legs.length === 1 && (multi ? legs[0].date === trip.to : Number(legs[0].shr) >= 12)) return { go: null, back: legs[0], extra: 0 };
   return { go: legs[0] || null, back: legs[1] || null, extra: groups.slice(2).reduce((n, g) => n + g.length, 0) };
 }
 
-/** 가는 편·오는 편에서 고른 교통편의 다음 선택 — 기차·비행기를 한 번 더 누르면 특실, 또 누르면 일반석이다. 다른 것을 누르면 그것으로 바뀐다. */
-export function nextLegPick(pick, value) {
-  if (LEG_GRADED.includes(value) && pick?.t === value) return { t: value, g: pick.g === 'first' ? DEFAULT_GRADE : 'first' };
+/**
+ * 가는 편·오는 편에서 고른 교통편의 다음 선택 — 기차·비행기를 한 번 더 누르면 특실, 또 누르면 일반석이다. 다른 것을 누르면 그것으로 바뀐다.
+ * graded 는 등급이 있는 교통편이다 — 출장 카드는 기차·비행기(LEG_GRADED), 신청 폼은 기차뿐이다(nextFormLegs).
+ */
+export function nextLegPick(pick, value, graded = LEG_GRADED) {
+  if (graded.includes(value) && pick?.t === value) return { t: value, g: pick.g === 'first' ? DEFAULT_GRADE : 'first' };
   return { t: value, g: DEFAULT_GRADE };
 }
 

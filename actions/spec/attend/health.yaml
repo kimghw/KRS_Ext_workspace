@@ -69,16 +69,23 @@ fields:
     read: 사용자가 말로 고르지 않습니다 — 버튼이 정합니다(임시저장이면 save, 결재요청이면 request)
     llm: false
     ui: false
+  gcal:
+    type: boolean
+    label: G캘린더
+    desc: 결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다
+    read: 사용자가 구글 캘린더·일정 등록을 말했을 때만 true
+    default: false
+    llm: false
   doc:
     type: object
     label: 고쳐 올리는 문서
-    desc: 임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc)
-    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서
+    desc: 올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03)
+    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서
     llm: false
     ui: false
     fields:
       docNo: { type: string, max: 30, required: true, desc: 문서번호, read: 고치는 문서의 번호 그대로 }
-      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1), read: 그 문서의 상태 코드 그대로 }
+      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청), read: 그 문서의 상태 코드 그대로 }
 ignore:
   kind: 행위 ID 가 종류다(attend.health)
   dateTo: 하루짜리 — settle 이 시작일로 맞추고 HR 에는 시작일이 종료일로 간다
@@ -95,8 +102,8 @@ ignore:
   flexThu: 유연근무의 칸
   flexFri: 유연근무의 칸
   settle: 출장의 여비계산서
-  transport: 출장의 교통편
-  trainGrade: 출장의 좌석 등급
+  go: 출장의 가는 편 교통편
+  back: 출장의 오는 편 교통편
   car: 출장·외근의 차량 조회
   carPlace: 외근의 차량 행선지
   sub: 건강검진에는 갈래가 없다
@@ -117,4 +124,4 @@ runner: attend.apply
 uses:
   - { module: src/attend.js, export: buildJob }
   - { module: src/hr.js, export: hrRunJob }
-next: 결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 첨부는 어댑터가 기록의 파일 이름으로 ctx.files 에서 찾아 buildJob 의 file op 에 넣는다
+next: 결재요청 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList). 첨부는 어댑터가 기록의 파일 이름으로 ctx.files 에서 찾아 buildJob 의 file op 에 넣는다. G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)

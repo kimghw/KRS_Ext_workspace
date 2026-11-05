@@ -83,13 +83,13 @@ console.log('trip.create — 폼 → settlePlan(memo) → tripCreate(사번·이
 await ta('기록의 칸이 폼이 되고(근무지가 비면 사전설정의 근무지), ctx.memo 가 settlePlan 에 가며, 사번·이름은 hrMe 의 것이다', async () => {
   const { d, names, argsOf, log } = make();
   const preset = { hrMe: { emplNo: '11115', name: '김거화', dept: '전기' }, workplace: '부산' };
-  const record = build(d, 'trip.create', { dateFrom: '2026-10-20', start: '07:00', dateTo: '2026-10-21', end: '20:00', days: 2, place: '대전', venue: '한국기계연구원', purpose: '착수회의', transport: ['train'], trainGrade: 'standard' }, preset);
+  const record = build(d, 'trip.create', { dateFrom: '2026-10-20', start: '07:00', dateTo: '2026-10-21', end: '20:00', days: 2, place: '대전', venue: '한국기계연구원', purpose: '착수회의', go: { t: 'train', g: 'standard' }, back: { t: 'train', g: 'standard' } }, preset);
   assert.equal(record.input.workplace, null);
-  const memo = { transport: ['train'], trainGrade: 'standard', path: ['부산', '대전'], date: '2026-09-01' };
+  const memo = { go: { t: 'train', g: 'standard' }, back: { t: 'train', g: 'standard' }, path: ['부산', '대전'], date: '2026-09-01' };
   const r = await run(d, record, { memo, onStage: () => {} });
   assert.deepEqual(names(), ['settlePlan', 'tripCreate']);
   assert.deepEqual(argsOf('settlePlan'), [tripFormOf(record), memo]);
-  assert.deepEqual(tripFormOf(record), { kind: 'trip', dateFrom: '2026-10-20', start: '07:00', dateTo: '2026-10-21', end: '20:00', days: 2, place: '대전', venue: '한국기계연구원', purpose: '착수회의', workplace: '부산', transport: ['train'], trainGrade: 'standard' });
+  assert.deepEqual(tripFormOf(record), { kind: 'trip', dateFrom: '2026-10-20', start: '07:00', dateTo: '2026-10-21', end: '20:00', days: 2, place: '대전', venue: '한국기계연구원', purpose: '착수회의', workplace: '부산', go: { t: 'train', g: 'standard' }, back: { t: 'train', g: 'standard' } });
   const [plan, who] = argsOf('tripCreate');
   assert.deepEqual([plan.sDate, plan.eDate, plan.location, plan.trans.length > 0, who.emplNo, who.name], ['2026-10-20', '2026-10-21', '대전(한국기계연구원)', true, '11115', '김거화']);
   assert.deepEqual([r.existing, r.linked, log[0].kind, log[0].ok], [false, 2, 'trip', true]);

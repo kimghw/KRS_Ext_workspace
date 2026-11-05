@@ -92,27 +92,33 @@ fields:
     type: string
     max: 50
     label: 근무지
-    desc: 떠나는 근무지(서울·부산). 사전정산을 켰을 때 묻고(기차가 끼면 KTX 역을 찾으므로 그때만 필수 — 기존 검증기 몫), 차량 조회만 켰을 때도 받는다(차량의 지역)
+    desc: 떠나는 근무지(서울·부산). 사전정산을 켰을 때 묻고(어느 편이든 기차·버스면 그 줄이 근무지에서 떠나므로 그때만 필수 — 기존 검증기 몫), 차량 조회만 켰을 때도 받는다(차량의 지역)
     read: 근무지 — 서울 또는 부산
     llm: false
-  transport:
-    type: tags
-    values: [train, plane, bus]  # src/travel.js TRANSPORTS(references/travel-rules.yaml transport.choices)
-    label: 교통편
-    desc: 교통편(여럿 — 기차 + 비행기). 사전정산을 켰을 때만 묻는다
-    read: 기차(train)·비행기(plane)·버스(bus) 가운데 말한 것
-    default: [train]             # travel-rules.yaml transport.default
+  # 교통편은 가는 편·오는 편마다 하나다(2026-11-03 사용자 지정: "올때 갈때 교통편이 다를 수 있는데") — 출장 카드의 가는 편·오는 편과 같은 {t, g}.
+  # 기차인 편만 사전정산에 KTX 줄이 들어간다(src/travel.js settlePlan). 화면은 편마다 아이콘 셋이고 고른 기차를 한 번 더 누르면 특실이다(nextFormLegs).
+  go:
+    type: object
+    label: 가는 편
+    desc: 가는 편(출발일)의 교통편과 기차 좌석 등급. 사전정산을 켰을 때만 묻는다
+    read: 가는 편의 교통편 — 사용자가 말한 것만
     llm: false
     when: settle
-  trainGrade:
-    type: enum
-    values: [standard, first]    # travel-rules.yaml transport.train.grade_labels — 화면은 기차 아이콘을 한 번 더 누르면 특실
-    label: 좌석 등급
-    desc: 기차 좌석 등급(standard 일반석·first 특실) — 교통편 아이콘 안의 값이라 fieldsFor 에는 따로 없다
-    read: 특실이라고 했을 때만 first
-    default: standard
+    fields:
+      t: { type: enum, required: true, values: [train, plane, bus], default: train, label: 교통편, desc: '교통편(src/travel.js TRANSPORTS — references/travel-rules.yaml transport.choices, 기본 transport.default)', read: '기차(train)·비행기(plane)·버스(bus) 가운데 말한 것' }
+      g: { type: enum, values: [standard, first], default: standard, label: 좌석 등급, desc: '기차 좌석 등급(standard 일반석·first 특실 — travel-rules.yaml transport.train.grade_labels). 기차가 아니면 standard', read: 기차 특실이라고 했을 때만 first }
+      fare: { type: integer, min: 1, max: 10000000, label: 버스 요금, desc: '버스인 편의 요금(원) — 사람이 폼에 적는다(2026-11-03 사용자 지정: "폼에서 요금을 적게". eclass 교통비 요금표의 그 구간 버스 항목을 후보로 미리 채운다). 버스가 아니면 없다', read: 버스 요금을 말했을 때만 그 금액(원) }
+  back:
+    type: object
+    label: 오는 편
+    desc: 오는 편(도착일)의 교통편과 기차 좌석 등급. 사전정산을 켰을 때만 묻는다. 화면에서 가는 편을 바꿀 때 오는 편이 같았으면 따라 바뀐다
+    read: 오는 편의 교통편 — 사용자가 말한 것만
     llm: false
     when: settle
+    fields:
+      t: { type: enum, required: true, values: [train, plane, bus], default: train, label: 교통편, desc: '교통편(src/travel.js TRANSPORTS — references/travel-rules.yaml transport.choices, 기본 transport.default)', read: '기차(train)·비행기(plane)·버스(bus) 가운데 말한 것' }
+      g: { type: enum, values: [standard, first], default: standard, label: 좌석 등급, desc: '기차 좌석 등급(standard 일반석·first 특실 — travel-rules.yaml transport.train.grade_labels). 기차가 아니면 standard', read: 기차 특실이라고 했을 때만 first }
+      fare: { type: integer, min: 1, max: 10000000, label: 버스 요금, desc: '버스인 편의 요금(원) — 사람이 폼에 적는다(2026-11-03 사용자 지정: "폼에서 요금을 적게". eclass 교통비 요금표의 그 구간 버스 항목을 후보로 미리 채운다). 버스가 아니면 없다', read: 버스 요금을 말했을 때만 그 금액(원) }
   expense:
     type: enum
     values: ['Y', 'N']
@@ -131,16 +137,23 @@ fields:
     read: 사용자가 말로 고르지 않습니다 — 버튼이 정합니다(임시저장이면 save, 결재요청이면 request)
     llm: false
     ui: false
+  gcal:
+    type: boolean
+    label: G캘린더
+    desc: 결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-내 이름] 제목·날짜·시간으로 채워 새 탭에 연다(2026-11-03 사용자 지정, src/gcal.js) — 캘린더 고르기와 저장은 사람이 한다. HR 에는 올라가지 않고 임시저장에서는 열지 않는다
+    read: 사용자가 구글 캘린더·일정 등록을 말했을 때만 true
+    default: false
+    llm: false
   doc:
     type: object
     label: 고쳐 올리는 문서
-    desc: 임시저장해 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 종류는 못 바꾼다
-    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정을 누른 문서
+    desc: 올려 둔 문서를 열어 고쳐 올릴 때 그 문서(없으면 새 신청 — buildJob 의 doc). 임시저장(1)이면 그 문서를 고치고, 결재완료(5)면 HR 근태수정신청(결재요청만 — 2026-11-03). 종류는 못 바꾼다
+    read: 사용자가 정하지 않습니다 — 신청 내역에서 수정(임시저장)·근태 변경(결재완료)을 누른 문서
     llm: false
     ui: false
     fields:
       docNo: { type: string, max: 30, required: true, desc: 문서번호, read: 고치는 문서의 번호 그대로 }
-      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1), read: 그 문서의 상태 코드 그대로 }
+      statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1 · 결재완료 5 — 근태수정신청), read: 그 문서의 상태 코드 그대로 }
 # blankForm('trip') 에는 있지만 이 종류의 기록에 담지 않는 화면 전용 키 — 까닭을 값으로 적는다.
 ignore:
   kind: 행위 ID 가 종류다(attend.trip)
@@ -178,4 +191,4 @@ uses:
 then:
   - { action: trip.create, when: settle }
   - { action: car.reserve, when: car }
-next: 결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 trip.create 가, 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다)
+next: 결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 trip.create 가, 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)

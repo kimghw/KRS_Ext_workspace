@@ -20,6 +20,52 @@
 /** 이전에 보낸 곳을 몇 줄까지 기억하고 보이는가(과제·계정 + 받는 사람 + 보내는 길). */
 export const RECENT_MAX = 3;
 
+/* ------------------------------------------------------------ R&D 과제에서 고르기 */
+// 2026-11-03 사용자 지정: "여기 과제 계정은 r&D 에 등록된 과제. 약자들 중 선택하거나 직접 입력할 수 있게 해줘. 과제 선택하면 담당 행정하시는분도
+// 연결되어 있으니 그분께 보낼 수 있도록 해줘." — 과제·계정 칸은 R&D 탭의 과제 약자 가운데 고르거나 직접 적고, 고른 과제에 행정지원이 있으면
+// 그 행정 담당이 받는 사람이 된다(쪽지의 받는 사람 찾기로 ID 를 찾는다 — sendbox.js).
+
+const squash = (s) => String(s || '').replace(/\s/g, '').toLowerCase();
+
+/**
+ * 과제의 행정 담당 — 행정지원(R&D 탭 '참여인력' 칸의 [{ name, role, ref }]) 가운데 맡은 일에 "행정"이 든 첫 사람, 없으면 첫 사람이다. 없으면 null.
+ * @returns {{name: string, role: string}|null}
+ */
+export function adminOf(project) {
+  const people = (Array.isArray(project?.support) ? project.support : []).filter((s) => String(s?.name || '').trim());
+  const hit = people.find((s) => /행정/.test(s.role || '')) || people[0];
+  return hit ? { name: String(hit.name).trim(), role: String(hit.role || '').trim() } : null;
+}
+
+/**
+ * 송부 칸의 과제·계정으로 고를 R&D 과제 — 값은 과제의 약자(없으면 과제명), 설명은 과제명과 행정 담당이다. 약자도 과제명도 없는 과제는 뺀다.
+ * @param {object[]} projects src/rnd.js normalizeBook 의 projects(alias·name·support)
+ * @returns {{value: string, label: string, admin: {name: string, role: string}|null}[]}
+ */
+export function projectChoices(projects) {
+  const out = [];
+  for (const p of Array.isArray(projects) ? projects : []) {
+    const value = String(p?.alias || p?.name || '').trim();
+    if (!value || out.some((c) => squash(c.value) === squash(value))) continue;
+    const admin = adminOf(p);
+    const name = String(p?.name || '').trim();
+    out.push({ value, label: [name !== value ? name : '', admin ? `행정 ${admin.name}` : ''].filter(Boolean).join(' · '), admin });
+  }
+  return out;
+}
+
+/** 적은 과제·계정이 고를 과제의 약자와 같으면(빈칸·대소문자는 보지 않는다) 그 과제. 아니면 null — 직접 적은 계정이다. */
+export const choiceOf = (choices, text) => (squash(text) ? (choices || []).find((c) => squash(c.value) === squash(text)) || null : null);
+
+/**
+ * 행정 담당의 이름으로 찾은 받는 사람 후보(쪽지의 받는 사람 찾기 — src/memo.js memoSuggest) 가운데 그 사람 — 이름이 꼭 같은 사람이 하나뿐일 때만이다.
+ * 동명이인이거나 없으면 null(사람이 후보에서 고른다).
+ */
+export function adminHit(hits, admin) {
+  const same = (hits || []).filter((h) => squash(h?.name) === squash(admin?.name));
+  return same.length === 1 ? same[0] : null;
+}
+
 /** 최근 목록의 맨 앞에 넣는다 — 같은 것이 있으면 앞으로 옮기고, RECENT_MAX 개를 넘으면 오래된 것을 버린다. */
 export function pushRecent(list, value, keyOf = (x) => x) {
   if (value == null || value === '') return (list || []).slice(0, RECENT_MAX);

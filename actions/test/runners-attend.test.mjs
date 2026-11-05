@@ -52,12 +52,12 @@ const rejects = async (p, re) => {
 };
 
 console.log('attend.apply — buildJob 이 받는 폼은 패널이 주던 폼과 같다');
-await ta('출장(사전정산 켬·교통편 둘·특실): 기록 → settle 한 폼 그대로, op 가 action, doc 은 null. hrRunJob 에 onStage 가 간다', async () => {
+await ta('출장(사전정산 켬·가는 편 KTX 특실·오는 편 버스 요금): 기록 → settle 한 폼 그대로, op 가 action, doc 은 null. hrRunJob 에 onStage 가 간다', async () => {
   const form = settle({ ...blankForm('trip', TODAY), dateFrom: '2026-10-20', days: 2, place: '대전', venue: '한국기계연구원', purpose: '착수회의 참석',
-    workplace: '부산', settle: true, transport: ['train', 'plane'], trainGrade: 'first' });
+    workplace: '부산', settle: true, go: { t: 'train', g: 'first' }, back: { t: 'bus', g: 'standard', fare: 7400 } });
   const { d, calls, log } = make();
   const record = build(d, form, 'request');
-  assert.deepEqual([record.input.op, record.input.doc, record.input.dateTo, record.input.transport, record.input.expense], ['request', null, '2026-10-21', ['train', 'plane'], 'Y']);
+  assert.deepEqual([record.input.op, record.input.doc, record.input.dateTo, record.input.go, record.input.back, record.input.expense], ['request', null, '2026-10-21', { t: 'train', g: 'first', fare: null }, { t: 'bus', g: 'standard', fare: 7400 }, 'Y'], '버스가 아닌 편의 요금은 빈 값(null)이다');
   const onStage = () => {};
   const r = await d.run(record, { confirmed: record.hash, onStage });
   assert.deepEqual(r, HR_OK);

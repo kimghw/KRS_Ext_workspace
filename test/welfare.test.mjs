@@ -41,9 +41,9 @@ t('연차 안의 "기념일 지원" 체크박스를 켜면 연차 칸 아래에 
   assert.deepEqual(Object.keys(WELFARE_BLANK), ['wfa', 'wfaName', 'wfaRelation', 'wfaReason', 'wfaDate', 'wfaStayFrom', 'wfaStayTo', 'wfaPaid', 'wfaAsk', 'wfaCash']);
   assert.equal(f.wfaRelation, '본인', '가족관계의 기본값은 본인');
   assert.deepEqual(fieldsFor(f).map((x) => x.key),
-    ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'wfaReason', 'wfaDate', 'wfaName', 'wfaRelation', 'wfaStayFrom', 'wfaStayTo', 'wfaPaid', 'wfaAsk', 'wfaCash']);
-  assert.deepEqual(fieldsFor({ ...f, wfa: false }).map((x) => x.key), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa'], '끄면 체크박스만 남는다');
-  assert.deepEqual(fieldsFor({ ...f, sub: 'LH' }).map((x) => x.key), ['sub', 'dateFrom', 'dateTo', 'days', 'half'], '체력단련으로 바꾸면 기념일 칸이 없다');
+    ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'gcal', 'wfaReason', 'wfaDate', 'wfaName', 'wfaRelation', 'wfaStayFrom', 'wfaStayTo', 'wfaPaid', 'wfaAsk', 'wfaCash']);
+  assert.deepEqual(fieldsFor({ ...f, wfa: false }).map((x) => x.key), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'gcal'], '끄면 체크박스만 남는다');
+  assert.deepEqual(fieldsFor({ ...f, sub: 'LH' }).map((x) => x.key), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'gcal'], '체력단련으로 바꾸면 기념일 칸이 없다');
   assert.equal(isWelfare(withSub(f, 'LH')), false);
   assert.deepEqual(missingFields(f), ['wfaReason', 'wfaDate', 'wfaName'], '기념일의 내용만 반드시 적는다 — 금액·사용구분은 신청 화면에서 적어도 된다');
   assert.deepEqual(missingFields(form(FILLED)), []);

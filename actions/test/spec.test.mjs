@@ -296,6 +296,7 @@ t('종류마다 fieldsFor 가 내는 칸 ⊆ YAML 의 칸이고 이름(label)이
     const { fields } = ACTIONS.actions[`attend.${kind}`];
     for (const form of forms[kind]) {
       for (const f of fieldsFor(form)) {
+        if (f.type === 'jump') continue;   // 출장 폼의 KTX·항공권은 값 없이 차량 탭의 조회로 가는 단추다(2026-11-05) — 기록의 칸이 아니라 YAML 에 없다
         assert.ok(f.key in fields, `${kind}: ${f.key} 칸이 YAML 에 없다`);
         assert.equal(fields[f.key].label, f.label, `${kind}.${f.key} 의 이름`);
       }
@@ -321,9 +322,10 @@ t('신청 종류마다 op(save·request)와 doc(고쳐 올리는 문서) 칸이 
 t('기본값(default)은 blankForm·SUBS 가 까는 값과 같다 — 출장 07:00~20:00·경비 Y·기차, 외근/외출/검진 09:00, 소통 13:00 60분 부서소통회', () => {
   const f = (kind) => ACTIONS.actions[`attend.${kind}`].fields;
   const trip = blankForm('trip', TODAY);
-  assert.deepEqual([f('trip').start.default, f('trip').end.default, f('trip').expense.default, f('trip').transport.default, f('trip').trainGrade.default, f('trip').days.default],
-    [trip.start, trip.end, trip.expense, trip.transport, trip.trainGrade, trip.days]);
-  assert.deepEqual([trip.start, trip.end, trip.expense, trip.transport, trip.trainGrade], ['07:00', '20:00', 'Y', [DEFAULT_TRANSPORT], DEFAULT_GRADE]);
+  assert.deepEqual([f('trip').start.default, f('trip').end.default, f('trip').expense.default, f('trip').days.default], [trip.start, trip.end, trip.expense, trip.days]);
+  // 가는 편·오는 편(객체)은 안의 칸마다 기본값이 있다 — 기차 일반석(2026-11-03 편마다).
+  for (const leg of ['go', 'back']) assert.deepEqual([f('trip')[leg].fields.t.default, f('trip')[leg].fields.g.default], [trip[leg].t, trip[leg].g], leg);
+  assert.deepEqual([trip.start, trip.end, trip.expense, trip.go, trip.back], ['07:00', '20:00', 'Y', { t: DEFAULT_TRANSPORT, g: DEFAULT_GRADE }, { t: DEFAULT_TRANSPORT, g: DEFAULT_GRADE }]);
   for (const kind of ['out', 'leaveout', 'health']) assert.equal(f(kind).start.default, DEFAULT_START, kind);
   assert.equal(f('out').expense.default, blankForm('out', TODAY).expense);
   assert.equal(f('out').sub.default, SUBS.out[0].value);
@@ -348,8 +350,10 @@ t('enum 의 값은 src/attend.js·travel.js·welfare.js 의 상수와 같다', (
   assert.equal(f('trip').days.max, MAX_TRIP_DAYS);
   assert.equal(f('leave').days.max, MAX_TRIP_DAYS);
   assert.deepEqual(f('leave').half.values, ['am', 'pm', 'full'], 'LLM 값 — UI 의 전일은 빈 값');
-  assert.deepEqual(f('trip').transport.values, TRANSPORTS.map((x) => x.value));
-  assert.deepEqual(f('trip').trainGrade.values, TRAIN_GRADES.map((x) => x.value));
+  for (const leg of ['go', 'back']) {
+    assert.deepEqual(f('trip')[leg].fields.t.values, TRANSPORTS.map((x) => x.value), leg);
+    assert.deepEqual(f('trip')[leg].fields.g.values, TRAIN_GRADES.map((x) => x.value), leg);
+  }
   assert.deepEqual(f('leave').wfaReason.values, REASONS);
   assert.deepEqual(f('leave').wfaRelation.values, RELATIONS);
   assert.deepEqual(f('leave').wfaCash.values, CASH_KINDS.map((x) => x.value));
@@ -585,7 +589,7 @@ t('toYaml 은 node 의 yaml 로 다시 읽으면 같은 값이다 — 따옴표�
 t('--example 은 example·default 로 채운 기록을 YAML 로, --show 는 합쳐진 행위를 JSON 으로 보인다', () => {
   const rec = exampleRecord(ACTIONS.actions['attend.trip']);
   assert.deepEqual([rec.v, rec.action, rec.by, rec.preset.today, rec.preset.workplace], [1, 'attend.trip', 'ui', '<today>', '<storage:attendWorkplace>']);
-  assert.deepEqual([rec.input.dateFrom, rec.input.days, rec.input.settle, rec.input.transport, rec.input.op, rec.input.doc], ['2026-10-20', 2, false, ['train'], null, { docNo: null, statusCode: null }]);
+  assert.deepEqual([rec.input.dateFrom, rec.input.days, rec.input.settle, rec.input.go, rec.input.op, rec.input.doc], ['2026-10-20', 2, false, { t: 'train', g: 'standard', fare: null }, null, { docNo: null, statusCode: null }]);
   const ex = cli('--example', 'attend.trip');
   assert.equal(ex.status, 0, ex.stderr);
   assert.deepEqual(parse(ex.stdout), rec);

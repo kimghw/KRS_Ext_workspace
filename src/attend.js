@@ -5,7 +5,7 @@
 // 저장·결재요청 함수가 있고, 값을 넣는 **순서**가 중요하다 — 종류를 바꾸면 날짜가 오늘로 돌아가고,
 // 날짜를 바꾸면 시각이 초기화된다. 그래서 순서를 여기서 한 번에 정해 두고 테스트로 못 박는다.
 
-import { TRANSPORTS, DEFAULT_TRANSPORT, DEFAULT_GRADE, transportsOf } from './travel.js';
+import { TRANSPORTS, DEFAULT_TRANSPORT, DEFAULT_GRADE, FARE_BY_HAND, formLegs } from './travel.js';
 import { WELFARE_BLANK, WELFARE_CHECK, welfareFields, welfareProblems } from './welfare.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -100,6 +100,18 @@ export const CANCEL_FORMS = {
   LV: { route: '/uhr/docappr/apprcnclholi100/view', grid: 'docapprcnclholi100Grid', pop: '/uhr/docappr/apprholi-pop' },
   ET: { route: '/uhr/docappr/apprcnclholi100/view', grid: 'docapprcnclholi100Grid', pop: '/uhr/docappr/apprholi-pop' },
 };
+
+/**
+ * 결재완료 건의 근태수정신청(2026-11-03 HR 공지 「기결재 근태 수정 프로세스 변경」 — 취소신청 → 취소결재 → 새 상신 대신 수정신청 → 수정결재).
+ * HR 의 「근태수정신청」 화면(MODIFY_LIST_ROUTE — 결재완료 문서 목록)에서 줄의 [수정]은 원 신청서 화면을 수정 모드로 연다
+ * (modifyRequestYn=Y — 사이트의 beginModify…Request 가 #bfDocNo 에 원 문서번호를 넣고 #docNo·#statusCode 를 비운 채 폼을 푼다,
+ * 2026-11-03 화면 소스). 고친 뒤 결재요청하면 원 문서를 잇는(bfDocNo) 새 문서가 올라가고, 기존 근태는 그것이 승인될 때까지 그대로다.
+ * 그 목록의 신청서는 이 넷뿐이다 — 유연근무(FW)에는 수정신청이 없다. 이미 수정 문서가 있으면(그 폼의 api + MODIFY_RELATED 가 MODIFIED 줄을 준다)
+ * 사이트가 다시 수정하지 못하게 한다.
+ */
+export const MODIFY_LIST_ROUTE = '/empmenu/docappr/docapprdocmstremp101/view';
+export const MODIFY_FORM_IDS = ['TRO', 'TR', 'LV', 'ET'];
+export const MODIFY_RELATED = '/related-modifications';
 
 /**
  * 패널이 다루는 근태 종류. form 은 HR 폼, code 는 그 폼의 근태종류 코드.
@@ -322,6 +334,12 @@ export function timeOptions(form) {
   return Array.from({ length: (24 * 60) / step }, (_, i) => clock(i * step));
 }
 
+/** G캘린더 단추(G 아이콘, 켜고 끄기) — 출장·외근·외출·휴가·건강검진 폼의 옵션 줄 끝(fieldsFor). */
+export const GCAL_CHECK = Object.freeze({
+  key: 'gcal', label: 'G캘린더', type: 'toggle', icon: 'gcal', required: false,
+  hint: 'G캘린더 — 결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 [종류-이름] 제목·날짜·시간으로 채워 엽니다 — 캘린더를 고르고 [저장]을 누르세요',
+});
+
 /** 빈 폼. kind 를 주면 그 종류의 기본값을 깐다. 날짜는 오늘 — HR 폼의 기본값과 같다. */
 export function blankForm(kind, today) {
   const base = {
@@ -329,11 +347,14 @@ export function blankForm(kind, today) {
     place: '', venue: '', workplace: '', purpose: '', flexStart: '', allDay: true, expense: '', file: null, days: 1,
     // 출장의 여비계산서(사전정산): 올린 뒤 자동으로 만들지(settle)와 교통편. 근무지·교통편은 이것을 켰을 때만 묻는다
     // (출장지 place 와 장소 venue 는 출장이면 늘 묻는다).
-    // 교통편은 여럿을 함께 고를 수 있어 목록이다(기차 + 비행기). trainGrade 는 기차의 좌석 등급(일반석·특실)이다.
-    settle: false, transport: [DEFAULT_TRANSPORT], trainGrade: DEFAULT_GRADE,
+    // 교통편은 가는 편(go)·오는 편(back)마다 하나다(2026-11-03 사용자 지정: 올 때·갈 때 교통편이 다를 수 있다) — {t: 기차·비행기·버스,
+    // g: 기차의 좌석 등급(일반석·특실)}, 출장 카드의 가는 편·오는 편과 같은 꼴이다(src/travel.js 의 formLegs).
+    settle: false, go: { t: DEFAULT_TRANSPORT, g: DEFAULT_GRADE }, back: { t: DEFAULT_TRANSPORT, g: DEFAULT_GRADE },
     // 출장·외근의 차량 조회: 켜면 폼의 날짜·시간에 빈 차량을 찾아 보이고, 누르면 그 차량을 신청한다(src/carfind.js).
     // carPlace 는 차량 신청의 행선지 — 폼에 출장지 칸이 없을 때(외근) 받는다. 둘 다 HR 에는 올라가지 않는다.
     car: false, carPlace: '',
+    // G캘린더: 켜면 결재요청이 올라간 뒤 구글 캘린더 「일정 만들기」 창을 채워 연다(src/gcal.js — 2026-11-03 사용자 지정). HR 에는 올라가지 않는다.
+    gcal: false,
     sub: SUBS[kind]?.[0].value || '', half: '', span: '',
     flexMode: 'day', ...Object.fromEntries(FLEX_DAYS.map((d) => [d.key, ''])),
     // 기념일 지원(휴가의 기념일 갈래 — src/welfare.js)의 칸. 연차 사용일은 시작일·며칠간이 그대로다.
@@ -407,11 +428,19 @@ export function fieldsFor(form) {
   };
   // 출장·외근의 차량 조회(2026-10-03 사용자 지정). 켜면 폼의 날짜·시간에 빈 차량을 폼 아래에 보여 주고,
   // 누르면 그 차량을 그 시간으로 신청한다. 화면만의 값이라 HR 신청서에는 들어가지 않는다.
-  const car = { key: 'car', label: '차량 조회', type: 'check', required: false, hint: '이 날짜·시간에 빈 차량을 찾습니다. 빈 차량을 누르면 그 시간으로 신청합니다.' };
+  // 옵션 줄의 칸은 체크 박스가 아니라 아이콘 단추다(type toggle, 2026-11-05 사용자 지정: "차량 조회 체크 박스를 그냥 아이콘 버튼으로 … 예비계산도 계산서 아이콘") — 값은 그대로 참/거짓.
+  const car = { key: 'car', label: '차량 조회', type: 'toggle', icon: 'car', required: false, hint: '차량 조회 — 이 날짜·시간에 빈 차량을 찾습니다. 빈 차량을 누르면 그 시간으로 신청합니다.' };
+  // 출장의 KTX·항공권은 폼 값이 아니라 가는 단추(type jump)다 — 출발일·출발 시각으로 차량 탭의 KTX·항공권 조회로 간다(같은 날 사용자 지정: "차량, KTX, 항공기, G 아이콘").
+  const tripJumps = [
+    { key: 'ktx', label: 'KTX 조회', type: 'jump', icon: 'train', view: 'ktx', required: false, group: 'opts', hint: 'KTX 조회 — 출발일·출발 시각으로 차량 탭에서 열차를 조회합니다' },
+    { key: 'flight', label: '항공권 조회', type: 'jump', icon: 'plane', view: 'flight', required: false, group: 'opts', hint: '항공권 조회 — 출발일·출발 시각으로 차량 탭에서 대한항공·에어부산을 조회합니다' },
+  ];
   // 차량은 근무지(서울·부산)의 것을 잡고, 신청에는 행선지가 있어야 한다(사이트가 요구한다). 폼에 근무지·출장지 칸이 없으면
   // (외근) 차량 조회를 켰을 때 한 줄로 받는다. 출장은 출장지(장소)가 행선지라 근무지만 받는다(사전정산을 꺼 두었을 때).
   // 근무지는 사전정산의 근무지와 같은 값이고 한 번 적으면 남는다.
   // 근태 신청의 필수 칸은 아니다 — 비어 있으면 차량 상자가 말해 준다.
+  // G캘린더(2026-11-03 사용자 지정: "사전정산, 차량조회 옆에 G캘린더"). 옵션 줄(opts)의 맨 끝에 선다. 유연근무에는 없다(src/gcal.js gcalKind).
+  const gcal = { ...GCAL_CHECK, group: 'opts' };
   const carWhere = [
     { key: 'workplace', label: '근무지', type: 'text', required: false, group: 'carwhere', hint: '서울 또는 부산' },
     { key: 'carPlace', label: '행선지', type: 'text', required: false, group: 'carwhere', hint: '차량 신청에 필요 — 예) 부산시청' },
@@ -423,10 +452,10 @@ export function fieldsFor(form) {
     // 패널의 목적이 그 내용이다(2026-10-02 사용자 지정). 장소를 남기려면 목적에 같이 적는다.
     return [sub, day, { ...start, hint }, span,
       { key: 'purpose', label: '목적', type: 'text', required: true, hint: edu ? '예) 안전관리 교육 (서울)' : '예) 과제 협의 (부산시청)' },
-      car, ...(form.car ? carWhere : [])];
+      { ...car, group: 'opts' }, gcal, ...(form.car ? carWhere : [])];
   }
   if (k === 'leaveout') {
-    return [day, start, span, { key: 'purpose', label: '사유', type: 'text', required: true, hint: '예) 병원 방문' }];
+    return [day, start, span, { key: 'purpose', label: '사유', type: 'text', required: true, hint: '예) 병원 방문' }, gcal];
   }
   if (k === 'trip') {
     // 출장경비는 묻지 않는다. 늘 선급 예산이라(2026-10-02 사용자 지정) blankForm 이 깔아 둔 'Y' 를 그대로 보낸다.
@@ -443,16 +472,21 @@ export function fieldsFor(form) {
       { key: 'purpose', label: '목적', type: 'text', required: true, hint: '예) 착수회의 참석' },
       // 켜면 결재요청이 올라간 뒤 eclass 에 여비계산서(사전정산)를 자동으로 만든다(2026-10-02 사용자 지정).
       // 그 옆에 차량 조회가 나란히 선다(같은 묶음 opts).
-      { key: 'settle', label: '여비계산서 사전정산', type: 'check', required: false, group: 'opts' },
-      { ...car, group: 'opts' }];
-    // 근무지·교통편은 여비계산서를 만들 때만 묻는다. 둘이 한 줄에 나란히 선다(group) — 근무지 옆에 교통편 아이콘이 온다.
-    // 근무지는 떠나는 곳이고, 한 번 적으면 다음 신청서에도 남는다(패널이 저장해 둔다). 기차(KTX)가 끼어 있으면
-    // KTX 구간의 운임을 근무지의 역에서 찾으므로, 근무지는 그때만 필수다.
+      { key: 'settle', label: '여비계산서 사전정산', type: 'toggle', icon: 'sheet', required: false, group: 'opts', hint: '여비계산서 사전정산 — 결재요청이 올라간 뒤 eclass 에 여비계산서(사전정산)를 만듭니다' },
+      { ...car, group: 'opts' }, ...tripJumps, gcal];
+    // 근무지·교통편은 여비계산서를 만들 때만 묻는다. 셋이 한 줄에 나란히 선다(group) — 근무지 옆에 가는 편·오는 편 아이콘이 온다
+    // (2026-11-03 사용자 지정: 올 때·갈 때 교통편이 다를 수 있다). 근무지는 떠나는 곳이고, 한 번 적으면 다음 신청서에도 남는다(패널이 저장해 둔다).
+    // 어느 편이든 기차(KTX)·버스면 그 줄이 근무지에서 떠나므로(KTX 는 근무지의 역에서 운임을 찾는다), 근무지는 그때만 필수다.
+    // 버스인 편은 아이콘 아래에 요금 칸이 선다(2026-11-03 사용자 지정: "폼에서 요금을 적게") — 비어 있으면 그 편이 빈 칸이다(missingFields).
     // 출장 증빙은 신청할 때 묻지 않는다 — 신청 내역의 출장 카드에서 넣는다(2026-10-03 사용자 지정).
     if (form.settle) {
+      const legs = formLegs(form);
+      const options = TRANSPORTS.map(({ value, label }) => ({ value, label }));
+      const leaves = [legs.go.t, legs.back.t].some((t) => t === 'train' || t === FARE_BY_HAND);
       fields.push(
-        { key: 'workplace', label: '근무지', type: 'text', required: transportsOf(form).includes('train'), group: 'where', hint: '예) 부산' },
-        { key: 'transport', label: '교통편', type: 'icons', required: true, group: 'where', options: TRANSPORTS.map(({ value, label }) => ({ value, label })) },
+        { key: 'workplace', label: '근무지', type: 'text', required: leaves, group: 'where', hint: '예) 부산' },
+        { key: 'go', label: '가는 편', type: 'icons', required: true, group: 'where', options },
+        { key: 'back', label: '오는 편', type: 'icons', required: true, group: 'where', options },
       );
     } else if (form.car) {
       // 사전정산을 켰으면 그 줄의 근무지가 곧 차량의 근무지다. 꺼 두었으면 근무지 칸이 없어 따로 받는다 — 행선지는 늘 출장지(장소)다.
@@ -473,13 +507,14 @@ export function fieldsFor(form) {
         hint: locked ? '오전·오후는 하루짜리 연차에만 있습니다' : '오전·오후 반차 — 다시 누르면 전일',
         options: HALVES.filter((h) => h.value).map(({ value, label }) => ({ value, label })) },
       // 연차에는 그 아래 "기념일 지원" 체크박스 — 켜면 기념일 칸(신청사항·기념일·대상자·가족관계·시설 이용일·금액·사용구분)이 붙는다(src/welfare.js).
-      ...(codeOf(form) === 'LY' ? [WELFARE_CHECK, ...(isWelfare(form) ? welfareFields() : [])] : [])];
+      // 연차의 기념일 지원과 G캘린더는 한 줄(opts)이고, 기념일 칸은 그 아래에 붙는다.
+      ...(codeOf(form) === 'LY' ? [{ ...WELFARE_CHECK, group: 'opts' }, gcal, ...(isWelfare(form) ? welfareFields() : [])] : [gcal])];
   }
   // 건강검진: 하루 전체 아니면 시간. 사유와 첨부(검진 확인서)는 사이트가 반드시 요구한다.
   const fields = [date, { key: 'allDay', label: '하루 전체', type: 'check', required: false }];
   if (!form.allDay) fields.push(start, span);
   fields.push({ key: 'purpose', label: '사유', type: 'text', required: true, hint: '예) 건강검진' },
-    { key: 'file', label: '첨부파일', type: 'file', required: !form.hasFile, hint: form.hasFile ? '올려 둔 파일이 있습니다' : '검진 확인서 등 (필수)' });
+    { key: 'file', label: '첨부파일', type: 'file', required: !form.hasFile, hint: form.hasFile ? '올려 둔 파일이 있습니다' : '검진 확인서 등 (필수)' }, gcal);
   return fields;
 }
 
@@ -487,7 +522,10 @@ const filled = (v) => (typeof v === 'string' ? v.trim() !== '' : Array.isArray(v
 
 /** 비어 있는 필수칸의 key 목록. */
 export function missingFields(form) {
-  return fieldsFor(form).filter((f) => f.required && !filled(form[f.key])).map((f) => f.key);
+  // 출장의 가는 편·오는 편은 버스인데 요금을 적지 않았으면 빈 칸이다(요금 칸이 그 편의 아이콘 아래에 있다).
+  const legs = form?.kind === 'trip' ? formLegs(form) : null;
+  const empty = (f) => !filled(form[f.key]) || (legs && f.type === 'icons' && legs[f.key]?.t === FARE_BY_HAND && !legs[f.key].fare);
+  return fieldsFor(form).filter((f) => f.required && empty(f)).map((f) => f.key);
 }
 
 /** 출장 증빙(신청 내역의 출장 카드에 넣는 표·영수증)으로 받는 파일 — 이미지와 PDF. 탐색기의 거름망(accept)과 패널의 검사가 같은 목록을 쓴다. */
@@ -638,7 +676,8 @@ export function spanHours(form) {
  *
  * @param {object} form  패널 폼
  * @param {{action?:'none'|'save'|'request', doc?:{docNo:string,statusCode:string}}} opts
- *   doc 을 주면 그 임시저장 문서를 열어 고친다(종류는 못 바꾼다).
+ *   doc 을 주면 그 문서를 열어 고친다(종류는 못 바꾼다). 임시저장 문서면 그 문서를 고쳐 저장·결재요청하고,
+ *   결재완료 문서(statusCode 5)면 근태수정신청이다(MODIFY_FORM_IDS — 원 문서를 수정 모드로 열어 결재요청만, 2026-11-03).
  * @returns {object} src/hr.js 의 runJob 이 먹는 일감
  */
 export function buildJob(form, { action = 'none', doc = null } = {}) {
@@ -651,6 +690,15 @@ export function buildJob(form, { action = 'none', doc = null } = {}) {
   const expect = [];
   const read = {};
   const editing = !!doc;
+  const modify = isModifyDoc(doc);
+  if (modify && !MODIFY_FORM_IDS.includes(spec.formId)) throw new Error(`${kind.label} 은(는) 근태수정신청이 없습니다.`);
+  // 수정 모드의 화면에도 저장 버튼이 서지만, HR 의 수정 절차는 결재요청 하나다(2026-11-03 공지 — [수정] → 고치기 → [결재요청]).
+  if (modify && action === 'save') throw new Error('근태수정신청은 임시저장하지 않습니다 — 고친 뒤 결재요청하세요.');
+  if (modify) {
+    // 사이트가 수정 모드로 바꿨는지(원 문서번호가 #bfDocNo 에 들어갔는지) 본 뒤에야 누른다 — 아니면 원 문서를 그대로 다시 올리게 된다.
+    expect.push({ sel: '#bfDocNo', value: doc.docNo, label: '원 문서번호(근태수정신청)' });
+    read.bfDocNo = '#bfDocNo';
+  }
 
   const code = codeOf(form);
 
@@ -732,12 +780,15 @@ export function buildJob(form, { action = 'none', doc = null } = {}) {
 
   return {
     route: spec.route, ready: spec.ready, formId: spec.formId,
-    open: doc ? { docNo: doc.docNo, statusCode: doc.statusCode || '1' } : null,
+    open: doc ? { docNo: doc.docNo, statusCode: doc.statusCode || '1', ...(modify ? { modify: true, related: spec.api + MODIFY_RELATED } : {}) } : null,
     ops, expect, read, action,
     fn: action === 'save' ? spec.save : action === 'request' ? 'apprRequest' : null,
-    summary: describe(form),
+    summary: modify ? `${describe(form)} (근태수정신청 · ${doc.docNo})` : describe(form),
   };
 }
+
+/** 고쳐 올리는 문서가 결재완료 건인가 — 그러면 근태수정신청이다(buildJob). */
+export const isModifyDoc = (doc) => !!doc && String(doc.statusCode || '') === STATUS.APPROVED;
 
 /** 이미 저장된 문서에 버튼 하나만 누르는 일감(상신·회수). 값은 건드리지 않는다. */
 export function buildDocJob(item, action) {
@@ -894,8 +945,9 @@ const FILLABLE = {
 /**
  * 문서함 목록 한 줄을 화면용으로 바꾸고, 그 상태에서 할 수 있는 일을 단다.
  *   임시저장 → 수정·상신·삭제 / 결재요청(승인 전) → 변경·회수 / 결재완료 → 변경·취소신청 / 회수 → 삭제
- * 변경(change)은 올린 건의 시간·날짜를 고치는 길이다. HR 에는 올린 문서를 고치는 버튼이 없어서, 승인 전이면
- * 회수하고 승인 뒤면 취소신청을 올린 다음 같은 내용을 새 신청서로 불러온다.
+ * 변경(change)은 올린 건의 시간·날짜를 고치는 길이다. 승인 전이면 회수한 다음 같은 내용을 새 신청서로 불러오고,
+ * 승인 뒤면 같은 내용을 폼에 불러와 HR 근태수정신청으로 고쳐 올린다(2026-11-03 HR 공지 — 그 전에는 취소신청 + 새 신청서였다).
+ * HR 근태수정신청 목록처럼 상태 이름이 "수정"인 결재완료 건에는 변경을 달지 않는다(그 목록의 [수정] 버튼 조건).
  * 패널이 다루는 종류가 아니면 수정·변경은 달지 않는다(목록에는 보인다).
  * 같은 내용으로 새 신청서를 쓰는 "복사"는 뺐다(2026-10-03 사용자 지정) — 반려된 건처럼 할 일이 없는 줄에는 버튼이 없다.
  * 올려 둔 연차(승인 전후)에는 기념일 지원(wfa)이 더 붙는다 — 연차는 그대로 두고 가족 기념일 지원만 신청한다(welfareFormFor).
@@ -918,7 +970,7 @@ export function listItem(row) {
     if (form && fillable) actions.push('change');
     if (form) actions.push('recall');
   } else if (st === STATUS.APPROVED && CANCEL_FORMS[row.formId]) {
-    if (fillable) actions.push('change');
+    if (fillable && MODIFY_FORM_IDS.includes(row.formId) && String(row.statusName || '').trim() !== '수정') actions.push('change');
     actions.push('cancel');
   } else if (st === STATUS.RECALLED) {
     // 회수한 문서는 더 쓸 일이 없어 지울 수 있게 한다(2026-10-02 사용자 지정). HR 문서함 화면은 임시저장에만

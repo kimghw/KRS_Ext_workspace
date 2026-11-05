@@ -1,0 +1,9 @@
+domain: flight
+title: 항공
+log: flight
+kinds: [search]
+preset:
+  today: { from: today, desc: 오늘(YYYY-MM-DD) — 지난 출발일 검사 }
+llm:
+  task: flight
+  mode: none

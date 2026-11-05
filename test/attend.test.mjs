@@ -9,7 +9,7 @@ import {
   workStartOn, halfPlan, halfFlexForm, itemsIn, isPast, rangeCovering, isWelfare, welfareFormFor, nameOf, leaveBalance,
   SUBS, codeOf, withSub, halfOf, halfFromTimes, timeStep, timeOptions, spanDays, spanned, spanEnd, settle, nextSpan, SPAN_HOURS,
   FLEX_TIMES, FLEX_MODES, FLEX_DAYS, flexTimesFor, flexModeOf, fillFlexWeek,
-  acceptsFile, kindOfItem, itemsOfKind, EVIDENCE_ACCEPT, statusLabel,
+  acceptsFile, kindOfItem, itemsOfKind, EVIDENCE_ACCEPT, statusLabel, MODIFY_FORM_IDS, MODIFY_LIST_ROUTE, isModifyDoc,
 } from '../src/attend.js';
 
 const TODAY = '2026-10-02';   // 금요일
@@ -47,7 +47,7 @@ t('소통(부서소통회)은 외근 13~14시의 줄임이다 — 고르면 시�
   assert.deepEqual(missingFields(f), []);
   assert.equal(timeStep(f), 30, '외근이라 30분 단위다');
   assert.equal(describe(f), '부서소통회 10/2 13:00~14:00 · 부서소통회');
-  assert.deepEqual(fieldsFor(f).map((x) => x.key), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car']);
+  assert.deepEqual(fieldsFor(f).map((x) => x.key), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'gcal']);
 });
 t('소통에서 다른 갈래로 옮기면 깔아 준 값은 걷어 내고, 직접 고친 값은 가져간다', () => {
   const meet = withSub({ ...blankForm('out', TODAY), start: '15:00', span: 120, purpose: '협의' }, 'MEET');
@@ -62,12 +62,12 @@ t('출장은 출발 7시·도착 20시·당일 하루·선급 예산이 기본�
   const f = blankForm('trip', TODAY);
   assert.deepEqual([f.start, f.end, f.days, f.dateTo, f.expense], ['07:00', '20:00', 1, TODAY, 'Y']);
 });
-t('출장은 출발일·출발·도착일·도착 두 줄과 며칠간 칩 한 줄, 출장지·장소 한 줄, 목적, 그 아래 여비계산서 사전정산 체크박스(기본은 꺼짐)', () => {
+t('출장은 출발일·출발·도착일·도착 두 줄과 며칠간 칩 한 줄, 출장지·장소 한 줄, 목적, 그 아래 아이콘 단추 줄(계산서(사전정산, 기본은 꺼짐) · 차량 · KTX · 항공기 · G)', () => {
   const fields = fieldsFor(blankForm('trip', TODAY));
-  assert.deepEqual(fields.map((x) => x.key), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car']);
+  assert.deepEqual(fields.map((x) => x.key), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal']);
   assert.deepEqual(fields.slice(0, 5).map((x) => x.label), ['출발일', '출발', '도착일', '도착', '며칠간']);
   const settleBox = fields.find((x) => x.key === 'settle');
-  assert.deepEqual([settleBox.type, settleBox.label, blankForm('trip', TODAY).settle], ['check', '여비계산서 사전정산', false]);
+  assert.deepEqual([settleBox.type, settleBox.icon, settleBox.label, blankForm('trip', TODAY).settle], ['toggle', 'sheet', '여비계산서 사전정산', false]);
   assert.deepEqual(missingFields({ ...blankForm('trip', TODAY), purpose: '협의' }), ['place'], '꺼 두어도 출장지는 묻는다 — 근무지는 묻지 않는다');
   assert.deepEqual(missingFields({ ...blankForm('trip', TODAY), purpose: '협의', place: '대전' }), [], '장소는 비워도 된다');
 });
@@ -81,12 +81,15 @@ t('출장지·장소는 사전정산과 상관없이 늘 한 줄(같은 묶음)�
     assert.equal(fieldsFor(blankForm(kind, TODAY)).some((x) => x.key === 'place' || x.key === 'venue'), false, kind);
   }
 });
-t('출장·외근에는 차량 조회 체크박스가 있다(기본은 꺼짐) — 출장은 사전정산 옆(같은 묶음)에, 외근은 목적 아래에 선다. 다른 종류에는 없다', () => {
+t('출장·외근에는 차량 조회 단추(아이콘, 기본은 꺼짐)가 있다 — 출장은 계산서(사전정산) 옆에 KTX·항공권(가는 단추)·G 와 한 줄, 외근은 목적 아래 G캘린더와 한 줄. 다른 종류에는 없다', () => {
   const box = (form) => fieldsFor(form).find((x) => x.key === 'car');
   const trip = fieldsFor(blankForm('trip', TODAY));
-  assert.deepEqual(trip.filter((x) => x.group === 'opts').map((x) => x.key), ['settle', 'car'], '사전정산과 차량 조회가 한 줄이다');
-  assert.deepEqual([box(blankForm('trip', TODAY)).type, box(blankForm('trip', TODAY)).label, box(blankForm('trip', TODAY)).required], ['check', '차량 조회', false]);
-  assert.deepEqual([box(blankForm('out', TODAY)).type, box(blankForm('out', TODAY)).group], ['check', undefined]);
+  assert.deepEqual(trip.filter((x) => x.group === 'opts').map((x) => [x.key, x.type, x.icon]),
+    [['settle', 'toggle', 'sheet'], ['car', 'toggle', 'car'], ['ktx', 'jump', 'train'], ['flight', 'jump', 'plane'], ['gcal', 'toggle', 'gcal']],
+    '계산서 · 차량 · KTX · 항공기 · G 차례의 아이콘 단추(2026-11-05) — KTX·항공권은 폼 값 없이 차량 탭의 조회로 간다');
+  assert.deepEqual(trip.filter((x) => x.type === 'jump').map((x) => x.view), ['ktx', 'flight']);
+  assert.deepEqual([box(blankForm('trip', TODAY)).type, box(blankForm('trip', TODAY)).label, box(blankForm('trip', TODAY)).required], ['toggle', '차량 조회', false]);
+  assert.deepEqual([box(blankForm('out', TODAY)).type, box(blankForm('out', TODAY)).group], ['toggle', 'opts']);
   assert.ok(box({ ...blankForm('out', TODAY), sub: 'TR' }), '교육에도 있다');
   for (const kind of ['flex', 'leaveout', 'leave', 'health']) assert.equal(box(blankForm(kind, TODAY)), undefined, kind);
   assert.deepEqual([blankForm('trip', TODAY).car, blankForm('out', TODAY).car], [false, false]);
@@ -101,9 +104,9 @@ t('출장·외근에는 차량 조회 체크박스가 있다(기본은 꺼짐) �
 t('차량 조회를 켜면 근무지·행선지가 한 줄로 나온다 — 출장은 출장지가 행선지라 근무지만, 사전정산을 켜면 그 줄의 근무지가 그 몫을 해서 따로 묻지 않는다', () => {
   const keys = (form) => fieldsFor(form).map((x) => x.key);
   const trip = { ...blankForm('trip', TODAY), car: true };
-  assert.deepEqual(keys(trip), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'workplace']);
-  assert.deepEqual(keys({ ...trip, settle: true }), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'workplace', 'transport']);
-  assert.deepEqual(keys({ ...blankForm('out', TODAY), car: true }), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'workplace', 'carPlace']);
+  assert.deepEqual(keys(trip), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal', 'workplace']);
+  assert.deepEqual(keys({ ...trip, settle: true }), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal', 'workplace', 'go', 'back']);
+  assert.deepEqual(keys({ ...blankForm('out', TODAY), car: true }), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'gcal', 'workplace', 'carPlace']);
   assert.deepEqual(fieldsFor(trip).filter((x) => x.group === 'carwhere').map((x) => [x.key, x.label, x.type, x.required]), [['workplace', '근무지', 'text', false]]);
   const where = fieldsFor({ ...blankForm('out', TODAY), car: true }).filter((x) => x.group === 'carwhere');
   assert.deepEqual(where.map((x) => [x.key, x.label, x.type, x.required]), [['workplace', '근무지', 'text', false], ['carPlace', '행선지', 'text', false]],
@@ -115,24 +118,28 @@ t('차량 조회를 켜면 근무지·행선지가 한 줄로 나온다 — 출�
 t('출장 증빙은 신청할 때 묻지 않는다 — 신청 내역의 출장 카드에서 넣는다. 카드가 받는 것은 이미지와 PDF 다', () => {
   const form = { ...blankForm('trip', TODAY), purpose: '협의', settle: true, place: '대전', workplace: '부산' };
   assert.equal(fieldsFor(form).some((x) => x.type === 'file'), false);
-  assert.deepEqual(fieldsFor(form).map((x) => x.key), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'workplace', 'transport']);
+  assert.deepEqual(fieldsFor(form).map((x) => x.key), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal', 'workplace', 'go', 'back']);
   assert.deepEqual(missingFields(form), []);
   assert.deepEqual([
     acceptsFile(EVIDENCE_ACCEPT, { name: 'a.png', type: 'image/png' }), acceptsFile(EVIDENCE_ACCEPT, { name: 'b.PDF', type: '' }),
     acceptsFile(EVIDENCE_ACCEPT, { name: 'c.pdf', type: 'application/pdf' }), acceptsFile(EVIDENCE_ACCEPT, { name: 'd.hwp', type: 'application/x-hwp' }),
   ], [true, true, true, false]);
 });
-t('여비계산서 사전정산을 켜면 근무지·교통편이 한 줄(같은 묶음)로 나온다 — 교통편은 기차·비행기·버스, 기본은 기차 일반석', () => {
+t('여비계산서 사전정산을 켜면 근무지·가는 편·오는 편이 한 줄(같은 묶음)로 나온다 — 편마다 기차·비행기·버스, 기본은 기차 일반석 (2026-11-03 편마다)', () => {
   const form = { ...blankForm('trip', TODAY), purpose: '협의', settle: true };
   const where = fieldsFor(form).filter((x) => x.group === 'where');
   assert.deepEqual(where.map((x) => [x.key, x.label, x.type, x.required]),
-    [['workplace', '근무지', 'text', true], ['transport', '교통편', 'icons', true]]);
+    [['workplace', '근무지', 'text', true], ['go', '가는 편', 'icons', true], ['back', '오는 편', 'icons', true]]);
   assert.deepEqual(where[1].options, [{ value: 'train', label: '기차(KTX)' }, { value: 'plane', label: '비행기' }, { value: 'bus', label: '버스' }]);
-  assert.deepEqual([form.transport, form.trainGrade], [['train'], 'standard'], '교통편은 여럿을 함께 고를 수 있어 목록이다');
+  assert.deepEqual(where[2].options, where[1].options);
+  assert.deepEqual([form.go, form.back], [{ t: 'train', g: 'standard' }, { t: 'train', g: 'standard' }], '편마다 교통편 하나와 기차 등급이다');
   assert.deepEqual(missingFields(form), ['place', 'workplace'], '출장지는 늘 필수이고, 켜면 기차일 때 떠나는 곳(근무지)도 필수다');
-  assert.deepEqual(missingFields({ ...form, place: '대전', transport: ['bus'] }), [], '기차가 끼어 있지 않으면 KTX 운임을 찾지 않으므로 근무지는 비워도 된다');
-  assert.deepEqual(missingFields({ ...form, place: '대전', transport: ['train', 'plane'] }), ['workplace'], '기차와 비행기를 함께 골라도 KTX 편이 있으니 근무지는 필수다');
-  assert.deepEqual(missingFields({ ...form, place: '대전', workplace: '부산', transport: [] }), ['transport'], '하나는 골라야 한다');
+  const plane = { t: 'plane', g: 'standard' };
+  assert.deepEqual(missingFields({ ...form, place: '대전', go: plane, back: plane }), [], '두 편 모두 비행기면 사전정산에 줄이 없으므로 근무지는 비워도 된다');
+  assert.deepEqual(missingFields({ ...form, place: '대전', go: plane, back: { t: 'train', g: 'standard' } }), ['workplace'], '한 편이라도 KTX 면 근무지는 필수다');
+  assert.deepEqual(missingFields({ ...form, place: '대전', workplace: '부산', go: plane, back: { t: 'bus', g: 'standard' } }), ['back'], '버스인 편은 요금을 적어야 한다');
+  assert.deepEqual(missingFields({ ...form, place: '대전', workplace: '부산', go: plane, back: { t: 'bus', g: 'standard', fare: 7400 } }), []);
+  assert.deepEqual(missingFields({ ...form, place: '대전', go: plane, back: { t: 'bus', fare: 7400 } }), ['workplace'], '버스 줄도 근무지에서 떠난다');
 });
 t('며칠간의 칩: 휴가는 1D~5D (하루부터 닷새), 출장은 1D~7D (한 줄을 고르게 나눠 선다)', () => {
   const chips = (kind) => fieldsFor(blankForm(kind, TODAY)).find((x) => x.key === 'days').chips.map((c) => [c.label, c.days]);
@@ -170,9 +177,10 @@ t('달력에서 고른 끝나는 날은 며칠간으로 바뀐다 (시작일 포
 });
 t('휴가: 갈래, 시작일·종료일 한 줄(lv), 며칠간 1D~5D 오른쪽에 오전·오후(lvdays — 2026-10-08 사용자 지정), 연차면 그 아래 기념일 지원 체크박스. 전일 칩은 없고 사유는 묻지 않는다', () => {
   const f = blankForm('leave', TODAY);
-  assert.deepEqual(fieldsFor(f).map((x) => [x.key, x.group || '']), [['sub', ''], ['dateFrom', 'lv'], ['dateTo', 'lv'], ['days', 'lvdays'], ['half', 'lvdays'], ['wfa', '']]);
-  assert.deepEqual([fieldsFor(f).at(-1).type, fieldsFor(f).at(-1).label], ['check', '기념일 지원']);
-  assert.deepEqual(fieldsFor({ ...f, sub: 'LH' }).map((x) => x.key), ['sub', 'dateFrom', 'dateTo', 'days', 'half'], '체력단련에는 기념일 지원이 없다');
+  assert.deepEqual(fieldsFor(f).map((x) => [x.key, x.group || '']), [['sub', ''], ['dateFrom', 'lv'], ['dateTo', 'lv'], ['days', 'lvdays'], ['half', 'lvdays'], ['wfa', 'opts'], ['gcal', 'opts']]);
+  const wfa = fieldsFor(f).find((x) => x.key === 'wfa');
+  assert.deepEqual([wfa.type, wfa.label], ['check', '기념일 지원']);
+  assert.deepEqual(fieldsFor({ ...f, sub: 'LH' }).map((x) => x.key), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'gcal'], '체력단련에는 기념일 지원이 없다');
   const half = (form) => fieldsFor(form).find((x) => x.key === 'half');
   assert.deepEqual(half(f).options.map((o) => o.label), ['오전', '오후']);
   assert.equal(half(f).locked, false, '하루짜리 연차 — 오전·오후를 고를 수 있다');
@@ -198,7 +206,7 @@ t('시각으로 말한 휴가: 끝이 13시 이전이면 오전, 시작이 13시
 });
 t('외근: 갈래(외근·교육·소통)를 먼저 묻는다', () => {
   const fields = fieldsFor(blankForm('out', TODAY));
-  assert.deepEqual(fields.map((x) => x.key), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car']);
+  assert.deepEqual(fields.map((x) => x.key), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'gcal']);
   assert.deepEqual(fields[0].options.map((o) => o.label), ['외근', '교육', '소통']);
 });
 t('시각 단위: 출장·교육은 정시, 외근·외출·건강검진은 30분', () => {
@@ -214,7 +222,7 @@ t('하루 안에서 끝나는 종류는 시작과 몇 시간으로 받는다. �
   assert.deepEqual(['out', 'leaveout', 'trip', 'leave', 'flex', 'health'].map((k) => spanned(blankForm(k, TODAY))),
     [true, true, false, false, false, false]);
   assert.equal(spanned({ ...blankForm('health', TODAY), allDay: false }), true, '건강검진은 시간으로 올릴 때만');
-  assert.deepEqual(fieldsFor(blankForm('leaveout', TODAY)).map((x) => x.key), ['dateFrom', 'start', 'span', 'purpose']);
+  assert.deepEqual(fieldsFor(blankForm('leaveout', TODAY)).map((x) => x.key), ['dateFrom', 'start', 'span', 'purpose', 'gcal']);
   assert.ok(fieldsFor(blankForm('trip', TODAY)).some((x) => x.key === 'end') && !fieldsFor(blankForm('trip', TODAY)).some((x) => x.key === 'span'));
 });
 t('칩은 1~8시간이고 30분을 더하는 칩이 하나 붙는다. 정시 단위인 교육에는 30분 칩이 없다', () => {
@@ -574,6 +582,21 @@ t('임시저장 문서를 고칠 때는 종류를 다시 넣지 않고 그 문�
   assert.equal(setOf(job, '#biztripKind'), undefined);
   assert.equal(job.ops[0].sel, '#biztripDateFrom');
 });
+t('결재완료 문서를 고치면 근태수정신청이다(2026-11-03 HR 공지) — 수정 모드로 열고, 원 문서번호(#bfDocNo)를 확인한 뒤에야 결재요청한다', () => {
+  const job = buildJob(out, { action: 'request', doc: { docNo: '202609-11115-0009', statusCode: '5' } });
+  assert.deepEqual(job.open, { docNo: '202609-11115-0009', statusCode: '5', modify: true, related: '/uhr/docappr/approut100/related-modifications' });
+  assert.equal(job.fn, 'apprRequest');
+  assert.equal(setOf(job, '#biztripKind'), undefined, '종류는 다시 넣지 않는다');
+  assert.deepEqual(job.expect[0], { sel: '#bfDocNo', value: '202609-11115-0009', label: '원 문서번호(근태수정신청)' });
+  assert.equal(job.read.bfDocNo, '#bfDocNo');
+  assert.ok(job.summary.endsWith(' (근태수정신청 · 202609-11115-0009)'), job.summary);
+  assert.throws(() => buildJob(out, { action: 'save', doc: { docNo: '202609-11115-0009', statusCode: '5' } }), /임시저장하지 않습니다/);
+  const flex = { ...blankForm('flex', TODAY), flexMode: 'all', flexStart: '09:00' };
+  assert.throws(() => buildJob(flex, { action: 'request', doc: { docNo: '202609-11115-0001', statusCode: '5' } }), /근태수정신청이 없습니다/);
+  assert.deepEqual([isModifyDoc({ docNo: 'x', statusCode: '5' }), isModifyDoc({ docNo: 'x', statusCode: '1' }), isModifyDoc(null)], [true, false, false]);
+  assert.deepEqual([MODIFY_FORM_IDS, MODIFY_LIST_ROUTE], [['TRO', 'TR', 'LV', 'ET'], '/empmenu/docappr/docapprdocmstremp101/view']);
+  assert.equal(buildJob(out, { action: 'request', doc: { docNo: '202610-11115-0001', statusCode: '1' } }).open.modify, undefined, '임시저장 문서는 그대로 고친다');
+});
 t('빈 칸이 있으면 일감을 만들지 않는다', () => {
   assert.throws(() => buildJob(blankForm('out', TODAY)), /비어 있거나/);
   assert.throws(() => buildJob(blankForm('', TODAY)), /종류/);
@@ -607,6 +630,8 @@ t('결재 상태 딱지의 말: 올려 둔 것(결재대기·결재요청)은 "�
   assert.deepEqual([label('1', '임시저장'), label('4', '반려'), label('6', '회수')], ['임시저장', '반려', '회수']);
 });
 t('결재완료 → 변경·취소신청', () => assert.deepEqual(listItem(ROW).actions, ['change', 'cancel']));
+t('결재완료라도 상태 이름이 "수정"이면 변경(근태수정신청)을 달지 않는다 — HR 근태수정신청 목록의 [수정] 버튼 조건', () =>
+  assert.deepEqual(listItem({ ...ROW, statusName: '수정' }).actions, ['cancel']));
 t('임시저장 → 수정·상신·삭제', () =>
   assert.deepEqual(listItem({ ...ROW, statusCode: '1' }).actions, ['edit', 'request', 'delete']));
 t('결재요청(승인 전) → 변경·회수', () =>

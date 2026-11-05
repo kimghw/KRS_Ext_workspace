@@ -249,15 +249,21 @@ console.log('아이콘 — 확인·받기·다시 불러오기');
     await sync.check({ quiet: false });
     assert.equal(button.hidden, true);
   });
-  await ta('다리가 늦으면 숨기지 않고 실패로 보인다', async () => {
+  // 받을 것이 있을 때만 보인다(2026-11-05 사용자 지정: "깃허브 업데이트 할게 아니면 아 이이콘 안보여줘도 될듯").
+  await ta('다리가 늦어 확인을 못 하면 숨는다', async () => {
     answers = { gitStatus: Object.assign(new Error('45초 안에 다리가 답하지 않았습니다'), { timeout: true }) };
     await sync.check({ quiet: false });
-    assert.deepEqual([button.hidden, button.dataset.mode], [false, 'error']);
+    assert.deepEqual([button.hidden, button.dataset.mode], [true, 'error']);
   });
-  await ta('같으면 수 없이 보인다 — 누르면 다시 확인만 한다', async () => {
+  await ta('올리지 않은 커밋만 있으면 숨는다', async () => {
+    answers = { gitStatus: { ...base, ahead: 3 } };
+    await sync.check({ quiet: false });
+    assert.deepEqual([button.hidden, button.dataset.mode], [true, 'ahead']);
+  });
+  await ta('같으면 숨는다 — 누르면(숨기 전에 눌렸다면) 다시 확인만 한다', async () => {
     answers = { gitStatus: base };
     await sync.check({ quiet: false });
-    assert.deepEqual([button.hidden, button.dataset.mode, badge.hidden], [false, 'same', true]);
+    assert.deepEqual([button.hidden, button.dataset.mode, badge.hidden], [true, 'same', true]);
     sent.length = 0;
     await sync.click();
     assert.deepEqual(sent, ['gitStatus']);
@@ -305,7 +311,7 @@ console.log('아이콘 — 확인·받기·다시 불러오기');
     status = { ...base, overlap: ['a.js'] };
     await sync.click();
     assert.match(button.title, /^GitHub 에서 받지 못했습니다 — 고치고 있는 파일과 겹쳐/);
-    assert.equal(button.dataset.mode, 'blocked');
+    assert.deepEqual([button.dataset.mode, button.hidden], ['blocked', false], '새 커밋이 있으니 받을 수 없어도 보인다');
     assert.equal(said.at(-1)[1], 'error');
   });
   await ta('받을 수 없는 모양에서 누르면 받지 않고 다시 확인만 한다', async () => {

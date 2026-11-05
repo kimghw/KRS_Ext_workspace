@@ -103,6 +103,7 @@ fields:
       statusCode: { type: string, max: 2, desc: 결재 상태 코드(임시저장 1), read: 그 문서의 상태 코드 그대로 }
 ignore:
   kind: 행위 ID 가 종류다(attend.flex)
+  gcal: G캘린더 — 유연근무는 자리를 비우는 근태가 아니라 없다(src/gcal.js gcalKind)
   dateTo: 유연근무에는 기간이 없다(당일 하루 또는 주간)
   start: 시각 칸이 없다 — 출근시간(flexStart)이 시간대다
   end: 시각 칸이 없다
@@ -115,8 +116,8 @@ ignore:
   allDay: 건강검진의 칸
   file: 건강검진의 첨부
   settle: 출장의 여비계산서
-  transport: 출장의 교통편
-  trainGrade: 출장의 좌석 등급
+  go: 출장의 가는 편 교통편
+  back: 출장의 오는 편 교통편
   car: 출장·외근의 차량 조회
   carPlace: 외근의 차량 행선지
   sub: 유연근무에는 갈래가 없다

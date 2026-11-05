@@ -73,8 +73,11 @@ const type = (id, value) => {
   input.value = value;
   input.dispatchEvent(new window.Event('input', { bubbles: true }));
 };
+// 옵션 줄의 칸은 아이콘 단추다(2026-11-05) — 켜짐은 aria-pressed, 누르면 뒤집힌다. 체크 박스였던 wfa 같은 칸은 그대로 체크 박스.
+const pressed = (id) => doc.getElementById(id).getAttribute('aria-pressed') === 'true';
 const tick = (id, on) => {
   const box = doc.getElementById(id);
+  if (box.tagName === 'BUTTON') { if (pressed(id) !== on) box.click(); return; }
   box.checked = on;
   box.dispatchEvent(new window.Event('change', { bubbles: true }));
 };
@@ -89,18 +92,34 @@ const car = (name) => [...box().querySelectorAll('button.at-car')].find((b) => b
 
 console.log('출장 폼 — 사전정산 옆의 차량 조회');
 type('at_dateFrom', '2026-10-20');
-t('차량 조회 체크박스는 사전정산 옆에 서고 꺼져 있다 — 꺼 두면 차량을 읽지 않고 행선지도 묻지 않는다', () => {
-  assert.deepEqual([...doc.querySelector('#atFields .at-group.at-opts').children].map((n) => [n.dataset.key, n.querySelector('.at-label').textContent]),
-    [['settle', '여비계산서 사전정산'], ['car', '차량 조회']]);
-  assert.deepEqual([doc.getElementById('at_car').checked, box(), site.scans.length, doc.getElementById('at_carPlace')], [false, null, 0, null]);
-  assert.match(doc.querySelector('.at-field[data-key="car"]').title, /빈 차량을 누르면 그 시간으로 신청합니다/);
+t('차량 조회 단추는 계산서(사전정산) 옆에 서고 꺼져 있다 — 옵션 줄은 아이콘 단추 계산서 · 차량 · KTX · 항공기 · G(2026-11-05). 꺼 두면 차량을 읽지 않고 행선지도 묻지 않는다', () => {
+  assert.deepEqual([...doc.querySelector('#atFields .at-group.at-opts').children].map((n) => [n.dataset.key, n.querySelector('button').getAttribute('aria-label'), n.querySelector('button').getAttribute('aria-pressed'), !!n.querySelector('svg')]),
+    [['settle', '여비계산서 사전정산', 'false', true], ['car', '차량 조회', 'false', true], ['ktx', 'KTX 조회', null, true], ['flight', '항공권 조회', null, true], ['gcal', 'G캘린더', 'false', true]],
+    '체크 박스가 아니라 아이콘 단추 — KTX·항공권은 켜짐 없이 가는 단추, 그 줄 끝에 G캘린더(2026-11-03)');
+  assert.equal(doc.querySelector('#atFields .at-group.at-opts input[type="checkbox"]'), null);
+  assert.deepEqual([pressed('at_car'), box(), site.scans.length, doc.getElementById('at_carPlace')], [false, null, 0, null]);
+  assert.match(doc.getElementById('at_car').title, /빈 차량을 누르면 그 시간으로 신청합니다/);
+});
+
+t('KTX·항공권 단추는 출발일·출발 시각을 패널의 날짜 줄·시작 시간에 넣고 차량 탭의 그 조회로 가서 조회를 누른다 — 폼 값은 그대로', () => {
+  const clicks = [];
+  for (const id of ['tabCar', 'ktxGo', 'flightGo']) doc.getElementById(id).addEventListener('click', () => clicks.push(id));
+  const hour = doc.getElementById('hourStart');
+  for (let h = 0; h < 24; h++) hour.add(new window.Option(`${h}:00`, String(h)));
+  type('at_start', '09:00');
+  doc.getElementById('at_ktx').click();
+  assert.deepEqual([doc.getElementById('date').value, hour.value, clicks], ['2026-10-20', '9', ['tabCar', 'ktxGo']]);
+  doc.getElementById('at_flight').click();
+  assert.deepEqual(clicks, ['tabCar', 'ktxGo', 'tabCar', 'flightGo']);
+  assert.deepEqual([pressed('at_car'), panel.state.form.dateFrom, panel.state.form.start, 'ktx' in panel.state.form], [false, '2026-10-20', '09:00', false], '가는 단추는 폼 값을 바꾸지 않는다');
+  type('at_start', '07:00');   // 다음 검사들은 출발 7시를 전제한다
 });
 
 site.days['2026-10-20'] = [res(CARS[0].name, '2026-10-20', 600, 720), res(CARS[1].name, '2026-10-20', 1200, 1320)];
 tick('at_car', true);
 t('켜면 근무지 칸이 나오고(근무지는 적어 둔 것이 깔려 있다 — 행선지는 출장지다), 곧바로 폼의 날짜·시간(10/20 07:00~20:00)으로 차량 현황을 읽는다', () => {
-  assert.ok(doc.getElementById('at_car').checked, '폼을 다시 그려도 켠 것이 남는다');
-  assert.deepEqual(keys(), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'workplace']);
+  assert.ok(pressed('at_car'), '폼을 다시 그려도 켠 것이 남는다');
+  assert.deepEqual(keys(), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal', 'workplace']);
   assert.deepEqual([...doc.querySelector('#atFields .at-group.at-carwhere').children].map((n) => n.dataset.key), ['workplace']);
   assert.equal(doc.getElementById('at_carPlace'), null, '출장에는 행선지 칸이 따로 없다');
   assert.equal(doc.getElementById('at_workplace').value, '부산');
@@ -235,7 +254,7 @@ type('at_venue', '');
 type('at_workplace', '부산');
 await loaded();
 t('사전정산을 켜도 출장지가 행선지다 — 근무지는 사전정산 줄의 것을 쓰고, 차량 목록은 사전정산 칸들 아래에 선다', () => {
-  assert.deepEqual(keys(), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'workplace', 'transport']);
+  assert.deepEqual(keys(), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal', 'workplace', 'go', 'back']);
   assert.equal(doc.querySelector('#atFields .at-group.at-carwhere'), null);
   assert.ok(notes().includes('빈 차량을 누르면 이 시간으로 바로 신청합니다 · 근무지 부산 · 행선지 세종'));
   assert.deepEqual([...doc.querySelectorAll('#atFields > *')].map((n) => n.id || n.className.split(' ').slice(0, 2).join('.')).slice(-3),
@@ -270,7 +289,7 @@ doc.querySelector('#atKinds .at-kind[data-kind="out"]').click();
 type('at_dateFrom', '2026-10-22');
 tick('at_car', true);
 t('외근에도 목적 아래에 차량 조회와 근무지·행선지 칸이 있다. 몇 시간을 고르기 전에는 찾지 않고 그렇게 말한다', () => {
-  assert.deepEqual(keys(), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'workplace', 'carPlace']);
+  assert.deepEqual(keys(), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'gcal', 'workplace', 'carPlace']);
   assert.deepEqual([notes(), site.scans.length], [['날짜와 시간을 넣으면 그 시간에 빈 차량을 찾습니다.'], before]);
 });
 type('at_start', '14:30');
@@ -299,7 +318,7 @@ panel.hide();
 await panel.show();
 await loaded();
 t('근태 탭으로 돌아오면 다시 읽는다 — 폼과 켜 둔 것은 그대로고, 그 사이 남이 잡은 차가 사용 중으로 바뀌어 있다', () => {
-  assert.deepEqual([doc.getElementById('at_car').checked, doc.getElementById('at_carPlace').value], [true, '부산시청']);
+  assert.deepEqual([pressed('at_car'), doc.getElementById('at_carPlace').value], [true, '부산시청']);
   assert.deepEqual(rows(), [
     ['DIV', '아반테 (181허4360)', '14:00~17:00 내 신청'], ['BUTTON', '스타리아 (308소4997)', '비어 있음'], ['DIV', '쏘나타 (203도7306)', '15:00~16:00 홍길동'],
   ]);

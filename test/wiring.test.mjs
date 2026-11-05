@@ -531,6 +531,48 @@ console.log('Help Chat 줄의 패널 캡처 단추와 설정(일반)의 스위�
   });
 }
 
+console.log('머리의 Teams (나) 단추와 설정(일반)의 스위치 (2026-11-05)');
+{
+  const { wired, window, store, calls } = await boot({ mode: 'room' });
+  const doc = window.document;
+  const btn = doc.getElementById('teamsNotes');
+  const box = doc.getElementById('teamsNotesOn');
+  t('머리 단추 줄 맨 앞에 보이고, 스위치는 일반 갈래 · 기본 켬', () => {
+    assert.equal(doc.querySelector('.head-tools').firstElementChild, btn);
+    assert.equal(btn.hidden, false);
+    assert.ok(box.closest('#setGeneral'));
+    assert.equal(box.checked, true);
+    assert.ok(wired.get('teamsNotes')?.has('click'));
+    assert.ok(wired.get('teamsNotesOn')?.has('change'));
+  });
+  window.chrome.tabs.query = async () => [{ id: 7, index: 2 }];
+  btn.click();
+  await new Promise((r) => setTimeout(r, 20));
+  t('누르면 지금 탭 바로 옆에 Teams 웹의 나와의 채팅(48:notes)을 연다', () => {
+    assert.deepEqual(calls.tabs.at(-1), { url: 'https://teams.microsoft.com/_#/l/chat/48:notes/conversations', index: 3, openerTabId: 7 });
+  });
+  box.checked = false;
+  box.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 20));
+  t('끄면 저장되고 단추가 숨는다 · 활동 기록', () => {
+    assert.equal(store.teamsNotes, false);
+    assert.equal(btn.hidden, true);
+    assert.ok((store.activityLog || []).some((e) => e.kind === 'setting' && /Teams \(나\).*끔/.test(e.text)));
+  });
+  for (const fn of calls.storageListeners) fn({ teamsNotes: { newValue: true } }, 'local');
+  t('다른 창의 패널에서 켜면 이 창도 따라간다', () => {
+    assert.equal(box.checked, true);
+    assert.equal(btn.hidden, false);
+  });
+}
+{
+  const { window } = await boot({ mode: 'room', teamsNotes: false });
+  t('꺼 둔 설정이면 스위치는 꺼진 채, 단추는 숨은 채로 뜬다', () => {
+    assert.equal(window.document.getElementById('teamsNotesOn').checked, false);
+    assert.equal(window.document.getElementById('teamsNotes').hidden, true);
+  });
+}
+
 console.log('설정(일반)의 Quality 연도 유지 체크박스');
 {
   const { wired, window, store } = await boot({ mode: 'room' });
@@ -788,7 +830,7 @@ console.log('설정(일반)의 행위 명세 — 갈래 → 종류 → YAML 원�
   t('일반 갈래 안에 갈래 단추가 탭 차례로 서고, 종류 줄·원본은 닫혀 있다', () => {
     assert.ok(domains.closest('#setGeneral'));
     assert.deepEqual([...domains.children].map((b) => b.firstChild.textContent),
-      ['근태', '여비계산서', '공문', '게시판', '일일 업무', 'R&D', '메일', '회의실', '차량', 'KTX', '홈 카드', '회람']);
+      ['근태', '여비계산서', '공문', '게시판', '일일 업무', 'R&D', '메일', '회의실', '차량', 'KTX', '항공', '홈 카드', '회람']);
     assert.ok([...domains.children].every((b) => b.type === 'button' && b.getAttribute('aria-pressed') === 'false'));
     assert.ok(kinds.hidden && file.hidden);
   });
@@ -3385,7 +3427,7 @@ console.log('공문 탭 — 부분 골라 캡처(2026-10-08 "탭이 아니라 �
   await settle(30);
   t('"부분 골라 캡처"를 누르면 권한을 묻고 보고 있는 탭에 고르기 막을 씌운다 — 단추는 "고르기 취소"가 되고, 탭 단추만 잠긴다(파일 넣기는 그대로)', () => {
     assert.ok(perms.has);
-    assert.deepEqual(ran.map((r) => r.slice(0, 2)), [['top', 'pagePick']]);
+    assert.deepEqual(ran.map((r) => r.slice(0, 2)), [['top', 'pdfType'], ['top', 'pagePick']], '찍기 전에 PDF 탭인지 본다(2026-11-03)');
     assert.equal(partBtn().textContent, '고르기 취소');
     assert.equal(partBtn().getAttribute('aria-pressed'), 'true');
     assert.ok(!partBtn().disabled && tabBtn().disabled);
@@ -3395,7 +3437,7 @@ console.log('공문 탭 — 부분 골라 캡처(2026-10-08 "탭이 아니라 �
   partBtn().click();
   await settle(30);
   t('고르기 취소를 누르면 페이지의 막을 걷고(pickCancel) 단추가 돌아온다 — 아무것도 찍지 않는다', () => {
-    assert.deepEqual(ran.map((r) => r[1]), ['pagePick', 'pickCancel']);
+    assert.deepEqual(ran.map((r) => r[1]), ['pdfType', 'pagePick', 'pickCancel']);
     assert.equal(pending, null);
     assert.equal(partBtn().textContent, '부분');
     assert.ok(!tabBtn().disabled);
@@ -3779,7 +3821,7 @@ console.log('근태 탭');
     assert.equal(doc.getElementById('atSubmit').disabled, true);
   });
   t('외근은 날짜와 시작이 한 줄에 나란히 서고, 그 아래가 1~8시간 칩과 색이 다른 +30분 칩이다', () => {
-    assert.deepEqual([...doc.querySelectorAll('#atFields .at-field')].map((n) => n.dataset.key), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car']);
+    assert.deepEqual([...doc.querySelectorAll('#atFields .at-field')].map((n) => n.dataset.key), ['sub', 'dateFrom', 'start', 'span', 'purpose', 'car', 'gcal']);
     assert.ok(doc.querySelector('.at-field[data-key="dateFrom"]').classList.contains('beside'));
     assert.deepEqual(spanChips().map((b) => b.textContent), ['1H', '2H', '3H', '4H', '5H', '6H', '7H', '8H', '+30분']);
     assert.ok(spanChips().at(-1).classList.contains('at-plus'));
@@ -3851,12 +3893,12 @@ console.log('근태 탭');
     assert.equal(doc.getElementById('at_dateFrom').value, '2026-10-20');
     assert.equal(doc.getElementById('at_dateTo').value, '2026-10-20', '도착일 칸은 며칠간에서 나오는 끝나는 날이다(당일이면 출발일과 같다) — 달력으로 고르면 며칠간이 따라 바뀐다');
     assert.deepEqual([doc.getElementById('at_start').value, doc.getElementById('at_end').value], ['07:00', '20:00']);
-    assert.deepEqual([...doc.querySelectorAll('#atFields .at-field')].map((n) => n.dataset.key), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car']);
+    assert.deepEqual([...doc.querySelectorAll('#atFields .at-field')].map((n) => n.dataset.key), ['dateFrom', 'start', 'dateTo', 'end', 'days', 'place', 'venue', 'purpose', 'settle', 'car', 'ktx', 'flight', 'gcal']);
     assert.deepEqual([...doc.querySelector('#atFields .at-group.at-spot').children].map((n) => [n.dataset.key, n.querySelector('.at-label').textContent]),
       [['place', '출장지필수'], ['venue', '장소']]);
-    assert.deepEqual([doc.getElementById('at_settle').type, doc.getElementById('at_settle').checked], ['checkbox', false]);
-    assert.deepEqual([...doc.querySelector('#atFields .at-group.at-opts').children].map((n) => n.dataset.key), ['settle', 'car'], '차량 조회는 사전정산 옆(같은 줄)에 선다');
-    assert.deepEqual([doc.getElementById('at_car').type, doc.getElementById('at_car').checked, doc.getElementById('atCars')], ['checkbox', false, null]);
+    assert.deepEqual([doc.getElementById('at_settle').tagName, doc.getElementById('at_settle').getAttribute('aria-pressed')], ['BUTTON', 'false']);
+    assert.deepEqual([...doc.querySelector('#atFields .at-group.at-opts').children].map((n) => n.dataset.key), ['settle', 'car', 'ktx', 'flight', 'gcal'], '차량 조회·KTX·항공권·G캘린더는 계산서(사전정산) 옆(같은 줄)에 아이콘 단추로 선다(2026-11-05)');
+    assert.deepEqual([doc.getElementById('at_car').tagName, doc.getElementById('at_car').getAttribute('aria-pressed'), doc.getElementById('atCars')], ['BUTTON', 'false', null]);
     assert.deepEqual([...doc.querySelectorAll('#atFields .at-field.need')].map((n) => n.dataset.key), ['place']);
     assert.equal(doc.getElementById('atSubmit').disabled, true);
     assert.ok(doc.querySelector('.at-field[data-key="dateFrom"]').classList.contains('filled'));
@@ -3872,25 +3914,30 @@ console.log('근태 탭');
     assert.deepEqual([field('days').classList.contains('inl'), field('days').querySelector('.at-label').textContent], [false, '며칠간']);
     assert.deepEqual([field('purpose').classList.contains('inl'), field('purpose').querySelector('.at-label').textContent], [false, '목적필수']);
   });
-  // 여비계산서 사전정산: 체크박스를 켜면 근무지·교통편이 한 줄로 나온다
+  // 여비계산서 사전정산: 체크박스를 켜면 근무지·가는 편·오는 편이 한 줄로 나온다(2026-11-03 편마다)
+  // 사전정산은 계산서 아이콘 단추다(2026-11-05) — 켜짐은 aria-pressed, 누르면 뒤집힌다.
   const tick = (on) => {
     const box = doc.getElementById('at_settle');
-    box.checked = on;
-    box.dispatchEvent(new window.Event('change', { bubbles: true }));
+    if ((box.getAttribute('aria-pressed') === 'true') !== on) box.click();
   };
-  const icons = () => [...doc.querySelectorAll('.at-field[data-key="transport"] .at-chip')];
+  const icons = (leg = 'go') => [...doc.querySelectorAll(`.at-field[data-key="${leg}"] .at-chip`)];
+  const active = (leg) => icons(leg).map((b) => b.classList.contains('active'));
   tick(true);
-  t('여비계산서 사전정산을 켜면 근무지·교통편이 한 줄(같은 묶음)에 선다 — 교통편은 아이콘 셋이고 기차가 골라져 있다', () => {
+  t('여비계산서 사전정산을 켜면 근무지·가는 편·오는 편이 한 줄(같은 묶음)에 선다 — 편마다 아이콘 셋이고 기차가 골라져 있다', () => {
     const group = doc.querySelector('#atFields .at-group.at-where');
-    assert.deepEqual([...group.children].map((n) => n.dataset.key), ['workplace', 'transport']);
+    assert.deepEqual([...group.children].map((n) => n.dataset.key), ['workplace', 'go', 'back']);
+    assert.deepEqual([...group.querySelectorAll('.at-icons .at-label')].map((n) => n.textContent), ['가는 편', '오는 편']);
     assert.deepEqual([...doc.querySelector('#atFields .at-group.at-spot').children].map((n) => n.dataset.key), ['place', 'venue'], '출장지·장소 줄은 그대로다');
     assert.equal(doc.querySelector('#atFields .at-field.at-file'), null, '출장 증빙은 신청할 때 묻지 않는다 — 신청 내역의 출장 카드에서 넣는다');
     for (const key of ['place', 'venue', 'workplace']) {
       assert.equal(doc.querySelector(`.at-field[data-key="${key}"]`).classList.contains('wide'), false, '한 줄을 다 쓰지 않는다');
       assert.equal(doc.getElementById(`at_${key}`).type, 'text');
     }
-    assert.deepEqual(icons().map((b) => [b.getAttribute('aria-label'), !!b.querySelector('svg'), b.classList.contains('active')]),
-      [['기차(KTX)', true, true], ['비행기', true, false], ['버스', true, false]]);
+    for (const leg of ['go', 'back']) {
+      assert.deepEqual(icons(leg).map((b) => [b.getAttribute('aria-label'), !!b.querySelector('svg'), b.classList.contains('active')]),
+        [['기차(KTX)', true, true], ['비행기', true, false], ['버스', true, false]], leg);
+    }
+    assert.equal(doc.querySelector('.at-fare'), null, '버스가 아니면 요금 칸이 없다');
     assert.deepEqual([...doc.querySelectorAll('#atFields .at-field.need')].map((n) => n.dataset.key), ['place', 'workplace']);
     assert.equal(doc.getElementById('atSubmit').disabled, true);
   });
@@ -3919,11 +3966,12 @@ console.log('근태 탭');
     assert.doesNotMatch(doc.getElementById('atNeed').textContent, /증빙/);
     assert.equal(doc.getElementById('atSubmit').disabled, false);
   });
-  const state = () => icons().map((b) => [b.classList.contains('active'), b.classList.contains('first'), b.getAttribute('aria-pressed'), b.getAttribute('aria-label')]);
+  const state = (leg = 'go') => icons(leg).map((b) => [b.classList.contains('active'), b.classList.contains('first'), b.getAttribute('aria-pressed'), b.getAttribute('aria-label')]);
   const need = () => doc.getElementById('atNeed').textContent;
   icons()[0].click();
-  t('기차를 한 번 더 누르면 특실이다 — 아이콘에 first 가 붙고(주황색 +) 이름이 "특실"이 되며, 운임표의 특실 정가가 들어간다', () => {
-    assert.deepEqual(state(), [[true, true, 'true', '기차(KTX) 특실'], [false, false, 'false', '비행기'], [false, false, 'false', '버스']]);
+  t('가는 편 기차를 한 번 더 누르면 특실이다 — 아이콘에 first 가 붙고(주황색 +) 이름이 "특실"이 되며, 같았던 오는 편도 따라간다', () => {
+    assert.deepEqual(state('go'), [[true, true, 'true', '기차(KTX) 특실'], [false, false, 'false', '비행기'], [false, false, 'false', '버스']]);
+    assert.deepEqual(state('back')[0], [true, true, 'true', '기차(KTX) 특실']);
     assert.match(need(), /여비계산서\(사전정산\): 당일출장\(주재국\) · 대전 · KTX 부산↔대전 특실 48,000원 × 2/);
     assert.equal(doc.activeElement, icons()[0], '누른 아이콘에 초점이 남는다');
   });
@@ -3931,40 +3979,55 @@ console.log('근태 탭');
   t('출장지를 바꾸면 그 구간의 특실 값으로 바뀐다(부산↔서울 78,900원)', () =>
     assert.match(need(), /KTX 부산↔서울 특실 78,900원 × 2/));
   type('at_place', '대전');
-  icons()[0].click();
-  t('기차 하나뿐일 때 또 누르면 꺼지지 않고 일반석으로 돌아간다', () => {
-    assert.deepEqual(state()[0], [true, false, 'true', '기차(KTX)']);
-    assert.match(need(), /KTX 부산↔대전 일반석 33,100원 × 2/);
+  icons('back')[0].click();
+  t('오는 편 기차만 또 누르면 오는 편만 일반석이다 — 꺼지지 않고, 편마다의 요금이 적힌다', () => {
+    assert.deepEqual([state('go')[0], state('back')[0]], [[true, true, 'true', '기차(KTX) 특실'], [true, false, 'true', '기차(KTX)']]);
+    assert.match(need(), /KTX 부산↔대전 특실 48,000원 \+ 일반석 33,100원/);
   });
-  icons()[1].click();
-  t('기차와 비행기를 함께 고를 수 있다 — 어느 편이 무엇인지는 다녀와서 신청 내역에서 고른다고 적힌다', () => {
-    assert.deepEqual(icons().map((b) => b.classList.contains('active')), [true, true, false]);
-    assert.match(need(), /교통편 내역 없음\(가는 편·오는 편은 다녀와서 신청 내역에서 고름\)/);
+  icons('go')[1].click();
+  t('가는 편을 비행기로 바꾸면 달랐던 오는 편은 그대로다 — 비행기 편은 사후정산이라 줄이 없고 오는 편 KTX 만 들어간다 (2026-11-03 사용자 지정)', () => {
+    assert.deepEqual([active('go'), active('back')], [[false, true, false], [true, false, false]]);
+    assert.match(need(), /대전 · 가는 편 비행기 · 오는 편 KTX 대전→부산 일반석 33,100원/);
     assert.equal(doc.getElementById('atSubmit').disabled, false);
   });
-  icons()[0].click();
-  icons()[0].click();
-  t('다른 교통편이 켜져 있으면 기차는 일반석 → 특실 → 꺼짐으로 돈다. 비행기만 남으면 근무지는 필수가 아니다', () => {
-    assert.deepEqual(icons().map((b) => b.classList.contains('active')), [false, true, false]);
+  icons('back')[1].click();
+  t('두 편 모두 비행기면 교통편 내역이 없고 근무지는 필수가 아니다 — 고른 것을 또 눌러도 꺼지지 않는다', () => {
     assert.match(need(), /대전 · 교통편 내역 없음$/);
     type('at_workplace', '');
     assert.equal(doc.querySelector('.at-field[data-key="workplace"]').classList.contains('need'), false);
-    icons()[1].click();
-    assert.deepEqual(icons().map((b) => b.classList.contains('active')), [false, true, false], '마지막 하나는 꺼지지 않는다');
+    icons('back')[1].click();
+    assert.deepEqual(active('back'), [false, true, false], '편마다 하나는 골라져 있다');
     type('at_workplace', '부산');
   });
-  icons()[2].click();
-  icons()[1].click();
-  t('버스만 고르면 교통편 내역을 넣지 않는다고 적힌다 — 다시 기차로 돌아올 수 있다', () => {
-    assert.deepEqual(icons().map((b) => b.classList.contains('active')), [false, false, true]);
-    assert.match(need(), /여비계산서\(사전정산\): 당일출장\(주재국\) · 대전 · 교통편 내역 없음$/);
-    icons()[0].click();
-    icons()[2].click();
-    assert.match(need(), /KTX 부산↔대전/);
+  icons('go')[2].click();
+  t('버스를 고르면 그 편의 아이콘 아래에 요금 칸이 선다 — 같았던 오는 편도 따라 버스가 되고, 오는 편을 비행기로 돌리면 그 칸은 빠진다', () => {
+    assert.deepEqual([active('go'), active('back')], [[false, false, true], [false, false, true]]);
+    assert.equal(doc.querySelectorAll('.at-fare').length, 2);
+    icons('back')[1].click();
+    assert.equal(doc.querySelector('.at-field[data-key="back"] .at-fare'), null);
+  });
+  t('버스 요금 칸이 비어 있으면 그 편이 빈 칸이다 — 적은 요금으로 버스 줄이 들어간다 (2026-11-03 사용자 지정: "폼에서 요금을 적게")', () => {
+    const fare = doc.querySelector('.at-field[data-key="go"] .at-fare');
+    assert.ok(fare, '가는 편 아래에 요금 칸');
+    assert.equal(doc.querySelector('.at-field[data-key="go"]').classList.contains('need'), true);
+    assert.equal(doc.getElementById('atSubmit').disabled, true);
+    fare.value = '28000';
+    fare.dispatchEvent(new window.Event('input', { bubbles: true }));
+    fare.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.equal(doc.querySelector('.at-field[data-key="go"]').classList.contains('need'), false);
+    assert.equal(doc.getElementById('atSubmit').disabled, false);
+    assert.equal(fare.value, '28,000', '다 치면 쉼표를 찍어 보인다');
+    assert.match(need(), /대전 · 가는 편 버스 부산→대전 28,000원 · 오는 편 비행기$/);
+  });
+  icons('go')[0].click();
+  icons('back')[0].click();
+  t('다시 기차로 돌아오면 요금 칸이 사라지고 KTX 두 줄이다', () => {
+    assert.equal(doc.querySelector('.at-fare'), null);
+    assert.match(need(), /KTX 부산↔대전 일반석 33,100원 × 2/);
   });
   doc.getElementById('atReset').click();
   t('비우기를 누르면 사전정산이 꺼지고 그 칸들이 사라진다 — 다시 켜면 근무지는 남아 있고 출장지는 비어 있다', () => {
-    assert.equal(doc.getElementById('at_settle').checked, false);
+    assert.equal(doc.getElementById('at_settle').getAttribute('aria-pressed'), 'false');
     assert.equal(doc.getElementById('at_workplace'), null);
     tick(true);
     assert.deepEqual([doc.getElementById('at_place').value, doc.getElementById('at_workplace').value, doc.getElementById('at_purpose').value], ['', '부산', '']);
@@ -4036,7 +4099,7 @@ console.log('근태 탭');
   const chipsOf = (key) => [...doc.querySelectorAll(`.at-field[data-key="${key}"] .at-chip`)];
   const keys = () => [...doc.querySelectorAll('#atFields .at-field')].map((n) => n.dataset.key);
   t('휴가: 연차가 기본이고 시작일·종료일이 한 줄, 그 아래 며칠간 칩 오른쪽에 오전·오후, 그 아래 기념일 지원 체크박스다(2026-10-08 사용자 지정). 그대로 올릴 수 있다', () => {
-    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa']);
+    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'gcal']);
     assert.deepEqual(chipsOf('sub').map((b) => [b.textContent, b.classList.contains('active')]), [['연차', true], ['체력단련', false]], '기념일은 갈래 칩이 아니다');
     assert.equal(doc.getElementById('at_wfa').type, 'checkbox');
     assert.equal(doc.getElementById('at_wfa').checked, false);
@@ -4070,7 +4133,7 @@ console.log('근태 탭');
   });
   chipsOf('days')[1].click();
   t('이틀로 늘리면 종료일이 따라오고 오전·오후는 잠긴 채 남으며 전일로 올라간다', () => {
-    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa']);
+    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'gcal']);
     assert.equal(doc.getElementById('at_dateTo').value, '2026-10-21');
     assert.ok(chipsOf('half').every((b) => b.disabled));
     assert.match(doc.getElementById('atNeed').textContent, /연차 10\/20~10\/21 2일간/);
@@ -4079,7 +4142,7 @@ console.log('근태 탭');
   t('체력단련을 고르면 제목이 바뀌고 기념일 지원 체크박스는 없다', () => {
     assert.match(doc.getElementById('atFormTitle').textContent, /체력단련 신청/);
     assert.match(doc.getElementById('atNeed').textContent, /체력단련 10\/20~10\/21 2일간/);
-    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half']);
+    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'gcal'], 'G캘린더는 남는다(2026-11-03)');
   });
   t('말로 채운 것이 활동 기록에 남는다', () =>
     assert.ok((store.activityLog || []).some((e) => e.kind === 'attend-ask' && /10월 20일 출장/.test(e.text))));
@@ -4095,7 +4158,7 @@ console.log('근태 탭');
   await new Promise((r) => setTimeout(r, 80));
   t('기념일 지원을 켜면 연차 칸 아래에 기념일 칸(신청사항·기념일·대상자·가족관계·시설 이용일·금액·사용구분)이 붙고, 결재요청·임시저장은 그대로다', () => {
     assert.equal(doc.getElementById('atFormTitle').textContent, '연차 신청 · 기념일 지원');
-    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa',
+    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'gcal',
       'wfaReason', 'wfaDate', 'wfaName', 'wfaRelation', 'wfaStayFrom', 'wfaStayTo', 'wfaPaid', 'wfaAsk', 'wfaCash']);
     assert.equal(doc.getElementById('at_wfa').checked, true);
     assert.deepEqual(chipsOf('wfaRelation').map((b) => [b.textContent, b.classList.contains('active')]).slice(0, 2), [['본인', true], ['배우자', false]]);
@@ -4143,7 +4206,7 @@ console.log('근태 탭');
   });
   check('at_wfa', false);
   t('기념일 지원을 끄면 연차 칸만 남고 제목도 돌아온다', () => {
-    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa']);
+    assert.deepEqual(keys(), ['sub', 'dateFrom', 'dateTo', 'days', 'half', 'wfa', 'gcal']);
     assert.equal(doc.getElementById('atFormTitle').textContent, '연차 신청');
     assert.equal(doc.getElementById('atWfa'), null);
     assert.equal(doc.getElementById('atNeed').textContent, '올릴 내용 — 연차 10/20 전일');
@@ -4219,8 +4282,7 @@ console.log('근태 탭');
   await new Promise((r) => setTimeout(r, 80));
   doc.querySelector('#atKinds .at-kind[data-kind="trip"]').click();
   const box = doc.getElementById('at_settle');
-  box.checked = true;
-  box.dispatchEvent(new window.Event('change', { bubbles: true }));
+  if (box.getAttribute('aria-pressed') !== 'true') box.click();   // 계산서 아이콘 단추(2026-11-05)
   t('패널을 새로 열어 출장의 여비계산서 사전정산을 켜면 근무지에 지난번 값이 깔려 있고 출장지는 비어 있다', () => {
     assert.deepEqual([doc.getElementById('at_place').value, doc.getElementById('at_workplace').value], ['', '부산']);
     assert.equal(doc.querySelector('.at-field[data-key="workplace"]').classList.contains('need'), false, '깔린 값이 있으니 빈 칸으로 칠하지 않는다');
@@ -4232,14 +4294,14 @@ console.log('근태 탭');
   t('고쳐 적으면 그것이 다음 기본값으로 저장된다', () => assert.equal(store.attendWorkplace, '부산 본사'));
   doc.getElementById('atReset').click();
   const again = doc.getElementById('at_settle');   // 비우기가 칸을 다시 그렸다
-  again.checked = true;
-  again.dispatchEvent(new window.Event('change', { bubbles: true }));
+  if (again.getAttribute('aria-pressed') !== 'true') again.click();   // 계산서 아이콘 단추(2026-11-05)
   t('비우고 다시 켜도 고쳐 적은 근무지가 깔린다', () => assert.equal(doc.getElementById('at_workplace').value, '부산 본사'));
 }
 {
-  // 출장지마다 지난번에 쓴 교통편을 기억해 두었다가 같은 출장지를 다시 적으면 먼저 쓴다(2026-10-04 사용자 지정, src/routes.js).
+  // 출장지마다 지난번에 쓴 교통편을 기억해 두었다가 같은 출장지를 다시 적으면 먼저 쓴다(2026-10-04 사용자 지정, src/routes.js — 2026-11-03 편마다).
+  // 제주는 편을 가리기 전(2026-11-03 전)에 담긴 꼴 그대로다 — 그것도 읽는다.
   const { window } = await boot({ mode: 'attend', attendKind: 'trip', attendWorkplace: '부산', tripRoutes: {
-    '경기도 용인시': { transport: ['train'], trainGrade: 'first', path: ['부산', '수원'], date: '2026-09-09' },
+    '경기도 용인시': { go: { t: 'train', g: 'first' }, back: { t: 'train', g: 'first' }, path: ['부산', '수원'], date: '2026-09-09' },
     제주: { transport: ['plane'], trainGrade: 'standard', path: null, date: '2026-08-01' },
   } });
   const doc = window.document;
@@ -4252,38 +4314,38 @@ console.log('근태 탭');
   const place = (value) => fire('at_place', value, 'input', 'change');
   fire('at_purpose', '과제 협의', 'input');
   const box = doc.getElementById('at_settle');
-  box.checked = true;
-  box.dispatchEvent(new window.Event('change', { bubbles: true }));
-  const icons = () => [...doc.querySelectorAll('.at-field[data-key="transport"] .at-chip')].map((b) => [b.classList.contains('active'), b.classList.contains('first')]);
+  if (box.getAttribute('aria-pressed') !== 'true') box.click();   // 계산서 아이콘 단추(2026-11-05)
+  const chips = (leg) => [...doc.querySelectorAll(`.at-field[data-key="${leg}"] .at-chip`)];
+  const icons = (leg = 'go') => chips(leg).map((b) => [b.classList.contains('active'), b.classList.contains('first')]);
   const need = () => doc.getElementById('atNeed').textContent;
   place('경기도 용인시');
-  t('지난번에 간 출장지를 적으면 교통편 아이콘이 그때대로 골라지고(기차 특실), 사전정산의 KTX 는 그때의 길이다 — 요금은 지금 운임표의 값', () => {
-    assert.deepEqual(icons(), [[true, true], [false, false], [false, false]]);
+  t('지난번에 간 출장지를 적으면 가는 편·오는 편 아이콘이 그때대로 골라지고(기차 특실), 사전정산의 KTX 는 그때의 길이다 — 요금은 지금 운임표의 값', () => {
+    for (const leg of ['go', 'back']) assert.deepEqual(icons(leg), [[true, true], [false, false], [false, false]], leg);
     assert.match(need(), /KTX 부산↔수원 특실 64,200원 × 2 · 지난번에 쓴 길$/);
     assert.equal(doc.getElementById('at_place').value, '경기도 용인시', '적은 글은 그대로다');
   });
   place('제주');
-  t('다른 출장지로 바꾸면 그 출장지의 것으로 — 비행기로 갔던 곳은 비행기가 골라진다', () => {
-    assert.deepEqual(icons(), [[false, false], [true, false], [false, false]]);
+  t('다른 출장지로 바꾸면 그 출장지의 것으로 — 비행기로 갔던 곳은 두 편 모두 비행기가 골라진다(예전 꼴의 기억)', () => {
+    for (const leg of ['go', 'back']) assert.deepEqual(icons(leg), [[false, false], [true, false], [false, false]], leg);
     assert.match(need(), /제주 · 교통편 내역 없음$/);
   });
   place('경기도 화성시');
   t('기억이 없는 출장지면 기본(기차 일반석)으로 돌아가고 길은 찾아서 짓는다 — 화성은 동탄', () => {
-    assert.deepEqual(icons(), [[true, false], [false, false], [false, false]]);
+    for (const leg of ['go', 'back']) assert.deepEqual(icons(leg), [[true, false], [false, false], [false, false]], leg);
     assert.match(need(), /KTX 부산↔동탄 일반석 48,300원 × 2$/);
   });
-  doc.querySelectorAll('.at-field[data-key="transport"] .at-chip')[2].click();
+  chips('back')[1].click();
   place('제주');
-  t('이 신청서에서 교통편을 손댔으면 출장지를 바꿔도 기억으로 덮어쓰지 않는다', () =>
-    assert.deepEqual(icons(), [[true, false], [false, false], [true, false]]));
+  t('이 신청서에서 교통편을 손댔으면 출장지를 바꿔도 기억으로 덮어쓰지 않는다', () => {
+    assert.deepEqual([icons('go'), icons('back')], [[[true, false], [false, false], [false, false]], [[false, false], [true, false], [false, false]]]);
+  });
   doc.getElementById('atReset').click();
   const again = doc.getElementById('at_settle');
-  again.checked = true;
-  again.dispatchEvent(new window.Event('change', { bubbles: true }));
+  if (again.getAttribute('aria-pressed') !== 'true') again.click();   // 계산서 아이콘 단추(2026-11-05)
   fire('at_purpose', '과제 협의', 'input');
   place('전남 목포시');
   t('비우면 다시 기억을 따른다 — 바로 가는 KTX 가 없는 목포는 오송에서 갈아타는 길이 적힌다', () => {
-    assert.deepEqual(icons(), [[true, false], [false, false], [false, false]]);
+    for (const leg of ['go', 'back']) assert.deepEqual(icons(leg), [[true, false], [false, false], [false, false]], leg);
     assert.match(need(), /KTX 부산↔오송↔목포 일반석 69,500원 × 2$/);
   });
 }
@@ -4530,8 +4592,7 @@ console.log('근태 폼의 차량 조회 — 빈 차량을 누르면 차량 탭�
   };
   const tick = (id) => {
     const box = doc.getElementById(id);
-    box.checked = true;
-    box.dispatchEvent(new window.Event('change', { bubbles: true }));
+    if (box.getAttribute('aria-pressed') !== 'true') box.click();   // 아이콘 단추(2026-11-05)
   };
   const carRows = () => [...doc.querySelectorAll('#atCars .at-cars-list .at-car')].map((n) =>
     [n.tagName, n.querySelector('.at-car-name').textContent, n.querySelector('.at-car-state').textContent]);
@@ -4567,7 +4628,7 @@ console.log('근태 폼의 차량 조회 — 빈 차량을 누르면 차량 탭�
     assert.ok(!doc.getElementById('tabCar').classList.contains('active'));
     assert.ok(!doc.getElementById('attend').classList.contains('hidden'));
     assert.ok(doc.getElementById('booking').classList.contains('hidden'), '차량 탭의 신청 칸은 열리지 않았다');
-    assert.deepEqual([doc.getElementById('at_purpose').value, doc.getElementById('at_place').value, doc.getElementById('at_car').checked], ['착수회의 참석', '대전', true]);
+    assert.deepEqual([doc.getElementById('at_purpose').value, doc.getElementById('at_place').value, doc.getElementById('at_car').getAttribute('aria-pressed')], ['착수회의 참석', '대전', 'true']);
   });
   t('차량 탭에서 예약한 것과 같은 것이 남는다 — 활동 기록, 내가 넣은 예약, 신청 폼이 알려 준 내 이름', () => {
     assert.ok(store.justBooked.some((b) => b.mode === 'car' && b.date === D1 && b.room === '스타리아 (308소4997)' && b.start === 420 && b.end === 1440), JSON.stringify(store.justBooked));

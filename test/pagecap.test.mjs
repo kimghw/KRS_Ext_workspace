@@ -1070,4 +1070,82 @@ console.log('잇고 자르기 (가짜 캔버스)');
   delete globalThis.OffscreenCanvas;
 }
 
+console.log('크롬 PDF 뷰어 — 찍지 않고 PDF 파일 그대로 (2026-11-03 "캡쳐할때 크롬웹은 전체 또는 부분캡쳐가 안됨")');
+{
+  const { isPdfUrl, tabIsPdf, pdfName, readPdf, FILE_ACCESS_HELP } = await import('../src/pagecap.js');
+  const { PDF_PART_NOTE } = await import('../webpick.js');
+  const PDF = new TextEncoder().encode('%PDF-1.4\n%%EOF');
+  const LOCAL = 'file:///C:/Users/me/Downloads/%EC%97%AC%EB%B9%84%EC%A6%9D%EB%B9%99_147501.pdf';
+  t('주소의 경로가 .pdf 로 끝나면 PDF 다 — 웹 주소와 내 PC 파일 둘 다 받고(파일도 캡처 대상), 다른 파일·화면은 그대로 막는다', () => {
+    assert.deepEqual([isPdfUrl(LOCAL), isPdfUrl('https://x.org/a/b.PDF?v=1'), isPdfUrl('https://x.org/a.pdf.html'), isPdfUrl('chrome://x/a.pdf')], [true, true, false, false]);
+    assert.deepEqual(capturable(LOCAL), { ok: true, why: '', pdf: true });
+    assert.equal(capturable('https://x.org/a.pdf').pdf, true);
+    assert.equal(capturable('https://x.org/a').pdf, undefined);
+    assert.match(capturable('file:///C:/a.html').why, /캡처할 수 없습니다/, 'PDF 가 아닌 파일은 여전히 못 찍는다');
+  });
+  await ta('주소로 모르는 웹 PDF(내려받기 주소)는 문서의 contentType 으로 본다 — 못 보면 아니다', async () => {
+    assert.equal(await tabIsPdf({ url: LOCAL }, async () => { throw new Error('불리면 안 된다'); }), true);
+    assert.equal(await tabIsPdf({ url: 'https://x.org/Download?id=3' }, async () => 'application/pdf'), true);
+    assert.equal(await tabIsPdf({ url: 'https://x.org/' }, async () => 'text/html'), false);
+    assert.equal(await tabIsPdf({ url: 'https://x.org/' }, async () => { throw new Error('권한 없음'); }), false);
+  });
+  t('파일 이름은 주소의 마지막 조각(한글은 풀어서), 없으면 탭 제목 + .pdf', () => {
+    assert.equal(pdfName({ url: LOCAL }), '여비증빙_147501.pdf');
+    assert.equal(pdfName({ url: 'https://x.org/Download?id=3', title: '견적서' }), 'Download.pdf');
+    assert.equal(pdfName({ url: 'https://x.org/', title: '견적서: 2차' }), '견적서_ 2차.pdf');
+  });
+  await ta('웹 PDF 는 로그인 쿠키를 실어 받고, 받은 것이 %PDF 가 아니면(로그인 화면) 던진다', async () => {
+    const calls = [];
+    const ok = (body, status = 200) => async (url, init) => { calls.push([url, init]); return new Response(body, { status }); };
+    const file = await readPdf({ url: 'https://x.org/a/견적.pdf' }, { fetchImpl: ok(PDF) });
+    assert.deepEqual([file.name, file.type, file.size], ['견적.pdf', 'application/pdf', PDF.length]);
+    assert.deepEqual(calls[0][1], { credentials: 'include' });
+    await assert.rejects(readPdf({ url: 'https://x.org/a.pdf' }, { fetchImpl: ok('<html>login</html>') }), /PDF 가 아닙니다/);
+    await assert.rejects(readPdf({ url: 'https://x.org/a.pdf' }, { fetchImpl: ok('', 403) }), /HTTP 403/);
+  });
+  await ta('내 PC 파일은 파일 URL 액세스가 켜져 있을 때만 읽고, 꺼져 있으면 켜는 법(또는 끌어다 놓기)을 말한다', async () => {
+    const read = [];
+    const file = await readPdf({ url: LOCAL }, { fileAccess: async () => true, readFile: async (u) => { read.push(u); return PDF; } });
+    assert.deepEqual([read, file.name], [[LOCAL], '여비증빙_147501.pdf']);
+    await assert.rejects(readPdf({ url: LOCAL }, { fileAccess: async () => false, readFile: async () => PDF }), (e) => e.message === FILE_ACCESS_HELP);
+    await assert.rejects(readPdf({ url: LOCAL }, { fileAccess: async () => true, readFile: async () => { throw new Error('읽지 못했습니다'); } }), /내 PC 의 PDF 를 읽지 못했습니다/);
+  });
+  const doc = () => ({ tab: { title: '여비계산서 147501 증빙', url: LOCAL }, file: new File([PDF], '여비증빙_147501.pdf', { type: 'application/pdf' }) });
+  const page = () => ({ files: [new File(['x'], 'a.png', { type: 'image/png' })], text: '글', title: '칸', host: 'x.org', shots: 1, tiles: 1, cut: false });
+  const fake = (over = {}) => {
+    const used = { front: 0, start: 0 };
+    const pick = createWebPick({
+      watch: () => {}, mail: null,
+      front: async () => { used.front++; return { pages: [page()], failed: [] }; },
+      start: async () => { used.start++; return { tab: {}, done: Promise.resolve(null), cancel: async () => {} }; },
+      ...over,
+    });
+    return { pick, used };
+  };
+  await ta('전체 — PDF 탭이면 찍지 않고 그 파일 하나를 pdf: true 로 돌려준다(찍기 시작처럼 잠그고 무엇을 가져오는지 말한다)', async () => {
+    const said = [];
+    let started = 0;
+    const { pick, used } = fake({ pdf: async ({ onFound }) => { const d = doc(); onFound(d.tab); return d; } });
+    const got = await pick.shoot('tab', { onStatus: (s) => said.push(s), onStart: () => started++ });
+    assert.deepEqual([got.pdf, got.files.map((f) => f.name), got.pages, got.notes, got.what], [true, ['여비증빙_147501.pdf'], [], [], 'PDF 파일 여비증빙_147501.pdf']);
+    assert.deepEqual([used.front, started, said], [0, 1, ['PDF「여비계산서 147501 증빙」를 파일 그대로 가져오는 중입니다…']]);
+  });
+  await ta('부분 — PDF 안은 고를 수 없어 파일 전체를 가져오고 그렇게 알린다(고르기 막을 씌우지 않는다)', async () => {
+    const { pick, used } = fake({ pdf: async ({ onFound }) => { const d = doc(); onFound(d.tab); return d; } });
+    const got = await pick.shoot('part');
+    assert.deepEqual([got.pdf, got.notes, used.start], [true, [PDF_PART_NOTE], 0]);
+  });
+  await ta('PDF 가 아니거나 PDF 인지 보다가 막히면 여느 때처럼 찍고, PDF 인데 받지 못하면 그 까닭을 던진다', async () => {
+    const plain = fake({ pdf: async () => null });
+    assert.equal((await plain.pick.shoot('tab')).pdf, undefined);
+    assert.equal(plain.used.front, 1);
+    const blocked = fake({ pdf: async () => { throw new Error('사이트 접근 권한'); } });
+    await blocked.pick.shoot('tab');
+    assert.equal(blocked.used.front, 1);
+    const broken = fake({ pdf: async ({ onFound }) => { onFound(doc().tab); throw new Error(FILE_ACCESS_HELP); } });
+    await assert.rejects(broken.pick.shoot('tab'), (e) => e.message === FILE_ACCESS_HELP);
+    assert.equal(broken.used.front, 0);
+  });
+}
+
 console.log(`\n${pass} passed`);

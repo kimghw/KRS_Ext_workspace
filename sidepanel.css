@@ -44,6 +44,8 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .head-tools { display: flex; flex: none; align-items: center; gap: 7px; margin-left: auto; }
 /* 홈 카드 켜고 끄기(2026-10-26 사용자 지정: "그냥 버튼 누르는 걸로") — 다른 머리 단추와 같은 네모, 켜져 있으면 눌린 모양. */
 .app-header .home-toggle[aria-pressed="true"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
+/* Teams (나) — 제 색 그대로의 Teams 로고. 설정이 끄면 숨는다. */
+.app-header .teams-notes[hidden] { display: none; }
 .refresh.spin svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 /* GitHub 새 커밋(gitsync.js). 로고(rerp 와 같은 mark-github)는 칠한 모양이라 선 아이콘의 fill/stroke 를 뒤집는다. 새 커밋·재시작 대기는 연한 파랑, 갈라짐·겹침은 빨간 배지로 구분한다. */
@@ -897,7 +899,14 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .at-wfa-err { color: var(--danger); }
 .attend .at-wfa-open { align-self: flex-start; }
 /* 연차 안의 "기념일 지원" 체크박스 — 연차 칸과 기념일 칸 사이의 머리다. 위에 가는 선을 두어 아래 칸이 기념일 몫인 것이 보이게 한다. */
-.attend .at-field.at-check[data-key="wfa"] { padding-top: 10px; border-top: 1px solid var(--line); font-weight: 600; }
+.attend .at-field.at-check[data-key="wfa"] { font-weight: 600; }
+/* 기념일 지원은 G캘린더와 한 줄(opts — 2026-11-03)이라 구분선은 그 줄 전체에 건다. */
+.attend .at-group.at-opts:has(> [data-key="wfa"]) { padding-top: 10px; border-top: 1px solid var(--line); }
+/* 옵션 줄의 아이콘 단추(계산서 · 승용차 · 기차 · 비행기 · G — 2026-11-05 사용자 지정: "차량 조회 체크 박스를 그냥 아이콘 버튼으로"). 켜진 것은 .active(교통편 칩과 같은 색), 가는 단추(KTX·항공권)는 켜짐이 없다. */
+.attend .at-group.at-opts:has(> .at-opt) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.attend .at-field.at-opt { flex: none; }
+.attend .at-optbtn { width: 36px; min-height: 36px; padding: 0; border-radius: 9px; }
+.attend .at-optbtn svg { width: 19px; height: 19px; }
 /* 그 체크박스 오른쪽의 올해 쓴 횟수(올해 2/5번 사용 — 2026-10-09 사용자 지정). 다 썼으면 붉게, 못 읽었으면 흐리게. */
 .attend .at-wfa-used {
   order: 3; padding: 1px 8px; border-radius: 999px; background: var(--surface-soft);
@@ -1214,11 +1223,16 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .at-group { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 10px; align-items: start; }
 /* 출장의 출장지(좁게) · 장소 한 줄 — 사전정산과 상관없이 늘 나온다(2026-10-08 사용자 지정). */
 .attend .at-group.at-spot { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
-/* 여비계산서 사전정산을 켜면 나오는 한 줄 — 근무지 · 교통편 아이콘(기차·비행기·버스). */
-.attend .at-group.at-where { grid-template-columns: minmax(0, 1fr) auto; }
+/* 여비계산서 사전정산을 켜면 나오는 한 줄 — 근무지 · 가는 편 · 오는 편 아이콘(기차·비행기·버스 — 2026-11-03 편마다).
+   패널이 좁으면 오는 편이 다음 줄로 내려간다. */
+.attend .at-group.at-where { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.attend .at-group.at-where .at-field:not(.at-icons) { flex: 1 1 96px; }
+.attend .at-group.at-where .at-icons { flex: 0 0 auto; }
+/* 버스인 편의 요금 칸 — 그 편의 아이콘 셋 아래, 아이콘 줄과 같은 폭(2026-11-03 사용자 지정: "폼에서 요금을 적게"). */
+.attend .at-field.at-icons input.at-fare:not([type="checkbox"]) { width: 114px; box-sizing: border-box; text-align: right; }
 .attend .at-icons .at-chips { flex-wrap: nowrap; gap: 3px; }
 /* 교통편 아이콘 — 고르면 버튼이 아니라 **아이콘의 색**이 바뀐다(2026-10-03 사용자 지정). 안 고른 것은 흐린 회색, 고른 것은 파랑,
-   특실(기차를 한 번 더 누른 것 — 출장 카드에서는 비행기도)은 주황색이고 오른쪽 위에 "+" 가 붙는다. 여럿이 함께 켜질 수 있다. 신청 폼과 출장 카드의 가는 편·오는 편이 같이 쓴다. */
+   특실(기차를 한 번 더 누른 것 — 출장 카드에서는 비행기도)은 주황색이고 오른쪽 위에 "+" 가 붙는다. 편마다 하나가 켜진다. 신청 폼과 출장 카드의 가는 편·오는 편이 같이 쓴다. */
 .attend .at-chip.at-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; padding: 0; color: var(--faint); }
 .attend .at-chip.at-icon svg { width: 20px; height: 20px; pointer-events: none; }
 .attend .at-chip.at-icon:hover { background: var(--surface); border-color: var(--line); color: var(--muted); }
@@ -2365,3 +2379,43 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .ktx-seat b { font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .ktx-seat.soon b::after { content: " 임박"; color: var(--danger); font-size: 10.5px; font-weight: 600; }
 .ktx-seat:disabled { border-color: var(--busy-line); background: var(--busy); }
+/* 차량 탭에서 무엇을 볼지(차량 · KTX · 항공권) — 날짜 줄의 시간 칸 옆 아이콘 셋(2026-11-05 "탭은 제거해줘" · "목록 팝업이 아니라 아이콘으로"). 꼴은 날짜 이동 단추(.day-nav), 누른 것은 aria-pressed. KTX·항공권을 고르면 .app 에 ktx-view·flight-view 가 붙어 말로 찾기·차량 현황·예약 칸이 숨는다. */
+.car-view-control { flex: none; }
+.car-view-control[hidden] { display: none; }
+.car-view-control button { padding: 5px; }
+.car-view-control button svg { width: 18px; height: 18px; }
+.car-view-control button[aria-pressed="true"] { color: var(--pick); background: var(--surface); box-shadow: var(--shadow); }
+.app.ktx-view > .ask, .app.ktx-view > .schedule, .app.ktx-view > #booking { display: none; }
+.app.ktx-view > .ktx { margin-top: 0; }
+/* 항공 조회 — 차량·KTX 와 날짜 줄을 공유하고 항공사별 결과를 따로 보여 준다. */
+.app.flight-view > .ask, .app.flight-view > .schedule, .app.flight-view > #booking { display: none; }
+.flight .section-heading { justify-content: flex-start; }
+.flight-card { padding: 12px 14px; }
+.flight-route { display: flex; align-items: center; gap: 6px; }
+.flight select { min-width: 0; min-height: 36px; padding: 4px 6px; border: 0; border-radius: 9px; background: var(--surface-soft); font-size: 13px; cursor: pointer; }
+.flight-route select { flex: 1; }
+#flightSwap { flex: none; width: 30px; min-height: 30px; padding: 6px; background: transparent; color: var(--muted); }
+#flightSwap svg { width: 16px; height: 16px; }
+#flightGo { flex: none; min-width: 64px; border-radius: 10px; }
+.flight-note, .flight-empty { margin: 8px 2px 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.flight-note:empty { display: none; }
+.flight-note.bad, .flight-error { color: var(--danger); }
+.flight-list:empty { display: none; }
+.flight-provider { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.flight-provider-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+.flight-provider h3 { margin: 0; font-size: 13.5px; font-weight: 650; }
+.flight-checked { color: var(--muted); font-size: 11px; }
+.flight-rows { margin: 6px 0 0; padding: 0; list-style: none; }
+.flight-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+.flight-row:first-child { border-top: 0; }
+.flight-time { font-size: 14px; font-variant-numeric: tabular-nums; }
+.flight-number, .flight-seat { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+/* 결과 위의 탭 셋(전체 · 대한항공 · 에어부산 — 2026-11-05). 전체 탭의 줄은 항공사 이름을 앞에 단다. */
+.flight-tabs { margin: 10px 0 6px; }
+.flight-airline { color: var(--fg); font-weight: 600; }
+.flight-seat.available { color: var(--pick); }
+.flight-row .flight-open { grid-column: 2; grid-row: 1 / span 3; flex-direction: column; gap: 2px; padding: 6px 9px; min-height: 38px; font-size: 12px; }
+.flight-open b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.flight-fallback { margin-top: 8px; font-size: 12px; }
+.flight-links { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.flight-schedule { color: var(--muted); font-size: 12px; text-underline-offset: 3px; }

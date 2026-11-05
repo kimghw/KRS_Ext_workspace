@@ -24,7 +24,7 @@
 // name 은 preset.tripMe(여비계산서 목록이 아는 내 이름)이고 비면 preset.me 다. 성공 판정(§14.3): trip.send 는 ok, 나머지는 던지지 않으면 성공(sent false 도 정상).
 // 사이트 특유의 차례(저장 뒤 다시 읽어 판정·같은 줄 거르기·확정 폼 찾기)는 src/trip.js 에 그대로 있다 — 여기는 기록을 인자로 바꾸기만 한다.
 
-import { settlePlan, prePlan, stayPlan, tripStage, DEFAULT_TRANSPORT, DEFAULT_GRADE } from '../../src/travel.js';
+import { settlePlan, prePlan, stayPlan, tripStage, formLegs, DEFAULT_GRADE } from '../../src/travel.js';
 import { afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgeKnown, lodgeCommentWith, lodgeCommentWithout, LODGE_CURRENCY, LODGE_OVER_REASON } from '../../src/after.js';
 import { lodgeKey } from '../../src/afterup.js';
 import {
@@ -72,13 +72,13 @@ function sameLodge(rec, ctx) {
 /** 그 계산서에서 내 출장자 번호 — 이름이 맞는 출장자가 없으면 첫 사람(attendpanel 의 trseqOf 와 같다). */
 const trseqOf = (row, name) => ((row.travelers || []).find((t) => t.name === name) || (row.travelers || [])[0])?.trseq || '';
 
-/** trip.create 기록 → settlePlan 이 받는 출장 폼. 근무지가 비면 사전설정의 근무지, 교통편·등급이 비면 기본값(기차·일반석 — 폼과 같다). */
+/** trip.create 기록 → settlePlan 이 받는 출장 폼. 근무지가 비면 사전설정의 근무지, 가는 편·오는 편이 비면 기본값(기차·일반석 — 폼과 같다, formLegs). */
 export function tripFormOf(rec) {
   const i = rec.input;
   return {
     kind: 'trip', dateFrom: i.dateFrom, start: i.start, dateTo: i.dateTo, end: i.end, days: i.days,
     place: i.place || '', venue: i.venue || '', purpose: i.purpose || '', workplace: i.workplace || rec.preset?.workplace || '',
-    transport: Array.isArray(i.transport) && i.transport.length ? [...i.transport] : [DEFAULT_TRANSPORT], trainGrade: i.trainGrade || DEFAULT_GRADE,
+    ...formLegs({ go: i.go, back: i.back }),
   };
 }
 

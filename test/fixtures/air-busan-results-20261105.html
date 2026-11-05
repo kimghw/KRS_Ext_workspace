@@ -1,0 +1,189 @@
+<!-- Sanitized Air Busan availability page captured over CDP on 2026-11-05 (PUS to GMP, 2026-11-12, 1 adult, one-way). The page moves the URL path segments into the hidden formSearchParam itself and runs the search after the city list arrives; hidden input values below are the live property values observed after that search (outerHTML drops them). Scripts, menus, notices, the visible search widget, the fourth and later flight rows and the session field were removed. -->
+<form name="formSearchOWRT" action="" style="display:none">
+<input type="radio" name="tripType" class="radioTripType" value="RT">
+<input type="radio" name="tripType" class="radioTripType" value="OW" checked>
+<input type="radio" name="tripType" class="radioTripType" value="FREE">
+<select name="depCity" title="여정 출발지"><option value="PUS" selected>부산</option></select>
+<select name="arrCity" title="여정 도착지"><option value="GMP" selected>서울(김포)</option></select>
+<input type="text" name="paxCountAd" value="1" class="val" title="성인 인원수">
+<input type="text" name="paxCountCh" value="0" class="val" title="소아 인원수">
+<input type="text" name="paxCountIn" value="0" class="val" title="유아 인원수">
+<input id="datePickerDeparture" type="text" class="inpPicker" name="depDate1" value="2026-11-12" title="가는날 입력">
+<input id="datePickerArrival" type="text" class="inpPicker" name="depDate2" value="2026-11-12" title="오는날 입력">
+</form>
+<form name="formSearchParam" action="/web/bookingApi/flightsAvail" method="post" onsubmit="return false;">
+<input type="hidden" name="bookingCategory" value="Individual">
+<input type="hidden" name="focYn" value="N">
+<input type="hidden" name="tripType" value="OW">
+<input type="hidden" name="depCity1" value="PUS">
+<input type="hidden" name="depCity2" value="">
+<input type="hidden" name="arrCity1" value="GMP">
+<input type="hidden" name="arrCity2" value="">
+<input type="hidden" name="depDate1" value="2026-11-12">
+<input type="hidden" name="depDate2" value="">
+<input type="hidden" name="itinNo" value="">
+<input type="hidden" name="openReturnYN" value="">
+<input type="hidden" name="paxCountCorp" value="0">
+<input type="hidden" name="paxCountAd" value="1">
+<input type="hidden" name="paxCountCh" value="0">
+<input type="hidden" name="paxCountIn" value="0">
+</form>
+<div class="nativeListAvail">
+<div class="nativeAvail mgb50" data-itinno="1" data-depcity="PUS" data-arrcity="GMP" data-depdate="2026-11-12">
+<div class="posR">
+<h4 class="titFlightTo ">1구간
+<span>
+<label class="depCityName">부산</label> <img alt="에서">
+<label class="arrCityName">서울(김포)</label>
+<label class="depDate_MMDDddd">11/12(목)</label>
+</span>
+<span class="currency">통화 : KRW</span>
+</h4>
+</div>
+<div class="dateList mgt20 dateRibbonPrice " data-dateselected=""><a href="#none" class="btnPrev" onclick="return false;">1구간 항공편 이전 날짜</a><ul class="dateUlist" data-itinno="1"><li class=""><a href="#none" class="buttonDateRibbon" data-depdate="20261110"><span class="stamp">11/10 (화)</span></a></li><li class=""><a href="#none" class="buttonDateRibbon" data-depdate="20261111"><span class="stamp">11/11 (수)</span></a></li><li class="on"><a href="#none" class="buttonDateRibbon" data-depdate="20261112"><span class="stamp">11/12 (목)</span></a></li><li class=""><a href="#none" class="buttonDateRibbon" data-depdate="20261113"><span class="stamp">11/13 (금)</span></a></li><li class=""><a href="#none" class="buttonDateRibbon" data-depdate="20261114"><span class="stamp">11/14 (토)</span></a></li></ul><a href="#none" class="btnNext" onclick="return false;">1구간 항공편 다음 날짜</a></div>
+<div class="scrollTbl mgt20">
+<div class="nativeTable01">
+<table>
+<caption>출발-도착시간, 항공편, 특가항공권, 실속항공권, 일반항공권으로 구성된 1구간 항공편입니다.</caption>
+<colgroup>
+<col style="width:140px;">
+<col style="width:130px;">
+<col style="width:150px;">
+<col style="width:150px;">
+<col style="width:150px;">
+</colgroup>
+<thead>
+<tr>
+<th scope="col">출발-도착시간</th>
+<th scope="col">항공편</th>
+<th scope="col">특가항공권<br><strong class="point01">(무료 위탁수하물 미제공)</strong></th>
+<th scope="col">실속항공권</th>
+<th scope="col">일반항공권</th>
+</tr>
+</thead>
+<tbody class="nativeListFlight"><tr data-flightno="BX8032" data-flighttime="07:10 - 08:15">
+<td rowspan="1">07:10 - 08:15</td>
+<td rowspan="1">BX8032</td>
+<td class="nativeFlightCls">
+<div class="notAvailable">마감</div>
+</td>
+<td class="nativeFlightCls">
+<div class="infoToolTip" style="display: none;">
+<h3>운임종류</h3>
+<p class="nativeFareTypeName">실속 항공운임 (E)</p>
+<h3>여정변경</h3>
+<p>가능</p>			
+<h3>환불수수료</h3> 
+<p>운임규정 필독사항 참고</p>
+<h3>스탬프 적립</h3>
+<p>불가</p>
+<h3>무료 위탁수하물</h3>
+<p>15kg(유아 미제공)</p>
+</div>
+<label class="nativeClsLabel" data-itinno="1" data-flightno="BX8032" data-cls="E" data-subcls="">
+<input type="radio" name="itinNo1_flightNo_subCls" value="BX8032_">
+<span class="nativePrice" data-value="9900">9,900</span>
+</label></td>
+<td class="nativeFlightCls">
+<div class="infoToolTip" style="display: none;">
+<h3>운임종류</h3>
+<p class="nativeFareTypeName">일반 항공운임 (A)</p>
+<h3>여정변경</h3>
+<p>가능</p>			
+<h3>환불수수료</h3> 
+<p>운임규정 필독사항 참고</p>
+<h3>스탬프 적립</h3>
+<p>가능</p>
+<h3>무료 위탁수하물</h3>
+<p>15kg(유아 미제공)</p>
+</div>
+<label class="nativeClsLabel" data-itinno="1" data-flightno="BX8032" data-cls="A" data-subcls="">
+<input type="radio" name="itinNo1_flightNo_subCls" value="BX8032_">
+<span class="nativePrice" data-value="66000">66,000</span>
+</label></td>
+</tr><tr data-flightno="BX8050" data-flighttime="09:00 - 10:05">
+<td rowspan="1">09:00 - 10:05</td>
+<td rowspan="1">BX8050</td>
+<td class="nativeFlightCls">
+<div class="notAvailable">마감</div>
+</td>
+<td class="nativeFlightCls">
+<div class="infoToolTip" style="display: none;">
+<h3>운임종류</h3>
+<p class="nativeFareTypeName">실속 항공운임 (E)</p>
+<h3>여정변경</h3>
+<p>가능</p>			
+<h3>환불수수료</h3> 
+<p>운임규정 필독사항 참고</p>
+<h3>스탬프 적립</h3>
+<p>가능(할인율 50% 미만)</p>
+<h3>무료 위탁수하물</h3>
+<p>15kg(유아 미제공)</p>
+</div>
+<label class="nativeClsLabel" data-itinno="1" data-flightno="BX8050" data-cls="E" data-subcls="">
+<input type="radio" name="itinNo1_flightNo_subCls" value="BX8050_">
+<span class="nativePrice" data-value="42300">42,300</span>
+</label></td>
+<td class="nativeFlightCls">
+<div class="infoToolTip" style="display: none;">
+<h3>운임종류</h3>
+<p class="nativeFareTypeName">일반 항공운임 (A)</p>
+<h3>여정변경</h3>
+<p>가능</p>			
+<h3>환불수수료</h3> 
+<p>운임규정 필독사항 참고</p>
+<h3>스탬프 적립</h3>
+<p>가능</p>
+<h3>무료 위탁수하물</h3>
+<p>15kg(유아 미제공)</p>
+</div>
+<label class="nativeClsLabel" data-itinno="1" data-flightno="BX8050" data-cls="A" data-subcls="">
+<input type="radio" name="itinNo1_flightNo_subCls" value="BX8050_">
+<span class="nativePrice" data-value="66000">66,000</span>
+</label></td>
+</tr><tr data-flightno="BX8052" data-flighttime="10:50 - 11:55">
+<td rowspan="1">10:50 - 11:55</td>
+<td rowspan="1">BX8052</td>
+<td class="nativeFlightCls">
+<div class="notAvailable">마감</div>
+</td>
+<td class="nativeFlightCls">
+<div class="infoToolTip" style="display: none;">
+<h3>운임종류</h3>
+<p class="nativeFareTypeName">실속 항공운임 (E)</p>
+<h3>여정변경</h3>
+<p>가능</p>			
+<h3>환불수수료</h3> 
+<p>운임규정 필독사항 참고</p>
+<h3>스탬프 적립</h3>
+<p>가능(할인율 50% 미만)</p>
+<h3>무료 위탁수하물</h3>
+<p>15kg(유아 미제공)</p>
+</div>
+<label class="nativeClsLabel" data-itinno="1" data-flightno="BX8052" data-cls="E" data-subcls="">
+<input type="radio" name="itinNo1_flightNo_subCls" value="BX8052_">
+<span class="nativePrice" data-value="50900">50,900</span>
+</label></td>
+<td class="nativeFlightCls">
+<div class="infoToolTip" style="display: none;">
+<h3>운임종류</h3>
+<p class="nativeFareTypeName">일반 항공운임 (A)</p>
+<h3>여정변경</h3>
+<p>가능</p>			
+<h3>환불수수료</h3> 
+<p>운임규정 필독사항 참고</p>
+<h3>스탬프 적립</h3>
+<p>가능</p>
+<h3>무료 위탁수하물</h3>
+<p>15kg(유아 미제공)</p>
+</div>
+<label class="nativeClsLabel" data-itinno="1" data-flightno="BX8052" data-cls="A" data-subcls="">
+<input type="radio" name="itinNo1_flightNo_subCls" value="BX8052_">
+<span class="nativePrice" data-value="66000">66,000</span>
+</label></td>
+</tr></tbody>
+</table>
+</div>
+</div>
+</div>
+</div>

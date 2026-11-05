@@ -1,4 +1,4 @@
-import { DEFAULT_HOURS, ORIGIN, PORTAL_HOME_URL } from './src/config.js';
+import { DEFAULT_HOURS, ORIGIN, PORTAL_HOME_URL, TEAMS_NOTES_URL, TEAMS_NOTES_KEY } from './src/config.js';
 import { AuthError } from './src/net.js';
 import { captureRaw } from './src/site.js';
 import { RUNNERS, runnerOf } from './src/runners.js';
@@ -39,6 +39,7 @@ import { createGitSync } from './gitsync.js';
 import { createDwrBox } from './dwrbox.js';
 import { createStdBox } from './stdbox.js';
 import { createKtxBox } from './ktxbox.js';
+import { createFlightBox } from './flightbox.js';
 import { fetchWorkList } from './src/dwrwrite.js';
 import { ENABLE_KEY as CAP_ENABLE_KEY, captureEnabled, startPick as startPanelPick, codeOf as panelCode, renderPng as panelPng } from './src/panelcap.js';
 import { hrListDocs, hrWorkPlan } from './src/hr.js';
@@ -56,6 +57,7 @@ import { registerBooking, inputOf, cancelInputOf, handleSpan, LIVE_RECORD_GONE }
 import { registerDwr } from './actions/runners/dwr.js';
 import { registerBoard } from './actions/runners/board.js';
 import { registerKtx } from './actions/runners/ktx.js';
+import { registerFlight } from './actions/runners/flight.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -78,7 +80,7 @@ const el = {
   scanBar: $('scanBar'), scanNote: $('scanNote'), scanFill: $('scanFill'),
   homeCard: $('homeCard'), teamsButton: $('teamsButton'), qualityYearKeep: $('qualityYearKeep'), homeUncfm: $('homeUncfm'),
   docCirculate: $('docCirculate'), docCirculateState: $('docCirculateState'), tabPicks: $('tabPicks'),
-  panelCap: $('panelCap'), panelCapture: $('panelCapture'),
+  panelCap: $('panelCap'), panelCapture: $('panelCapture'), teamsNotes: $('teamsNotes'), teamsNotesOn: $('teamsNotesOn'),
   specDomains: $('specDomains'), specKinds: $('specKinds'), specFile: $('specFile'), specPath: $('specPath'), specOut: $('specOut'),
   settingsBox: $('settingsBox'), settingsShortcut: $('settingsShortcut'), settingsTabs: $('settingsTabs'), settingsClose: $('settingsClose'), llmModel: $('llmModel'),
   connTeamsUrl: $('connTeamsUrl'), connTeamsState: $('connTeamsState'), connTeamsCheck: $('connTeamsCheck'),
@@ -151,6 +153,7 @@ registerDwr(actions);
 registerBoard(actions);
 // KTX 열차 조회(ktx.search — 차량 탭의 KTX 조회 칸이 코레일 뒤 탭에서, 2026-11-05). 조회라 확인 없이 돈다.
 registerKtx(actions);
+registerFlight(actions);
 
 /** 행위의 사전설정을 채운다 — 저장소·내 이름·오늘·레시피·패널의 ctx(actions/preset.js). 값이 없으면 null 이지만 키는 다 있다. */
 const presetFor = (id, ctx = {}) => resolvePreset(actions.entry(id).preset, {
@@ -2040,6 +2043,7 @@ createStdBox({ actions, me: () => state.myName, compareTab: COMPARE_KIND });
 
 /** 차량 탭의 KTX 조회 칸(ktxbox.js — 코레일 조회, 좌석을 누르면 코레일 탭에서 골라 둔다, 2026-11-05). 날짜·시작 시는 탭 위의 날짜 줄·시작 시간이다. */
 const ktx = createKtxBox({ actions, when: () => ({ date: el.date.value, hour: hours().start }), today: todayStr });
+createFlightBox({ actions, when: () => ({ date: el.date.value, hour: hours().start }), today: todayStr });
 
 /** R&D 탭. 화면 조각은 rndpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. 공유 (SharePoint)의 fetch·저장소는 기본값(전역 fetch 와 rerp/spstore.js — 브라우저 로그인 쿠키, manifest *.sharepoint.com). */
 const rnd = createRndPanel({
@@ -3180,7 +3184,7 @@ async function init() {
   const saved = await chrome.storage.local.get(
     ['hourStart', 'hourEnd', 'region', 'apiKey', 'mode', 'justBooked', 'myName', 'spanDays',
       'foldOpen', 'roomOrder', 'roomFold', HOME_ENABLE_KEY, TEAMS_ENABLE_KEY, QYEAR_ENABLE_KEY, UNCFM_ENABLE_KEY, CIRC_ENABLE_KEY, CIRC_STATE_KEY, TABS_KEY, SETTINGS_PANE_KEY,
-      SPEC_HEIGHT_KEY, CAP_ENABLE_KEY]);
+      SPEC_HEIGHT_KEY, CAP_ENABLE_KEY, TEAMS_NOTES_KEY]);
   if (saved.hourStart != null) el.hourStart.value = saved.hourStart;
   if (saved.hourEnd != null) el.hourEnd.value = saved.hourEnd;
   if (saved.spanDays != null) el.spanDays.value = saved.spanDays;
@@ -3210,6 +3214,9 @@ async function init() {
   // 머리의 패널 캡처 단추 — 설정이 끄면 숨는다(src/panelcap.js).
   el.panelCapture.checked = captureEnabled(saved[CAP_ENABLE_KEY]);
   paintCaptureButton(el.panelCapture.checked);
+  // 머리의 Teams (나) 단추 — 설정이 끄면 숨는다.
+  el.teamsNotesOn.checked = saved[TEAMS_NOTES_KEY] !== false;
+  el.teamsNotes.hidden = !el.teamsNotesOn.checked;
   // 보이는 탭. 끈 탭은 머리의 탭 줄에서 뗀다 — 어느 탭으로 열지는 아래(startMode)에서 이 값을 본다.
   state.tabsOff = hiddenTabs(saved[TABS_KEY]);
   paintTabs();
@@ -3341,6 +3348,17 @@ async function init() {
     chrome.storage.local.set({ [CAP_ENABLE_KEY]: on });
     paintCaptureButton(on);
     logEvent('setting', true, `머리의 패널 캡처 단추 ${on ? '켬' : '끔'}`);
+  });
+  // Teams (나) — 지금 탭 바로 옆에 새 탭으로 연다(2026-11-05 사용자 지정: "옆 탭에 팀즈 (나)로"). 설정의 스위치는 단추를 보이거나 숨긴다.
+  el.teamsNotes.addEventListener('click', async () => {
+    const [cur] = await chrome.tabs.query({ active: true, currentWindow: true });
+    chrome.tabs.create({ url: TEAMS_NOTES_URL, ...(cur ? { index: cur.index + 1, openerTabId: cur.id } : {}) });
+  });
+  el.teamsNotesOn.addEventListener('change', () => {
+    const on = el.teamsNotesOn.checked;
+    chrome.storage.local.set({ [TEAMS_NOTES_KEY]: on });
+    el.teamsNotes.hidden = !on;
+    logEvent('setting', true, `머리의 Teams (나) 단추 ${on ? '켬' : '끔'}`);
   });
   // 행위 명세 — 갈래 단추 → 종류 단추 → YAML 원본. 고른 단추를 다시 누르면 접는다. 원본 칸의 높이는 끌어 바꾼 대로 기억한다.
   paintSpecDomains();
@@ -3493,6 +3511,10 @@ async function init() {
     if (CAP_ENABLE_KEY in changes) {
       el.panelCapture.checked = captureEnabled(changes[CAP_ENABLE_KEY].newValue);
       paintCaptureButton(el.panelCapture.checked);
+    }
+    if (TEAMS_NOTES_KEY in changes) {
+      el.teamsNotesOn.checked = changes[TEAMS_NOTES_KEY].newValue !== false;
+      el.teamsNotes.hidden = !el.teamsNotesOn.checked;
     }
     // 다른 창의 패널에서 보이는 탭을 바꿨다 — 이 창의 탭 줄·체크박스도 따라간다. 보고 있는 탭은 숨겨도 떠날 때까지 남는다.
     if (TABS_KEY in changes) {

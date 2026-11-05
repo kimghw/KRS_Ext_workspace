@@ -88,7 +88,7 @@ const KEY = '경기도 고양시 킨텍스';
 console.log('출장 카드를 펴면 그 출장지의 교통편을 기억한다');
 await open('TR-9', 145580);
 t('사전정산의 교통편 줄(사이트에서 광명으로 고친 것)을 읽어 그 출장지의 교통편으로 저장한다 — 읽기만 했다', () => {
-  assert.deepEqual(store[ROUTES_KEY], { [KEY]: { transport: ['train'], trainGrade: 'standard', path: ['부산', '광명'], date: '2026-09-09' } });
+  assert.deepEqual(store[ROUTES_KEY], { [KEY]: { go: { t: 'train', g: 'standard' }, back: { t: 'train', g: 'standard' }, path: ['부산', '광명'], date: '2026-09-09' } });
   assert.ok(gets.some((g) => g.startsWith('/BusinessTrip/Write?seq=145580')));
 });
 await open('TR-7', 141000);
@@ -109,8 +109,7 @@ const fire = (id, value, ...events) => {
 };
 fire('at_purpose', '전시회 참석', 'input');
 const box = doc.getElementById('at_settle');
-box.checked = true;
-box.dispatchEvent(new window.Event('change', { bubbles: true }));
+if (box.getAttribute('aria-pressed') !== 'true') box.click();   // 계산서 아이콘 단추(2026-11-05)
 fire('at_place', KEY, 'input', 'change');
 t('사전정산의 KTX 는 지난번의 길(광명)이 먼저다 — 요금은 지금 운임표의 정가이고, 다시 쓴 길이라고 적힌다', () =>
   assert.match(doc.getElementById('atNeed').textContent, /경기도 고양시 킨텍스 · KTX 부산↔광명 일반석 52,200원 × 2 · 지난번에 쓴 길$/));

@@ -47,7 +47,18 @@ export async function tripList({ from, to }) {
   return { rows, pages: tripListPages(doc), me: tripUser(doc), via: r.via };
 }
 
-/** 교통편 줄을 사이트 요금표의 같은 항목과 잇는다(같은 구간·수단·요금). 못 찾거나 못 읽으면 그대로 둔다. */
+/**
+ * eclass 교통비 요금표에서 두 곳 사이의 항목(parseFeeRows — 사이트는 두 이름이 들어간 항목을 방향 없이 준다). 신청 폼의 버스 요금 칸에
+ * 후보를 미리 채울 때 쓴다(src/travel.js busFareOf — 2026-11-03 사용자 지정: "폼에서 요금을 적게"). 로그인이 풀렸으면 AuthError 를 던진다.
+ */
+export async function feeRowsBetween(dep, arr, date) {
+  const q = `sDate=${date}&conCode=${String(TRAVEL_RULES.nation.code || '').split('|')[0]}&departure=${encodeURIComponent(dep)}&arrival=${encodeURIComponent(arr)}`;
+  const r = await siteFetch(`${BASE}/TrafficFee/Select?${q}`);
+  if (looksLogin(r.html)) throw new AuthError(LOGIN);
+  return parseFeeRows(r.html);
+}
+
+/** 교통편 줄을 사이트 요금표의 같은 항목과 잇는다(같은 구간·수단·요금 — KTX 줄도 버스 줄도). 못 찾거나 못 읽으면 그대로 둔다. */
 async function linkFees(plan) {
   if (!TRAVEL_RULES.transport.train.link_site_fee) return 0;
   let linked = 0;

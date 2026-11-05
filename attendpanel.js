@@ -2,8 +2,8 @@
 // 여기는 그 둘을 화면에 잇기만 한다.
 //
 // 결재요청·임시저장은 한 번 누르면 나간다 — 무엇이 올라가는지는 버튼 위의 "올릴 내용" 줄에 적혀 있다
-// (2026-10-02 사용자 지정). 올린 것을 거둬들이거나 지우는 버튼(삭제·회수·변경·취소신청)은 두 번 눌러야 나간다 —
-// 첫 번째는 어느 문서인지 적어 보여주고, 두 번째에 보낸다.
+// (2026-10-02 사용자 지정). 올린 것을 거둬들이거나 지우는 버튼(삭제·회수·변경(승인 전 — 회수)·취소신청)은 두 번 눌러야 나간다 —
+// 첫 번째는 어느 문서인지 적어 보여주고, 두 번째에 보낸다. 승인 건의 근태 변경은 폼에 불러오기만 해서(근태수정신청, 2026-11-03) 한 번이다.
 
 import {
   KINDS, KIND_MAIN, KIND_MORE, STATUS, MAX_TRIP_DAYS, blankForm, fieldsFor, missingFields, problems, describe, settle,
@@ -21,10 +21,10 @@ import { siteFetch } from './src/net.js';
 import { fillAttendSmart, receiptSmart } from './src/llm.js';
 import {
   settlePlan, describePlan, tripStage, tripDocFor, tripIconState, settleLabel,
-  TRANSPORTS, TRAIN_GRADES, LEG_GRADED, transportsOf, trainGradeOf, nextTransport, legPlan, nextLegPick, describeTrans, prePlan, stayPlan, legDiffs, legWhen,
+  TRANSPORTS, TRAIN_GRADES, LEG_GRADED, LEGS, FARE_BY_HAND, formLegs, nextFormLegs, fareIn, busFareOf, busEnds, legPlan, nextLegPick, describeTrans, prePlan, stayPlan, legDiffs, legWhen,
 } from './src/travel.js';
 // 여비계산서에 쓰는 것(tripCreate·tripPreSave·tripPreConfirm·tripPostConfirm·tripDelete·tripAfterSave)은 여기서 직접 부르지 않는다 — 행위(actions/runners/trip.js)로 간다. 읽기만 남는다.
-import { tripList, tripDocUrl, TRIP_SHELL_URL, tripPreDetail, tripAfterUrl, tripPreUrl } from './src/trip.js';
+import { tripList, tripDocUrl, TRIP_SHELL_URL, tripPreDetail, tripAfterUrl, tripPreUrl, feeRowsBetween } from './src/trip.js';
 import { afterNeed, afterPlan, afterSummary, evidenceOf, needsAfter, TRANS_NAME } from './src/after.js';
 import { lodgeAsk, lodgeCap, lodgeSettle, lodgeSame, lodgeChoices, lodgeDecide, lodgeOver, lodgeKnown, lodgeComment, lodgeReason, LODGE_OVER_REASON } from './src/after.js';
 import { createEvidenceStore, MARKS_KEY } from './src/evidence.js';
@@ -43,6 +43,8 @@ import { AuthError } from './src/net.js';
 import { PORTAL_HOME_URL } from './src/config.js';
 // 행위 층(actions/) — HR 에 올리고 여비계산서를 쓰는 일은 전부 기록(record)으로 지어 디스패처로 돌린다(사람의 누름이 확인이다). 읽기(hrListDocs·tripList·tripPreDetail …)는 행위가 아니다.
 import { createDispatcher } from './actions/dispatch.js';
+import { gcalUrl, gcalKind } from './src/gcal.js';
+import { TRANSPORT_ICON, OPTION_ICON } from './src/icons.js';
 import { jumpsOf, paintJumps, flashFocus } from './src/jump.js';
 import { resolvePreset } from './actions/preset.js';
 import { registerAttend } from './actions/runners/attend.js';
@@ -70,7 +72,7 @@ const ACTION_LABEL = { edit: '수정', change: '근태 변경', request: '상신
 const ACTION_TITLE = {
   wfa: '이 연차로 가족 기념일 지원을 신청합니다 — 연차는 다시 올리지 않고, 폼에 연차 날짜와 기념일 칸이 열립니다',
   edit: '이 임시저장 문서를 폼으로 불러와 고칩니다',
-  change: '시간·날짜를 바꿉니다 — 올린 건을 거둬들이고(승인 전이면 회수, 승인 뒤면 취소신청) 같은 내용을 폼에 불러옵니다',
+  change: '시간·날짜를 바꿉니다 — 승인 전이면 회수하고 같은 내용을 폼에 불러오고, 승인 뒤면 같은 내용을 폼에 불러와 HR 근태수정신청으로 올립니다(기존 근태는 수정결재 승인까지 그대로)',
   request: '이 임시저장 문서를 그대로 결재요청합니다',
   delete: '이 문서를 지웁니다(임시저장했거나 회수한 문서)',
   recall: '결재요청을 거둬들입니다(결재 전일 때만)',
@@ -111,12 +113,9 @@ const spanText = (from, to, today) => {
   const one = (s) => (from.slice(0, 4) === year && to.slice(0, 4) === year ? md(s) : `${s.slice(2, 4)}/${md(s)}`);
   return `${one(from)} ~ ${one(to)}`;
 };
-/** 교통편 아이콘(기차·비행기·버스). 버스는 옆모습이다(2026-10-03 사용자 지정) — 앞모습은 기차와 가려지지 않는다. */
-const TRANSPORT_ICON = {
-  train: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z"/><path d="M4 11h16M8 21l2-3M16 21l-2-3M8.5 14.5h.01M15.5 14.5h.01"/></svg>',
-  plane: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2Z"/></svg>',
-  bus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 16.5h-1a1 1 0 0 1-1-1V8A1.5 1.5 0 0 1 4 6.5h13a2 2 0 0 1 1.8 1.1l2.2 4.4c.3.6.5 1.3.5 2v1.5a1 1 0 0 1-1 1h-1M9.5 16.5h5"/><path d="M2.5 11.5h18.2M8.5 6.5v5M14 6.5v5"/><circle cx="7" cy="16.5" r="2"/><circle cx="17" cy="16.5" r="2"/></svg>',
-};
+// 교통편 아이콘(기차·비행기·버스 — 버스는 옆모습, 2026-10-03 사용자 지정)은 src/icons.js 로 옮겼다 — 차량 탭의 시간 옆 아이콘 셋과 같은 것을 쓴다(2026-11-05).
+/** 출장 폼 옵션 단추의 아이콘 — 계산서(사전정산) · 승용차(차량 조회) · 기차(KTX 조회) · 비행기(항공권 조회) · G(구글 캘린더). */
+const OPT_ICON = { sheet: OPTION_ICON.sheet, car: TRANSPORT_ICON.car, train: TRANSPORT_ICON.train, plane: TRANSPORT_ICON.plane, gcal: OPTION_ICON.gcal };
 /** 특실을 부르는 이름(아이콘의 풍선말·읽어 주는 이름에 붙인다). */
 const FIRST_LABEL = TRAIN_GRADES.find((g) => g.value === 'first')?.label || '특실';
 const TRIP_TITLE = '여비계산서를 eclass 에서 열기';
@@ -167,8 +166,10 @@ export function createAttendPanel({
     // items 는 화면에 보이는 건(기간에 걸친 것), all 은 HR 에서 읽은 전부다 — 방금 올린 건이 기간 밖이어도 all 에서 확인한다.
     form: blankForm('', attendToday()), items: [], all: [], edit: null, busy: false, chat: [],
     armed: null, armTimer: null, filled: new Set(), loadedOnce: false, authFailed: false, moreOpen: false,
-    // 신청 내역: 펴 둔 줄, 취소 사유를 받는 줄(then 이 'copy' 면 올린 뒤 폼에 불러온다), 따로 정한 조회 기간.
-    openDoc: null, cancelFor: null, cancelThen: null, range: null,
+    // G캘린더를 마지막에 켰는가(저장소 attendGcal) — 새 신청서가 이것을 따른다(2026-11-03).
+    gcal: false,
+    // 신청 내역: 펴 둔 줄, 취소 사유를 받는 줄, 따로 정한 조회 기간.
+    openDoc: null, cancelFor: null, range: null,
     // 취소신청을 올려 둔 원 문서의 기록(src/attend.js 의 CANCELLING_KEY) — 그 줄은 상태가 "취소 중"이고 여비계산서 칸이 없다.
     cancelKept: {},
     // 기본 보기에서 다녀온 출장을 몇 주 뒤까지 보이는가(0 = 안 봄, 4, 8). 저장해 두고 홈의 WORKSPACE 카드도 같이 따른다.
@@ -217,10 +218,13 @@ export function createAttendPanel({
     // 가는 편·오는 편에서 고른 교통편(신청서 번호가 열쇠): { go: {t, g}, back: {t, g} }. 사전정산과 다르게 고른 편만 들어 있고,
     // 저장해 두어 패널을 다시 열어도 남는다. 사후정산을 올릴 때 교통비 내역이 된다.
     legs: {},
-    // 출장지마다 지난번에 쓴 교통편(src/routes.js — 출장지에 적은 글 → { transport, trainGrade, path, date }). 저장해 두고, 같은 출장지를
+    // 출장지마다 지난번에 쓴 교통편(src/routes.js — 출장지에 적은 글 → { go, back, path, date }). 저장해 두고, 같은 출장지를
     // 다시 적으면 아이콘과 사전정산의 KTX 길을 그것으로 먼저 맞춘다(2026-10-04 사용자 지정). transportSet 은 이 신청서에서 교통편
     // 아이콘을 손댔는가 — 손댔으면 기억으로 덮어쓰지 않는다.
     routes: {}, transportSet: false,
+    // 신청 폼의 버스 요금 후보(2026-11-03 사용자 지정: "폼에서 요금을 적게"): feeRows 는 eclass 교통비 요금표에서 읽은 항목("근무지|출장지" 가 열쇠,
+    // 읽는 중이면 null), fareFrom 은 편마다 요금 칸을 채운 요금표 항목(사람이 고쳐 적으면 null — 풍선말이 그 출처를 말한다).
+    feeRows: {}, fareFrom: { go: null, back: null },
     // 출장·외근 폼의 차량 조회: key 는 찾은(찾는 중인) 기간, result 는 src/carfind.js 의 carsInWindow 결과.
     // 폼의 기간이 key 와 달라지면 다시 찾는다. booking 은 신청을 보내는 중인 차량, note 는 방금 한 신청의 결과 글이다.
     cars: { key: '', win: null, loading: false, result: null, error: '', booking: '', note: null },
@@ -232,10 +236,11 @@ export function createAttendPanel({
   /** 신청 내역이 비었을 때의 기본 문구(HTML 에 적힌 것). 종류로 걸러서 빈 것이면 다른 문구를 보인다. */
   const EMPTY_TEXT = el.empty.textContent;
 
-  /** 새 신청서. 적어 둔 근무지가 깔려 있다. 교통편 아이콘은 아직 손대지 않은 것이다. */
+  /** 새 신청서. 적어 둔 근무지와 지난번에 고른 G캘린더(attendGcal)가 깔려 있다. 교통편 아이콘은 아직 손대지 않은 것이다. */
   const blank = (kind) => {
     st.transportSet = false;
-    return { ...blankForm(kind, attendToday()), workplace: st.workplace };
+    st.fareFrom = { go: null, back: null };
+    return { ...blankForm(kind, attendToday()), workplace: st.workplace, gcal: !!st.gcal };
   };
 
   /** 그 폼의 출장지에 기억해 둔 교통편(지난번에 간 길). 없으면 null. */
@@ -256,7 +261,7 @@ export function createAttendPanel({
   function recallTransport() {
     if (st.form.kind !== 'trip' || st.edit || st.transportSet) return false;
     const next = withRoute(memoOf(st.form));
-    if (String(transportsOf(st.form)) === String(next.transport) && trainGradeOf(st.form) === next.trainGrade) return false;
+    if (JSON.stringify(formLegs(st.form)) === JSON.stringify(next)) return false;
     st.form = settle({ ...st.form, ...next });
     return true;
   }
@@ -439,6 +444,21 @@ export function createAttendPanel({
       + `aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}"${disabled ? ' disabled' : ''}>${TRANSPORT_ICON[o.value] || escapeHtml(o.label)}</button>`;
   };
 
+  /**
+   * 버스인 편의 요금 칸(2026-11-03 사용자 지정: "ktx /버스는 사전정산이 가능해" · "폼에서 요금을 적게") — 그 편의 아이콘 아래에 서고,
+   * 적은 요금으로 사전정산의 버스 줄이 들어간다. eclass 교통비 요금표에 그 구간의 버스 항목이 있으면 후보로 미리 채운다(seedBusFares).
+   * 버스가 아니면 빈 글이다.
+   */
+  function fareHtml(key, pick) {
+    if (pick.t !== FARE_BY_HAND) return '';
+    const from = st.fareFrom[key];
+    const name = `${LEGS.find((l) => l.key === key)?.label || ''} 버스 요금(원)`;
+    const tip = from ? `eclass 교통비 요금표의 ${from.dep}→${from.arr} ${from.fee.toLocaleString('ko-KR')}원으로 채웠습니다 — 고쳐 적을 수 있습니다`
+      : `${name} — 사전정산에 이 요금으로 들어갑니다`;
+    return `<input type="text" inputmode="numeric" class="at-fare" data-fare="${key}" value="${pick.fare ? pick.fare.toLocaleString('ko-KR') : ''}" `
+      + `placeholder="요금(원)" aria-label="${escapeHtml(name)}" title="${escapeHtml(tip)}" />`;
+  }
+
   function fieldHtml(f) {
     // 연차의 오전·오후는 하루짜리 연차에서만 산다(halfOf) — 여러 날로 늘리면 적어 둔 값이 있어도 켜 보이지 않는다(칩은 잠긴다).
     const v = f.key === 'half' ? halfOf(st.form) : st.form[f.key];
@@ -468,14 +488,21 @@ export function createAttendPanel({
         + `<div class="at-chips"${tip}>${chips}</div><span id="${id}_msg" class="at-msg"></span></div>`;
     }
     if (f.type === 'icons') {
-      // 아이콘으로 고르는 칸(교통편). 칩과 같은 길(data-choice)로 눌린다. 여럿을 함께 켤 수 있고(기차 + 비행기),
-      // 기차는 한 번 더 누르면 특실이 된다 — 다음 선택은 src/travel.js 의 nextTransport 가 정한다.
-      const on = transportsOf(st.form);
-      const first = trainGradeOf(st.form) === 'first';
-      const chips = f.options.map((o) => transportButton(o, { on: on.includes(o.value), first, attrs: `data-choice="${escapeHtml(o.value)}"` })).join('');
+      // 아이콘으로 고르는 칸(출장의 가는 편·오는 편 — 2026-11-03 사용자 지정). 칩과 같은 길(data-choice)로 눌린다. 편마다 하나를 고르고,
+      // 기차는 한 번 더 누르면 특실이 된다 — 다음 선택은 src/travel.js 의 nextFormLegs 가 정한다.
+      const pick = formLegs(st.form)[f.key];
+      const chips = f.options.map((o) => transportButton(o, { on: pick.t === o.value, first: pick.g === 'first', attrs: `data-choice="${escapeHtml(o.value)}"` })).join('');
       return `<div class="at-field at-icons" data-key="${f.key}" role="group" aria-labelledby="${id}_label">`
         + `<span class="at-label" id="${id}_label">${escapeHtml(f.label)}</span>`
-        + `<div class="at-chips">${chips}</div><span id="${id}_msg" class="at-msg"></span></div>`;
+        + `<div class="at-chips">${chips}</div>${fareHtml(f.key, pick)}<span id="${id}_msg" class="at-msg"></span></div>`;
+    }
+    if (f.type === 'toggle' || f.type === 'jump') {
+      // 옵션 줄의 아이콘 단추(2026-11-05 사용자 지정: "차량 조회 체크 박스를 그냥 아이콘 버튼으로 차량, KTX, 항공기, G 아이콘을 넣어줘. 예비계산도 계산서 아이콘").
+      // toggle(사전정산·차량 조회·G캘린더)은 누르면 켜고 끄는 참/거짓 값(aria-pressed), jump(KTX·항공권)는 값 없이 차량 탭의 조회로 간다(jumpToCar).
+      const on = f.type === 'toggle' && !!v;
+      return `<div class="at-field at-opt" data-key="${f.key}"><button type="button" id="${id}" class="at-chip at-icon at-optbtn${on ? ' active' : ''}${f.type === 'jump' ? ' at-jump' : ''}" `
+        + `data-opt="${escapeHtml(f.key)}"${f.type === 'toggle' ? ` aria-pressed="${on}"` : ''} aria-label="${escapeHtml(f.label)}" title="${escapeHtml(f.hint || f.label)}">`
+        + `${OPT_ICON[f.icon] || escapeHtml(f.label)}</button><span id="${id}_msg" class="at-msg"></span></div>`;
     }
     let input;
     if (f.type === 'select') {
@@ -529,9 +556,9 @@ export function createAttendPanel({
     // 연차에 기념일 지원을 붙였으면 제목에도 적는다 — "연차 신청 · 기념일 지원".
     const plus = isWelfare(st.form) ? ' · 기념일 지원' : '';
     el.formTitle.textContent = st.wfaFor ? `기념일 지원 · ${st.wfaFor.summary}`
-      : st.edit ? `${nameOf(st.form)} 수정 · ${st.edit.docNo}${plus}` : `${nameOf(st.form)} 신청${plus}`;
+      : st.edit ? `${nameOf(st.form)} ${modifying() ? '수정신청' : '수정'} · ${st.edit.docNo}${plus}` : `${nameOf(st.form)} 신청${plus}`;
     paintFold();
-    // 같은 묶음(group)의 칸은 한 줄에 나란히 세운다(출장지·장소 / 근무지·교통편).
+    // 같은 묶음(group)의 칸은 한 줄에 나란히 세운다(출장지·장소 / 근무지·가는 편·오는 편).
     let html = '';
     let group = '';
     for (const f of fieldsFor(st.form)) {
@@ -552,13 +579,17 @@ export function createAttendPanel({
     if ($('atWfaUsed') && !st.wfa) loadWfa();
     // 신청 내역에서 연 기념일 지원은 연차를 다시 올리지 않는다 — 결재요청·임시저장을 숨기고, 기념일 상자의 "신청 화면 열기"로만 나간다.
     el.submit.classList.toggle('hidden', !!st.wfaFor);
-    el.save.classList.toggle('hidden', !!st.wfaFor);
+    // 근태수정신청은 결재요청 하나다 — 임시저장을 숨긴다(2026-11-03 HR 공지의 절차: [수정] → 고치기 → [결재요청]).
+    el.save.classList.toggle('hidden', !!st.wfaFor || modifying());
     el.editCancel.classList.toggle('hidden', !st.edit && !st.wfaFor);
-    el.editCancel.textContent = st.wfaFor ? '기념일 지원 그만두기' : '수정 그만두기';
+    el.editCancel.textContent = st.wfaFor ? '기념일 지원 그만두기' : modifying() ? '수정신청 그만두기' : '수정 그만두기';
     el.editNote.classList.toggle('hidden', !st.edit && !st.wfaFor);
     if (st.wfaFor) {
       el.editNote.textContent = `이미 올린 ${st.wfaFor.summary} 에 가족 기념일 지원만 신청합니다 — 연차는 HR 에 다시 올리지 않습니다. `
         + '기념일 칸을 채우고 아래 상자의 "신청 화면 열기"를 누르세요(연차휴가 사용일은 위 날짜가 들어갑니다).';
+    } else if (modifying()) {
+      el.editNote.textContent = '결재완료 근태를 HR 근태수정신청으로 고칩니다 — 고친 뒤 결재요청하면 수정결재가 올라가고, '
+        + '기존 근태는 그것이 승인될 때까지 그대로입니다. 종류는 바꿀 수 없습니다.';
     } else if (st.edit) el.editNote.textContent = '임시저장 문서를 고치는 중입니다. 종류는 바꿀 수 없습니다.';
     paintNeed();
   }
@@ -622,12 +653,13 @@ export function createAttendPanel({
     el.need.className = 'at-need';
     el.need.textContent = ready ? `${st.wfaFor ? '열 내용' : '올릴 내용'} — ${sendSummary()}` : '';
     el.submit.disabled = !ready || st.busy || !!st.wfaFor;
-    el.save.disabled = !ready || st.busy || !!st.wfaFor;
+    el.save.disabled = !ready || st.busy || !!st.wfaFor || modifying();
     // 기념일 상자의 "신청 화면만 열기" — 연차를 이미 올렸을 때 쓴다. 칸이 다 맞으면 반차 알람과 상관없이 열 수 있다(HR 에 올리지 않는다).
     const wfaOnly = $('atWfaOpen');
     if (wfaOnly) wfaOnly.disabled = !!miss.size || !!bad.size || st.busy;
     el.chatGo.disabled = st.busy;
     paintCars();
+    seedBusFares();
   }
 
   /* ---------------------------------------------------------------- 차량 조회 */
@@ -828,20 +860,57 @@ export function createAttendPanel({
   function sendSummary() {
     const head = docSummary();
     if (st.wfaFor) return `기념일 지원 신청 화면(채워서): ${describeWelfare(st.form)} · 연차 ${md(st.form.dateFrom)}${st.form.dateTo && st.form.dateTo !== st.form.dateFrom ? `~${md(st.form.dateTo)}` : ''} (이미 올림)`;
-    if (isWelfare(st.form)) return `${head} → 결재요청 뒤 기념일 지원 신청 화면(채워서): ${describeWelfare(st.form)}`;
-    return wantsTrip(st.form) ? `${head} → 결재요청 뒤 여비계산서(사전정산): ${describePlan(settlePlan(st.form, memoOf(st.form)))}` : head;
+    const cal = wantsGcal(st.form) ? ' → 구글 캘린더 일정 창' : '';
+    if (isWelfare(st.form)) return `${head} → 결재요청 뒤 기념일 지원 신청 화면(채워서): ${describeWelfare(st.form)}${cal}`;
+    return (wantsTrip(st.form) ? `${head} → 결재요청 뒤 여비계산서(사전정산): ${describePlan(settlePlan(st.form, memoOf(st.form)))}` : head) + cal;
   }
 
   /** HR 에 올라가는 신청서만 한 줄로(여비계산서는 빼고). 올린 뒤의 말과 기록에 쓴다. */
   function docSummary() {
     const plan = flexPlan();
-    return plan?.flexStart
-      ? `유연근무 ${md(st.form.dateFrom)} ${flexSpan(plan.flexStart)} → ${describe(st.form)}`
-      : describe(st.form);
+    const what = modifying() ? `근태수정신청(${st.edit.docNo}) ${describe(st.form)}` : describe(st.form);
+    return plan?.flexStart ? `유연근무 ${md(st.form.dateFrom)} ${flexSpan(plan.flexStart)} → ${what}` : what;
   }
+
+  /** 폼이 결재완료 건을 고치는 중인가 — 그러면 결재요청이 HR 근태수정신청이다(2026-11-03, modifyIntoForm). */
+  const modifying = () => !!st.edit && st.edit.status === STATUS.APPROVED;
 
   /** 이 폼을 결재요청하면 여비계산서(사전정산)도 만드는가. */
   const wantsTrip = (form) => form.kind === 'trip' && !!form.settle;
+  /** 결재요청 뒤 구글 캘린더 일정 창을 여는가(G캘린더 — 2026-11-03). 유연근무에는 그 칸이 없다. */
+  const wantsGcal = (form) => !!form.gcal && gcalKind(form.kind);
+  /**
+   * 출장 폼의 KTX·항공권 단추(2026-11-05) — 출발일·출발 시각을 패널의 날짜 줄·시작 시간에 넣고 차량 탭의 그 조회(KTX·항공권)로 가서 조회를 누른다.
+   * 패널의 요소를 이름으로 찾는다(sidepanel.html 의 #date·#hourStart·#tabCar·#carViewControl·#ktxGo·#flightGo) — 없으면 그 걸음은 건너뛴다. 폼은 그대로 남는다.
+   */
+  function jumpToCar(view) {
+    const fire = (node, type) => node.dispatchEvent(new node.ownerDocument.defaultView.Event(type, { bubbles: true }));
+    const date = $('date');
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(st.form.dateFrom || '')) { date.value = st.form.dateFrom; fire(date, 'input'); fire(date, 'change'); }
+    const hour = $('hourStart');
+    const h = String(st.form.start || '').match(/^(\d{1,2}):/)?.[1];
+    if (hour && h != null && [...hour.options].some((o) => +o.value === +h)) { hour.value = String(+h); fire(hour, 'change'); }
+    $('tabCar')?.click();
+    $('carViewControl')?.querySelector(`[data-view="${view}"]`)?.click();
+    $(view === 'ktx' ? 'ktxGo' : 'flightGo')?.click();
+  }
+
+  /**
+   * 올린 근태를 구글 캘린더 「일정 만들기」 창에 채워 새 탭으로 연다(src/gcal.js — 2026-11-03 사용자 지정: "구글 캘린더에 이런식으로 넣을 수 있게").
+   * 제목의 이름은 HR 이 아는 나(st.me), 없으면 설정의 내 이름. 넣는 것(캘린더 고르기·저장)은 사람이 한다. 던지지 않는다 — 상태 줄 끝에 붙일 말을 돌려준다.
+   */
+  async function openGcal(form, docNo) {
+    try {
+      const saved = await chrome.storage.local.get('myName').catch(() => null);
+      const name = String(st.me?.name || saved?.myName || '').trim();
+      const url = gcalUrl(form, { name, docNo });
+      if (!url) return ' · 구글 캘린더 일정 창은 열지 못했습니다(날짜·시간이 없습니다)';
+      await chrome.tabs.create({ url, active: true });
+      return ' · 구글 캘린더 일정 창을 열었습니다 — 캘린더를 고르고 [저장]을 누르세요';
+    } catch (err) {
+      return ` · 구글 캘린더 일정 창을 열지 못했습니다: ${problemText(err)}`;
+    }
+  }
 
   /**
    * 출장 결재요청이 올라간 뒤 여비계산서(사전정산)를 만든다. 던지지 않는다 — 출장은 이미 올라갔으므로
@@ -855,7 +924,7 @@ export function createAttendPanel({
       // 행위 trip.create — 기록은 출장 폼의 칸(출발·도착·며칠·출장지·장소·목적·근무지·교통편·등급), 사전설정은 HR 의 나(사번)·근무지. 어댑터가 같은 settlePlan 으로 짓는다.
       const record = await buildRecord('trip.create', {
         dateFrom: form.dateFrom, start: form.start, dateTo: form.dateTo, end: form.end, days: form.days, place: form.place, venue: form.venue, purpose: form.purpose,
-        workplace: form.workplace, transport: transportsOf(form), trainGrade: trainGradeOf(form),
+        workplace: form.workplace, ...formLegs(form),
       });
       const r = await runRecord(record, {
         memo: memoOf(form), onStage: setStatus, text: '여비계산서(사전정산) 작성 실패', data: { plan },
@@ -1433,6 +1502,19 @@ export function createAttendPanel({
     const key = b?.closest('.at-field')?.dataset.key;
     if (!key || st.busy) return;
     disarm();
+    // 옵션 줄의 아이콘 단추 — toggle 은 켜고 끄고(체크 박스였던 것과 같은 값), jump(KTX·항공권)는 차량 탭의 조회로 간다.
+    if (b.dataset.opt) {
+      const f = fieldsFor(st.form).find((x) => x.key === key);
+      if (f?.type === 'jump') return jumpToCar(f.view);
+      st.form[key] = !st.form[key];
+      if (key === 'gcal') {
+        st.gcal = st.form[key];
+        chrome.storage.local.set({ attendGcal: st.gcal });
+      }
+      // 칸이 생기거나 없어진다(근무지·교통편 / 차량 목록) — 단추의 켜짐도 다시 그려진다.
+      st.form = settle(st.form);
+      return paintForm();
+    }
     // 저장된 유연근무 문서는 HR 이 기간구분(Daily·Weekly)을 잠근다. 주간과 전체는 같은 Weekly 라 오갈 수 있다.
     const flexCode = (m) => FLEX_MODES.find((x) => x.value === m)?.code;
     if (key === 'flexMode' && st.edit && flexCode(b.dataset.choice) !== flexCode(flexModeOf(st.form))) {
@@ -1446,14 +1528,15 @@ export function createAttendPanel({
       : pick ? nextSpan(st.form, pick === 'half' ? pick : Number(pick))
         : key === 'half' && b.dataset.choice === halfOf(st.form) ? '' : b.dataset.choice;
     // 갈래는 깔아 주는 값이 있을 수 있다(소통을 고르면 13~14시와 목적이 채워진다).
-    // 교통편은 여럿을 함께 켜고 끄며, 기차는 일반석 → 특실 → 꺼짐으로 돈다.
-    if (key === 'transport') st.transportSet = true;   // 손댄 아이콘은 출장지의 기억으로 덮어쓰지 않는다
+    // 출장의 가는 편·오는 편은 편마다 하나를 고르고, 고른 기차를 다시 누르면 일반석 ↔ 특실이다. 가는 편을 바꿀 때 오는 편이 같았으면 따라 바뀐다.
+    const leg = key === 'go' || key === 'back';
+    if (leg) st.transportSet = true;   // 손댄 아이콘은 출장지의 기억으로 덮어쓰지 않는다
     st.form = key === 'sub' ? withSub(st.form, value)
-      : key === 'transport' ? settle({ ...st.form, ...nextTransport(st.form, value) })
+      : leg ? settle({ ...st.form, ...nextFormLegs(st.form, key, value) })
         : settle({ ...st.form, [key]: value });
     paintForm();
-    // 몇 시간·교통편은 칩 여럿이 함께 켜질 수 있다. 누른 그 칩으로 돌아간다(꺼져도 그 자리다).
-    const again = pick ? `[data-span="${pick}"]` : key === 'transport' ? `[data-choice="${value}"]` : '.active';
+    // 몇 시간은 칩 여럿이 함께 켜질 수 있다. 몇 시간·교통편은 누른 그 칩으로 돌아간다(꺼져도 그 자리다).
+    const again = pick ? `[data-span="${pick}"]` : leg ? `[data-choice="${value}"]` : '.active';
     el.fields.querySelector(`.at-field[data-key="${key}"] .at-chip${again}`)?.focus();
   }
 
@@ -1481,8 +1564,21 @@ export function createAttendPanel({
       if (e.type === 'change' && st.form.kind === 'leave' && (was === 1) !== (n === 1)) return paintForm();
       return paintNeed();
     }
+    if (input.dataset.fare) {
+      // 버스인 편의 요금 칸 — 그 편 안에 담는다(src/travel.js formLegs). 사람이 적었으므로 요금표 후보의 출처는 지운다. 다 친 뒤에는 쉼표를 찍어 보인다.
+      const leg = input.dataset.fare;
+      const fare = fareIn(input.value);
+      st.fareFrom[leg] = null;
+      st.form = settle({ ...st.form, [leg]: { ...formLegs(st.form)[leg], fare: fare || undefined } });
+      if (e.type === 'change' && fare) input.value = fare.toLocaleString('ko-KR');
+      return paintNeed();
+    }
     if (input.type === 'checkbox') {
       st.form[key] = input.checked;
+      if (key === 'gcal') {
+        st.gcal = input.checked;
+        chrome.storage.local.set({ attendGcal: st.gcal });
+      }
       // 칸이 생기거나 없어진다(시각 / 근무지·교통편 / 차량 목록 / 기념일 칸 — 제목에도 "· 기념일 지원"이 붙는다)
       if (key === 'allDay' || key === 'settle' || key === 'car' || key === 'wfa') {
         st.form = settle(st.form);
@@ -1509,13 +1605,13 @@ export function createAttendPanel({
    * 출장지를 치는 중에 기억해 둔 교통편이 되살아날 때 쓴다(새로 그리면 치던 칸의 커서와 누르던 아이콘이 사라진다).
    */
   function paintTransport() {
-    const on = transportsOf(st.form);
-    const first = trainGradeOf(st.form) === 'first';
-    for (const b of el.fields.querySelectorAll('.at-field[data-key="transport"] .at-chip')) {
+    const legs = formLegs(st.form);
+    for (const b of el.fields.querySelectorAll('.at-field[data-key="go"] .at-chip, .at-field[data-key="back"] .at-chip')) {
       const o = TRANSPORTS.find((x) => x.value === b.dataset.choice);
-      if (!o) continue;
-      const active = on.includes(o.value);
-      const plus = active && first && o.value === 'train';
+      const pick = legs[b.closest('.at-field')?.dataset.key];
+      if (!o || !pick) continue;
+      const active = pick.t === o.value;
+      const plus = active && pick.g === 'first' && o.value === 'train';
       const name = plus ? `${o.label} ${FIRST_LABEL}` : o.label;
       b.classList.toggle('active', active);
       b.classList.toggle('first', plus);
@@ -1529,6 +1625,54 @@ export function createAttendPanel({
       if (need) label.insertAdjacentHTML('beforeend', '<em class="at-req">필수</em>');
       else label.querySelector('.at-req').remove();
     }
+    paintFares();
+  }
+
+  /** 편마다의 버스 요금 칸을 지금 폼에 맞춘다 — 버스가 된 편에는 칸을 세우고, 아니게 된 편에서는 뺀다. 치는 중인 칸은 건드리지 않는다. */
+  function paintFares() {
+    const legs = formLegs(st.form);
+    for (const { key } of LEGS) {
+      const node = el.fields.querySelector(`.at-field[data-key="${key}"]`);
+      const old = node?.querySelector('.at-fare');
+      if (!node || (old && document.activeElement === old)) continue;
+      old?.remove();
+      const html = fareHtml(key, legs[key]);
+      if (html) node.querySelector('.at-chips').insertAdjacentHTML('afterend', html);
+    }
+  }
+
+  let fareTimer = 0;
+  /**
+   * 버스인 편의 요금 칸이 비어 있으면 eclass 교통비 요금표에서 그 구간(근무지 ↔ 출장지)의 버스 항목을 찾아 후보로 채운다(busFareOf).
+   * 사람이 적은 값은 덮지 않고, 근무지·출장지를 치는 중이면 잠깐 기다린다. 못 읽으면(로그인이 풀렸다) 조용히 비워 둔다 — 사람이 적으면 된다.
+   */
+  function seedBusFares() {
+    clearTimeout(fareTimer);
+    if (st.form.kind !== 'trip' || !st.form.settle) return;
+    const legs = formLegs(st.form);
+    const { home, dest } = busEnds(st.form);
+    if (!LEGS.some(({ key }) => legs[key].t === FARE_BY_HAND && !legs[key].fare) || !home || !dest) return;
+    const ask = `${home}|${dest}`;
+    const empty = () => LEGS.filter(({ key }) => { const p = formLegs(st.form)[key]; return p.t === FARE_BY_HAND && !p.fare; });
+    fareTimer = setTimeout(async () => {
+      if (st.form.kind !== 'trip' || !empty().length) return;   // 기다리는 사이에 사람이 적었다
+      if (st.feeRows[ask] === undefined) {
+        st.feeRows[ask] = null;
+        let rows = [];
+        try { rows = await feeRowsBetween(home, dest, st.form.dateFrom); } catch { /* 요금표를 못 읽으면 사람이 적는다 */ }
+        st.feeRows[ask] = rows;
+      }
+      const hit = st.feeRows[ask] && busFareOf(st.feeRows[ask], home, dest);
+      const now = busEnds(st.form);
+      if (!hit || st.form.kind !== 'trip' || `${now.home}|${now.dest}` !== ask) return;
+      const cur = formLegs(st.form);
+      const open = empty();
+      if (!open.length) return;
+      for (const { key } of open) { cur[key] = { ...cur[key], fare: hit.fee }; st.fareFrom[key] = hit; }
+      st.form = settle({ ...st.form, go: cur.go, back: cur.back });
+      paintFares();
+      paintNeed();
+    }, 500);
   }
 
   /* ---------------------------------------------------------------- 말로 채우기 */
@@ -1574,7 +1718,7 @@ export function createAttendPanel({
       st.form = form;
       st.filled = new Set(changed);
       // 말로 교통편을 정했으면 손댄 것이고, 출장지만 정했으면 지난번에 그 출장지로 갈 때 고른 교통편을 되살린다.
-      if (changed.includes('transport') || changed.includes('trainGrade')) st.transportSet = true;
+      if (changed.includes('go') || changed.includes('back')) st.transportSet = true;
       else if (changed.includes('place')) recallTransport();
       setFold(true);
       const miss = missingFields(form);
@@ -1646,6 +1790,8 @@ export function createAttendPanel({
     const summary = docSummary();
     const kind = st.form.kind;
     const editing = st.edit;
+    const modify = modifying();
+    if (modify && action !== 'request') return setStatus('근태수정신청은 임시저장하지 않습니다 — 고친 뒤 결재요청하세요.', 'error');
     const sent = { ...st.form };   // 올린 그대로. 올린 뒤 폼이 비워져도 여비계산서는 이것으로 짓는다.
     // 행위 attend.<종류> — 기록은 폼의 칸 + op(임시저장 save·결재요청 request)·doc(고쳐 올리는 문서). 반차 앞에 올릴 유연근무는 따로 한 기록이다(먼저 돈다).
     // 관문이 막으면(비었거나 틀린 칸) 까닭을 상태 줄에 적고 아무것도 보내지 않는다.
@@ -1688,7 +1834,10 @@ export function createAttendPanel({
           state = await confirmInList(r.docNo);
           const want = action === 'request' ? [STATUS.REQUESTED, STATUS.WAIT, STATUS.APPROVED] : [STATUS.TEMP];
           seen = !!state && want.includes(state.status);
-          return { ok: seen, text: `${verb}: ${summary} · ${r.docNo}${seen ? '' : ' (목록에서 미확인)'}`, data: { action, kind, docNo: r.docNo, status: state?.statusName, read: r.read, edited: !!editing } };
+          return {
+            ok: seen, text: `${verb}: ${summary} · ${r.docNo}${seen ? '' : ' (목록에서 미확인)'}`,
+            data: { action, kind, docNo: r.docNo, status: state?.statusName, read: r.read, edited: !!editing, ...(modify ? { modifyOf: editing.docNo } : {}) },
+          };
         },
       });
       if (!r.ok) {
@@ -1711,8 +1860,11 @@ export function createAttendPanel({
         trip += ` · ${w.text}`;
         fine &&= w.ok;
       }
+      // G캘린더를 켰으면 구글 캘린더 일정 창을 채워 연다(임시저장에서는 열지 않는다).
+      if (seen && action === 'request' && wantsGcal(sent)) trip += await openGcal(sent, r.docNo);
+      const kept = modify ? ` · 기존 근태(${editing.docNo})는 수정결재가 승인될 때까지 그대로입니다` : '';
       setStatus(seen
-        ? `${verb}했습니다 — ${summary} · ${r.docNo} (${state.statusName})${hidden}${trip}`
+        ? `${verb}했습니다 — ${summary} · ${r.docNo} (${state.statusName})${kept}${hidden}${trip}`
         : `${verb}했다고 HR 이 답했지만 목록에서 확인하지 못했습니다 — ${r.docNo || '문서번호 없음'}. HR 에서 확인해 주세요.`,
       fine ? '' : 'error');
       onChanged();
@@ -1778,10 +1930,8 @@ export function createAttendPanel({
           + `${st.busy ? ' disabled' : ''}>${WEB_ICON}</button>` : '');
       const cancelBox =st.cancelFor === it.docNo
         ? `<div class="at-cancel">`
-          + (st.cancelThen === 'copy' ? '<p class="at-help">결재가 끝난 건은 고칠 수 없습니다. 취소신청을 올리고, 같은 내용을 폼에 불러와 새로 올립니다.</p>' : '')
           + `<input type="text" id="atCancelReason" aria-label="취소 사유 (필수)" placeholder="취소 사유 (필수)" autocomplete="off" />`
-          + `<button type="button" class="small at-warn" data-act="cancel-go"${st.busy ? ' disabled' : ''}>`
-          + `${st.cancelThen === 'copy' ? '취소신청 올리고 폼에 불러오기' : '취소신청 올리기'}</button></div>` : '';
+          + `<button type="button" class="small at-warn" data-act="cancel-go"${st.busy ? ' disabled' : ''}>취소신청 올리기</button></div>` : '';
       // 출장이면 여비계산서 한 줄: 단계와 바로 가기 아이콘. 계산서가 없으면 목록 화면이 열린다.
       // 아이콘의 숫자(1 사전정산 · 2 사후정산)와 색(회색 미작성 · 녹색 작성 중 · 파랑 완료)이 단계를 말한다.
       const icon = tripIconState(trip, stage);
@@ -1880,7 +2030,7 @@ export function createAttendPanel({
         paintForm();
       }
       disarm();
-      Object.assign(st, { openDoc: it.docNo, cancelFor: null, cancelThen: null });
+      Object.assign(st, { openDoc: it.docNo, cancelFor: null });
       return paintList();
     }
     if (!want.send || !isTrip(it)) {
@@ -2805,9 +2955,14 @@ export function createAttendPanel({
         onStart: () => Object.assign(a, { busy: true, error: '', stage: '' }),
       });
       if (!got) return undefined;
-      step('캡처한 페이지를 PDF 로 묶는 중…');
-      const taken = (await evidence.list(it.docNo).catch(() => a.kept || [])).map((k) => k.name);
-      docs = await pagePdfs(got.pages, { today: attendToday(), taken });
+      if (got.pdf) {
+        // 크롬 PDF 뷰어였다(2026-11-03 — webpick.js) — 찍은 장이 아니라 그 PDF 파일 그대로다. 끌어다 놓은 파일과 같이 넣는다(글자는 읽을 때 뽑는다).
+        docs = (got.files || []).map((file) => ({ file, text: '' }));
+      } else {
+        step('캡처한 페이지를 PDF 로 묶는 중…');
+        const taken = (await evidence.list(it.docNo).catch(() => a.kept || [])).map((k) => k.name);
+        docs = await pagePdfs(got.pages, { today: attendToday(), taken });
+      }
       if (!docs.length) throw new Error('캡처한 화면이 비어 있습니다.');
       logEvent('trip', true, `웹페이지 캡처(증빙): ${trip.seq} · ${got.what}`, { seq: trip.seq, docNo: it.docNo, files: docs.map((d) => d.file.name) });
     } catch (err) {
@@ -2964,7 +3119,6 @@ export function createAttendPanel({
       disarm();
       st.openDoc = it.docNo;
       st.cancelFor = null;
-      st.cancelThen = null;
       paintList();
     }
     const stage = tripStage(trip, st.trips?.me);
@@ -3520,7 +3674,7 @@ export function createAttendPanel({
   function seatForm(form, edit) {
     // 새 신청서에는 올려 둔 첨부가 따라오지 않으므로 다시 붙이게 한다. 문서에 근무지가 없으면(고치는 중이어도) 적어 둔 것을 깐다.
     const workplace = form.workplace || st.workplace;
-    st.form = edit ? { ...form, workplace } : { ...form, hasFile: false, workplace };
+    st.form = edit ? { ...form, workplace, gcal: !!st.gcal } : { ...form, hasFile: false, workplace, gcal: !!st.gcal };
     st.edit = edit || null;
     // 불러온 폼의 교통편은 아직 손대지 않은 것이다 — 새 신청서로 불러왔으면 그 출장지에 기억해 둔 교통편을 깐다.
     st.transportSet = false;
@@ -3567,11 +3721,30 @@ export function createAttendPanel({
   }
 
   /**
+   * 결재완료 건의 근태 변경 — HR 근태수정신청(2026-11-03 HR 공지: "수정신청 → 수정결재 완료", 그 전의 취소신청 → 새 상신 대신).
+   * 같은 내용을 폼에 불러오고(st.edit 은 그 결재완료 줄), 고친 뒤 결재요청하면 원 문서를 수정 모드로 열어 고친 값으로 올린다
+   * (src/attend.js buildJob 의 근태수정신청 · src/hr.js frameRun). 기존 근태는 수정결재가 승인될 때까지 그대로이고, 임시저장은 없다.
+   */
+  async function modifyIntoForm(it) {
+    disarm();
+    st.cancelFor = null;
+    setBusy(true);
+    setStatus('문서를 불러오는 중...');
+    try {
+      seatForm(await readDocForm(it), it);
+      setStatus(`${it.summary} 을(를) 근태수정신청으로 불러왔습니다 — 고친 뒤 결재요청하세요. 기존 근태는 수정결재가 승인될 때까지 그대로입니다.`);
+    } catch (err) {
+      setError(err, '문서를 불러오지 못했습니다');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
    * 이미 있는 문서에 하는 일(상신·회수·삭제·취소신청). 끝나면 목록으로 결과를 확인한다.
    *
-   * then 이 'copy' 면 올린 건을 **고치는** 길이다(변경). HR 에는 올린 문서를 고치는 버튼이 없어서, 거둬들인 뒤
-   * (승인 전이면 회수, 승인 뒤면 취소신청) 같은 내용을 새 신청서로 폼에 불러온다. 내용은 거둬들이기 **전에** 읽는다 —
-   * 읽지 못했는데 거둬들이기만 되면 다시 쓸 것이 남지 않는다.
+   * then 이 'copy' 면 승인 전 건을 **고치는** 길이다(변경 — 회수한 뒤 같은 내용을 새 신청서로 폼에 불러온다). 내용은 회수하기 **전에** 읽는다 —
+   * 읽지 못했는데 회수만 되면 다시 쓸 것이 남지 않는다. 승인 뒤의 변경은 여기를 거치지 않는다 — 근태수정신청(modifyIntoForm).
    */
   async function act(it, action, { reason, then } = {}) {
     const verb = ACTION_LABEL[action];
@@ -3598,9 +3771,8 @@ export function createAttendPanel({
               if (action === 'cancel' && /취소할 수 있는 결재완료 문서 목록에/.test(failText(r))) {
                 already = true;
                 st.cancelFor = null;
-                st.cancelThen = null;
                 await confirmInList(it.docNo);
-                const dropped = await afterCancel(it, '', { keepTrip: then === 'copy', already: true });
+                const dropped = await afterCancel(it, '', { already: true });
                 setStatus(`이미 취소신청이 올라가 있는 건입니다 — ${it.summary} · ${it.docNo}${dropped}`);
                 onChanged();
                 return { ok: true, text: `취소신청 이미 있음: ${it.summary} · ${it.docNo}`, data: { action, docNo: it.docNo } };
@@ -3618,11 +3790,10 @@ export function createAttendPanel({
       });
       if (already) return;
       st.cancelFor = null;
-      st.cancelThen = null;
       if (st.edit?.docNo === it.docNo || st.wfaFor?.docNo === it.docNo) resetForm();
       if (done && again) seatForm(again, null);
       // 취소신청을 올렸으면 그 건은 결재될 때까지 "취소 중"이다 — 적어 두고, 출장이면 여비계산서(사전정산까지)를 지운다(then: trip.delete).
-      const dropped = action === 'cancel' && done ? await afterCancel(it, detail.newDocNo, { keepTrip: !!again }) : '';
+      const dropped = action === 'cancel' && done ? await afterCancel(it, detail.newDocNo) : '';
       const tail = (again ? '. 같은 내용을 폼에 불러왔습니다 — 시간을 고친 뒤 결재요청하세요.' : '') + dropped;
       setStatus(done
         ? `${verb}했습니다 — ${it.summary} · ${it.docNo}${action === 'cancel' ? ' (취소신청서가 결재되면 무효가 됩니다)' : ''}${tail}`
@@ -3638,17 +3809,17 @@ export function createAttendPanel({
 
   /**
    * 취소신청을 올린 뒤의 일. 그 건을 "취소 중"으로 적어 두고(CANCELLING_KEY — 홈 카드도 읽는다), 출장이면 여비계산서를 사전정산까지
-   * 지운다(2026-10-07 사용자 지정). 근태 변경(keepTrip)은 같은 출장을 새로 올리는 길이라 계산서를 남긴다. 던지지 않는다 —
-   * 상태 줄에 덧붙일 말을 돌려준다.
+   * 지운다(2026-10-07 사용자 지정). 던지지 않는다 — 상태 줄에 덧붙일 말을 돌려준다.
+   * (승인 건의 근태 변경은 2026-11-03 부터 취소신청이 아니라 근태수정신청이라 여기를 거치지 않는다 — 계산서도 그대로다.)
    */
-  async function afterCancel(it, cancelDocNo, { keepTrip = false, already = false } = {}) {
+  async function afterCancel(it, cancelDocNo, { already = false } = {}) {
     // 이미 있던 취소신청(already)은 목록에서 이어 둔 기록이 있으면 그대로 둔다 — 그 취소신청서 번호를 지우지 않게.
     if (!(already && st.cancelKept[it.docNo])) {
       st.cancelKept = { ...st.cancelKept, [it.docNo]: { at: Date.now(), cancelDocNo: cancelDocNo || '' } };
     }
     chrome.storage.local.set({ [CANCELLING_KEY]: st.cancelKept });
     paintList();
-    if (!isTrip(it) || keepTrip) return '';
+    if (!isTrip(it)) return '';
     try {
       if (!st.trips?.rows || tripsBusy) await loadTrips();
       const row = st.trips?.rows ? tripDocFor(it, st.trips.rows, st.trips.me) : null;
@@ -3691,7 +3862,6 @@ export function createAttendPanel({
       disarm();
       st.openDoc = st.openDoc === it.docNo ? null : it.docNo;
       st.cancelFor = null;
-      st.cancelThen = null;
       paintList();
       el.list.querySelector(`li[data-i="${li.dataset.i}"] .at-head`)?.focus();
       return undefined;
@@ -3904,13 +4074,11 @@ export function createAttendPanel({
     }
     if (a === 'edit') return loadIntoForm(it);
     if (a === 'wfa') return wfaFromList(it);
-    const approved = it.status === STATUS.APPROVED;
-    if (a === 'cancel' || (a === 'change' && approved)) {
+    // 결재완료 건의 근태 변경은 HR 근태수정신청이다(2026-11-03 HR 공지) — 같은 내용을 폼에 불러올 뿐 아무것도 거둬들이지 않아 한 번에 열린다.
+    if (a === 'change' && it.status === STATUS.APPROVED) return modifyIntoForm(it);
+    if (a === 'cancel') {
       // 사유를 받아야 한다. 줄 아래에 칸을 펴고, 올리는 것은 그 칸 옆의 버튼이 한다.
-      const then = a === 'change' ? 'copy' : null;
-      const same = st.cancelFor === it.docNo && st.cancelThen === then;
-      st.cancelFor = same ? null : it.docNo;
-      st.cancelThen = same ? null : then;
+      st.cancelFor = st.cancelFor === it.docNo ? null : it.docNo;
       disarm();
       paintList();
       $('atCancelReason')?.focus();
@@ -3920,7 +4088,7 @@ export function createAttendPanel({
       const reason = $('atCancelReason')?.value.trim() || '';
       if (!reason) return setStatus('취소 사유를 적어 주세요.', 'error');
       if (!armed(`cancel:${it.docNo}`, btn, '한 번 더 누르면 올립니다')) return undefined;
-      return act(it, 'cancel', { reason, then: st.cancelThen });
+      return act(it, 'cancel', { reason });
     }
     if (a === 'change') {
       // 승인 전: 회수하고 같은 내용을 폼에 불러온다.
@@ -4128,13 +4296,14 @@ export function createAttendPanel({
   async function show() {
     el.root.classList.remove('hidden');
     if (!st.form.kind && !st.edit) {
-      const saved = await chrome.storage.local.get(['attendKind', 'attendMore', 'attendWorkplace', 'attendFormOpen', 'attendView', 'attendLegs']);
+      const saved = await chrome.storage.local.get(['attendKind', 'attendMore', 'attendWorkplace', 'attendFormOpen', 'attendView', 'attendLegs', 'attendGcal']);
       st.legs = saved?.attendLegs && typeof saved.attendLegs === 'object' ? saved.attendLegs : {};
       st.moreOpen = !!saved?.attendMore;
       st.formOpen = saved?.attendFormOpen !== false;
       st.view = saved?.attendView === 'all' ? 'all' : '';
       st.workplace = typeof saved?.attendWorkplace === 'string' ? saved.attendWorkplace : '';
-      st.form = KINDS[saved?.attendKind] ? blank(saved.attendKind) : { ...st.form, workplace: st.workplace };
+      st.gcal = saved?.attendGcal === true;
+      st.form = KINDS[saved?.attendKind] ? blank(saved.attendKind) : { ...st.form, workplace: st.workplace, gcal: st.gcal };
     }
     // 이 패널이 올린 숙박 줄의 기록. 기다리지 않는다.
     chrome.storage.local.get(['attendLodgeMine', 'attendLodgeInfo']).then((saved) => {

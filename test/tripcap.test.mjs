@@ -271,7 +271,7 @@ q('.at-send button[data-pick="part"]').click();
 await until(() => cap.pending, '페이지에 고르기 막 씌우기');
 await wait(20);
 t('부분 골라 캡처를 누르면 보고 있는 탭에 고르기 막을 씌우고, 카드를 다시 그려도 그 칸의 단추가 "고르기 취소"로 남는다 — 카드는 잠그지 않는다', () => {
-  assert.deepEqual(cap.ran, ['pagePick']);
+  assert.deepEqual(cap.ran, ['pdfType', 'pagePick'], '찍기 전에 PDF 탭인지 본다(2026-11-03)');
   assert.equal(q('.at-send button[data-pick="part"]').textContent, '고르기 취소');
   assert.ok(q('.at-send button[data-pick="tab"]').disabled);
   assert.ok(!st.after['145580'].busy);
@@ -282,7 +282,7 @@ t('다시 그린 뒤에도 고르는 중', () => assert.equal(q('.at-send button
 cap.pending([{ n: 1, tag: 'div', title: '영수증', frame: null }]);   // 사용자가 영수증 상자를 눌러 고르고 페이지의 캡처를 눌렀다
 await until(() => cap.shots === 3 && !st.after['145580'].busy && shelf.size === 2, '고른 영수증 상자를 보관함에 담기');
 await ta('고른 상자만 한 번 찍어 PDF 하나로 읽지 않고 보관함에 담긴다 — 같은 날 같은 사이트라 이름이 _2 로 비켜 앞의 증빙을 덮지 않는다', async () => {
-  assert.deepEqual(cap.ran, ['pagePick', 'partInfo', 'partStep', 'partDone']);
+  assert.deepEqual(cap.ran, ['pdfType', 'pagePick', 'partInfo', 'partStep', 'partDone']);
   const kept = await evidence.list('TR-1');
   assert.deepEqual(kept.map((k) => k.label), ['항공기 증명', '증빙']);
   assert.match(kept[1].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}_2\\.pdf$`));

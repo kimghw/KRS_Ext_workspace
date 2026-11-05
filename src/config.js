@@ -203,3 +203,8 @@ export const MAIL_DOMAIN = 'krs.co.kr';
 
 /** Teams 1:1 채팅 딥링크. `?users=<메일>` 을 붙이면 앱·웹이 그 사람과의 채팅을 연다. 설치·인증 없이 URL 만으로 된다. */
 export const TEAMS_CHAT_URL = 'https://teams.microsoft.com/l/chat/0/0';
+/** Teams 웹의 나와의 채팅(○○(나) — 대화 48:notes). `/l/chat/…` 딥링크는 "앱으로 열까요" 안내에서 멈춰서 그 안내가 넘겨 주는 웹 경로를
+ *  바로 연다 — teams.cloud.microsoft 로 넘어가 "채팅 | ○○(나)" 가 뜬다(2026-11-05 9333 크롬 실측). 머리의 Teams 단추(sidepanel.js). */
+export const TEAMS_NOTES_URL = 'https://teams.microsoft.com/_#/l/chat/48:notes/conversations';
+/** 머리의 Teams (나) 단추를 보일지 — 설정 → 일반의 스위치, 기본 켬. */
+export const TEAMS_NOTES_KEY = 'teamsNotes';

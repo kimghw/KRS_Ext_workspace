@@ -34,7 +34,7 @@ export function fileOf(rec, ref, files) {
 
 /**
  * 기록 → 근태 폼. 빈 폼(blankForm — 종류의 기본값) 위에 기록의 칸을 얹고 settle 로 파생 칸(종료일·종료 시각)을 맞춘다 — 패널이 buildJob 에 주던 폼과 같다.
- *   null(비운 칸·when 으로 빠진 칸) → 빈 폼의 값  ·  half 'full' → ''(UI 의 전일)  ·  file 참조 → ctx.files 의 바이트  ·  op·doc 은 폼이 아니다
+ *   null(비운 칸·when 으로 빠진 칸) → 빈 폼의 값  ·  객체 칸 안의 null → 키를 뺀다  ·  half 'full' → ''(UI 의 전일)  ·  file 참조 → ctx.files 의 바이트  ·  op·doc 은 폼이 아니다
  */
 export function formOf(rec, { blankForm: blank = blankForm, settle: fix = settle } = {}, files = []) {
   const base = blank(kindOf(rec), rec.preset?.today || '');
@@ -42,7 +42,9 @@ export function formOf(rec, { blankForm: blank = blankForm, settle: fix = settle
   for (const [key, v] of Object.entries(rec.input || {})) {
     if (key === 'op' || key === 'doc') continue;
     if (v == null) { form[key] = base[key]; continue; }
-    form[key] = key === 'half' && v === 'full' ? '' : key === 'file' ? fileOf(rec, v, files) : v;
+    // 객체 칸(출장의 가는 편·오는 편 {t, g, fare})의 빈 안의 칸(null)은 뺀다 — 패널의 폼에는 그 키가 없다(버스가 아닌 편의 요금).
+    const plain = key !== 'file' && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => x != null)) : v;
+    form[key] = key === 'half' && v === 'full' ? '' : key === 'file' ? fileOf(rec, v, files) : plain;
   }
   return fix(form);
 }

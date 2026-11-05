@@ -867,6 +867,8 @@ export function createGongmunPanel({ $, escapeHtml, logEvent, ai, me = () => '',
       paintIntake();
     }
     if (!got) return;
+    // 크롬 PDF 뷰어였으면(2026-11-03 — webpick.js) 찍은 장이 아니라 그 PDF 파일 그대로다 — 끌어다 놓은 파일처럼 읽는다.
+    if (got.pdf) return intake({ files: got.files || [], notes: got.notes || [] });
     // 메일이면(webpick.js → src/mailgrab.js) 본문을 찍은 장과 함께 첨부 파일(files — 원본)과 메일 글(text — 제목·보낸 사람·본문)이 온다
     // (2026-10-15 사용자 지정: "전체 하면 메일이랑 첨부를 같이 가져오고 … 부분으로 첨부파일 클릭하면 첨부파일만 가져오고"). 메일 글이 오면
     // 본문 장의 화면 글자는 그것과 겹치니 메일 글을 쓴다. 첨부는 원본 첨부로 넣는다(intake 의 originals).

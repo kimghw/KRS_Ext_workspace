@@ -37,6 +37,7 @@ export const KIND_LABEL = {
   dwr: '일일업무',
   board: '게시판',
   ktx: 'KTX',
+  flight: '항공',
   'gongmun-setup': '공문설정',
   mail: '메일',
   git: 'GitHub',

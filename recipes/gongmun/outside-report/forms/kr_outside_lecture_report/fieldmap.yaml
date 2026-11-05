@@ -2,7 +2,8 @@
 # 실측: 2026-10-15 CDP 로 연 빈 신고서(HER-2026-000690, 읽기만)와 지난 신고서 HER-2026-000266(읽기 꼴) — 칸 id·필수 검사(formSubmit)·숫자 검사.
 # kind 의 뜻은 research-form/forms/research_task/fieldmap.yaml 머리말과 같고, 이 폼에는 둘이 더 있다:
 #   date — Telerik RadDatePicker. control 의 $find(control).set_selectedDate 로 넣고 다시 읽는다(글 칸에 적으면 피커가 모른다).
-#   time — Telerik RadDateTimePicker(시각 칸). 같은 길로 넣는다 — 날짜는 on 이 가리키는 초안 칸(활동 첫날)이다.
+#   time — Telerik RadDateTimePicker(시각 칸). 같은 길로 넣는다 — 날짜는 on 이 가리키는 초안 칸(활동 첫날)이다. 칸이 시각만 적는 꼴이라 피커는 날짜를
+#          오늘로 다시 읽는다(2026-10-30 실측) — 작성기는 시·분만 맞춰 보고, 날짜는 시작일·종료일 칸이 가진다.
 # source: draft 는 외부활동 초안(purposes/outside/purpose.yaml 의 fields)의 칸 값이다:
 #   from    초안 칸의 key — 목록이면 앞에서부터 비지 않은 것(종료일이 비면 시작일)
 #   default 초안 칸이 비었을 때 넣는 값 — 지난 신고서처럼 쓰지 않는 수 칸(일괄신고·1회 평균)은 0 이다(2026-08-13 HER-2026-000266)
