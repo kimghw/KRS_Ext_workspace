@@ -2410,9 +2410,15 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .flight-row:first-child { border-top: 0; }
 .flight-time { font-size: 14px; font-variant-numeric: tabular-nums; }
 .flight-number, .flight-seat { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-/* 결과 위의 탭 셋(전체 · 대한항공 · 에어부산 — 2026-11-05). 전체 탭의 줄은 항공사 이름을 앞에 단다. */
+/* 결과 위의 탭 셋(전체 · 대한항공 · 에어부산 — 2026-11-05). 전체 탭의 줄은 항공사 로고를 앞에 단다(2026-11-06 사용자 지정: "대한항공 부산에어 로고를 넣어줘"). */
 .flight-tabs { margin: 10px 0 6px; }
-.flight-airline { color: var(--fg); font-weight: 600; }
+.flight-airline { display: inline-flex; align-items: center; vertical-align: -4px; color: var(--fg); font-weight: 600; }
+/* 로고는 icons/airlines/ 의 단색 SVG(src/flights.js AIRLINES[].logo) — 글줄에 맞춰 높이만 정하고 너비는 비율대로. 대한항공은 가로로 긴 글자표, 에어부산은 물결이 글자 위에 있어 같은 글자 크기면 키가 더 크다. 어두운 화면에서는 흰색 단색으로 뒤집는다. */
+.flight-logo { display: block; width: auto; height: 13px; }
+.flight-logo[data-airline="BX"] { height: 17px; }
+.flight-provider h3 .flight-logo { height: 15px; }
+.flight-provider h3 .flight-logo[data-airline="BX"] { height: 20px; }
+@media (prefers-color-scheme: dark) { .flight-logo { filter: brightness(0) invert(1) opacity(.9); } }
 .flight-seat.available { color: var(--pick); }
 .flight-row .flight-open { grid-column: 2; grid-row: 1 / span 3; flex-direction: column; gap: 2px; padding: 6px 9px; min-height: 38px; font-size: 12px; }
 .flight-open b { font-size: 12px; font-variant-numeric: tabular-nums; }

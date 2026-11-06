@@ -8,6 +8,12 @@ const DEFAULT = { from: 'PUS', to: 'GMP' };
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const messageOf = (err) => Array.isArray(err?.problems) && err.problems.length ? err.problems.join(', ') : String(err?.message || err);
 const same = (a, b) => a && b && ['airline', 'from', 'to', 'date', 'hour', 'adults'].every((k) => a[k] === b[k]);
+/** 항공사 자리 — AIRLINES[].logo(확장 안의 단색 SVG)를 <img> 로, alt·title 은 이름이라 글로 읽는 쪽은 그대로(2026-11-06 사용자 지정: "대한항공 부산에어 로고를 넣어줘"). 로고가 없는 항공사는 이름 글자. */
+function airlineHtml(airline) {
+  const a = AIRLINES[airline];
+  if (!a?.logo) return esc(a?.name || airline);
+  return `<img class="flight-logo" src="${esc(a.logo)}" alt="${esc(a.name)}" title="${esc(a.name)}" data-airline="${esc(airline)}" draggable="false">`;
+}
 
 /** 조회 시각은 한국 시간으로 표시한다. 없거나 잘못된 시각을 현재 시각으로 꾸미지 않는다. */
 function checkedLabel(value) {
@@ -59,19 +65,18 @@ export function createFlightBox({
     for (const control of [el.from, el.to, el.swap, el.go]) control.disabled = on;
   }
 
-  /** 줄 하나 — 전체 탭에서는 항공사 이름을 앞에 단다. 단추의 data-provider·data-row 는 st.results 의 자리라 어느 탭에서 눌러도 같은 항공사·줄이다. */
+  /** 줄 하나 — 전체 탭에서는 항공사 로고를 앞에 단다. 단추의 data-provider·data-row 는 st.results 의 자리라 어느 탭에서 눌러도 같은 항공사·줄이다. */
   function rowHtml(r, provider, row, index, withAirline) {
     const name = AIRLINES[r.airline]?.name || r.airline;
     const soldout = row.availability === 'soldout';
     const available = row.availability === 'available';
     return `<li class="flight-row" data-airline="${esc(r.airline)}"><span class="flight-time"><b>${esc(row.dep)}</b> → ${esc(row.arr)}</span>`
-      + `<span class="flight-number">${withAirline ? `<span class="flight-airline">${esc(name)}</span> · ` : ''}${esc(row.no)}${row.fareName ? ` · ${esc(row.fareName)} 기준` : ''}</span>`
+      + `<span class="flight-number">${withAirline ? `<span class="flight-airline">${airlineHtml(r.airline)}</span> · ` : ''}${esc(row.no)}${row.fareName ? ` · ${esc(row.fareName)} 기준` : ''}</span>`
       + `<span class="flight-seat${available ? ' available' : ''}">${esc(seatLabel(row))}</span>`
       + `<button type="button" class="flight-open" data-provider="${provider}" data-row="${index}"${soldout ? ' disabled' : ''} title="${esc(name)} 예약 페이지 열기">`
       + `${row.price ? `<b>${esc(row.price)}</b>` : ''}<span>${soldout ? '매진' : available ? '예약 페이지' : '좌석 확인'}</span></button></li>`;
   }
   function providerHtml(r, provider, withRows) {
-    const name = AIRLINES[r.airline]?.name || r.airline;
     const schedule = AIRLINES[r.airline]?.schedule;
     const checked = checkedLabel(r.checkedAt);
     const rows = r.ok && Array.isArray(r.rows) ? r.rows : [];
@@ -79,7 +84,7 @@ export function createFlightBox({
       : !r.ok ? `<p class="flight-empty flight-error">${esc(r.error || '항공사 화면에서 결과를 확인하지 못했습니다.')}</p>`
       : !withRows ? '' : !rows.length ? '<p class="flight-empty">조건에 맞는 항공편이 없습니다.</p>'
       : `<ul class="flight-rows">${rows.map((row, index) => rowHtml(r, provider, row, index, false)).join('')}</ul>`;
-    return `<section class="flight-provider" data-airline="${esc(r.airline)}"><div class="flight-provider-head"><h3>${esc(name)}</h3>`
+    return `<section class="flight-provider" data-airline="${esc(r.airline)}"><div class="flight-provider-head"><h3>${airlineHtml(r.airline)}</h3>`
       + `${checked ? `<span class="flight-checked">${esc(checked)}</span>` : ''}</div>${content}`
       + (r.pending ? '' : `<div class="flight-links"><button type="button" class="flight-open flight-fallback ghost" data-provider="${provider}">${r.ok ? '항공사 예약 페이지 열기' : '예약 페이지에서 확인'}</button>`
       + `${schedule ? `<a class="flight-schedule" href="${esc(schedule)}" target="_blank" rel="noopener noreferrer">공식 시간표 ↗</a>` : ''}</div>`) + '</section>';

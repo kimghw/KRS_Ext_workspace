@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { createFlightBox, PREF_KEY, seatLabel } from '../flightbox.js';
 import { createKtxBox } from '../ktxbox.js';
+import { AIRLINES } from '../src/flights.js';
 
 const { JSDOM } = createRequire(process.env.JSDOM_BASE || import.meta.url)('jsdom');
 const html = fs.readFileSync(new URL('../sidepanel.html', import.meta.url), 'utf8');
@@ -54,7 +55,7 @@ test('항공 검색은 공통 날짜·시작 시간과 성인 1명·두 항공�
   assert.deepEqual([...buttons].map((b) => b.disabled), [false, true, false]);
   assert.match(f.$('flightList').textContent, /예약 가능 · 잔여 3석/);
   assert.match(f.$('flightList').textContent, /좌석 확인 필요/);
-  assert.equal(f.$('flightList').querySelector('img, script'), null, '사이트 글은 HTML 로 해석하지 않는다');
+  assert.equal(f.$('flightList').querySelector('img:not(.flight-logo), script'), null, '사이트 글은 HTML 로 해석하지 않는다(그림은 항공사 로고뿐)');
   buttons[0].querySelector('span').click();
   await tick();
   assert.deepEqual(f.picks, [{ airline: 'BX', tabId: 22, input: f.calls[1].input, row: rows[0] }]);
@@ -74,7 +75,7 @@ test('한 항공사가 실패해도 다른 항공사 결과를 남기고 실패 
   assert.equal(f.$('flightList').querySelectorAll('.flight-row').length, 3);
   const failed = f.$('flightList').querySelector('[data-airline="KE"]');
   assert.match(failed.textContent, /접속 확인 필요/);
-  assert.equal(failed.querySelector('img'), null);
+  assert.equal(failed.querySelector('img:not(.flight-logo)'), null, '오류 글은 HTML 로 해석하지 않는다(그림은 로고뿐)');
   assert.equal(failed.querySelector('button').textContent, '예약 페이지에서 확인');
   assert.equal(failed.querySelector('.flight-schedule').href, 'https://www.koreanair.com/flight-status?isSchedule=T');
   assert.equal(failed.querySelector('.flight-schedule').target, '_blank');
@@ -144,7 +145,7 @@ test('항공사마다 기록 하나를 나란히 돌리고 먼저 온 쪽부터 
   f.$('flightGo').click();
   await tick();
   assert.deepEqual(f.calls.map((c) => c.input.airline), ['KE', 'BX']);
-  assert.deepEqual([...f.$('flightList').querySelectorAll('.flight-provider')].map((p) => p.querySelector('h3').textContent + ':' + p.querySelector('.flight-pending')?.textContent), ['대한항공:조회 중…', '에어부산:조회 중…']);
+  assert.deepEqual([...f.$('flightList').querySelectorAll('.flight-provider')].map((p) => p.querySelector('h3 img.flight-logo').alt + ':' + p.querySelector('.flight-pending')?.textContent), ['대한항공:조회 중…', '에어부산:조회 중…']);
   assert.equal(f.$('flightList').querySelector('.flight-links'), null, '조회 중에는 열 단추가 없다');
   finish.KE({ ok: true, results: [{ airline: 'KE', ok: true, rows: [rows[0]], tabId: 11, checkedAt: '2026-11-05T03:15:00Z' }] });
   await tick();
@@ -246,9 +247,10 @@ test('결과 위의 탭 셋 — 전체는 두 항공사 줄을 출발 시각 순
   assert.deepEqual([...tabs.querySelectorAll('[data-view]')].map((b) => b.textContent + ':' + b.getAttribute('aria-selected') + ':' + b.disabled), ['전체:true:false', '대한항공:false:false', '에어부산:false:false']);
   const merged = [...f.$('flightList').querySelectorAll('.flight-row')];
   assert.deepEqual(merged.map((li) => li.querySelector('.flight-time').textContent), ['08:45 → 09:50', '09:00 → 10:05', '09:45 → 10:50'], '출발 시각 순');
-  assert.deepEqual(merged.map((li) => li.querySelector('.flight-airline').textContent), ['대한항공', '에어부산', '대한항공']);
-  assert.equal(merged[1].querySelector('.flight-number').textContent, '에어부산 · BX8050 · 실속항공권 기준');
-  assert.deepEqual([...f.$('flightList').querySelectorAll('.flight-provider')].map((p) => p.querySelector('h3').textContent + ' ' + p.querySelector('.flight-checked').textContent + ' ' + p.querySelectorAll('.flight-row').length), ['대한항공 11. 05. 12:15 확인 0', '에어부산 11. 05. 12:16 확인 0'], '전체 아래에는 항공사마다 확인 시각과 열기 단추만');
+  assert.deepEqual(merged.map((li) => li.querySelector('.flight-airline img.flight-logo').alt), ['대한항공', '에어부산', '대한항공'], '항공사 자리는 로고 그림, alt 가 이름(2026-11-06)');
+  assert.deepEqual(merged.map((li) => li.querySelector('.flight-logo').getAttribute('src')), [AIRLINES.KE.logo, AIRLINES.BX.logo, AIRLINES.KE.logo]);
+  assert.equal(merged[1].querySelector('.flight-number').textContent, ' · BX8050 · 실속항공권 기준', '이름 글자는 로고의 alt·title 에만');
+  assert.deepEqual([...f.$('flightList').querySelectorAll('.flight-provider')].map((p) => p.querySelector('h3 img.flight-logo').alt + ' ' + p.querySelector('.flight-checked').textContent + ' ' + p.querySelectorAll('.flight-row').length), ['대한항공 11. 05. 12:15 확인 0', '에어부산 11. 05. 12:16 확인 0'], '전체 아래에는 항공사마다 로고 머리·확인 시각과 열기 단추만');
   assert.equal(f.$('flightCount').textContent, '3');
   merged[1].querySelector('.flight-open span').click();
   await tick();
@@ -266,4 +268,14 @@ test('결과 위의 탭 셋 — 전체는 두 항공사 줄을 출발 시각 순
   f.$('flightGo').click();
   await tick();
   assert.deepEqual([...tabs.querySelectorAll('[data-view]')].map((b) => b.getAttribute('aria-selected')), ['false', 'false', 'true']);
+});
+
+test('항공사 로고 파일 — AIRLINES 의 logo 는 확장 안의 viewBox 있는 단색 SVG 다(2026-11-06 "대한항공 부산에어 로고를 넣어줘")', () => {
+  for (const [code, a] of Object.entries(AIRLINES)) {
+    const file = new URL('../' + a.logo, import.meta.url);
+    assert.ok(fs.existsSync(file), `${code} 로고 파일 ${a.logo}`);
+    const svg = fs.readFileSync(file, 'utf8');
+    assert.match(svg, /<svg[^>]*viewBox="[^"]+"/, `${code} 로고는 viewBox 가 있는 SVG`);
+    assert.doesNotMatch(svg, /<script|<image|href=/i, `${code} 로고에 스크립트·바깥 참조가 없다`);
+  }
 });

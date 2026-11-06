@@ -2,9 +2,10 @@
 // URL 근거와 실사이트 검증 한계: docs/flights.md. DOM은 의미(편명·시각·조회 조건)로
 // 읽되 조건을 확인할 수 없으면 실패로 돌린다. 실패는 매진/운항 없음이 아니다.
 
+// logo — 패널이 결과 줄·항공사 머리에 보이는 단색 SVG(확장 루트 기준 경로, 출처는 docs/flights.md "항공사 로고"). 2026-11-06 사용자 지정: "대한항공 부산에어 로고를 넣어줘".
 export const AIRLINES = Object.freeze({
-  KE: { name: '대한항공', home: 'https://www.koreanair.com/booking/search?bookingType=R&hl=ko', schedule: 'https://www.koreanair.com/flight-status?isSchedule=T' },
-  BX: { name: '에어부산', home: 'https://www.airbusan.com/web/individual/booking/domestic', schedule: 'https://www.airbusan.com/web/individual/booking/schedule' },
+  KE: { name: '대한항공', home: 'https://www.koreanair.com/booking/search?bookingType=R&hl=ko', schedule: 'https://www.koreanair.com/flight-status?isSchedule=T', logo: 'icons/airlines/ke.svg' },
+  BX: { name: '에어부산', home: 'https://www.airbusan.com/web/individual/booking/domestic', schedule: 'https://www.airbusan.com/web/individual/booking/schedule', logo: 'icons/airlines/bx.svg' },
 });
 
 export const FLIGHT_AIRPORTS = [
