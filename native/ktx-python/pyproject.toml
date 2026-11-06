@@ -1,0 +1,15 @@
+[project]
+name = "krs-ktx-query"
+version = "0.1.0"
+description = "KRS bridge query-only binjari runtime"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "rebrowser-playwright==1.64.102",
+  "greenlet==3.3.0",
+  "pyee==13.0.0",
+  "typing-extensions==4.15.0",
+  "tzdata==2025.3",
+]
+
+[tool.uv]
+package = false

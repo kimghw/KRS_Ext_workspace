@@ -859,14 +859,10 @@
       <p id="editNote" class="edit-note hidden"></p>
     </section>
     <!-- KTX 조회(2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음") —
-         차량 탭에서만 선다(ktxbox.js). 날짜·시작 시는 위의 날짜 줄·시작 시간이다. 조회는 코레일 화면을 최소화한 창에 열어 하고(src/ktx.js — 행위 ktx.search),
-         줄의 좌석을 누르면 그 탭이 패널의 창으로 옮겨 와 그 좌석이 골라진다. 예매 단추(좌석이 잡히는 예약)부터는 사람이 누른다. -->
+         2026-11-06: 기존 브릿지가 binjari에서 추출한 조회 모듈을 실행하고, 패널은 조건·결과를 표시한다. 좌석 선택·예매는 사람이 한다. -->
     <section id="ktxBox" class="ktx" aria-labelledby="ktxTitle" hidden>
       <div class="section-heading">
         <h2 id="ktxTitle">KTX 조회<span id="ktxCount" class="count"></span></h2>
-        <button id="ktxSite" class="open-inline" type="button" title="코레일 승차권 예매를 새 탭에서 열기" aria-label="코레일 승차권 예매를 새 탭에서 열기">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>
-        </button>
       </div>
       <div class="ktx-card card">
         <div class="ktx-bar">
@@ -876,8 +872,13 @@
           <select id="ktxPax" aria-label="인원"></select>
           <button id="ktxGo" class="primary" type="button">조회</button>
         </div>
+        <p class="ktx-help">위에서 고른 날짜·시작 시간으로 조회합니다. 좌석 선택·예매는 코레일에서 직접 진행해 주세요.</p>
         <p id="ktxNote" class="ktx-note" role="status" aria-live="polite"></p>
         <ul id="ktxList" class="ktx-list"></ul>
+        <div class="ktx-links">
+          <button id="ktxContinue" class="primary" type="button" hidden>코레일에서 계속</button>
+          <button id="ktxSite" class="ghost" type="button" title="코레일을 새 탭으로 열고 직접 조회하기">코레일 열기</button>
+        </div>
       </div>
     </section>
     <!-- 대한항공·에어부산 편도 항공편 조회. 날짜와 시작 시간은 위의 날짜 줄을 따른다. -->

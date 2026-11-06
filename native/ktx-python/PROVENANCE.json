@@ -1,0 +1,30 @@
+{
+  "source": "https://github.com/kimghw/binjari",
+  "revision": "79970c9d1bab7f2ab83de4e01a1cb25cb51df701",
+  "source_sha256": {
+    "browser.py": "14bcda491f7bc4d4e91cd0994af5f20c83f28189924598ebac6a7d9e1abc6bc2",
+    "dom.py": "3f4d530fb088e57c11284fa933caf48de853900f4e063283636910afac4ff561",
+    "diagnostics.py": "fa7ad0e76478c53737a2c8b81f2f94fd01527f1a8c2dd8a23ca5db63b7ec609d",
+    "korail/search.py": "763c527fc3de718620f1d1b322edd3301b2509efcd5634f502daf0ea6c5cf5bc",
+    "korail/client.py": "df302944c81de67504446eca274e335679580b706ed168176f5326398cd104db",
+    "korail/selectors.py": "ce786fd89302112e03ded1a131d141e4edd1436a752007f953e385d9cc58d752"
+  },
+  "vendor_sha256": {
+    "__init__.py": "73bcb37cc41c9b94cce108ed01c71ed066281803e6ed9d37ab92e81fcb207fec",
+    "browser.py": "14bcda491f7bc4d4e91cd0994af5f20c83f28189924598ebac6a7d9e1abc6bc2",
+    "config.py": "2934bdd310f8a58c2c453ea16d2934641539626a06aa2505b6cfac342c21620d",
+    "diagnostics.py": "fa7ad0e76478c53737a2c8b81f2f94fd01527f1a8c2dd8a23ca5db63b7ec609d",
+    "dom.py": "3f4d530fb088e57c11284fa933caf48de853900f4e063283636910afac4ff561",
+    "korail/__init__.py": "3e8bac771c28cf5b0850b045ce3429c0e1702537c60ba57c53647303d390f81f",
+    "korail/client.py": "80c102397cdee33d7436d3d65027d5b2e612e62b43902e077ee5b0dd69310460",
+    "korail/search.py": "92685f5782fbd39f88cf122d20fcb0ec6c75360fdde6e512422a6320cd27a814",
+    "korail/selectors.py": "d85ff838b2a47b5901352cd49971aee72cef0a8687c3310e056c196d2c27f961"
+  },
+  "changes": [
+    "Extract only search form and result-reading helpers.",
+    "Replace dotenv/watcher config with explicit query dataclass.",
+    "No popup auto-confirmation, guard dismissal, reload, pagination or retry.",
+    "Fresh dedicated Chrome profile per query; explicit session handoff only.",
+    "Upstream browser library configuration is unchanged."
+  ]
+}

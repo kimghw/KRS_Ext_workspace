@@ -240,12 +240,7 @@ export const ACTIONS = {
       "kinds": [
         "search"
       ],
-      "preset": {
-        "today": {
-          "from": "today",
-          "desc": "오늘(YYYY-MM-DD) — 코레일이 조회 시작 한계(limitStartDate)로 싣는다"
-        }
-      },
+      "preset": {},
       "llm": {
         "task": "ktx",
         "mode": "none"
@@ -6488,19 +6483,14 @@ export const ACTIONS = {
       "effect": "none",
       "log": "ktx",
       "summary": "KTX {from}→{to} {date} {hour}시~ {adults}명",
-      "preset": {
-        "today": {
-          "from": "today",
-          "desc": "오늘(YYYY-MM-DD) — 코레일이 조회 시작 한계(limitStartDate)로 싣는다"
-        }
-      },
+      "preset": {},
       "fields": {
         "from": {
           "type": "enum",
           "required": true,
           "label": "출발역",
-          "desc": "출발역 — 코레일 역 목록의 이름(KTX 가 서는 역)",
-          "read": "출발역 이름. 코레일 역 이름 그대로(울산은 울산(통도사), 여수는 여수EXPO)",
+          "desc": "KTX 조회에 보낼 출발역",
+          "read": "코레일 출발역 이름. 없으면 부산",
           "llm": true,
           "ui": true,
           "default": "부산",
@@ -6544,8 +6534,8 @@ export const ACTIONS = {
           "type": "enum",
           "required": true,
           "label": "도착역",
-          "desc": "도착역 — 코레일 역 목록의 이름(KTX 가 서는 역)",
-          "read": "도착역 이름. 코레일 역 이름 그대로",
+          "desc": "KTX 조회에 보낼 도착역",
+          "read": "코레일 도착역 이름. 없으면 서울",
           "llm": true,
           "ui": true,
           "default": "서울",
@@ -6589,8 +6579,8 @@ export const ACTIONS = {
           "type": "date",
           "required": true,
           "label": "출발일",
-          "desc": "출발일 — 차량 탭 날짜 줄의 날짜",
-          "read": "출발일(YYYY-MM-DD). 날짜가 없으면 오늘",
+          "desc": "차량 탭 날짜 줄의 출발일",
+          "read": "출발일(YYYY-MM-DD)",
           "llm": true,
           "ui": true,
           "example": "2026-11-12"
@@ -6599,8 +6589,8 @@ export const ACTIONS = {
           "type": "integer",
           "required": true,
           "label": "출발 시",
-          "desc": "이 시각부터의 열차를 본다 — 차량 탭의 시작 시간",
-          "read": "이 시각 이후 출발 열차를 본다(0~23). 없으면 8",
+          "desc": "이 시각 이후 출발 열차를 조회한다",
+          "read": "차량 탭의 시작 시간(0~23)",
           "llm": true,
           "ui": true,
           "default": 8,
@@ -6612,7 +6602,7 @@ export const ACTIONS = {
           "type": "integer",
           "required": true,
           "label": "인원",
-          "desc": "어른 인원 — 코레일 조회의 txtPsgFlg_1",
+          "desc": "조회할 어른 인원",
           "read": "어른 몇 명인지. 없으면 1",
           "llm": true,
           "ui": true,
@@ -6624,7 +6614,9 @@ export const ACTIONS = {
       },
       "checks": [],
       "rules": [
-        "출발역과 도착역이 같으면 조회하지 않는다(checks 의 비교는 크기뿐이라 실행기 ktxSearch 가 막는다)."
+        "출발역과 도착역이 같으면 조회하지 않는다.",
+        "조회는 기존 브릿지의 Python 조회 모듈이 한 번 수행하고, 확장은 코레일 폼을 조작하지 않는다.",
+        "좌석 상태는 읽기 전용이며 예약·결제는 사람이 한다."
       ],
       "llm": false,
       "runner": "ktx.search",
@@ -6635,7 +6627,7 @@ export const ACTIONS = {
         }
       ],
       "then": [],
-      "next": "열차 줄(출발·도착 시각 · 열차 · 소요 · 일반실·특실 운임/매진)을 칸에 그린다 → 좌석을 누르면 최소화한 창의 코레일 탭이 패널의 창으로 옮겨 와 그 좌석이 골라진다(ktxPick) → 예매 단추는 사람이"
+      "next": "열차 목록과 좌석 상태를 표시한다. 코레일에서 계속을 누르면 해당 조회 화면을 앞으로 열고 사람이 좌석 선택·예매를 진행한다."
     },
     "mail.register": {
       "id": "mail.register",

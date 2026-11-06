@@ -1,16 +1,10 @@
-# KTX 갈래 — 코레일(www.korail.com) 승차권 조회. 차량 탭의 KTX 조회 칸(ktxbox.js)이 조회 누름마다 ktx.search 기록 하나를 지어 디스패처로 보낸다
-# (2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 추가해줘 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음").
-# 실행기는 src/ktx.js ktxSearch — 코레일 화면을 최소화한 창으로 열어(사람의 탭 줄에 서지 않는다 — 2026-11-05 "백그라운드에서 실행되도록 해줘") 결과 화면의 기록(history.state 의 search)에 조건을 넣고 새로고침해 사이트가 스스로 조회하게 한 뒤 열차 줄을 읽는다.
-# 예매·결제는 행위가 아니다 — 줄의 좌석을 누르면 그 탭이 사람의 창으로 옮겨 와 좌석이 골라질 뿐이고(src/ktx.js ktxPick — 탐색이라 기록을 짓지 않는다), 예매 단추는 사람이 누른다.
-# binjari(github.com/kimghw/binjari)의 예약·결제 자동화는 가져오지 않는다.
-#
-# LLM 작업은 만들지 않는다(mode none). 그래도 칸마다 read 는 둔다 — 2단계 통합 명령창에서 LLM 이 칸 값을 제안할 때 쓴다.
+# 2026-11-06: binjari 조회 코드를 추출·병합하고 기존 네이티브 브릿지 통로로 호출한다.
+# KTX의 Python 조회 모듈과 기존 Claude/OCR 기능은 코드 결합을 낮춰 분리한다.
+# 패널은 조건과 결과만 다루며 예약·결제는 사람이 코레일에서 진행한다.
 domain: ktx
 title: KTX
-log: ktx                       # 활동 로그 kind(src/logbook.js KIND_LABEL — 'KTX')
+log: ktx
 kinds: [search]
-preset:
-  today: { from: today, desc: 오늘(YYYY-MM-DD) — 코레일이 조회 시작 한계(limitStartDate)로 싣는다 }
 llm:
-  task: ktx                    # 이름만 맡아 둔다 — mode none 이라 작업은 만들지 않는다
+  task: ktx
   mode: none

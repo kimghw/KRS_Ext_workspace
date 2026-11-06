@@ -1,0 +1,49 @@
+def _check_guard(page: Page, stage: str) -> bool:
+    """Read all pages in this dedicated query context; preserve and stop on a block."""
+    for candidate in [page] + [p for p in page.context.pages if p is not page]:
+        if candidate.is_closed():
+            continue
+        notice = inspect_guard_notice(candidate)
+        if notice:
+            record_guard(candidate, notice, stage)
+            raise GuardBlocked(notice["message"], code=notice["code"] or "GUARD_BLOCKED")
+    return False
+
+def navigate_to_search(client: KorailSPAClient) -> Page:
+    page = client.main_page()
+    safe_goto(page, S.SEARCH_URL, timeout_ms=20000)
+    _check_guard(page, "search form")
+    try:
+        page.wait_for_selector(S.SEARCH_FORM_DETECT, timeout=10000)
+    except PWTimeoutError:
+        _check_guard(page, "search form timeout")
+        raise SiteLayoutChanged("검색 폼을 찾지 못했습니다.")
+    for _ in range(8):
+        _check_guard(page, "notice wait")
+        if dismiss_notice_modal(page):
+            break
+        page.wait_for_timeout(500)
+    return page
+
+def submit_search(page: Page, config: KTXAConfig) -> List[Dict[str, Any]]:
+    """One submission, no reload, no retry, no pagination, no seat selection."""
+    _check_guard(page, "before submit")
+    validate_query(page, config, "before submit")
+    human_pause(3.0, 6.0)
+    human_click(page.locator(S.SEARCH_SUBMIT).first)
+    try:
+        page.wait_for_url(S.RESULT_URL_PATTERN, timeout=15000)
+    except PWTimeoutError:
+        _check_guard(page, "submit/navigation")
+        raise SiteLayoutChanged(f"조회 결과 화면으로 이동하지 못했습니다: {page.url}")
+    try:
+        page.wait_for_load_state("networkidle", timeout=10000)
+    except PWTimeoutError:
+        pass
+    human_pause(1.5, 2.5)
+    _check_guard(page, "submit")
+    validate_query(page, config, "after submit")
+    rows = _read_rows(page)
+    if not rows and not _empty_marker_visible(page):
+        raise SearchResultUnavailable("조회 결과를 확인하지 못했습니다. 코레일 화면을 확인해 주세요.")
+    return rows

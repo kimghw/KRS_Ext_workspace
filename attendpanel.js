@@ -880,7 +880,8 @@ export function createAttendPanel({
   /** 결재요청 뒤 구글 캘린더 일정 창을 여는가(G캘린더 — 2026-11-03). 유연근무에는 그 칸이 없다. */
   const wantsGcal = (form) => !!form.gcal && gcalKind(form.kind);
   /**
-   * 출장 폼의 KTX·항공권 단추(2026-11-05) — 출발일·출발 시각을 패널의 날짜 줄·시작 시간에 넣고 차량 탭의 그 조회(KTX·항공권)로 가서 조회를 누른다.
+   * 출장 폼의 KTX·항공권 단추(2026-11-05) — 출발일·출발 시각을 패널의 날짜 줄·시작 시간에 넣고 차량 탭의 해당 칸으로 간다.
+   * KTX 는 기존 브릿지의 추출된 조회 모듈로, 항공권은 기존 항공 실행부로 그 날짜·시각을 조회한다(2026-11-06). 좌석 선택·예매는 사람이 한다.
    * 패널의 요소를 이름으로 찾는다(sidepanel.html 의 #date·#hourStart·#tabCar·#carViewControl·#ktxGo·#flightGo) — 없으면 그 걸음은 건너뛴다. 폼은 그대로 남는다.
    */
   function jumpToCar(view) {

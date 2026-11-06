@@ -1,5 +1,5 @@
 ﻿<#
-  브라우저(크롬·엣지)가 이 확장에서만 로컬 Claude CLI 다리를 열 수 있게 등록한다.
+  기존 로컬 브릿지를 등록하고 KTX 실행 환경을 준비한다. KTX 설치 실패는 기존 등록에 영향을 주지 않는다.
 
   크롬과 엣지는 매니페스트 형식과 origin(chrome-extension://…)이 같고 레지스트리 키만 다르다.
   같은 폴더에서 불러오면 확장 ID 도 같으므로 매니페스트 하나를 두 키에 같이 건다.
@@ -10,7 +10,8 @@
     2) powershell -ExecutionPolicy Bypass -File install.ps1 -ExtensionId <붙여넣기>
 #>
 param(
-  [Parameter(Mandatory = $true)][string]$ExtensionId
+  [Parameter(Mandatory = $true)][string]$ExtensionId,
+  [switch]$SkipKtx
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,10 +19,12 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $hostName = 'com.krs.meetingroom'
 $batPath = Join-Path $here 'claude-bridge.bat'
 
-if ($ExtensionId -notmatch '^[a-p]{32}$') { throw "확장 ID 모양이 아닙니다 (a~p 32글자): $ExtensionId" }
+if ($ExtensionId -cnotmatch '^[a-p]{32}$') { throw "확장 ID 모양이 아닙니다 (a~p 32글자): $ExtensionId" }
 if (-not (Test-Path $batPath)) { throw "claude-bridge.bat 을 찾을 수 없습니다: $batPath" }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'node 가 PATH 에 없습니다.' }
-if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw 'claude CLI 가 PATH 에 없습니다.' }
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+  Write-Warning 'claude CLI 가 PATH 에 없습니다. KTX 조회에는 필요하지 않으며, Claude 기능은 CLI 설치 후 사용할 수 있습니다.'
+}
 
 $manifest = [ordered]@{
   name           = $hostName
@@ -61,7 +64,7 @@ foreach ($t in $targets) {
   $isNew = -not (Test-Path $t.Key)
   if ($isNew) { New-Item -Path $t.Key -Force | Out-Null }
   $prev = if ($isNew) { $null } else { (Get-ItemProperty $t.Key).'(default)' }
-  Set-ItemProperty -Path $t.Key -Name '(default)' -Value $manifestPath
+  if ($isNew -or ($prev -ne $manifestPath)) { Set-ItemProperty -Path $t.Key -Name '(default)' -Value $manifestPath }
   # 등록이 실제로 바뀐 때만 시각을 남긴다. 브라우저 본체가 이보다 먼저 떴으면 다시 떠야 한다.
   # 크로미엄은 키의 기본값만 읽으므로 값을 하나 더 두어도 무해하다.
   $bumped = $isNew -or ($prev -ne $manifestPath) -or $changed
@@ -83,4 +86,18 @@ if ($anyBumped) {
   Write-Host '엣지는 창을 다 닫아도 시작 부스트로 msedge.exe 가 남습니다 — 작업 관리자에 없어야 다시 뜬 것입니다.'
 } else {
   Write-Host '등록이 바뀌지 않았으므로 브라우저를 다시 열 필요는 없습니다.'
+}
+
+# KTX는 선택 기능이다. 먼저 기존 브릿지 등록을 마친 뒤 전용 Python을 준비한다.
+# 다운로드·의존성 설치 실패 때문에 Claude/OCR 등 기존 기능의 설치까지 실패시키지 않는다.
+if ($SkipKtx) {
+  Write-Host 'KTX 실행 환경 설치를 건너뛰었습니다 (-SkipKtx). 기존 브릿지 등록은 완료되었습니다.'
+} else {
+  try {
+    & (Join-Path $here 'setup-ktx.ps1')
+  } catch {
+    Write-Warning "KTX 실행 환경 설치 실패: $($_.Exception.Message)"
+    Write-Warning '기존 브릿지 등록은 완료되었습니다. 기존 기능은 계속 사용할 수 있으며 KTX 설치만 다시 실행하면 됩니다.'
+    Write-Host '  powershell -ExecutionPolicy Bypass -File native/setup-ktx.ps1'
+  }
 }

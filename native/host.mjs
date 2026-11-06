@@ -538,8 +538,8 @@ export async function handle(msg, { run = runClaude, log = writeLog, tail = tail
 
 /* ---------------------------------------------------------------- 진입 */
 
-// 테스트는 handle 만 가져다 쓴다. 크롬이 띄울 때는 이 변수가 없으므로 늘 아래가 돈다.
-if (process.env.KRS_HOST_NO_MAIN !== '1') {
+// entry.mjs는 기존 기능이 요청될 때만 이 모듈을 가져온다. 직접 실행한 경우에만 stdin을 읽는다.
+if (process.env.KRS_HOST_NO_MAIN !== '1' && process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   writeFrame = guardStdout();
   pruneLogs();
   pruneTempDebug();

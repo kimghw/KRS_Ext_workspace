@@ -1,252 +1,286 @@
-// KTX 조회 — 코레일 조건 짓기·결과 화면 읽기·최소화한 창에서 조회(src/ktx.js), 실행기 어댑터(actions/runners/ktx.js), 차량 탭의 칸(ktxbox.js)
-// (2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음" ·
-// "이걸 차량 현황 이랑 탭으로 해서 선택할 수 있게 해줘. 그리고 백그라운드에서 실행되도록 해줘").
-// 코레일은 흉내 낸다 — 열차 줄의 꼴은 binjari 의 검증된 파서·테스트(li.tckList · .price_box gen/sold_out/sold_out_soon)를 따르고,
-// 막힘 안내는 2026-11-05 이 PC(Azure)에서 실제로 본 -8202 모달의 글이다.
-
+// 기존 브릿지의 KTX 조회 모듈 연결 — 실제 사이트나 Python 실행 없이 메시지·표시·실패 경계를 검증한다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
-import { KTX_STATIONS, korailSearch, ktxSearch, ktxPick, injected } from '../src/ktx.js';
+import { KTX_STATIONS, KTX_NATIVE_HOST, KORAIL_MAIN, ktxSearch, ktxOpen } from '../src/ktx.js';
 import { createDispatcher } from '../actions/dispatch.js';
 import { registerKtx } from '../actions/runners/ktx.js';
 import { ACTIONS } from '../actions/spec.js';
 import { createKtxBox, PREF_KEY } from '../ktxbox.js';
-
 const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
 const { JSDOM } = require('jsdom');
 const html = fs.readFileSync(new URL('../sidepanel.html', import.meta.url), 'utf8');
-
-const ROW = (train, dep, arr, gen, spec) => `<li class="tckList"><div class="data_box"><strong>${train}</strong><h3><span>부산</span> → <span>서울</span>(${dep} ~ ${arr})</h3>`
-  + `<p>소요시간: 2시간 38분</p></div>${gen}${spec}</li>`;
-const RESULT = `<input id="labelstart" value="부산"><input id="labelend" value="서울"><input id="startDate" value="2026-11-12(목) 05:00"><ul>`
-  + ROW('KTX 101', '05:13', '07:51', '<div class="price_box gen"><a href="#none">일반실59,800원5%적립</a></div>', '<div class="price_box sold_out"><a href="#none">특실83,700원5%적립매진</a></div>')
-  + ROW('KTX-산천 211', '5:40', '8:20', '<div class="price_box gen sold_out_soon"><a href="#none">일반실(매진임박)59,800원</a></div>', '<div class="price_box"><a href="#none">특실83,700원</a></div>')
-  + ROW('KTX 103', '06:00', '08:38', '<div class="price_box sold_out"><a href="#none">일반실59,800원매진</a></div>', '')
-  + '</ul>';
-
-/** 결과 화면을 jsdom 에 세우고 탭 안 함수를 그 창에서 돌린다 — 함수가 바깥 이름을 쓰면(executeScript 로 못 넘긴다) 여기서 넘어진다. */
-function page(body, path = '/ticket/search/list') {
-  const dom = new JSDOM(`<!doctype html><body>${body}</body>`, { url: `https://www.korail.com${path}`, runScripts: 'outside-only' });
-  // executeScript 처럼 답을 직렬화해 돌려준다(jsdom 창의 객체는 이 쪽과 프로토타입이 달라 비교가 어긋난다).
-  const call = (fn, ...args) => JSON.parse(JSON.stringify(dom.window.eval(`(${fn.toString()})(...${JSON.stringify(args)})`)));
-  return { dom, call };
-}
-
-test('역 목록은 행위 명세의 values 와 같다(코레일 역 이름 — 울산(통도사)·여수EXPO)', () => {
-  const names = KTX_STATIONS.map(([n]) => n);
-  assert.deepEqual(ACTIONS.actions['ktx.search'].fields.from.values, names);
-  assert.deepEqual(ACTIONS.actions['ktx.search'].fields.to.values, names);
-  assert.equal(new Set(KTX_STATIONS.map(([, c]) => c)).size, KTX_STATIONS.length);
-});
-
-test('조건 — 사이트 GENERAL 폼의 칸에 역 코드·날짜·시·인원', () => {
-  const s = korailSearch({ from: '부산', to: '서울', date: '2026-11-12', hour: 5, adults: 2 }, '2026-11-05');
-  assert.equal(s.searchType, 'GENERAL');
-  assert.deepEqual([s.txtGoStart, s.txtGoStartCode, s.txtGoEnd, s.txtGoEndCode], ['부산', '0020', '서울', '0001']);
-  assert.deepEqual([s.txtGoAbrdDt, s.txtGoHour, s.limitStartDate, s.txtPsgFlg_1, s.txtPsgFlg_2], ['20261112', '050000', '20261105', 2, 0]);
-  assert.equal(s.txtMenuId, '11');
-});
-
-test('결과 화면 읽기 — 시각·열차·소요·좌석(매진·매진임박), 화면에 선 조건', () => {
-  const r = page(RESULT).call(injected.pageRows);
-  assert.equal(r.path, '/ticket/search/list');
-  assert.deepEqual([r.from, r.to, r.date], ['부산', '서울', '2026-11-12(목) 05:00']);
-  assert.equal(r.notice, '');
-  assert.equal(r.rows.length, 3);
-  assert.deepEqual(r.rows[0], { train: 'KTX', no: '101', dep: '05:13', arr: '07:51', took: '2시간 38분', gen: { price: '59,800원', soldOut: false, soon: false }, spec: { price: '83,700원', soldOut: true, soon: false } });
-  assert.deepEqual([r.rows[1].train, r.rows[1].no, r.rows[1].dep, r.rows[1].gen.soon, r.rows[1].gen.soldOut, r.rows[1].spec.soldOut], ['KTX-산천', '211', '05:40', true, false, false]);
-  assert.deepEqual([r.rows[2].gen.soldOut, r.rows[2].spec], [true, null]);
-});
-
-test('결과 화면 읽기 — 막힘 안내(보이는 모달의 CODE)와 열차 없음', () => {
-  const { dom, call } = page('<div class="ReactModal__Content"><h2>안내 메시지</h2><p>VPN 또는 데이터센터를 통해서는 서비스를 이용할 수 없습니다.</p><p>CODE : -8202</p>'
-    + '<p>ID : 61fcca7a-012d-1497-8f62-a857c08e737e</p><button>확인</button></div><div class="layerWrap">CODE : -1 숨은 것</div>');
-  const modal = dom.window.document.querySelector('.ReactModal__Content');
-  modal.getClientRects = () => [1];
-  modal.innerText = '안내 메시지\n\nVPN 또는 데이터센터를 통해서는 서비스를 이용할 수 없습니다.\n\nCODE : -8202\n\nID : 61fcca7a-012d-1497-8f62-a857c08e737e\n\n \n\n확인';   // 2026-11-05 실제 모달의 innerText
-  assert.equal(call(injected.pageRows).notice, 'VPN 또는 데이터센터를 통해서는 서비스를 이용할 수 없습니다. CODE : -8202');
-  assert.equal(page('<div class="tck_confirm_no-data">해당 스케줄에 운행하는 열차가 없습니다</div>').call(injected.pageRows).empty, true);
-});
-
-test('좌석 고르기 — 출발 시각·열차 번호로 줄을 찾아 그 좌석의 단추를 누른다', () => {
-  const { dom, call } = page(RESULT);
-  const hits = [];
-  dom.window.HTMLElement.prototype.scrollIntoView = function () {};
-  for (const a of dom.window.document.querySelectorAll('a')) a.addEventListener('click', () => hits.push(a.textContent));
-  assert.deepEqual(call(injected.pagePick, '05:40', '211', 'spec'), { ok: true });
-  assert.deepEqual(hits, ['특실83,700원']);
-  assert.equal(call(injected.pagePick, '07:00', '999', 'gen').ok, false);
-});
-
-/** 가짜 chrome — 코레일 탭 하나(최소화한 창 3 에), 패널의 창은 1. executeScript 는 함수 이름으로 답한다(pageRows 는 차례로 준 답). */
-function fakeChrome(answers) {
-  const calls = [];
-  const session = {};
-  let tab = null;
-  const api = {
-    storage: { session: { get: async (k) => ({ [k]: session[k] }), set: async (o) => Object.assign(session, o), remove: async (k) => { delete session[k]; } } },
-    tabs: {
-      get: async (id) => { if (!tab || tab.id !== id) throw new Error('No tab with id'); return tab; },
-      update: async (id, o) => { calls.push(['update', id, o.active]); },
-      move: async (id, o) => { calls.push(['move', id, o.windowId]); tab.windowId = o.windowId; },
-    },
-    windows: {
-      create: async (o) => { calls.push(['window', o.url, o.state]); tab = { id: 7, url: o.url, status: 'complete', windowId: 3 }; return { id: 3, tabs: [tab] }; },
-      getCurrent: async () => ({ id: 1 }),
-      update: async (id) => { calls.push(['focus', id]); },
-    },
-    scripting: {
-      executeScript: async ({ target, world, func, args }) => {
-        calls.push([func.name, target.tabId, world, args]);
-        if (func.name === 'pageQuery') return [{ result: 1 }];
-        if (func.name === 'pageRows') { const a = answers.length > 1 ? answers.shift() : answers[0]; if (a instanceof Error) throw a; return [{ result: a }]; }
-        if (func.name === 'pagePick') return [{ result: { ok: true } }];
-        return [{ result: null }];
-      },
-    },
-  };
-  return { api, calls, session, closeTab: () => { tab = null; } };
-}
-
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const SESSION = '0123456789abcdef0123456789abcdef';
 const INPUT = { from: '부산', to: '서울', date: '2026-11-12', hour: 5, adults: 1 };
-const fresh = (over) => ({ at: 2, path: '/ticket/search/list', rows: [], notice: '', empty: false, from: '부산', to: '서울', date: '2026-11-12(목) 05:00', ...over });
+const ROW = { train: 'KTX', no: '101', dep: '05:13', arr: '07:51', took: '2시간 38분',
+  gen: { price: '59,800원', soldOut: false, soon: true }, spec: { price: '83,700원', soldOut: true, soon: false } };
+const result = (rows = [ROW]) => ({ ok: true, rows, session: SESSION });
+function native(answer = () => result()) {
+  const calls = [], forbidden = [];
+  const deny = (name) => { forbidden.push(name); throw new Error('Unexpected API: ' + name); };
+  const api = new Proxy({
+    runtime: new Proxy({ sendNativeMessage: async (host, message) => { calls.push({ host, message }); return answer(message); } },
+      { get: (target, key) => key in target ? target[key] : deny('runtime.' + String(key)) }),
+  }, { get: (target, key) => key in target ? target[key] : deny(String(key)) });
+  return { api, calls, forbidden };
+}
+function panel({ answer, open, saved } = {}) {
+  const doc = new JSDOM(html).window.document;
+  const store = { ...(saved || {}) }, logs = [], opened = [], continued = [];
+  const f = native(answer);
+  const d = createDispatcher({ log: (line) => logs.push(line) });
+  registerKtx(d, { ktxSearch: (input, options) => ktxSearch(input, { ...options, api: f.api }) });
+  let date = INPUT.date, hour = INPUT.hour;
+  const box = createKtxBox({
+    doc, actions: d, storage: { get: async (key) => ({ [key]: store[key] }), set: async (values) => Object.assign(store, values) },
+    when: () => ({ date, hour }),
+    open: async (pick) => { continued.push(pick); return open ? open(pick) : { ok: true }; },
+    openTab: async (url) => { opened.push(url); },
+  });
+  const $ = (id) => doc.getElementById(id);
+  const change = (id, value) => { $(id).value = value; $(id).dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); };
+  const choose = (view) => $('carViewControl').querySelector('[data-view="' + view + '"] svg').dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }));
+  return { ...f, box, doc, $, store, d, logs, opened, continued, change, choose,
+    setDate: (value) => { date = value; }, setHour: (value) => { hour = value; } };
+}
 
-test('ktxSearch — 최소화한 창을 열고(탭 줄에 서지 않는다), 결과 화면을 조건으로 새로고침하고, 새 문서의 줄을 읽는다', async () => {
-  const row = { train: 'KTX', no: '101', dep: '05:13', arr: '07:51' };
-  const f = fakeChrome([{ at: 1, path: '/ticket/main', rows: [] }, new Error('Frame removed'), fresh({ rows: [row] })]);
+test('ktxSearch — 한 번의 네이티브 메시지로 조건만 보내고 페이지·창·저장소에 접근하지 않는다', async (t) => {
+  assert.equal(KTX_NATIVE_HOST, 'com.krs.meetingroom');
+  const f = native();
+  const requests = t.mock.method(globalThis, 'fetch', () => { throw new Error('network forbidden'); });
   const stages = [];
-  const r = await ktxSearch(INPUT, { api: f.api, today: '2026-11-05', onStage: (s) => stages.push(s) });
-  assert.deepEqual(r, { ok: true, rows: [row], tabId: 7 });
-  assert.deepEqual(f.calls[0], ['window', 'https://www.korail.com/ticket/main', 'minimized']);
-  const q = f.calls.find((c) => c[0] === 'pageQuery');
-  assert.equal(q[2], 'MAIN');
-  assert.deepEqual([q[3][0].txtGoStartCode, q[3][0].txtGoAbrdDt, q[3][1]], ['0020', '20261112', '/ticket/search/list']);
-  assert.equal(f.session.ktxTab, 7);
-  assert.deepEqual(stages, ['코레일 여는 중', '조회 중']);
-  // 같은 패널이 다시 조회하면 이 확장의 탭을 다시 쓴다
-  const again = await ktxSearch(INPUT, { api: f.api, today: '2026-11-05' });
-  assert.equal(again.ok, true);
-  assert.equal(f.calls.filter((c) => c[0] === 'window').length, 1);
-  // 좌석을 골라 사람에게 넘긴 탭은 다시 쓰지 않는다 — 다음 조회는 새 창
-  await ktxPick({ tabId: 7, row: { dep: '05:13', no: '101' }, seat: 'gen' }, { api: f.api });
-  assert.equal(f.session.ktxTab, undefined);
-  await ktxSearch(INPUT, { api: f.api, today: '2026-11-05' });
-  assert.equal(f.calls.filter((c) => c[0] === 'window').length, 2);
+  assert.deepEqual(await ktxSearch({ ...INPUT, command: 'ignored', url: 'https://example.com' }, { api: f.api, onStage: (s) => stages.push(s) }), result());
+  assert.deepEqual(f.calls, [{ host: KTX_NATIVE_HOST, message: { task: 'ktxSearch', input: INPUT } }]);
+  assert.deepEqual(f.forbidden, []);
+  assert.equal(requests.mock.callCount(), 0);
+  assert.deepEqual(stages, ['열차 조회 중']);
 });
 
-test('ktxSearch — 막힘 안내는 그 글로, 조건이 다른 화면은 줄을 받지 않는다, 같은 역은 탭을 열지 않는다', async () => {
-  const blocked = await ktxSearch(INPUT, { api: fakeChrome([fresh({ notice: 'VPN 또는 데이터센터를 통해서는 서비스를 이용할 수 없습니다. CODE : -8202' })]).api });
-  assert.equal(blocked.ok, false);
-  assert.match(blocked.error, /^코레일이 조회를 막았습니다 — .*-8202$/);
-  const other = await ktxSearch(INPUT, { api: fakeChrome([fresh({ from: '서울', to: '부산', rows: [{ dep: '05:00' }] })]).api });
-  assert.equal(other.ok, false);
-  assert.match(other.error, /서울→부산/);
-  const f = fakeChrome([]);
-  assert.equal((await ktxSearch({ ...INPUT, to: '부산' }, { api: f.api })).ok, false);
+test('조회 조건 — 모르는 역·같은 역·없는 날짜·잘못된 시와 인원은 브릿지 호출 전 거부한다', async () => {
+  const f = native();
+  for (const patch of [{ from: '인천' }, { to: '부산' }, { date: '2026-02-30' }, { date: '2026-2-3' }, { hour: 24 }, { hour: '5' }, { adults: 0 }, { adults: 10 }, { adults: NaN }]) {
+    const value = await ktxSearch({ ...INPUT, ...patch }, { api: f.api });
+    assert.equal(value.ok, false, JSON.stringify(patch));
+    assert.equal(value.code, 'INPUT_INVALID');
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test('조회 실패 — 차단·실행 환경 없음·옛 브릿지·미등록·시간 초과를 구분하고 재시도하지 않는다', async () => {
+  for (const [response, code, words] of [
+    [{ ok: false, error: 'CODE : -8003', code: 'GUARD_BLOCKED' }, 'GUARD_BLOCKED', /-8003/],
+    [{ ok: false, error: 'python missing', code: 'RUNTIME_MISSING' }, 'RUNTIME_MISSING', /KTX 실행 환경/],
+    [{ ok: false, error: '알 수 없는 작업: ktxSearch' }, 'BRIDGE_OUTDATED', /최신 브릿지 등록/],
+  ]) {
+    const f = native(() => response);
+    const r = await ktxSearch(INPUT, { api: f.api });
+    assert.equal(r.code, code);
+    assert.match(r.error, words);
+    if (code === 'RUNTIME_MISSING') {
+      assert.match(r.error, /native\/setup-ktx\.ps1/);
+      assert.doesNotMatch(r.error, /ExtensionId|native\/install\.ps1/);
+    }
+    if (code === 'BRIDGE_OUTDATED') {
+      assert.match(r.error, /native\/install\.ps1 -ExtensionId <확장ID>/);
+      assert.doesNotMatch(r.error, /setup-ktx/);
+    }
+    assert.equal(f.calls.length, 1);
+  }
+  const missing = native(() => { throw new Error('Specified native messaging host not found.'); });
+  assert.equal((await ktxSearch(INPUT, { api: missing.api })).code, 'BRIDGE_UNAVAILABLE');
+  assert.equal((await ktxSearch(INPUT, { api: {} })).code, 'BRIDGE_UNAVAILABLE');
+  const late = native(() => new Promise(() => {}));
+  assert.equal((await ktxSearch(INPUT, { api: late.api, timeoutMs: 1 })).code, 'BRIDGE_TIMEOUT');
+  assert.equal(late.calls.length, 1);
+});
+
+test('브릿지 미등록 — 조회와 계속 열기 모두 기존 단일 호스트만 사용하고 별도 호스트로 우회하지 않는다', async () => {
+  const hosts = [];
+  const api = { runtime: { sendNativeMessage: async (host) => {
+    hosts.push(host);
+    if (host === 'com.krs.ktx') return result();
+    throw new Error('Specified native messaging host not found.');
+  } } };
+  for (const response of [await ktxSearch(INPUT, { api }), await ktxOpen({ session: SESSION }, { api })]) {
+    assert.equal(response.ok, false);
+    assert.equal(response.code, 'BRIDGE_UNAVAILABLE');
+    assert.match(response.error, /브릿지 설치·등록/);
+    assert.match(response.error, /native\/install\.ps1 -ExtensionId <확장ID>/);
+    assert.doesNotMatch(response.error, /Claude|Node|setup-ktx|com\.krs\.ktx/);
+  }
+  assert.deepEqual(hosts, ['com.krs.meetingroom', 'com.krs.meetingroom']);
+});
+
+test('브릿지 응답 — 빈 목록은 허용하고 잘못된 세션·열차·좌석·시각은 성공으로 표시하지 않는다', async () => {
+  assert.deepEqual(await ktxSearch(INPUT, { api: native(() => result([])).api }), result([]));
+  for (const response of [null, {}, { ok: true, rows: [], session: '../escape' },
+    { ...result(), rows: {} }, result([{ ...ROW, dep: '99:30' }]), result([{ ...ROW, gen: { price: '1원', soldOut: 'false', soon: false } }])]) {
+    const r = await ktxSearch(INPUT, { api: native(() => response).api });
+    assert.equal(r.ok, false);
+    assert.equal(r.code, 'BRIDGE_RESPONSE');
+  }
+});
+
+test('ktxOpen — 조회 세션만 보내 화면을 열고 좌석·예약 명령은 보내지 않는다', async () => {
+  const f = native(() => ({ ok: true, ignored: 'value' }));
+  assert.deepEqual(await ktxOpen({ session: SESSION, seat: 'gen', row: ROW }, { api: f.api }), { ok: true });
+  assert.deepEqual(f.calls, [{ host: KTX_NATIVE_HOST, message: { task: 'ktxOpen', session: SESSION } }]);
+  assert.deepEqual(f.forbidden, []);
+  assert.equal((await ktxOpen({ session: '../bad' }, { api: f.api })).code, 'SESSION_INVALID');
+  assert.equal(f.calls.length, 1);
+  const lost = native(() => ({ ok: false, error: '조회 창이 닫혔습니다', code: 'SESSION_MISSING' }));
+  assert.equal((await ktxOpen({ session: SESSION }, { api: lost.api })).code, 'SESSION_MISSING');
+});
+
+test('행위 명세 — 32개 역·인원·날짜로 기록하고 확인 없이 조회 결과만 기록한다', async () => {
+  const entry = ACTIONS.actions['ktx.search'];
+  assert.deepEqual(Object.keys(entry.fields), ['from', 'to', 'date', 'hour', 'adults']);
+  assert.deepEqual(entry.fields.from.values, KTX_STATIONS.map(([name]) => name));
+  assert.deepEqual(entry.fields.to.values, entry.fields.from.values);
+  assert.deepEqual([entry.confirm, entry.effect], [false, 'none']);
+  const f = panel();
+  const { record } = f.d.build('ktx.search', { input: INPUT });
+  assert.deepEqual(await f.d.run(record), result());
+  assert.deepEqual(f.logs.map(({ kind, ok }) => [kind, ok]), [['ktx', true]]);
+  assert.match(f.logs[0].text, /부산→서울/);
+  assert.throws(() => f.d.build('ktx.search', { input: { ...INPUT, adults: 12 } }), /인원|adults/);
+});
+
+test('패널 — 조건을 보내 열차·좌석을 읽기 전용으로 표시하고 계속을 누를 때만 화면을 연다', async () => {
+  const f = panel({ saved: { [PREF_KEY]: { from: '부산', to: '서울', adults: 2 } } });
+  await tick();
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.$('ktxPax').value, '2');
+  f.$('ktxGo').click();
+  await tick();
+  assert.deepEqual(f.calls[0].message.input, { ...INPUT, adults: 2 });
+  assert.equal(f.$('ktxList').querySelectorAll('li').length, 1);
+  assert.equal(f.$('ktxCount').textContent, '1');
+  assert.equal(f.$('ktxList').querySelector('button'), null);
+  assert.match(f.$('ktxList').textContent, /일반실59,800원매진임박.*특실매진/);
+  assert.equal(f.$('ktxContinue').hidden, false);
+  assert.deepEqual(f.continued, []);
+  f.$('ktxContinue').click();
+  await tick();
+  assert.deepEqual(f.continued, [{ session: SESSION }]);
+  assert.match(f.$('ktxNote').textContent, /좌석 선택·예매·결제는 직접/);
+  assert.deepEqual(f.opened, []);
+});
+
+test('패널 — 사이트가 보낸 글은 열차명·가격·소요시간 모두 HTML로 실행하지 않는다', async () => {
+  const f = panel({ answer: () => result([{ ...ROW, train: '<img src=x onerror=evil()>', took: '<svg onload=evil()>',
+    gen: { ...ROW.gen, price: '<script>evil()</script>' } }]) });
+  f.$('ktxGo').click();
+  await tick();
+  assert.equal(f.$('ktxList').querySelector('img,svg,script'), null);
+  assert.match(f.$('ktxList').textContent, /<img src=x onerror=evil\(\)>/);
+  assert.match(f.$('ktxList').textContent, /<script>evil\(\)<\/script>/);
+});
+
+test('패널 — 조회 중 중복 클릭을 막고 조건이 바뀐 동안 도착한 결과와 세션을 폐기한다', async () => {
+  let finish;
+  const f = panel({ answer: () => new Promise((resolve) => { finish = resolve; }) });
+  const click = () => f.$('ktxGo').dispatchEvent(new f.doc.defaultView.MouseEvent('click', { bubbles: true }));
+  click(); click();
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.$('ktxGo').disabled, true);
+  f.setDate('2026-11-13');
+  f.$('date').dispatchEvent(new f.doc.defaultView.Event('change', { bubbles: true }));
+  finish(result());
+  await tick();
+  assert.equal(f.$('ktxList').children.length, 0);
+  assert.equal(f.$('ktxContinue').hidden, true);
+  assert.equal(f.$('ktxGo').disabled, false);
+  assert.match(f.$('ktxNote').textContent, /이전 결과/);
+});
+
+test('패널 — 공통 날짜 화살표·시각·역·인원 변경은 오래된 결과와 계속 연결을 지운다', async () => {
+  const f = panel();
+  const search = async () => { f.$('ktxGo').click(); await tick(); assert.equal(f.$('ktxContinue').hidden, false); };
+  await search();
+  f.change('ktxPax', '2');
+  assert.equal(f.$('ktxContinue').hidden, true);
+  await search();
+  f.change('ktxTo', '대전');
+  assert.equal(f.$('ktxList').children.length, 0);
+  await search();
+  f.setHour(8);
+  f.$('hourStart').dispatchEvent(new f.doc.defaultView.Event('input', { bubbles: true }));
+  assert.equal(f.$('ktxContinue').hidden, true);
+  await search();
+  f.$('nextDay').addEventListener('click', () => f.setDate('2026-11-13'));
+  f.$('nextDay').click();
+  assert.equal(f.$('ktxContinue').hidden, true);
+  await search();
+  f.$('ktxSwap').click();
+  assert.deepEqual([f.$('ktxFrom').value, f.$('ktxTo').value], ['대전', '부산']);
+  assert.equal(f.$('ktxContinue').hidden, true);
+  await tick();
+  assert.deepEqual(f.store[PREF_KEY], { from: '대전', to: '부산', adults: 2 });
+});
+
+test('패널 — 실패해도 자동 조회나 탭 열기가 없고 명시적으로 코레일 열기를 누를 수 있다', async () => {
+  let failed = true;
+  const f = panel({ answer: () => failed ? { ok: false, error: 'Python 실행 환경 없음', code: 'RUNTIME_MISSING' } : result() });
+  f.$('ktxGo').click(); await tick();
+  assert.equal(f.$('ktxNote').classList.contains('bad'), true);
+  assert.match(f.$('ktxNote').textContent, /native\/setup-ktx\.ps1/);
+  assert.doesNotMatch(f.$('ktxNote').textContent, /ExtensionId/);
+  assert.equal(f.$('ktxGo').disabled, false);
+  assert.equal(f.$('ktxContinue').hidden, true);
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(f.opened, []);
+  f.$('ktxSite').click(); await tick();
+  assert.deepEqual(f.opened, [KORAIL_MAIN]);
+  assert.equal(f.calls.length, 1);
+  failed = false;
+  f.$('ktxFrom').dispatchEvent(new f.doc.defaultView.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await tick();
+  assert.equal(f.$('ktxNote').classList.contains('bad'), false);
+  assert.equal(f.$('ktxContinue').hidden, false);
+});
+
+test('계속 열기 — 실패를 알리고 다시 시도할 수 있으며 바뀐 조건의 화면을 열지 않는다', async () => {
+  const f = panel({ open: () => { throw new Error('조회 화면이 닫혔습니다'); } });
+  f.$('ktxGo').click(); await tick();
+  f.$('ktxContinue').click(); await tick();
+  assert.match(f.$('ktxNote').textContent, /조회 화면이 닫혔습니다/);
+  assert.equal(f.$('ktxContinue').disabled, false);
+  f.setHour(10); // 이벤트가 없는 변경도 클릭 직전에 검사한다.
+  f.$('ktxContinue').click();
+  assert.equal(f.continued.length, 1);
+  assert.equal(f.$('ktxContinue').hidden, true);
+});
+
+test('시간 옆 아이콘 — 차량으로 시작하고 KTX·항공권 전환과 다른 탭에서 숨기기를 유지한다', () => {
+  const f = panel();
+  const app = f.doc.querySelector('.app');
+  const pressed = () => f.$('carViewControl').querySelector('[aria-pressed="true"]')?.dataset.view;
+  assert.deepEqual([f.$('carViewControl').hidden, f.$('ktxBox').hidden], [true, true]);
+  f.box.toggle(true);
+  assert.deepEqual([f.$('ktxBox').hidden, pressed()], [true, 'car']);
+  f.choose('ktx');
+  assert.deepEqual([f.$('ktxBox').hidden, f.$('flightBox').hidden, app.classList.contains('ktx-view')], [false, true, true]);
+  f.box.toggle(false);
+  assert.deepEqual([f.$('carViewControl').hidden, f.$('ktxBox').hidden, app.classList.contains('ktx-view')], [true, true, false]);
+  f.box.toggle(true);
+  assert.equal(f.$('ktxBox').hidden, false);
+  f.choose('flight');
+  assert.deepEqual([f.$('ktxBox').hidden, f.$('flightBox').hidden, app.classList.contains('flight-view'), pressed()], [true, false, true, 'flight']);
+  f.choose('car');
+  assert.deepEqual([f.$('ktxBox').hidden, f.$('flightBox').hidden, app.classList.contains('flight-view'), pressed()], [true, true, false, 'car']);
   assert.equal(f.calls.length, 0);
 });
 
-test('ktxPick — 최소화한 창의 코레일 탭을 패널의 창으로 옮겨 앞에 두고 그 줄의 좌석을 누른다, 닫힌 탭이면 다시 조회하라고', async () => {
-  const f = fakeChrome([]);
-  await f.api.windows.create({ url: 'https://www.korail.com/ticket/search/list', state: 'minimized' });
-  f.session.ktxTab = 7;
-  const r = await ktxPick({ tabId: 7, row: { dep: '05:13', no: '101' }, seat: 'gen' }, { api: f.api });
-  assert.deepEqual(r, { ok: true });
-  assert.deepEqual(f.calls.slice(1).map((c) => c.slice(0, 3)), [['move', 7, 1], ['update', 7, true], ['focus', 1], ['pagePick', 7, 'ISOLATED']]);
-  assert.equal(f.session.ktxTab, undefined, '넘긴 탭은 잊는다');
-  // 이미 패널의 창에 있으면 옮기지 않는다
-  await ktxPick({ tabId: 7, row: { dep: '05:13', no: '101' }, seat: 'spec' }, { api: f.api });
-  assert.equal(f.calls.filter((c) => c[0] === 'move').length, 1);
-  assert.deepEqual(f.calls.find((c) => c[0] === 'pagePick')[3], ['05:13', '101', 'gen']);
-  f.closeTab();
-  assert.match((await ktxPick({ tabId: 7, row: {}, seat: 'gen' }, { api: f.api })).error, /닫혔습니다/);
-});
-
-test('ktx.search — 조회라 확인 없이 돌고, 사전설정의 오늘을 넘긴다', async () => {
-  const seen = [];
-  const log = [];
-  const d = createDispatcher({ log: (e) => log.push(e) });
-  registerKtx(d, { ktxSearch: async (input, opts) => { seen.push({ input, today: opts.today }); return { ok: true, rows: [], tabId: 7 }; } });
-  const { record } = d.build('ktx.search', { input: INPUT, preset: { today: '2026-11-05' } });
-  assert.equal((await d.run(record)).ok, true);
-  assert.deepEqual(seen, [{ input: INPUT, today: '2026-11-05' }]);
-  assert.equal(log[0].kind, 'ktx');
-  assert.match(log[0].text, /부산→서울/);
-  assert.throws(() => d.build('ktx.search', { input: { ...INPUT, from: '인천' }, preset: { today: '2026-11-05' } }), /출발역|from/);
-});
-
-test('차량 탭의 칸 — 조회하면 줄이 서고, 매진 좌석은 잠기고, 좌석을 누르면 코레일에서 고른다', async () => {
-  const doc = new JSDOM(html).window.document;
-  const store = { [PREF_KEY]: { from: '부산', to: '서울', adults: 2 } };
-  const picks = [];
-  const d = createDispatcher();
-  const rows = page(RESULT).call(injected.pageRows).rows;
-  let asked = null;
-  registerKtx(d, { ktxSearch: async (input) => { asked = input; return { ok: true, rows, tabId: 7 }; } });
-  const box = createKtxBox({
-    doc, actions: d, when: () => ({ date: '2026-11-12', hour: 5 }), today: () => '2026-11-05',
-    storage: { get: async (k) => ({ [k]: store[k] }), set: async (o) => Object.assign(store, o) },
-    pick: async (p) => { picks.push(p); return { ok: true }; }, openTab: () => {},
-  });
-  await new Promise((r) => setTimeout(r, 0));
-  const $ = (id) => doc.getElementById(id);
-  const app = doc.querySelector('.app');
-  const pressed = () => $('carViewControl').querySelector('[aria-pressed="true"]')?.dataset.view;
-  const choose = (view) => $('carViewControl').querySelector(`[data-view="${view}"]`).querySelector('svg').dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }));
-  assert.deepEqual([$('carViewControl').hidden, $('ktxBox').hidden], [true, true], '차량 탭이 아니면 시간 옆 아이콘도 칸도 숨는다');
-  box.toggle(true);
-  assert.deepEqual([$('carViewControl').hidden, $('ktxBox').hidden, app.classList.contains('ktx-view'), pressed()], [false, true, false, 'car'], '차량 탭은 차량부터');
-  choose('ktx');
-  assert.deepEqual([$('ktxBox').hidden, app.classList.contains('ktx-view'), pressed(), store.ktxView], [false, true, 'ktx', undefined], '아이콘 안을 눌러도 되고, 고른 것은 저장하지 않는다');
-  box.toggle(false);
-  assert.deepEqual([$('carViewControl').hidden, $('ktxBox').hidden, app.classList.contains('ktx-view')], [true, true, false], '다른 탭으로 가면 숨는다');
-  box.toggle(true);
-  assert.equal($('ktxBox').hidden, false, '돌아오면 고른 탭 그대로');
-  assert.equal($('ktxPax').value, '2', '저장한 인원');
-  $('ktxSwap').click();
-  assert.deepEqual([$('ktxFrom').value, $('ktxTo').value], ['서울', '부산']);
-  $('ktxSwap').click();
-  $('ktxGo').click();
-  await new Promise((r) => setTimeout(r, 10));
-  assert.deepEqual(asked, { from: '부산', to: '서울', date: '2026-11-12', hour: 5, adults: 2 });
-  const items = $('ktxList').querySelectorAll('li');
-  assert.equal(items.length, 3);
-  assert.equal($('ktxCount').textContent, '3');
-  assert.match($('ktxNote').textContent, /부산→서울 11\/12 05시~ · 3편/);
-  const seats = [...items[0].querySelectorAll('button.ktx-seat')];
-  assert.deepEqual(seats.map((b) => [b.dataset.seat, b.disabled, b.textContent]), [['gen', false, '일반실59,800원'], ['spec', true, '특실매진']]);
-  assert.ok(items[1].querySelector('button.ktx-seat.soon'), '매진임박 표시');
-  seats[0].querySelector('b').click();
-  await new Promise((r) => setTimeout(r, 0));
-  assert.deepEqual(picks, [{ tabId: 7, row: rows[0], seat: 'gen' }]);
-  assert.match($('ktxNote').textContent, /05:13 KTX 101 일반실을 골라 두었습니다/);
-  choose('car');
-  assert.deepEqual([$('ktxBox').hidden, app.classList.contains('ktx-view'), store.ktxView], [true, false, undefined]);
-});
-
-test('시간 옆 고르기 — 예전에 저장해 둔 KTX 조회가 있어도 차량으로 연다(2026-11-05 "기본은 차량 조회로")', async () => {
-  const doc = new JSDOM(html).window.document;
-  const box = createKtxBox({ doc, actions: null, storage: { get: async (k) => ({ [k]: k === 'ktxView' ? 'ktx' : undefined }), set: async () => {} } });
-  box.toggle(true);
-  await new Promise((r) => setTimeout(r, 0));
-  assert.equal(doc.getElementById('ktxBox').hidden, true);
-  assert.equal(doc.querySelector('#carViewControl [aria-pressed="true"]').dataset.view, 'car');
-});
-
-test('패널 — 차량·KTX·항공권 아이콘 셋은 날짜 줄의 시간 칸 옆(목록이 아니라 단추), KTX 칸은 예약 칸 다음(.app 바로 아래), 차량 탭 안의 탭 줄은 없다', () => {
-  const doc = new JSDOM(html).window.document;
-  const box = doc.getElementById('ktxBox');
-  const pick = doc.getElementById('carViewControl');
-  assert.equal(box.previousElementSibling.id, 'booking');
-  assert.ok(pick.previousElementSibling.classList.contains('hours-control'));
-  assert.equal(pick.querySelector('svg'), null, '그림은 src/icons.js 의 것을 ktxbox 가 채운다(출장 폼과 같은 아이콘)');
-  createKtxBox({ doc, actions: null, storage: { get: async () => ({}), set: async () => {} } });
-  assert.deepEqual([...pick.querySelectorAll('button[data-view]')].map((b) => b.dataset.view + ':' + b.title + ':' + !!b.querySelector('svg')), ['car:차량 현황:true', 'ktx:KTX 조회:true', 'flight:항공권 조회:true']);
-  assert.equal(pick.querySelector('select'), null, '목록 팝업이 아니다');
-  assert.equal(doc.getElementById('carTabs'), null);
-  assert.ok(box.parentElement.classList.contains('app'));
+test('패널 배치 — 시간 옆 아이콘·예약 칸 다음 KTX·출장 바로가기 ktxGo 를 유지한다', () => {
+  const f = panel();
+  assert.equal(f.$('ktxBox').previousElementSibling.id, 'booking');
+  assert.ok(f.$('carViewControl').previousElementSibling.classList.contains('hours-control'));
+  assert.deepEqual([...f.$('carViewControl').querySelectorAll('button[data-view]')].map((b) => [b.dataset.view, !!b.querySelector('svg')]), [['car', true], ['ktx', true], ['flight', true]]);
+  assert.equal(f.$('carTabs'), null);
+  assert.equal(f.$('ktxGo').tagName, 'BUTTON');
   const css = fs.readFileSync(new URL('../sidepanel.css', import.meta.url), 'utf8');
   assert.match(css, /\.app\.ktx-view > \.ask, \.app\.ktx-view > \.schedule, \.app\.ktx-view > #booking \{ display: none; \}/);
 });

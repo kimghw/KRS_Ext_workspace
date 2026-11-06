@@ -1,2 +1,2 @@
 @echo off
-node "%~dp0host.mjs"
+node "%~dp0entry.mjs"

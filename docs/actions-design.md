@@ -461,10 +461,14 @@ export function registerFlight(d)
   'flight.search' (rec, { onStage }) → flightSearch({ airline, from, to, date, hour, adults } = rec.input, { today: rec.preset.today, onStage })   // 항공편 조회(confirm false). 예약 페이지 연결은 flightOpen 탐색, 예약·결제 없음. docs/flights.md 참고.
 // ktx.js
 export function registerKtx(d)
-  'ktx.search' (rec, { onStage }) → ktxSearch({ from, to, date, hour, adults } = rec.input, { today: rec.preset.today, onStage })   // 조회(confirm false) — 차량 탭 KTX 조회 탭(ktxbox.js): 이 확장의 코레일 탭(최소화한 창)에서 결과 화면의 history.state 에 조건을 넣고 새로고침 → 열차 줄(src/ktx.js, 2026-11-05). 막힘(-8002·-8202)은 ok false. 좌석 고르기(ktxPick)는 탐색이라 기록이 아니다
+  'ktx.search' (rec, { onStage }) → ktxSearch(rec.input, { onStage })   // 조회(confirm false) — com.krs.meetingroom의 ktxSearch → entry.mjs → ktx.mjs → Python worker.py. { ok, rows, session } 반환.
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.
+
+KTX 는 `ktx.search` 기록의 역·날짜·시·인원만 기존 네이티브 호스트 `com.krs.meetingroom`으로 보냅니다. 경량 진입부 `native/entry.mjs`가 KTX 요청만 `ktx.mjs`로 보내 전용 Python의 추출된 조회 코드를 실행합니다. 기존 요청에는 `host.mjs`를 불러옵니다. KTX 조회는 Claude 지시문·문서 처리·Git·Help 모듈을 불러오지 않고, 기존 기능은 KTX 환경 없이 동작합니다.
+응답의 `rows`는 패널에 표시하고 `session`은 화면을 열어 둔 동안만 보관합니다. **코레일에서 계속**은 native task `ktxOpen`으로 정확히 그 결과 창만 앞으로 열며 좌석 선택이나 예매를 하지 않습니다.
+네이티브 호스트에서 입력 재검사·교차 프로세스 잠금·실행 시간/출력 크기 제한을 적용합니다. 차단 오류는 재시도 없이 반환합니다. 확장의 `executeScript`나 `history.state` 변경은 사용하지 않습니다. 설치·진단은 [KTX 브릿지](ktx-bridge.md)를 참고합니다.
 
 ### 6.7 `src/llm.js` — LLM 쪽 어댑터(2차 물결, U3)
 
