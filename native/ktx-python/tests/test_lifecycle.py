@@ -14,8 +14,15 @@ import worker
 
 HIDDEN = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
-def script(code):
-    return [sys.executable, "-I", "-u", "-c", "import sys; sys.path.insert(0, " + repr(str(ROOT)) + "); " + code]
+def script(code, *, managed=False):
+    executable = sys._base_executable if managed and sys.platform == "win32" else sys.executable
+    return [executable, "-I", "-X", "utf8", "-u", "-c", "import sys; sys.path.insert(0, " + repr(str(ROOT)) + "); " + code]
+
+
+def managed_options():
+    # Match native/ktx.mjs: avoid the venv redirector's outer kill-on-close job,
+    # but keep the venv selected by CPython's own launcher environment value.
+    return {**HIDDEN, "env": {**os.environ, "__PYVENV_LAUNCHER__": sys.executable}}
 
 class LifecycleTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "Windows byte locks")
@@ -30,7 +37,7 @@ class LifecycleTests(unittest.TestCase):
                 code = ("from lifecycle import RequestLock, LifecycleError\n"
                         "try:\n with RequestLock(" + repr(root) + "):\n  print('unexpected acquisition')\n"
                         "except LifecycleError as exc:\n print(exc.code)")
-                result = subprocess.run(script(code), capture_output=True, text=True, timeout=10, **HIDDEN)
+                result = subprocess.run(script(code), capture_output=True, text=True, encoding="utf-8", timeout=10, **HIDDEN)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), "BUSY")
                 self.assertEqual(lock_path.stat().st_size, 0)
@@ -41,7 +48,7 @@ class LifecycleTests(unittest.TestCase):
     def test_cross_process_lock_rejects_second_request_and_releases_after_death(self):
         with tempfile.TemporaryDirectory() as root:
             code = "from lifecycle import RequestLock; import time\nwith RequestLock(" + repr(root) + "):\n print('locked', flush=True)\n time.sleep(30)"
-            child = subprocess.Popen(script(code), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **HIDDEN)
+            child = subprocess.Popen(script(code), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", **HIDDEN)
             try:
                 self.assertEqual(child.stdout.readline().strip(), "locked")
                 with self.assertRaises(LifecycleError) as caught:
@@ -102,8 +109,8 @@ class LifecycleTests(unittest.TestCase):
     def test_dead_parent_rejects_before_operation(self):
         parent = subprocess.Popen([sys.executable, "-I", "-c", "pass"], **HIDDEN)
         parent.wait(timeout=10)
-        result = subprocess.run(script("from lifecycle import ParentWatch\nwith ParentWatch(" + str(parent.pid) + "):\n print('unexpected operation')"),
-                                capture_output=True, text=True, **HIDDEN)
+        result = subprocess.run(script("from lifecycle import ParentWatch\nwith ParentWatch(" + str(parent.pid) + "):\n print('unexpected operation')", managed=True),
+                                capture_output=True, text=True, encoding="utf-8", **managed_options())
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("unexpected operation", result.stdout)
 
@@ -114,7 +121,7 @@ class LifecycleTests(unittest.TestCase):
         code = ("from lifecycle import ParentWatch; import subprocess,time\nwith ParentWatch(" + str(parent.pid) + "):\n"
                 " child = subprocess.Popen([sys.executable, '-I', '-c', 'import time;time.sleep(30)'], creationflags=subprocess.CREATE_NO_WINDOW)\n"
                 " print(child.pid, flush=True)\n time.sleep(30)")
-        watched = subprocess.Popen(script(code), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **HIDDEN)
+        watched = subprocess.Popen(script(code, managed=True), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", **managed_options())
         try:
             child_line = watched.stdout.readline().strip()
             self.assertTrue(child_line.isdigit(), watched.stderr.read() if not child_line else child_line)

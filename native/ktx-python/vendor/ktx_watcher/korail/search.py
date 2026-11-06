@@ -1,7 +1,8 @@
-"""Query form and row parsing extracted from binjari; bridge adds one-shot entrypoints."""
+"""Query form, guard re-query and row parsing extracted from binjari; bridge adds a one-shot entrypoint."""
 from __future__ import annotations
 import logging
 import re
+import time as _time
 from datetime import date as _date, time as Time
 from typing import Any, Dict, List, Optional
 from ..browser import Page, TimeoutError as PWTimeoutError
@@ -10,9 +11,12 @@ from ..dom import read_page_state
 from ..diagnostics import record_guard
 from . import GuardBlocked, SiteLayoutChanged, QueryConditionMismatch, SearchResultUnavailable
 from . import selectors as S
-from .client import KorailSPAClient, inspect_guard_notice, dismiss_notice_modal, human_click, human_pause, human_type, safe_goto
+from .client import (KorailSPAClient, dismiss_macro_notice, dismiss_notice_modal, human_click, human_pause,
+                     human_type, inspect_guard_notice, safe_goto)
 LOGGER = logging.getLogger(__name__)
 _TIME_RE = re.compile(r"(\d{1,2}):(\d{2})")
+# Same-condition re-queries in this process (binjari's counter; the one-shot entrypoint reads it).
+_REQUERY_COUNT = 0
 
 def _input_value(page: Page, sel: str) -> str:
     try:
@@ -421,6 +425,38 @@ def _set_passengers(page: Page, config: KTXAConfig) -> None:
 
 
 
+def _click_train_type_tab(page: Page, train_type: str) -> bool:
+    if not train_type or train_type in ("전체", "ALL"):
+        return False
+    sel = S.TRAIN_TYPE_TAB.get(train_type)
+    if not sel:
+        LOGGER.warning("열차종류 '%s' 미지원", train_type)
+        return False
+    try:
+        state = read_page_state(page, tab=sel, include_text=False)["tab"]
+    except Exception as e:
+        LOGGER.debug("Train tab state unavailable: %s", e)
+        return False
+    if state is None or state["active"]:
+        return False
+    loc = page.locator(sel).first
+    # 클릭 전 modal dismiss (delayed -8002 우회)
+    for attempt in range(3):
+        if _check_guard(page, "train type tab"):
+            raise GuardBlocked("열차 종류 변경 중 명시적 차단 안내", explicit=True)
+        try:
+            loc.click(timeout=4000)
+            LOGGER.info("열차종류 탭 '%s' 클릭 (attempt=%d)", train_type, attempt + 1)
+            human_pause(0.8, 1.4)
+            _wait_result_list(page, where="train type tab")
+            return True
+        except Exception as e:
+            LOGGER.warning("열차종류 탭 클릭 attempt=%d 실패: %s", attempt + 1, e)
+            _time.sleep(0.8)
+    return False
+
+
+
 def _parse_depart_time(text: str) -> Optional[Time]:
     m = _TIME_RE.search(text)
     if not m:
@@ -516,6 +552,31 @@ def _parse_result_rows(page: Page) -> List[Dict[str, Any]]:
 
 
 
+def navigate_to_search(client: KorailSPAClient) -> Page:
+    page = client.main_page()
+    safe_goto(page, S.SEARCH_URL, timeout_ms=30_000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=12_000)
+    except PWTimeoutError:
+        LOGGER.debug("networkidle timeout — 계속")
+    try:
+        page.wait_for_selector(S.SEARCH_FORM_DETECT, timeout=10_000)
+    except PWTimeoutError:
+        raise SiteLayoutChanged("검색 폼 selector 미감지")
+    # 진입 직후 매크로 안내 모달 있으면 dismiss
+    _check_guard(page, "search form")
+    # 운영기간성 공지 모달은 React 비동기 mount — 최대 4초 polling.
+    for _ in range(8):
+        if dismiss_notice_modal(page):
+            break
+        try:
+            page.wait_for_timeout(500)
+        except Exception:
+            break
+    return page
+
+
+
 def _set_srt_option(page: Page, config: KTXAConfig) -> None:
     """검색 폼의 '서울·용산 - 수서 함께 보기' 라디오를 config 에 맞춰 Y/N 으로 둔다.
 
@@ -548,6 +609,29 @@ def _set_srt_option(page: Page, config: KTXAConfig) -> None:
 
 
 
+def _ensure_srt_on_result(page: Page, config: KTXAConfig) -> bool:
+    """결과 페이지(search/list)의 '수서 함께 보기' 체크박스를 config 에 맞춘다 (클릭 시 자동 재조회)."""
+    want = bool(config.ktxa_include_srt)
+    try:
+        cb = page.locator(S.SRT_RESULT_CHECKBOX).first
+        if cb.count() == 0:
+            raise SiteLayoutChanged("결과 페이지 수서(SRT) 선택 요소 미발견")
+        if cb.is_checked() == want:
+            return False
+        try:
+            page.locator(S.SRT_RESULT_CHECKBOX_LABEL).first.click(timeout=3000)
+        except Exception:
+            page.evaluate("(sel) => document.querySelector(sel)?.click()", S.SRT_RESULT_CHECKBOX)
+        human_pause(1.5, 2.5)
+        if cb.is_checked() != want:
+            raise QueryConditionMismatch("결과 페이지 수서(SRT) 옵션 적용 검증 실패")
+        LOGGER.info("결과 페이지 수서(SRT) 함께 보기 %s", "재활성화" if want else "해제")
+        return True
+    except Exception as e:
+        raise SiteLayoutChanged(f"결과 페이지 수서(SRT) 체크 확인 실패: {e}") from e
+
+
+
 def _search_start_hour(config: KTXAConfig) -> int:
     if config.ktxa_time_window:
         return config.ktxa_time_window[0].hour
@@ -555,6 +639,13 @@ def _search_start_hour(config: KTXAConfig) -> int:
         return 0
     first = min(t.hour * 60 + t.minute for t in config.ktxa_times)
     return max(0, first - max(config.ktxa_tolerance_min, 0)) // 60
+
+
+
+def _query_signature(config: KTXAConfig) -> tuple:
+    return (config.ktxa_origin, config.ktxa_dest, config.ktxa_date,
+            _search_start_hour(config), tuple(sorted(config.passenger_counts().items())),
+            config.ktxa_include_srt, config.ktxa_train_type)
 
 
 
@@ -608,11 +699,122 @@ def fill_search_form(page: Page, config: KTXAConfig) -> None:
 
 
 
+def _check_guard(page: Page, stage: str) -> bool:
+    """Detect evidence independently of whether clicking confirm succeeds."""
+    pending = getattr(page.context, "_pending_guard_notices", [])
+    page.context._pending_guard_notices = []
+    notice = inspect_guard_notice(page)
+    if notice is not None:
+        record_guard(page, notice, stage)
+        if not dismiss_macro_notice(page, notice=notice):
+            raise GuardBlocked(
+                f"{stage}: {notice['code']} {notice['message']} (dismiss failed)",
+                explicit=True,
+            )
+    return bool(notice or pending)
+
+
+
 def _read_rows(page: Page) -> List[Dict[str, Any]]:
     try:
         return _parse_result_rows(page)
     except Exception as exc:
         raise SiteLayoutChanged(f"Result DOM parse failed: {exc}") from exc
+
+
+
+def _await_result(
+    page: Page, *, stage: str, timeout_ms: int = 10_000,
+) -> tuple[Optional[str], bool]:
+    """렌더 대기 뒤 행이 아니면 가드 분류까지. (state, guard_found).
+
+    대기 중 뒤늦게 뜬 차단 안내는 여기서 기록·닫기까지 한다 — 안 그러면 0행만 보고
+    '안내 없는 빈 목록' 으로 잘못 보고한다 (Codex 교차 검토 2026-11-06 지적).
+    """
+    state = _wait_result_list(page, where=stage, timeout_ms=timeout_ms)
+    if state == "rows":
+        return state, False
+    return state, _check_guard(page, stage)
+
+
+
+def _requery_after_guard(
+    page: Page, *, config: KTXAConfig | None, where: str, attempts: int = 2,
+) -> List[Dict[str, Any]]:
+    """Bounded retry with unchanged query conditions; never assume a one-time guard."""
+    global _REQUERY_COUNT
+    for attempt in range(1, attempts + 1):
+        if config is not None:
+            validate_query(page, config, "before guard retry")
+        LOGGER.warning("Guard retry (%s) %d/%d", where, attempt, attempts)
+        human_pause(1.0, 2.0)
+        button = page.locator(S.RESULT_SEARCH_SUBMIT).filter(visible=True).first
+        if button.is_visible():
+            human_click(button)
+        else:
+            # The compact result header hides its query button. Reload preserves
+            # the selected day; never click the separate next-day query control.
+            page.reload(wait_until="domcontentloaded", timeout=20_000)
+        _REQUERY_COUNT += 1
+        try:
+            page.wait_for_load_state("networkidle", timeout=12_000)
+        except PWTimeoutError:
+            pass
+        human_pause(1.5, 2.5)
+        if _check_guard(page, f"{where}/retry-{attempt}"):
+            if attempt == attempts:
+                raise GuardBlocked(f"Repeated explicit guard ({where}, {attempt} retries)",
+                                   explicit=True)
+            continue
+        if config is not None:
+            validate_query(page, config, "after guard retry")
+        _state, late_guard = _await_result(page, stage=f"{where}/retry-{attempt}")
+        if late_guard:
+            # 대기 중 뜬 차단 안내 — 위의 즉시 감지와 같은 규칙으로 센다
+            if attempt == attempts:
+                raise GuardBlocked(f"Repeated explicit guard ({where}, {attempt} retries, late)",
+                                   explicit=True)
+            continue
+        rows = _read_rows(page)
+        if rows:
+            LOGGER.info("Retry returned %d rows with the same conditions", len(rows))
+            return rows
+        if attempt < attempts:
+            # 안내도 마커도 없는 0행 — 렌더 지연일 수 있어 같은 조건으로 한 번 더 (refresh)
+            LOGGER.warning("Guard retry (%s) %d/%d: 목록 0행(새 안내 없음) — 재조회 1회 더",
+                           where, attempt, attempts)
+            continue
+        raise SearchResultUnavailable(
+            "Guard dismissed, but result list is empty without a new explicit notice")
+    raise GuardBlocked(f"Explicit guard persists ({where})", explicit=True)
+
+
+
+def submit_search(page: Page, config: KTXAConfig | None = None) -> List[Dict[str, Any]]:
+    """Submit once; preserve guard evidence and validate the requested conditions."""
+    if config is not None:
+        validate_query(page, config, "before submit")
+    human_pause(3.0, 6.0)
+    human_click(page.locator(S.SEARCH_SUBMIT).first)
+    try:
+        page.wait_for_url(S.RESULT_URL_PATTERN, timeout=15_000)
+    except PWTimeoutError:
+        if _check_guard(page, "submit/navigation"):
+            return _requery_after_guard(page, config=config, where="submit/navigation")
+        raise SiteLayoutChanged(f"Search did not reach results: {page.url}")
+    try:
+        page.wait_for_load_state("networkidle", timeout=15_000)
+    except PWTimeoutError:
+        pass
+    human_pause(1.5, 2.5)
+    if _check_guard(page, "submit"):
+        return _requery_after_guard(page, config=config, where="submit")
+    if config is not None:
+        validate_query(page, config, "after submit")
+    _state, late_guard = _await_result(page, stage="submit/wait")
+    if late_guard:
+        return _requery_after_guard(page, config=config, where="submit/wait")
+    return _read_rows(page)
 
 
 
@@ -629,6 +831,69 @@ def _empty_marker_visible(page: Page) -> bool:
 
 
 
+def _requery_when_empty(
+    page: Page, config: KTXAConfig, *, where: str,
+) -> List[Dict[str, Any]]:
+    """목록이 비었는데 차단 안내도 '열차 없음' 마커도 없을 때 — 같은 조건으로 새로고침 1회.
+
+    -8002 뒤의 _requery_after_guard 와 같은 원리(초기 응답이 비면 refresh 로 정상 목록).
+    조건은 바꾸지 않는다. 새로고침 후 차단 안내가 뜨면 가드 재조회 경로로 넘긴다.
+    """
+    global _REQUERY_COUNT
+    validate_query(page, config, f"before empty retry ({where})")
+    LOGGER.warning("결과 목록 0행 (%s) — 차단 안내·열차 없음 마커 없음, 새로고침 1회 재조회", where)
+    human_pause(1.0, 2.0)
+    page.reload(wait_until="domcontentloaded", timeout=20_000)
+    _REQUERY_COUNT += 1
+    try:
+        page.wait_for_load_state("networkidle", timeout=12_000)
+    except PWTimeoutError:
+        pass
+    human_pause(1.5, 2.5)
+    if _check_guard(page, f"{where}/empty-retry"):
+        return _requery_after_guard(page, config=config, where=f"{where}/empty-retry")
+    validate_query(page, config, f"after empty retry ({where})")
+    _state, late_guard = _await_result(page, stage=f"{where}/empty-retry")
+    if late_guard:
+        return _requery_after_guard(page, config=config, where=f"{where}/empty-retry")
+    rows = _read_rows(page)
+    if rows:
+        LOGGER.info("새로고침 재조회로 %d행 수신 (%s)", len(rows), where)
+    return rows
+
+
+
+def _settle_rows(
+    page: Page, config: KTXAConfig, raw: List[Dict[str, Any]], *, where: str,
+    budget: Optional[Dict[str, int]] = None, timeout_ms: int = 10_000,
+) -> List[Dict[str, Any]]:
+    """0행이면 렌더 완료를 기다려 다시 읽고, 그래도 비면(마커 없음) 새로고침으로 재조회.
+
+    budget={"refresh": n} 은 perform_search 한 번당 새로고침 재조회 예산 (호출당이 아님).
+    """
+    if raw:
+        return raw
+    state, guard = _await_result(page, stage=where, timeout_ms=timeout_ms)
+    if guard:
+        return _requery_after_guard(page, config=config, where=where)
+    if state == "modal":
+        # 차단 안내가 아닌 공지 모달 — 닫고 한 번 더 기다린다 (그 사이 가드가 뜨면 분류)
+        dismiss_notice_modal(page)
+        _state2, guard2 = _await_result(page, stage=f"{where}/after modal", timeout_ms=timeout_ms)
+        if guard2:
+            return _requery_after_guard(page, config=config, where=f"{where}/after modal")
+    raw = _read_rows(page)
+    if raw or _empty_marker_visible(page):
+        return raw
+    if budget is not None:
+        if budget.get("refresh", 0) <= 0:
+            LOGGER.warning("결과 목록 0행 (%s) — 이번 조회의 새로고침 예산 소진, 재조회 생략", where)
+            return raw
+        budget["refresh"] -= 1
+    return _requery_when_empty(page, config, where=where)
+
+
+
 def _route_matches(row: dict, config: KTXAConfig) -> bool:
     """Adjacent stations are not interchangeable with the requested journey."""
     for key, requested in (("origin", config.ktxa_origin), ("dest", config.ktxa_dest)):
@@ -641,52 +906,78 @@ def _route_matches(row: dict, config: KTXAConfig) -> bool:
     return True
 
 
-def _check_guard(page: Page, stage: str) -> bool:
-    """Read all pages in this dedicated query context; preserve and stop on a block."""
-    for candidate in [page] + [p for p in page.context.pages if p is not page]:
-        if candidate.is_closed():
-            continue
-        notice = inspect_guard_notice(candidate)
-        if notice:
-            record_guard(candidate, notice, stage)
-            raise GuardBlocked(notice["message"], code=notice["code"] or "GUARD_BLOCKED")
-    return False
+# ── 결과 목록 렌더 대기 — binjari _wait_result_list 와 같은 판정, 폴링만 간격식 ──────────
+# 사용자가 조회 창을 가리거나 최소화하면 requestAnimationFrame 이 멈출 수 있다. Playwright 의 기본
+# polling='raf' 대신 간격 폴링으로 행·'열차 없음' 마커·보이는 모달 중 먼저 뜨는 것을 본다.
+_RESULT_READY_JS = """({rows, empty, modal}) => {
+    const visible = el => el.getClientRects().length > 0 &&
+        getComputedStyle(el).visibility !== 'hidden';
+    if ([...document.querySelectorAll(modal)].some(visible)) return 'modal';
+    if (document.querySelectorAll(rows).length > 0) return 'rows';
+    if ([...document.querySelectorAll(empty)].some(visible)) return 'empty';
+    return null;
+}"""
+_RESULT_READY_STATES = ("rows", "empty", "modal")
 
-def navigate_to_search(client: KorailSPAClient) -> Page:
-    page = client.main_page()
-    safe_goto(page, S.SEARCH_URL, timeout_ms=20000)
-    _check_guard(page, "search form")
+
+def _wait_result_list(page: Page, *, where: str, timeout_ms: int = 10_000) -> Optional[str]:
+    """결과 목록이 실제로 렌더될 때까지 대기. 'rows' | 'empty' | 'modal' | None(시간 초과)."""
     try:
-        page.wait_for_selector(S.SEARCH_FORM_DETECT, timeout=10000)
+        state = page.wait_for_function(
+            _RESULT_READY_JS,
+            arg={"rows": "li.tckList", "empty": S.RESULT_EMPTY_MARKER,
+                 "modal": ".ReactModal__Content, [role=dialog]"},
+            timeout=timeout_ms, polling=250,
+        ).json_value()
     except PWTimeoutError:
-        _check_guard(page, "search form timeout")
-        raise SiteLayoutChanged("검색 폼을 찾지 못했습니다.")
-    for _ in range(8):
-        _check_guard(page, "notice wait")
-        if dismiss_notice_modal(page):
+        state = None
+    except Exception as e:
+        LOGGER.warning("결과 목록 대기 실패 (%s): %s: %s", where, type(e).__name__, e)
+        raise
+    if state not in _RESULT_READY_STATES:
+        state = None
+    if state != "rows":
+        LOGGER.warning("결과 목록 대기 (%s): %s", where,
+                       state or f"{timeout_ms // 1000}s 내 행 미렌더")
+    return state
+
+
+def perform_query(client: KorailSPAClient, config: KTXAConfig) -> List[Dict[str, Any]]:
+    """binjari perform_search 의 한 번 조회 부분 — 폼 입력 → 제출(차단 안내는 기록·닫기 뒤 같은 조건으로
+    재조회, 최대 2회) → 수서 함께 보기 옵션 → 목록 렌더 대기 → 열차종류 탭.
+
+    워처용인 검증된 결과 페이지 재사용·'더보기'·후보 시각 거르기는 하지 않는다. 첫 결과 페이지의 행을
+    그대로 돌려주고 거르기는 실행부(worker.shape_rows)가 한다. '열차 없음' 마커가 보이면 빈 목록이다.
+    """
+    page = navigate_to_search(client)
+    fill_search_form(page, config)
+    _set_srt_option(page, config)
+    raw = submit_search(page, config)
+    srt_changed = _ensure_srt_on_result(page, config)
+    if _check_guard(page, "result options"):
+        raw = _requery_after_guard(page, config=config, where="result options")
+    elif srt_changed:
+        raw = _read_rows(page)
+    budget = {"refresh": 1}   # 이번 조회 전체에서 빈 목록 새로고침은 1회
+    raw = _settle_rows(page, config, raw, where="result list", budget=budget)
+    # 열차종류 탭. 탭 뒤 재조회가 끼면 탭이 '전체' 로 돌아가므로 재조회가 있었을 때만 다시 적용(최대 3회).
+    for _ in range(3):
+        if not raw or not _click_train_type_tab(page, config.ktxa_train_type):
             break
-        page.wait_for_timeout(500)
-    return page
-
-def submit_search(page: Page, config: KTXAConfig) -> List[Dict[str, Any]]:
-    """One submission, no reload, no retry, no pagination, no seat selection."""
-    _check_guard(page, "before submit")
-    validate_query(page, config, "before submit")
-    human_pause(3.0, 6.0)
-    human_click(page.locator(S.SEARCH_SUBMIT).first)
-    try:
-        page.wait_for_url(S.RESULT_URL_PATTERN, timeout=15000)
-    except PWTimeoutError:
-        _check_guard(page, "submit/navigation")
-        raise SiteLayoutChanged(f"조회 결과 화면으로 이동하지 못했습니다: {page.url}")
-    try:
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except PWTimeoutError:
-        pass
-    human_pause(1.5, 2.5)
-    _check_guard(page, "submit")
-    validate_query(page, config, "after submit")
-    rows = _read_rows(page)
-    if not rows and not _empty_marker_visible(page):
+        requeries_before = _REQUERY_COUNT
+        if _check_guard(page, "after train type tab"):
+            raw = _requery_after_guard(page, config=config, where="after train type tab")
+        else:
+            raw = _settle_rows(page, config, _read_rows(page), where="after train type tab",
+                               budget=budget, timeout_ms=4_000)
+        if _REQUERY_COUNT == requeries_before:
+            break
+        if _ensure_srt_on_result(page, config):
+            raw = _settle_rows(page, config, _read_rows(page), where="srt after requery",
+                               budget=budget, timeout_ms=4_000)
+    else:
+        LOGGER.warning("열차종류 탭 재적용 한도(3회) 소진 — 행의 열차종류로 거른다")
+    validate_query(page, config, "result conditions")
+    if not raw and not _empty_marker_visible(page):
         raise SearchResultUnavailable("조회 결과를 확인하지 못했습니다. 코레일 화면을 확인해 주세요.")
-    return rows
+    return raw

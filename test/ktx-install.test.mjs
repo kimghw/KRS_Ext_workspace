@@ -22,7 +22,9 @@ const powershell = (args) => spawnSync('powershell.exe', ['-NoProfile', '-Execut
   encoding: 'utf8', timeout: 15_000, windowsHide: true,
 });
 function fixture(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'krs ktx installer '));
+  // TEMP can use an 8.3 alias on Windows; PowerShell expands PSScriptRoot to the
+  // long path. Give both sides the same real directory before comparing paths.
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'krs ktx installer ')));
   const script = path.join(dir, 'setup-ktx.ps1');
   fs.copyFileSync(source, script);
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

@@ -1,7 +1,8 @@
 """One JSON request -> one JSON response for the native KTX bridge.
 
-The only operations are search and open. Search submits once in a new dedicated
-Chrome profile; open foregrounds its exact result page for manual booking.
+The only operations are search and open. Search runs binjari's query flow in one
+dedicated Chrome (persistent profile; a live instance is reused, as binjari reuses
+its debug Chrome). Open foregrounds the exact result tab for manual booking.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -26,7 +28,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "vendor"))  # Also works with isolated Python (-I).
 sys.path.insert(0, str(ROOT))
 from lifecycle import ParentWatch, RequestLock
-VERSION = "0.1.0"
+VERSION = "0.3.0"
 SESSION_RE = re.compile(r"^[0-9a-f]{32}$")
 STATIONS = frozenset([
     "서울", "용산", "영등포", "행신", "광명", "수원", "천안아산", "오송",
@@ -34,6 +36,9 @@ STATIONS = frozenset([
     "부산", "경주", "울산(통도사)", "포항", "마산", "창원중앙", "논산", "익산",
     "정읍", "광주송정", "목포", "전주", "순천", "여수EXPO", "강릉", "정동진",
 ])
+# binjari chrome_launcher flags: keep rendering and timers alive while the window is minimized or covered.
+CHROME_FLAGS = ("--no-first-run", "--no-default-browser-check", "--disable-features=CalculateNativeWinOcclusion",
+                "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding")
 
 class WorkerError(RuntimeError):
     def __init__(self, message, code):
@@ -105,7 +110,7 @@ def state_path(value):
     root = Path(value).resolve()
     root.mkdir(parents=True, exist_ok=True)
     (root / "sessions").mkdir(exist_ok=True)
-    (root / "profiles").mkdir(exist_ok=True)
+    (root / "profile").mkdir(exist_ok=True)
     return root
 
 def find_chrome():
@@ -148,58 +153,190 @@ def endpoint_from_profile(profile):
         raise ValueError("Invalid dedicated Chrome port")
     return port, lines[1]
 
-def verify_browser(desc, profile):
-    # Bind the session to this profile's browser identifier and its owning process.
-    if type(desc.get("pid")) is not int or process_executable(desc["pid"]) != Path(desc.get("exe", "")).resolve():
+def debug_port_owner(port):
+    """Read the owner of this loopback listening socket before connecting to CDP."""
+    if sys.platform != "win32":
+        return None
+    from ctypes import wintypes
+
+    class TcpRow(ctypes.Structure):
+        _fields_ = [(name, wintypes.DWORD) for name in
+                    ("state", "local_address", "local_port", "remote_address", "remote_port", "pid")]
+
+    api = ctypes.WinDLL("iphlpapi", use_last_error=True).GetExtendedTcpTable
+    api.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), wintypes.BOOL,
+                    wintypes.ULONG, ctypes.c_int, wintypes.ULONG]
+    api.restype = wintypes.DWORD
+    size = wintypes.DWORD()
+    # TCP_TABLE_OWNER_PID_LISTENER = 3. The table can grow between the two calls.
+    for _ in range(3):
+        buffer = ctypes.create_string_buffer(size.value) if size.value else None
+        status = api(buffer, ctypes.byref(size), False, socket.AF_INET, 3, 0)
+        if status == 122:  # ERROR_INSUFFICIENT_BUFFER
+            continue
+        if status or buffer is None:
+            return None
+        count = wintypes.DWORD.from_buffer(buffer).value
+        for index in range(count):
+            row = TcpRow.from_buffer(buffer, ctypes.sizeof(wintypes.DWORD) + index * ctypes.sizeof(TcpRow))
+            if (socket.ntohs(row.local_port & 0xFFFF) == port
+                    and socket.inet_ntoa(row.local_address.to_bytes(4, "little")) == "127.0.0.1"):
+                return row.pid
+        return None
+    return None
+
+
+def choose_debug_port():
+    # Pass a concrete port, as binjari does. Chrome treats --remote-debugging-port=0
+    # as an automation launch; it is not equivalent to choosing a port ourselves.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def browser_endpoint(desc):
+    port, pid = desc.get("port"), desc.get("pid")
+    if type(port) is not int or not 1 <= port <= 65535 or type(pid) is not int or pid <= 0:
+        raise WorkerError("조회 창 정보가 올바르지 않습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
+    if process_executable(pid) != Path(desc.get("exe", "")).resolve() or debug_port_owner(port) != pid:
         raise WorkerError("조회 창이 닫혔습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
-    port, browser_path = endpoint_from_profile(profile)
-    if port != desc.get("port") or browser_path != desc.get("browserPath"):
-        raise WorkerError("조회 창 정보가 바뀌었습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
     direct = build_opener(ProxyHandler({}))
     with direct.open(f"http://127.0.0.1:{port}/json/version", timeout=3) as response:
         info = json.loads(response.read(65536))
     remote = urlparse(info.get("webSocketDebuggerUrl", ""))
-    if remote.scheme != "ws" or remote.hostname not in ("127.0.0.1", "localhost") or remote.port != port or remote.path != browser_path:
+    if (remote.scheme != "ws" or remote.hostname not in ("127.0.0.1", "localhost") or remote.port != port
+            or not re.fullmatch(r"/devtools/browser/[A-Za-z0-9-]+", remote.path)):
         raise WorkerError("전용 조회 창에 연결하지 못했습니다.", "SESSION_CLOSED")
-    return f"ws://127.0.0.1:{port}{browser_path}"
+    return f"ws://127.0.0.1:{port}{remote.path}"
 
-def start_browser(root, token):
+
+def verify_browser(desc, profile):
+    """Check recorded profile, socket owner, executable and browser GUID, including legacy sessions."""
+    if desc.get("portMode") == "explicit":
+        if desc.get("profile") != str(profile.resolve()):
+            raise WorkerError("조회 창의 프로필이 다릅니다. 다시 조회해 주세요.", "SESSION_CLOSED")
+    else:
+        # Only old port=0 instances have DevToolsActivePort. Keep open working for
+        # those sessions, but require a normal relaunch before another search.
+        pid = desc.get("pid")
+        if pid is not None and (type(pid) is not int or process_executable(pid) != Path(desc.get("exe", "")).resolve()):
+            raise WorkerError("조회 창이 닫혔습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
+        port, browser_path = endpoint_from_profile(profile)
+        if port != desc.get("port") or browser_path != desc.get("browserPath"):
+            raise WorkerError("조회 창 정보가 바뀌었습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
+        if pid is None:
+            desc = {**desc, "pid": debug_port_owner(port)}
+    endpoint = browser_endpoint(desc)
+    if urlparse(endpoint).path != desc.get("browserPath"):
+        raise WorkerError("조회 창 정보가 바뀌었습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
+    return endpoint
+
+def write_json(path, value):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+def save_browser(root, desc):
+    write_json(root / "browser.json", desc)
+
+def running_browser(root):
+    """The dedicated Chrome from an earlier request, if it is still alive (binjari reuses its debug Chrome the same way)."""
+    profile = root / "profile"
+    desc = None
+    try:
+        desc = json.loads((root / "browser.json").read_text(encoding="utf-8"))
+        if isinstance(desc, dict):
+            if desc.get("portMode") == "explicit" and "browserPath" not in desc:
+                # Recover an interrupted launch only if the recorded process owns
+                # this port and the record names this dedicated profile.
+                if desc.get("profile") != str(profile.resolve()):
+                    raise ValueError("Invalid dedicated profile")
+                endpoint = browser_endpoint(desc)
+                desc["browserPath"] = urlparse(endpoint).path
+                save_browser(root, desc)
+            return desc, verify_browser(desc, profile)
+    except (OSError, ValueError, TypeError, WorkerError):
+        if (isinstance(desc, dict) and desc.get("portMode") == "explicit"
+                and desc.get("profile") == str(profile.resolve()) and type(desc.get("pid")) is int
+                and process_executable(desc["pid"]) == Path(desc.get("exe", "")).resolve()):
+            # A transient endpoint failure must not replace the only record of a
+            # live explicit-port Chrome with a second process's handoff PID.
+            raise WorkerError("KTX 전용 Chrome에 아직 연결할 수 없습니다. 잠시 후 다시 조회해 주세요.", "CHROME_NOT_READY")
+    # A browser of this profile without a record (interrupted launch): adopt it by the profile's own port file.
+    try:
+        port, browser_path = endpoint_from_profile(profile)
+        desc = {"pid": None, "exe": str(find_chrome()), "port": port, "browserPath": browser_path}
+        endpoint = verify_browser(desc, profile)
+    except (OSError, ValueError, WorkerError):
+        return None, None
+    save_browser(root, desc)
+    return desc, endpoint
+
+def start_browser(root):
+    """Reuse the live dedicated Chrome or launch it as binjari does. Returns (desc, endpoint, launched)."""
+    desc, endpoint = running_browser(root)
+    if desc:
+        if desc.get("portMode") != "explicit":
+            raise WorkerError("이전 방식으로 실행된 KTX 전용 Chrome 창을 닫고 다시 조회해 주세요.", "CHROME_RESTART_REQUIRED")
+        return desc, endpoint, False
     if sys.platform != "win32":
         raise WorkerError("현재 KTX 실행부는 Windows용입니다.", "WINDOWS_REQUIRED")
     executable = find_chrome()
-    profile = root / "profiles" / token
-    profile.mkdir(exist_ok=False)
-    args = [str(executable), "--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1",
-            f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check", "--start-minimized", "about:blank"]
+    profile = root / "profile"
+    profile.mkdir(exist_ok=True)
+    with contextlib.suppress(OSError):
+        (profile / "DevToolsActivePort").unlink()  # Stale: nothing alive answered for it above.
+    port = choose_debug_port()
+    args = [str(executable), f"--remote-debugging-port={port}", "--remote-debugging-address=127.0.0.1",
+            f"--user-data-dir={profile}", *CHROME_FLAGS, "about:blank"]
+    # As binjari: a normal, visible window (not minimized). Only the focus is left where it was.
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    startup.wShowWindow = 7  # SW_SHOWMINNOACTIVE; open() explicitly restores the result window.
+    startup.wShowWindow = 4  # SW_SHOWNOACTIVATE
     process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                startupinfo=startup, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+    desc = {"pid": process.pid, "exe": str(executable), "port": port,
+            "profile": str(profile.resolve()), "portMode": "explicit"}
+    save_browser(root, desc)
     end = time.monotonic() + 15
     while time.monotonic() < end:
         if process.poll() is not None:
-            raise WorkerError("전용 Chrome 창을 시작하지 못했습니다.", "CHROME_START_FAILED")
+            # Chrome hands a second launch of an open profile to the running instance and exits at once.
+            desc, endpoint = running_browser(root)
+            if desc:
+                if desc.get("portMode") != "explicit":
+                    raise WorkerError("이전 방식으로 실행된 KTX 전용 Chrome 창을 닫고 다시 조회해 주세요.", "CHROME_RESTART_REQUIRED")
+                return desc, endpoint, False
+            raise WorkerError("전용 Chrome 창을 시작하지 못했습니다. 남아 있는 코레일 조회 창을 닫고 다시 조회해 주세요.", "CHROME_START_FAILED")
         try:
-            port, browser_path = endpoint_from_profile(profile)
-            desc = {"pid": process.pid, "exe": str(executable), "port": port, "browserPath": browser_path}
-            return desc, verify_browser(desc, profile)
+            endpoint = browser_endpoint(desc)
         except (OSError, ValueError, WorkerError):
             time.sleep(0.2)
+            continue
+        desc["browserPath"] = urlparse(endpoint).path
+        save_browser(root, desc)
+        return desc, endpoint, True
     # No browser was handed to a user yet; terminate only this newly spawned process.
     process.terminate()
     raise WorkerError("전용 Chrome 창이 준비되지 않았습니다.", "CHROME_START_FAILED")
 
 def save_session(root, token, desc):
-    path = root / "sessions" / f"{token}.json"
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(desc, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
+    write_json(root / "sessions" / f"{token}.json", desc)
 
 def target_id(client, page):
     cdp = client.context.new_cdp_session(page)
     try:
         return cdp.send("Target.getTargetInfo")["targetInfo"]["targetId"]
+    finally:
+        cdp.detach()
+
+def set_window_state(client, page, state):
+    cdp = client.context.new_cdp_session(page)
+    try:
+        window = cdp.send("Browser.getWindowForTarget")
+        cdp.send("Browser.setWindowBounds", {"windowId": window["windowId"], "bounds": {"windowState": state}})
     finally:
         cdp.detach()
 
@@ -216,28 +353,24 @@ def run_search(root, value):
     from ktx_watcher.korail import search
     config = query_config(value)
     token = uuid.uuid4().hex
-    desc, endpoint = start_browser(root, token)
-    desc.update({"created": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(), "input": value})
+    desc, endpoint, launched = start_browser(root)
     with KorailSPAClient(endpoint) as client:
         page = client.main_page()
-        desc["target"] = target_id(client, page)
-        save_session(root, token, desc)
+        session = {**desc, "created": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(), "input": value,
+                   "target": target_id(client, page)}
+        save_session(root, token, session)
         try:
-            cdp = client.context.new_cdp_session(page)
-            try:
-                window = cdp.send("Browser.getWindowForTarget")
-                cdp.send("Browser.setWindowBounds", {"windowId": window["windowId"], "bounds": {"windowState": "minimized"}})
-            finally:
-                cdp.detach()
-            search.navigate_to_search(client)
-            search.fill_search_form(page, config)
-            search._check_guard(page, "after form")
-            search._set_srt_option(page, config)
-            raw = search.submit_search(page, config)
+            raw = search.perform_query(client, config)
             return {"ok": True, "rows": shape_rows(raw, config), "session": token}
         except Exception as exc:
             capture_failure(page, root, token)
-            return failure(exc, session=token)
+            result = failure(exc, session=token)
+            if result["code"] == "GUARD_BLOCKED":
+                events = getattr(page, "_guard_events", []) or getattr(client.context, "_guard_events", [])
+                if events:
+                    notice = events[-1]
+                    result["error"] = f"코레일 조회가 제한되었습니다 ({notice.get('code') or '차단 안내'}). {notice.get('message', '')}"[:1800]
+            return result
 
 def run_open(root, token):
     from ktx_watcher.korail.client import KorailSPAClient
@@ -246,7 +379,7 @@ def run_open(root, token):
     path = root / "sessions" / f"{token}.json"
     try:
         desc = json.loads(path.read_text(encoding="utf-8"))
-        endpoint = verify_browser(desc, root / "profiles" / token)
+        endpoint = verify_browser(desc, root / "profile")
     except (OSError, ValueError, TypeError) as exc:
         raise WorkerError("조회 창이 닫혔습니다. 다시 조회해 주세요.", "SESSION_CLOSED") from exc
     with KorailSPAClient(endpoint) as client:
@@ -254,13 +387,8 @@ def run_open(root, token):
             if target_id(client, page) != desc.get("target"):
                 continue
             # User may already be booking/paying in this page: only restore and focus.
-            cdp = client.context.new_cdp_session(page)
-            try:
-                window = cdp.send("Browser.getWindowForTarget")
-                cdp.send("Browser.setWindowBounds", {"windowId": window["windowId"], "bounds": {"windowState": "normal"}})
-                page.bring_to_front()
-            finally:
-                cdp.detach()
+            set_window_state(client, page, "normal")
+            page.bring_to_front()
             return {"ok": True}
     raise WorkerError("조회 탭이 닫혔습니다. 다시 조회해 주세요.", "SESSION_CLOSED")
 
@@ -290,8 +418,9 @@ def handle(request):
 def check_runtime():
     from ktx_watcher.korail import search
     from ktx_watcher.browser import sync_playwright
-    assert callable(search.submit_search) and callable(sync_playwright)
-    assert not hasattr(search, "perform_search") and not hasattr(search, "_requery_after_guard")
+    # binjari's guard re-query must be present; the watcher loop, pagination and booking must not.
+    assert callable(search.perform_query) and callable(search._requery_after_guard) and callable(sync_playwright)
+    assert not hasattr(search, "perform_search") and not hasattr(search, "_expand_more_until")
     ZoneInfo("Asia/Seoul")
     return {"ok": True, "version": VERSION, "python": sys.version.split()[0],
             "browserLibrary": importlib.metadata.version("rebrowser-playwright")}

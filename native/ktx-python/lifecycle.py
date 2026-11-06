@@ -68,6 +68,10 @@ class WindowsOwner:
 
     No process enumeration or PID-based termination. An existing browser connected
     during open is not a descendant, so it cannot be killed by this job.
+    The host must launch the managed base interpreter directly, with CPython's
+    __PYVENV_LAUNCHER__ pointing at our venv. Running the venv redirector itself
+    adds an outer kill-on-close job; this inner job would prevent its silent
+    breakaway, so clearing our own flag could not preserve a new browser.
     """
     WAIT_OBJECT_0 = 0
     WAIT_TIMEOUT = 258

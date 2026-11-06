@@ -1,49 +1,75 @@
-def _check_guard(page: Page, stage: str) -> bool:
-    """Read all pages in this dedicated query context; preserve and stop on a block."""
-    for candidate in [page] + [p for p in page.context.pages if p is not page]:
-        if candidate.is_closed():
-            continue
-        notice = inspect_guard_notice(candidate)
-        if notice:
-            record_guard(candidate, notice, stage)
-            raise GuardBlocked(notice["message"], code=notice["code"] or "GUARD_BLOCKED")
-    return False
+# ── 결과 목록 렌더 대기 — binjari _wait_result_list 와 같은 판정, 폴링만 간격식 ──────────
+# 사용자가 조회 창을 가리거나 최소화하면 requestAnimationFrame 이 멈출 수 있다. Playwright 의 기본
+# polling='raf' 대신 간격 폴링으로 행·'열차 없음' 마커·보이는 모달 중 먼저 뜨는 것을 본다.
+_RESULT_READY_JS = """({rows, empty, modal}) => {
+    const visible = el => el.getClientRects().length > 0 &&
+        getComputedStyle(el).visibility !== 'hidden';
+    if ([...document.querySelectorAll(modal)].some(visible)) return 'modal';
+    if (document.querySelectorAll(rows).length > 0) return 'rows';
+    if ([...document.querySelectorAll(empty)].some(visible)) return 'empty';
+    return null;
+}"""
+_RESULT_READY_STATES = ("rows", "empty", "modal")
 
-def navigate_to_search(client: KorailSPAClient) -> Page:
-    page = client.main_page()
-    safe_goto(page, S.SEARCH_URL, timeout_ms=20000)
-    _check_guard(page, "search form")
+
+def _wait_result_list(page: Page, *, where: str, timeout_ms: int = 10_000) -> Optional[str]:
+    """결과 목록이 실제로 렌더될 때까지 대기. 'rows' | 'empty' | 'modal' | None(시간 초과)."""
     try:
-        page.wait_for_selector(S.SEARCH_FORM_DETECT, timeout=10000)
+        state = page.wait_for_function(
+            _RESULT_READY_JS,
+            arg={"rows": "li.tckList", "empty": S.RESULT_EMPTY_MARKER,
+                 "modal": ".ReactModal__Content, [role=dialog]"},
+            timeout=timeout_ms, polling=250,
+        ).json_value()
     except PWTimeoutError:
-        _check_guard(page, "search form timeout")
-        raise SiteLayoutChanged("검색 폼을 찾지 못했습니다.")
-    for _ in range(8):
-        _check_guard(page, "notice wait")
-        if dismiss_notice_modal(page):
+        state = None
+    except Exception as e:
+        LOGGER.warning("결과 목록 대기 실패 (%s): %s: %s", where, type(e).__name__, e)
+        raise
+    if state not in _RESULT_READY_STATES:
+        state = None
+    if state != "rows":
+        LOGGER.warning("결과 목록 대기 (%s): %s", where,
+                       state or f"{timeout_ms // 1000}s 내 행 미렌더")
+    return state
+
+
+def perform_query(client: KorailSPAClient, config: KTXAConfig) -> List[Dict[str, Any]]:
+    """binjari perform_search 의 한 번 조회 부분 — 폼 입력 → 제출(차단 안내는 기록·닫기 뒤 같은 조건으로
+    재조회, 최대 2회) → 수서 함께 보기 옵션 → 목록 렌더 대기 → 열차종류 탭.
+
+    워처용인 검증된 결과 페이지 재사용·'더보기'·후보 시각 거르기는 하지 않는다. 첫 결과 페이지의 행을
+    그대로 돌려주고 거르기는 실행부(worker.shape_rows)가 한다. '열차 없음' 마커가 보이면 빈 목록이다.
+    """
+    page = navigate_to_search(client)
+    fill_search_form(page, config)
+    _set_srt_option(page, config)
+    raw = submit_search(page, config)
+    srt_changed = _ensure_srt_on_result(page, config)
+    if _check_guard(page, "result options"):
+        raw = _requery_after_guard(page, config=config, where="result options")
+    elif srt_changed:
+        raw = _read_rows(page)
+    budget = {"refresh": 1}   # 이번 조회 전체에서 빈 목록 새로고침은 1회
+    raw = _settle_rows(page, config, raw, where="result list", budget=budget)
+    # 열차종류 탭. 탭 뒤 재조회가 끼면 탭이 '전체' 로 돌아가므로 재조회가 있었을 때만 다시 적용(최대 3회).
+    for _ in range(3):
+        if not raw or not _click_train_type_tab(page, config.ktxa_train_type):
             break
-        page.wait_for_timeout(500)
-    return page
-
-def submit_search(page: Page, config: KTXAConfig) -> List[Dict[str, Any]]:
-    """One submission, no reload, no retry, no pagination, no seat selection."""
-    _check_guard(page, "before submit")
-    validate_query(page, config, "before submit")
-    human_pause(3.0, 6.0)
-    human_click(page.locator(S.SEARCH_SUBMIT).first)
-    try:
-        page.wait_for_url(S.RESULT_URL_PATTERN, timeout=15000)
-    except PWTimeoutError:
-        _check_guard(page, "submit/navigation")
-        raise SiteLayoutChanged(f"조회 결과 화면으로 이동하지 못했습니다: {page.url}")
-    try:
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except PWTimeoutError:
-        pass
-    human_pause(1.5, 2.5)
-    _check_guard(page, "submit")
-    validate_query(page, config, "after submit")
-    rows = _read_rows(page)
-    if not rows and not _empty_marker_visible(page):
+        requeries_before = _REQUERY_COUNT
+        if _check_guard(page, "after train type tab"):
+            raw = _requery_after_guard(page, config=config, where="after train type tab")
+        else:
+            raw = _settle_rows(page, config, _read_rows(page), where="after train type tab",
+                               budget=budget, timeout_ms=4_000)
+        if _REQUERY_COUNT == requeries_before:
+            break
+        if _ensure_srt_on_result(page, config):
+            raw = _settle_rows(page, config, _read_rows(page), where="srt after requery",
+                               budget=budget, timeout_ms=4_000)
+    else:
+        LOGGER.warning("열차종류 탭 재적용 한도(3회) 소진 — 행의 열차종류로 거른다")
+    validate_query(page, config, "result conditions")
+    if not raw and not _empty_marker_visible(page):
         raise SearchResultUnavailable("조회 결과를 확인하지 못했습니다. 코레일 화면을 확인해 주세요.")
-    return rows
+    return raw

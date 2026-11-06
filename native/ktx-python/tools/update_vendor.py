@@ -1,6 +1,6 @@
 """Extract the reviewed, query-only subset from an explicit binjari checkout.
 
-Usage: python tools/update_vendor.py E:/dev/binjari
+Usage: python tools/update_vendor.py C:/Users/<account>/binjari
 No configuration files, credentials, watcher, reservation or payment code is read.
 Review changes and the generated provenance whenever updating this snapshot.
 """
@@ -14,16 +14,22 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "vendor" / "ktx_watcher"
 
+# binjari's query flow as-is: form entry, guard notice dismissal with a bounded same-condition
+# re-query, result-list render wait, train-type tab. Left out: the watcher's verified
+# result-page reuse (perform_search), '더보기' pagination, candidate/time filtering, booking.
 SEARCH_FUNCTIONS = (
     "_input_value", "_select_station", "_read_current_ym", "_click_day", "_click_hour",
     "_set_date", "_read_passenger_counts", "_click_passenger_step", "_set_passengers",
-    "_parse_depart_time", "_parse_result_rows", "_set_srt_option", "_search_start_hour",
-    "_query_state", "_condition_errors", "validate_query", "fill_search_form",
-    "_read_rows", "_empty_marker_visible", "_route_matches",
+    "_click_train_type_tab", "_parse_depart_time", "_parse_result_rows", "navigate_to_search",
+    "_set_srt_option", "_ensure_srt_on_result", "_search_start_hour", "_query_signature",
+    "_query_state", "_condition_errors", "validate_query", "fill_search_form", "_check_guard",
+    "_read_rows", "_await_result", "_requery_after_guard", "submit_search",
+    "_empty_marker_visible", "_requery_when_empty", "_settle_rows", "_route_matches",
 )
 CLIENT_FUNCTIONS = (
-    "human_pause", "human_click", "human_type", "safe_goto", "_click_visible",
-    "inspect_guard_notice",
+    "human_pause", "human_click", "human_type", "_click_visible", "safe_goto",
+    "inspect_guard_notice", "dismiss_macro_notice",
+    "dismiss_notice_modal", "_click_proceed_if_asked", "attach_context_popup_guard",
 )
 
 def extract(source, names):
@@ -39,7 +45,7 @@ def main():
     def read(name):
         raw = (source_root / "ktx_watcher" / name).read_bytes()
         source_files[name] = hashlib.sha256(raw).hexdigest()
-        return raw.decode("utf-8-sig")
+        return raw.decode("utf-8-sig").replace("\r\n", "\n")
     def write(name, text):
         path = DEST / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,10 +54,11 @@ def main():
     for name in ("browser.py", "dom.py", "diagnostics.py"):
         write(name, read(name))
     search = extract(read("korail/search.py"), SEARCH_FUNCTIONS)
-    search_header = '''"""Query form and row parsing extracted from binjari; bridge adds one-shot entrypoints."""
+    search_header = '''"""Query form, guard re-query and row parsing extracted from binjari; bridge adds a one-shot entrypoint."""
 from __future__ import annotations
 import logging
 import re
+import time as _time
 from datetime import date as _date, time as Time
 from typing import Any, Dict, List, Optional
 from ..browser import Page, TimeoutError as PWTimeoutError
@@ -60,12 +67,15 @@ from ..dom import read_page_state
 from ..diagnostics import record_guard
 from . import GuardBlocked, SiteLayoutChanged, QueryConditionMismatch, SearchResultUnavailable
 from . import selectors as S
-from .client import KorailSPAClient, inspect_guard_notice, dismiss_notice_modal, human_click, human_pause, human_type, safe_goto
+from .client import (KorailSPAClient, dismiss_macro_notice, dismiss_notice_modal, human_click, human_pause,
+                     human_type, inspect_guard_notice, safe_goto)
 LOGGER = logging.getLogger(__name__)
 _TIME_RE = re.compile(r"(\\d{1,2}):(\\d{2})")
+# Same-condition re-queries in this process (binjari's counter; the one-shot entrypoint reads it).
+_REQUERY_COUNT = 0
 
 '''
-    # The safe entrypoints live in a reviewed companion, not upstream retry flows.
+    # The one-shot entrypoint and the interval-polling list wait live in a reviewed companion.
     safe_search = (ROOT / "overrides" / "search_tail.py.txt").read_text(encoding="utf-8")
     write("korail/search.py", search_header + search + "\n" + safe_search)
     client = extract(read("korail/client.py"), CLIENT_FUNCTIONS)
@@ -85,12 +95,15 @@ _TIME_RE = re.compile(r"(\\d{1,2}):(\\d{2})")
                   "source_sha256": source_files,
                   "vendor_sha256": {str(p.relative_to(DEST)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest()
                                     for p in sorted(DEST.rglob("*.py"))},
-                  "changes": ["Extract only search form and result-reading helpers.",
+                  "changes": ["Extract the search form, guard re-query and result-reading helpers only.",
                               "Replace dotenv/watcher config with explicit query dataclass.",
-                              "No popup auto-confirmation, guard dismissal, reload, pagination or retry.",
-                              "Fresh dedicated Chrome profile per query; explicit session handoff only.",
+                              "Guard notices are recorded, dismissed and re-queried with unchanged conditions (bounded), as in binjari.",
+                              "Reviewed client override preserves observed guard codes -8001, -8002, -8003 and -8202 in diagnostics.",
+                              "No login, reservation, payment, '더보기' pagination or watcher result-page reuse.",
+                              "One persistent dedicated Chrome profile; a live instance is reused, as binjari reuses its debug Chrome.",
+                              "Result-list wait uses interval polling so background windows can finish rendering.",
                               "Upstream browser library configuration is unchanged."]}
-    (ROOT / "PROVENANCE.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (ROOT / "PROVENANCE.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 if __name__ == "__main__":
     main()

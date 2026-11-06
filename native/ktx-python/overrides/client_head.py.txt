@@ -1,4 +1,4 @@
-"""Query-only CDP client. No environment loading, login, popup confirmation or tab reuse."""
+"""Query-only CDP client. binjari's popup guard, pacing and guard-notice handling; no environment loading or login."""
 from __future__ import annotations
 import logging
 import random
@@ -9,14 +9,47 @@ from typing import Optional
 from ..browser import Browser, BrowserContext, Page, Playwright, TimeoutError as PWTimeoutError, sync_playwright
 from ..dom import first_visible, read_page_state
 from ..diagnostics import record_guard
-from . import GuardBlocked
 from . import selectors as S
 
 LOGGER = logging.getLogger(__name__)
 # Retain upstream pacing, without reading per-user environment files.
 HUMANIZE = True
+# Generic headings such as '안내 메시지' are also used for ordinary notices.
+_GUARD_KEYWORDS = ("미허가", "개발자도구", "비정상적인 접속")
+# Keep known site rejection codes intact, including the restart and network notices.
+_GUARD_CODE_RE = re.compile(r"(?<!\d)(?:-800[123]|-8202)(?!\d)")
+_INFO_KEYWORDS = S.MACRO_NOTICE_KEYWORDS + (
+    "안내",
+    "이용안내",
+    "확인하시고",
+    "선택하신",
+    "예매",
+    "본인인증",
+    "약관",
+)
+# "계속 진행하시겠습니까?" 류 진행 확인 모달 (아니오/네) → '네' 클릭으로 통과.
+_PROCEED_KEYWORDS = ("진행하시겠습니까",)
+
+
+def _guard_notice_from_state(state: dict) -> Optional[dict[str, str]]:
+    """Reviewed bridge override: preserve all observed guard codes, not ordinary notices."""
+    for text in state["modals"] or [state["body"]]:
+        code = _GUARD_CODE_RE.search(text)
+        positions = [text.find(kw) for kw in _GUARD_KEYWORDS if kw in text]
+        if code is not None:
+            positions.append(code.start())
+        if not positions:
+            continue
+        start = max(0, min(positions) - 100) if len(text) > 1200 else 0
+        return {
+            "message": text[start:start + 1200].strip(),
+            "code": code.group(0) if code else "",
+        }
+    return None
+
 
 class KorailSPAClient(AbstractContextManager):
+    """Connects to the dedicated Chrome over CDP. binjari's context popup guard is attached on connect."""
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
         self._pw = None
@@ -27,6 +60,7 @@ class KorailSPAClient(AbstractContextManager):
         self._pw = sync_playwright().start()
         try:
             self._browser = self._pw.chromium.connect_over_cdp(self.endpoint, timeout=15000)
+            attach_context_popup_guard(self.context)
             return self
         except Exception:
             self._pw.stop()
@@ -46,32 +80,19 @@ class KorailSPAClient(AbstractContextManager):
         return self._browser.contexts[0]
 
     def main_page(self):
+        """Reuse a blank tab of the shared window; a tab with content (an earlier result, a booking) is left alone."""
         if self._main_page is None:
-            self._main_page = self.context.new_page()
-            self._main_page.set_default_timeout(8000)
+            page = None
+            for candidate in self.context.pages:
+                try:
+                    url = candidate.url or ""
+                except Exception:
+                    continue
+                if url == "" or url.startswith("about:blank"):
+                    page = candidate
+                    break
+            if page is None:
+                page = self.context.new_page()
+            page.set_default_timeout(8000)
+            self._main_page = page
         return self._main_page
-
-def _guard_notice_from_state(state):
-    # Explicit codes cover macro, network and other site rejections. Never infer a
-    # block merely because no rows were returned.
-    for text in state.get("modals") or [state.get("body", "")]:
-        code = re.search(r"(?:CODE\s*:\s*)(-\d+)", text, re.I)
-        known = re.search(r"-800[23](?!\d)", text)
-        keywords = ("미허가", "개발자도구", "비정상적인 접속", "데이터센터", "VPN")
-        if code or known or any(word in text for word in keywords):
-            return {"message": text[:1200].strip(), "code": (code.group(1) if code else known.group(0) if known else "")}
-    return None
-
-def dismiss_notice_modal(page):
-    # Close only ordinary notices. Guard notices remain visible for the user.
-    notice = inspect_guard_notice(page)
-    if notice:
-        record_guard(page, notice, "notice")
-        raise GuardBlocked(notice["message"], code=notice["code"] or "GUARD_BLOCKED")
-    state = read_page_state(page)
-    if not any(word in state["body"] for word in S.NOTICE_MODAL_KEYWORDS):
-        return False
-    try:
-        return _click_visible(page, S.NOTICE_MODAL_DISMISS_BUTTON)
-    except Exception:
-        return False

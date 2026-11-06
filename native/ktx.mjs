@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PYTHON = path.join(HERE, 'ktx-runtime', '.venv', 'Scripts', 'python.exe');
+// Keep in step with setup-ktx.ps1's managed Python version. Launch the interpreter
+// directly: Windows' venv redirector owns an outer kill-on-close Job Object that
+// would kill Chrome even after ParentWatch releases its own job on completion.
+export const PYTHON_VERSION = '3.12.12';
+export const BASE_PYTHON = path.join(HERE, 'ktx-runtime', 'python', `cpython-${PYTHON_VERSION}-windows-x86_64-none`, 'python.exe');
 export const WORKER = path.join(HERE, 'ktx-python', 'worker.py');
 export const STATE = path.join(HERE, 'ktx-runtime', 'state');
 export const SEARCH_MS = 120_000;
@@ -38,7 +43,12 @@ export function workerEnv() {
 // Overrides are for local tests only; extension requests never supply them.
 export async function invoke(request, { python = PYTHON, worker = WORKER, stateDir = STATE, launch = spawn,
   timeoutMs = SEARCH_MS, maxOutput = MAX_OUTPUT } = {}) {
-  if (!fs.existsSync(python) || !fs.existsSync(worker)) return fail('RUNTIME_MISSING', 'KTX 실행 환경이 없습니다. native/setup-ktx.ps1을 실행해 주세요.');
+  const executable = python === PYTHON ? BASE_PYTHON : python;
+  if (!fs.existsSync(python) || !fs.existsSync(executable) || !fs.existsSync(worker)) return fail('RUNTIME_MISSING', 'KTX 실행 환경이 없습니다. native/setup-ktx.ps1을 실행해 주세요.');
+  const env = workerEnv();
+  // CPython's own redirector uses this value to select the venv even with -I.
+  // It is fixed by the host, never copied from the caller's environment/request.
+  if (python === PYTHON) env.__PYVENV_LAUNCHER__ = PYTHON;
   try { fs.mkdirSync(stateDir, { recursive: true }); }
   catch { return fail('RUNTIME_FAILED', 'KTX 작업 폴더를 준비하지 못했습니다.'); }
   return new Promise((resolve, reject) => {
@@ -85,8 +95,12 @@ export async function invoke(request, { python = PYTHON, worker = WORKER, stateD
       finish(result);
     };
     try {
-      child = launch(python, ['-I', '-X', 'utf8', '-u', worker], {
-        cwd: stateDir, env: workerEnv(), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'],
+      child = launch(executable, ['-I', '-X', 'utf8', '-u', worker], {
+        // libuv puts non-detached Windows children in another kill-on-close job.
+        // ParentWatch owns active-request cancellation; allow the handed-off
+        // Chrome to outlive this host too. Keep pipes/ref until worker closure.
+        cwd: stateDir, env, detached: process.platform === 'win32', windowsHide: true, shell: false,
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch { return finish(fail('WORKER_FAILED', 'KTX 실행부를 시작하지 못했습니다.')); }
     timer = setTimeout(() => { void stop(fail('WORKER_TIMEOUT', 'KTX 요청 시간이 초과되었습니다. 자동으로 재시도하지 않습니다.')); }, timeoutMs);

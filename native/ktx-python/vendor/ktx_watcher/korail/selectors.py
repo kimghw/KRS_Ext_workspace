@@ -17,6 +17,8 @@ DATE_PICKER_BTN = "a.btn_pop.btn_d-day"
 
 SEARCH_SUBMIT = "button.btn_lookup"
 
+RESULT_SEARCH_SUBMIT = ".selectAreaWrap button.btn_bn-blue"
+
 RESULT_PEOPLE_INPUT = "input#labelple"
 
 SEARCH_FORM_DETECT = "button.btn_lookup, input[name='txtGoStart']"
@@ -24,6 +26,10 @@ SEARCH_FORM_DETECT = "button.btn_lookup, input[name='txtGoStart']"
 SRT_RADIO_Y = "input[name='adjStnScdlOfrFlg2'][value='Y']"
 
 SRT_RADIO_N = "input[name='adjStnScdlOfrFlg2'][value='N']"
+
+SRT_RESULT_CHECKBOX = "input#adjStnScdlOfrFlg2[type='checkbox']"
+
+SRT_RESULT_CHECKBOX_LABEL = "label[for='adjStnScdlOfrFlg2']"
 
 PEOPLE_BTN = "a.data.btn_pop, .selectAreaWrap a.btn_recom"
 
@@ -65,6 +71,31 @@ RESULT_EMPTY_TEXT = "해당 스케줄에 운행하는 열차가 없습니다"
 
 RESULT_EMPTY_MARKER = ".tck_confirm_no-data"
 
+TRAIN_TYPE_TAB = {
+    "전체": "ul.tab_bar button.all",
+    "KTX": "ul.tab_bar button:has(div.korail_logo_tab)",
+    "KTX-산천": "ul.tab_bar button:has(div.korail_logo_tab)",
+    "새마을": "ul.tab_bar button:has(div.saemaeul_logo_tab)",
+    "ITX-새마을": "ul.tab_bar button:has(div.saemaeul_logo_tab)",
+    "무궁화": "ul.tab_bar button:has(div.mugung_logo_tab)",
+    "누리로": "ul.tab_bar button:has(div.mugung_logo_tab)",
+    "ITX-청춘": "ul.tab_bar button:has(div.chung_logo_tab)",
+}
+
+MACRO_NOTICE_KEYWORDS = (
+    "-8002",
+    "-8003",
+    "미허가",
+    "개발자도구",
+    "비정상적인 접속",
+    "안내 메시지",
+    "안내 메세지",  # 사이트가 두 철자를 혼용 (로그인 모달은 '메세지')
+)
+
+MODAL_CONFIRM_BUTTON = "button:has-text('확인')"
+
+MODAL_PROCEED_BUTTON = "button:text-is('네'), a:text-is('네')"
+
 NOTICE_MODAL_KEYWORDS = (
     "창닫기",
     "그만보기",
@@ -74,4 +105,9 @@ NOTICE_MODAL_DISMISS_BUTTON = (
     "button.btn_pop-close, "
     "button:has-text('창닫기'), "
     "a:has-text('창닫기')"
+)
+
+NOTICE_MODAL_HIDE_TODAY_CHECKBOX = (
+    "label:has-text('그만보기'), "
+    "input[id^='popClose'][type='checkbox']"
 )
