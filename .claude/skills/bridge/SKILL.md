@@ -91,7 +91,7 @@ argument-hint: "[check|install [<ID>]|ping|test|log [N]|browser|chrome|edge|rest
 
 ## 새 PC 에 설치
 
-1. `git clone https://github.com/kimghw/meeting_room` — 다른 사람 PC 도 같은 절차다. 코드에 고칠 개인 값은 없다
+1. `git clone https://github.com/kimghw/KRS_Ext_workspace` — 다른 사람 PC 도 같은 절차다. 코드에 고칠 개인 값은 없다
 2. `chrome://extensions` 또는 `edge://extensions` → 개발자 모드 → 압축해제된 확장 로드 → 폴더 선택
 3. `install` — 크롬·엣지 키에 한 번에 들어간다 (경로가 이전 PC 와 같으면 ID 도 같다)
 4. 브라우저 완전 재시작 → `check` 로 확인

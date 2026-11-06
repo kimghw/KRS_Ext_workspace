@@ -6,7 +6,7 @@ eclass 회의실 현황을 사이드 패널에서 **시간 단위**로 보고, �
 
 누가 쓰든 절차가 같습니다. **코드에 고칠 개인 값은 없습니다** — 아래 [사람마다 다른 것](#사람마다-다른-것--따로-설정하지-않습니다) 참고.
 
-1. 받기 — `git clone https://github.com/kimghw/meeting_room` (또는 ZIP 으로 받아 풀기)
+1. 받기 — `git clone https://github.com/kimghw/KRS_Ext_workspace` (또는 ZIP 으로 받아 풀기)
 2. 주소창에 크롬은 `chrome://extensions`, 엣지는 `edge://extensions` → 오른쪽 위 **개발자 모드** 켜기
 3. **압축해제된 확장 프로그램을 로드** → 받은 폴더 선택
 4. 같은 브라우저에서 **eclass 에 로그인** — 확장은 이 브라우저의 로그인을 그대로 씁니다

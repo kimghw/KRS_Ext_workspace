@@ -47,3 +47,7 @@
 ## Gmail (시험)
 
 - 2026-10-04 — "별도 폴더에 일단 구현" → Gmail API 읽기는 확장과 따로 도는 시험 구현(`gmail/`), 읽기 전용.
+
+## 폴더·저장소 이름
+
+- 2026-11-06 — "현재 meeting-room 은 workspace/깃 이름이랑 동일하게 해줘" → 확장 폴더(`meeting_room`)와 패키지 이름(`krs-meeting-room`)을 깃 저장소 이름 `KRS_Ext_workspace` 에 맞춘다(폴더 `C:\Users\<계정>\KRS_Ext_workspace`, package.json 은 npm 규칙대로 소문자 `krs-ext-workspace`). 네이티브 호스트 이름 `com.krs.meetingroom` 은 그대로.
