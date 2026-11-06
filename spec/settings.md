@@ -51,3 +51,8 @@
 ## 폴더·저장소 이름
 
 - 2026-11-06 — "현재 meeting-room 은 workspace/깃 이름이랑 동일하게 해줘" → 확장 폴더(`meeting_room`)와 패키지 이름(`krs-meeting-room`)을 깃 저장소 이름 `KRS_Ext_workspace` 에 맞춘다(폴더 `C:\Users\<계정>\KRS_Ext_workspace`, package.json 은 npm 규칙대로 소문자 `krs-ext-workspace`). 네이티브 호스트 이름 `com.krs.meetingroom` 은 그대로.
+
+## 설치 — 새 PC 에 브릿지·KTX 올리기
+
+- 2026-11-06 — KTX 조회가 "KTX 실행 환경이 준비되지 않았습니다"(브릿지 등록 뒤에 git pull 로 KTX 코드가 들어온 PC) → "브릿지 설치할떄 이것도 같이 설치되어야 하지 않냐?" → 브릿지 등록(`install.ps1`)이 KTX 실행 환경(`setup-ktx.ps1`)까지 함께 준비하는 것을 유지한다. 등록 뒤에 코드가 들어온 PC 는 `setup-ktx.ps1` 만 다시 돌린다.
+- 2026-11-06 — "이 워크스페이스를 설치할때 claude.md 에 브릿지랑 KTX를 설치할 수 있도록 사전정보를 줘" → `CLAUDE.md` 에 새 PC 설치 사전 정보(미리 있어야 할 것·차례·확인·자주 어긋나는 것)를 한 절로 둔다. 자세한 설명은 README 「로컬 CLI 연결」·`docs/ktx-bridge.md`·`/bridge` 스킬에 그대로.
