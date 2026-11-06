@@ -186,7 +186,7 @@ next: 결재요청 뒤 HR 신청 내역에서 상태를 확인한다 …   # 사
 | mode | 만드는 작업 | 칸 | 쓰는 갈래 |
 |---|---|---|---|
 | `merged` | `llm.task` 하나 | `kind`(enum — 종류 목록, read 는 종류마다 "trip(출장)·out(외근·교육·부서소통회)…" 를 종류 파일의 title·hint 로 짓는다) + 모든 종류의 `llm: true` 칸의 **합집합**(종류 차례) + 갈래 `llm.fields`. 같은 키가 여러 종류에 있으면 type 이 같아야 하고(enum 은 values 합집합), read 가 다르면 "종류별 — trip: …; leave: …" 로 합친다. partial 이면 required 는 모두 false. rules = 갈래 rules + 종류 rules("종류가 trip(출장)일 때: …") | attend |
-| `per-kind` | `<llm.task>.<종류>` | 그 종류의 칸만. role 의 `{종류}` 자리에 종류 title | room·car 의 search → `search.room`·`search.car` |
+| `per-kind` | `<llm.task>.<종류>` | 그 종류의 칸만. role 의 `{종류}` 자리에 종류 title | room·car 의 search → `search.room`·`search.car`, ktx 의 search → `search.ktx`(partial — 말로 찾기, 2026-11-06) |
 | `recipe` | 만들지 않는다 | 종류 파일의 `llm` 이 객체 — `llm: { tasks: [{ task: gongmun.purchase, fills: draft }, { task: gongmunReason.purchase, fills: draft }] }`. 생성기는 task 가 `RECIPE.tasks` 에 있는지, fills 가 칸인지 본다 | gongmun |
 | `none` | 만들지 않는다 | UI 만 | trip(여비)·cancel·doc 같은 것 |
 

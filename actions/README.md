@@ -21,7 +21,7 @@ LLM(말·문서)   ── 명세에서 만든 작업 ───┘
 | `dispatch.js` | 디스패처 — 실행기 등록(`register`), 기록 짓기(`build`), 실행(`run`: 실행 모드 재검사 → 지문 → 사람 확인 → 실행기 → 활동 로그 한 줄) |
 | `runners/<갈래>.js` | 실행기 어댑터 — 기록을 기존 함수(`src/runners.js`·`src/attend.js`+`src/hr.js`·`src/trip.js`·`src/gongmun.js`+`src/gmwrite.js` …)의 인자로 바꿔 부른다. 사이트 특유의 순서·되돌리기 판단은 그 함수들에 그대로 있다 |
 | `test/*.test.mjs` | `node --test "actions/test/*.test.mjs"` — 생성물 일치·명세 검사·관문·사전설정·기록·디스패처·어댑터(가짜 실행기) |
-| `tools/gen-actions.mjs` | 생성기. `--check`(어긋났는지만) · `--prompt <작업>`(LLM 지시문 전문 — `attend`·`search.room`·`search.car`) · `--show <행위>`(합쳐진 명세) · `--example <행위>`(보기 기록을 YAML 글로) |
+| `tools/gen-actions.mjs` | 생성기. `--check`(어긋났는지만) · `--prompt <작업>`(LLM 지시문 전문 — `attend`·`search.room`·`search.car`·`search.ktx`) · `--show <행위>`(합쳐진 명세) · `--example <행위>`(보기 기록을 YAML 글로) |
 
 ## 기록(record)은 이렇게 생겼다
 
@@ -80,7 +80,7 @@ then: [{ action: trip.create, when: settle }]   # 뒤따르는 행위(패널이 
 
 - **모든 칸에 `read` 가 있다.** 지금 LLM 이 채우지 않는 칸(`llm: false` — 첨부·체크박스·교통편 …)도 read 를 둔다 — 나중에 LLM 을 넣을 때 그대로 쓴다.
 - `preset` 은 그때그때 적지 않는 값 — 내 이름·오늘·근무지·공문 설정(부서·부서장·소장·본부장·문서번호 부서)·고른 과제·HR 의 나. 실행 전에 채워 기록에 같이 담긴다. 폼의 기본값(출장 07:00~20:00 같은 것)은 preset 이 아니라 칸의 `default` 다.
-- LLM 작업은 갈래의 `llm.mode` 로 만든다 — `merged`(근태: LLM 이 종류를 고른다 — 종류별 칸을 합쳐 작업 `attend` 하나), `per-kind`(회의실·차량 조회: `search.room`·`search.car`), `recipe`(공문: 작업은 레시피 `recipes/gongmun` 의 `gongmun.<갈래>`·`gongmunReason.<갈래>` 를 가리킨다 — 공문 초안 칸은 YAML 에 다시 적지 않고 `draft: { from: recipe }` 로 펼친다), `none`.
+- LLM 작업은 갈래의 `llm.mode` 로 만든다 — `merged`(근태: LLM 이 종류를 고른다 — 종류별 칸을 합쳐 작업 `attend` 하나), `per-kind`(회의실·차량 조회: `search.room`·`search.car`, KTX 말로 찾기: `search.ktx` — 답은 조각(partial)이라 말하지 않은 칸은 null 이고 패널이 지금 칸 위에 얹는다, 2026-11-06), `recipe`(공문: 작업은 레시피 `recipes/gongmun` 의 `gongmun.<갈래>`·`gongmunReason.<갈래>` 를 가리킨다 — 공문 초안 칸은 YAML 에 다시 적지 않고 `draft: { from: recipe }` 로 펼친다), `none`.
 - **갈래 공통 칸** — 여러 종류가 같은 글로 적는 칸은 `_domain.yaml` 의 `fields` 에 한 번 적고 종류 파일에서 `칸: { from: domain }` 으로 가져온다(차례는 종류 파일의 자리, 다르게 쓰려면 칸을 통째로 적는다 — 외부활동의 `form`·`body`). 공통 preset 과 달리 저절로 합쳐지지 않는다(종류마다 있고 없는 칸이 달라서).
 - `recipe` 모드의 갈래(공문)는 `kinds` 가 레시피의 목적 차례(`RECIPE.order`)와 같아야 하고 종류의 `llm.tasks` 는 그 종류의 작업(`.<종류>` 로 끝남)이어야 한다 — 생성기가 막는다. 공문 종류·양식을 더하는 차례는 [`recipes/gongmun/README.md`](../recipes/gongmun/README.md).
 - per-kind 의 또 한 보기는 R&D 다 — `rnd.extract`(사업계획서 → 그 차년도 KR 스냅샷 YAML)·`rnd.revise`(아무 꼴의 변경 글 → 고친 YAML). 갈래의 consumer 는 `rndgen/llm.js askRndTask` 하나이고, 디스패처 전이라 패널 `rndgen/` 이 askClaude 를 바로 부른다(2026-10-16 — 자세히 `rndgen/README.md`).
@@ -120,7 +120,7 @@ const found = await actions.run(q, { onProgress, loadDay });
 | 어디 | 무엇 |
 |---|---|
 | `src/input.js` | `TASKS` 에 `ACTIONS.tasks` 를 합친다(`import { ACTIONS } from '../actions/spec.js'` — 순수 데이터). `structureOf`·`schemaOf`·실행 모드·`when`·새 형(`tags`·`file`·`object`) 은 관문이 쓴다 |
-| `src/llm.js` | `fillAction(id, text, ctx, opts)` — 행위의 작업(`entry.task`)으로 말을 읽어 초안 조각을 돌려준다. `parseSmart` 는 `search.<kind>`, `fillAttendSmart` 는 `attend` |
+| `src/llm.js` | `fillAction(id, text, ctx, opts)` — 행위의 작업(`entry.task`)으로 말을 읽어 초안 조각을 돌려준다. `parseSmart` 는 `search.<kind>`, `fillAttendSmart` 는 `attend`, `ktxSmart` 는 `search.ktx`(KTX 말로 찾기 — 조각, 2026-11-06) |
 | `sidepanel.js` | 디스패처를 하나 만들어 근태·공문 패널에 넘긴다. 회의실·차량의 예약·취소·수정·말로 찾기가 지난다 |
 | `attendpanel.js` · `sendbox.js` · `lodgebox.js` | 근태 신청·상신·회수·삭제·취소신청, 여비계산서(사전정산 작성·고치기·확정, 사후정산 올리기·확정·지우기), 여비증빙 송부, 사후정산 숙박 줄의 `상한`·`비고에 저장`·지우기(`trip.lodge` — 기록은 attendpanel 의 buildRecord·runRecord 로, 화면의 그 줄·적어 둔 실제 금액·상한액은 ctx) |
 | `gongmunpanel.js` | 공문 작성(`gongmun.<갈래>`) |

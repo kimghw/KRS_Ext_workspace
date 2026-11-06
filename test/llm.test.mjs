@@ -91,6 +91,52 @@ await ta('CLI 를 끄면 API 를 쓴다', async () => {
   assert.equal(r.via, 'api');
 });
 
+console.log('KTX 말로 찾기(ktxSmart) — 같은 사다리, 답은 조각(2026-11-06 "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘")');
+
+await ta('CLI 가 되면 CLI 의 조각을 쓴다 — 작업 search.ktx, 입력 글에 오늘·달력·지금 조회 칸이 든다, null 인 칸은 빠진다', async () => {
+  setup({ native: { from: null, to: '대전', date: null, hour: 14, adults: null }, api: 'ok' });
+  const { ktxSmart } = await load();
+  const r = await ktxSmart('오후 2시 대전', { apiKey: 'sk-x', today: TODAY, useNative: true, form: { from: '부산', to: '서울', date: TODAY, hour: 8, adults: 1 } });
+  assert.deepEqual([r.via, r.patch, r.summary, r.costUsd, r.note], ['cli', { to: '대전', hour: 14 }, '…→대전 · 14시~', 0.01, '']);
+  assert.equal(seen.native.task, 'search.ktx');
+  assert.match(seen.native.input, /^오늘은 2026-09-16 \(수요일\) 입니다\.\n달력\(오늘부터, 한 주는 월요일에 시작\): 9\/16\(수\) 9\/17\(목\)/);
+  assert.match(seen.native.input, /지금 조회 칸: 출발역 부산 · 도착역 서울 · 출발일 2026-09-16 · 출발 시 8 · 인원 1\n\n요청: 오후 2시 대전$/);
+  assert.match(systemPrompt('search.ktx'), /KTX 열차 조회 도우미/);
+});
+
+await ta('"내일" 은 달력으로 다시 셈해 CLI 의 날짜를 바로잡고 note 에 적는다', async () => {
+  setup({ native: { from: null, to: '서울', date: '2026-09-20', hour: null, adults: null }, api: 'ok' });
+  const { ktxSmart } = await load();
+  const r = await ktxSmart('내일 서울', { apiKey: 'sk-x', today: TODAY, useNative: true });
+  assert.deepEqual([r.via, r.patch], ['cli', { to: '서울', date: '2026-09-17' }]);
+  assert.equal(r.note, '날짜는 달력으로 다시 셈했습니다');
+});
+
+await ta('CLI 도 API 도 안 되면 규칙 해석 — 역·날짜·시·인원을 읽고 왜 내려왔는지 note 에 남긴다', async () => {
+  setup({ native: 'absent', api: 'error' });
+  const { ktxSmart } = await load();
+  const r = await ktxSmart('모레 아침 9시 부산에서 동대구 둘이', { apiKey: 'sk-x', today: TODAY, useNative: true });
+  assert.deepEqual([r.via, r.patch, r.summary], ['local', { from: '부산', to: '동대구', date: '2026-09-18', hour: 9, adults: 2 }, '부산→동대구 · 모레 · 9시~ · 2명']);
+  assert.match(r.note, /로컬 CLI 실패.*API 실패/);
+});
+
+await ta('CLI 의 답에 읽은 칸이 없으면 규칙으로 내려가고, 규칙도 못 읽으면 던진다 — 조회할 조건이 없다', async () => {
+  setup({ native: { from: null, to: null, date: null, hour: null, adults: null }, api: 'ok' });
+  const { ktxSmart } = await load();
+  const r = await ktxSmart('서울', { apiKey: '', today: TODAY, useNative: true });
+  assert.deepEqual([r.via, r.patch, r.note], ['local', { to: '서울' }, '로컬 CLI 가 읽은 조건이 없음']);
+  await assert.rejects(() => ktxSmart('아무거나', { apiKey: '', today: TODAY, useNative: true }), /조건을 읽지 못했습니다\(로컬 CLI 가 읽은 조건이 없음\) — 역·날짜·시각·인원/);
+});
+
+await ta('fillAction(ktx.search) 도 같은 작업·같은 입력 글이다(갈래 llm.input: ktx)', async () => {
+  setup({ native: { from: '부산', to: null, date: null, hour: null, adults: 2 }, api: 'ok' });
+  const { fillAction, ktxInput } = await load();
+  const r = await fillAction('ktx.search', '부산에서 2명', { today: TODAY, form: { from: '서울' } }, { useNative: true });
+  assert.deepEqual([r.via, r.input], ['cli', { from: '부산', adults: 2 }]);
+  assert.equal(seen.native.input, ktxInput('부산에서 2명', { today: TODAY, form: { from: '서울' } }));
+  assert.match(seen.native.input, /출발역 서울 · 도착역 \? · 출발일 \? · 출발 시 \? · 인원 \?/);
+});
+
 console.log('CLI 연결 확인');
 await ta('호스트가 있으면 ok', async () => {
   setup({ native: 'ok', api: 'ok' });

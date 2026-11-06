@@ -1,10 +1,26 @@
+# KTX 갈래 — 코레일 열차 조회(src/ktx.js ktxSearch). 종류: search 하나(조회뿐, confirm 없음).
 # 2026-11-06: binjari 조회 코드를 추출·병합하고 기존 네이티브 브릿지 통로로 호출한다.
 # KTX의 Python 조회 모듈과 기존 Claude/OCR 기능은 코드 결합을 낮춰 분리한다.
 # 패널은 조건과 결과만 다루며 예약·결제는 사람이 코레일에서 진행한다.
+#
+# LLM 작업은 per-kind 모드 — search.yaml 이 `llm: { task: search.ktx }` 로 이름을 적는다(말로 찾기, 2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘").
+# 회의실·차량의 search 와 같은 사다리(src/llm.js ktxSmart — 로컬 CLI → API 키 → 규칙 해석 src/ktxnlq.js)지만 답은 조각(partial)이다 — 말하지 않은 칸은 null 이고,
+# 패널(ktxbox.js ask)이 지금 조회 칸(출발역·도착역·인원)과 날짜 줄(출발일·시작 시)의 값 위에 얹어 ktx.search 기록을 짓는다(by llm).
 domain: ktx
 title: KTX
 log: ktx
 kinds: [search]
 llm:
-  task: ktx
-  mode: none
+  task: search                 # 작업 이름의 머리 — 실제 이름은 종류 파일의 llm.task(search.ktx)
+  mode: per-kind
+  partial: true                # 답은 조각이다 — null 은 "지금 칸의 값 그대로"(ktxbox.js ask)
+  input: ktx                   # src/llm.js 의 ktxInput(text, { today, form })
+  title: KTX 조회 조건
+  consumer: { module: src/ktx.js, export: ktxSearch }
+  next: 패널이 읽은 칸을 KTX 조회 칸(출발역·도착역·인원)과 날짜 줄(출발일·시작 시)에 채운다 → ktx.search 기록 → src/ktx.js ktxSearch(기존 브릿지의 조회 모듈)
+  role: >-
+    당신은 KTX 열차 조회 도우미입니다. 사용자의 한국어 요청을 코레일 열차 조회 조건으로 바꿉니다.
+    입력에는 오늘 날짜와 달력, 지금 조회 칸의 값, 새 요청이 들어 있습니다.
+    조회 조건은 예매 명령이 아닙니다 — 열차를 찾을 뿐이고, 좌석 선택·예매는 사람이 코레일에서 합니다.
+  rules: []
+  fields: {}

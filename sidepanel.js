@@ -3,7 +3,7 @@ import { AuthError } from './src/net.js';
 import { captureRaw } from './src/site.js';
 import { RUNNERS, runnerOf } from './src/runners.js';
 import { describeModifyResult } from './src/modify.js';
-import { parseSmart, diagnoseSmart, nativeProbe, nativeLogs } from './src/llm.js';
+import { parseSmart, ktxSmart, diagnoseSmart, nativeProbe, nativeLogs } from './src/llm.js';
 import { DEFAULT_MODEL } from './src/ai.js';
 import { TEAMS_MCP_URL, FILE_TOOL, connect as mcpConnect } from './src/teams.js';
 // 설정 › 연결 갈래의 "OneNote MCP" 연결 확인에만 쓰는 주소(KR_MS365_mcp onenote 서버). R&D 탭의 공유는 2026-10-18 부터 원노트·MCP 를 쓰지 않는다(src/rndnote.js 는 없어짐 — 공유 (SharePoint), rndpanel.js).
@@ -1914,6 +1914,8 @@ async function checkCli() {
 }
 
 const ASK_PLACEHOLDER = '말로 찾는 회의실/차량';
+/** 차량 탭에서 KTX 를 골랐을 때 — 같은 칸이 KTX 조회 조건을 읽는다(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘"). */
+const ASK_PLACEHOLDER_KTX = '말로 찾는 KTX';
 const ASK_OFF_TEXT = 'claude가 연결되지 않았습니다';
 const ASK_OFF_HINT = '연결 지침을 복사해 Claude Code·Codex 에 붙여 넣거나, 아래 설정에 API 키를 넣으면 쓸 수 있습니다';
 
@@ -1929,9 +1931,11 @@ function paintAskReady() {
   el.ask.disabled = !ready;
   el.askGo.disabled = !ready || state.asking;
   document.querySelector('.ask')?.classList.toggle('off', !ready);
-  el.ask.placeholder = ready ? ASK_PLACEHOLDER : ASK_OFF_TEXT;
+  // 차량 탭에서 KTX 를 골랐으면 같은 칸이 KTX 조회 조건을 읽는다(runKtxAsk) — 플레이스홀더와 예문이 그것을 말한다.
+  const ktxAsk = isKtxAsk();
+  el.ask.placeholder = ready ? (ktxAsk ? ASK_PLACEHOLDER_KTX : ASK_PLACEHOLDER) : ASK_OFF_TEXT;
   el.ask.title = ready
-    ? (isCar() ? '예) 내일 오후 2시부터 3시간 쓸 차량' : '예) 내일 오후 2시, 8명이 쓸 회의실')
+    ? (ktxAsk ? '예) 내일 아침 9시 부산에서 서울 가는 KTX 2명' : isCar() ? '예) 내일 오후 2시부터 3시간 쓸 차량' : '예) 내일 오후 2시, 8명이 쓸 회의실')
     : ASK_OFF_HINT;
   // 닿을 곳이 없으면 두 말 칸(말로 찾기·말로 채우기) 아래에 연결 지침 복사 줄을 낸다.
   // 확인이 끝나기 전에는 내지 않는다 — 패널을 열 때마다 잠깐 떴다 사라진다.
@@ -2001,6 +2005,8 @@ async function copyCliGuide(btn) {
 const VIA_LABEL = { cli: '로컬 CLI', api: 'API 키', local: '규칙 해석' };
 
 const isCar = () => state.mode === 'car';
+/** 차량 탭에서 KTX 보기인가 — 말로 찾기 칸이 KTX 조회 조건을 읽는 때(ktxbox.js, 2026-11-06). ktx 는 아래에서 만든다(부를 때는 이미 있다). */
+const isKtxAsk = () => isCar() && ktx.view() === 'ktx';
 const isMineMode = () => state.mode === 'mine';
 const isAttend = () => state.mode === 'attend';
 const isGongmun = () => state.mode === 'gongmun';
@@ -2041,8 +2047,26 @@ const gongmun = createGongmunPanel({
 /** 공문 탭의 국제표준 업로드 칸(stdbox.js — 표준 PDF·ZIP 을 Standard Documents 게시판에 하나씩, board.standard 기록으로, 2026-10-30). 비교작성 탭에서는 서지 않는다. */
 createStdBox({ actions, me: () => state.myName, compareTab: COMPARE_KIND });
 
-/** 차량 탭의 KTX 조회 칸(전용 실행부 조회, 2026-11-06). 날짜·시작 시는 공통 날짜 줄을 따른다. */
-const ktx = createKtxBox({ actions, when: () => ({ date: el.date.value, hour: hours().start }) });
+/**
+ * 차량 탭의 KTX 조회 칸(전용 실행부 조회, 2026-11-06). 날짜·시작 시는 공통 날짜 줄을 따른다.
+ * 말로 찾기(같은 날 "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게") — 읽는 길(parse)은 회의실·차량과 같은 사다리(src/llm.js ktxSmart: 로컬 CLI → API 키 → 규칙 해석),
+ * 읽은 출발일·시는 날짜 줄·시작 시간에 손으로 고친 것과 같은 이벤트로 넣는다(setWhen — 차량 현황도 그 날로 간다). 보기가 바뀌면 말로 찾기 칸의 플레이스홀더를 다시 그린다.
+ */
+const ktx = createKtxBox({
+  actions, when: () => ({ date: el.date.value, hour: hours().start }),
+  parse: (text, form) => ktxSmart(text, { apiKey: state.apiKey, today: todayStr(), useNative: state.cli, form }),
+  setWhen: ({ date, hour }) => {
+    const fire = (node, type) => node.dispatchEvent(new node.ownerDocument.defaultView.Event(type, { bubbles: true }));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date || '') && el.date.value !== date) { el.date.value = date; fire(el.date, 'change'); }
+    if (Number.isInteger(hour) && +el.hourStart.value !== hour && [...el.hourStart.options].some((o) => +o.value === hour)) {
+      el.hourStart.value = String(hour);
+      // 종료 시가 시작 시보다 앞서면 격자가 비므로 한 시간 뒤로 민다(날짜 줄의 규칙).
+      if (+el.hourEnd.value <= hour) el.hourEnd.value = String(Math.min(hour + 1, 24));
+      fire(el.hourStart, 'change');
+    }
+  },
+  onView: () => paintAskReady(),
+});
 createFlightBox({ actions, when: () => ({ date: el.date.value, hour: hours().start }), today: todayStr });
 
 /** R&D 탭. 화면 조각은 rndpanel.js 가 들고 있고, 여기서는 탭을 오갈 때 보이고 숨기기만 한다. 공유 (SharePoint)의 fetch·저장소는 기본값(전역 fetch 와 rerp/spstore.js — 브라우저 로그인 쿠키, manifest *.sharepoint.com). */
@@ -2181,7 +2205,7 @@ function applyMode(mode, { keepSettings = false } = {}) {
   el.editNote.classList.add('hidden');
   state.editTarget = null;
   el.region.hidden = car || mineTab;
-  // 말로 찾기는 회의실·차량 둘 다 쓴다. 내 예약은 이미 지난 것을 보는 화면이라 뜻이 없다.
+  // 말로 찾기는 회의실·차량, 그리고 차량 탭의 KTX 보기(2026-11-06)가 쓴다. 내 예약은 이미 지난 것을 보는 화면이라 뜻이 없다.
   document.querySelector('.ask')?.toggleAttribute('hidden', mineTab || panelTab);
   // 근태·공문·R&D 탭은 날짜 격자도 예약 칸도 쓰지 않는다. 통째로 숨기고 제 화면만 둔다.
   document.querySelector('.controls')?.toggleAttribute('hidden', panelTab);
@@ -2730,11 +2754,39 @@ function renderFound(found, skipped, kind = 'room') {
   void skipped;
 }
 
+/**
+ * KTX 보기의 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 같은 칸·같은 사다리(src/llm.js ktxSmart)로 말을 읽어
+ * KTX 조회 칸과 날짜 줄에 채우고 바로 조회한다(ktxbox.js ask — ktx.search 기록은 by llm 이라 활동 로그에 말과 길이 남는다). 후보 목록(askList)은 쓰지 않는다 — 열차는 KTX 칸의 목록에 선다.
+ * 읽은 조건이 하나도 없으면 ask 가 던진다 — 채우지도 조회하지도 않고 그 까닭을 적는다(디스패처 전이라 여기서 활동 로그에 남긴다).
+ */
+async function runKtxAsk(text) {
+  state.asking = true;
+  el.askGo.disabled = true;
+  el.askList.innerHTML = '';
+  state.found = [];
+  setAskNote('조건을 해석하는 중...');
+  try {
+    const r = await ktx.ask(text);
+    const via = VIA_LABEL[r.via] || r.via;
+    const parts = [`[${via}] ${r.read} → KTX ${r.head}`, r.ok ? `열차 ${r.rows}편` : `조회하지 못했습니다 — ${r.error}`];
+    if (r.note) parts.push(r.note);
+    setAskNote(parts.join(' · '), r.ok ? '' : 'error');
+  } catch (err) {
+    setAskNote(err.message, 'error');
+    logEvent('ask', false, `"${text}" — ${err.message}`, { kind: 'ktx' });
+  } finally {
+    state.asking = false;
+    paintAskReady();
+  }
+}
+
 async function runAsk() {
   // Claude 가 없으면 칸이 잠겨 있다. 엔터로도 들어오지 못하게 여기서도 막는다.
   if (el.ask.disabled) return;
   const text = el.ask.value.trim();
   if (!text) return;
+  // 차량 탭에서 KTX 를 골랐으면 KTX 조회 조건이다 — 후보 목록 대신 KTX 칸의 열차 목록에 선다(2026-11-06).
+  if (isKtxAsk()) return runKtxAsk(text);
 
   // 물어본 탭을 붙잡아 둔다. 찾는 동안 탭을 옮겨도 결과는 물어본 곳 것이고,
   // 누를 때 그 탭으로 도로 옮겨 준다.

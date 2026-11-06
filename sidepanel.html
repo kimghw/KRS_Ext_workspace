@@ -769,11 +769,13 @@
       </div>
     </section>
     <section class="ask card off" aria-labelledby="askTitle">
-      <h2 id="askTitle" class="sr-only">말로 찾는 회의실/차량</h2>
+      <!-- 차량 탭에서 KTX 를 골랐을 때도 이 칸이다 — 플레이스홀더가 "말로 찾는 KTX" 로 바뀌고 열차는 아래 KTX 칸의 목록에 선다(sidepanel.js runKtxAsk · ktxbox.js ask,
+           2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘"). 항공권 보기에서는 숨는다(sidepanel.css .flight-view). -->
+      <h2 id="askTitle" class="sr-only">말로 찾는 회의실/차량/KTX</h2>
       <div class="ask-bar">
         <span class="sparkle-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/><path d="m20 2 .7 1.3L22 4l-1.3.7L20 6l-.7-1.3L18 4l1.3-.7L20 2Z"/></svg></span>
-        <input type="text" id="askInput" aria-label="말로 찾는 회의실/차량" placeholder="claude가 연결되지 않았습니다" title="연결 지침을 복사해 Claude Code·Codex 에 붙여 넣거나, 아래 설정에 API 키를 넣으면 쓸 수 있습니다" autocomplete="off" disabled />
-        <button id="askGo" class="primary" aria-label="조건에 맞는 빈 시간 찾기" disabled>찾기 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+        <input type="text" id="askInput" aria-label="말로 찾는 회의실/차량/KTX" placeholder="claude가 연결되지 않았습니다" title="연결 지침을 복사해 Claude Code·Codex 에 붙여 넣거나, 아래 설정에 API 키를 넣으면 쓸 수 있습니다" autocomplete="off" disabled />
+        <button id="askGo" class="primary" aria-label="조건에 맞는 빈 시간·열차 찾기" disabled>찾기 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
       </div>
       <p class="cli-help" hidden><span>Claude Code·Codex 에 붙여 넣으면 연결해 줍니다.</span><button type="button" class="small cli-guide-copy" title="이 PC 의 Claude Code·Codex 같은 코딩 에이전트에 붙여 넣으면 로컬 Claude CLI 를 연결해 줍니다. 확장 폴더 경로와 확장 ID 가 함께 들어갑니다.">연결 지침 복사</button></p>
       <div id="askNote" class="ask-note" role="status" aria-live="polite"></div>
@@ -859,7 +861,8 @@
       <p id="editNote" class="edit-note hidden"></p>
     </section>
     <!-- KTX 조회(2026-11-05 사용자 지정: "여기 차량 말고 추가로 KTX 조회 하고 구매 페이지로 바로 가는 것까지 … 조회만 하는 기능 까지만 넣어줘, 구매페이지까지 들어갔으면 좋겠음") —
-         2026-11-06: 기존 브릿지가 binjari에서 추출한 조회 모듈을 실행하고, 패널은 조건·결과를 표시한다. 좌석 선택·예매는 사람이 한다. -->
+         2026-11-06: 기존 브릿지가 binjari에서 추출한 조회 모듈을 실행하고, 패널은 조건·결과를 표시한다. 좌석 선택·예매는 사람이 한다.
+         말로 찾기(같은 날 "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘")는 위의 말로 찾기 칸(.ask)이 그대로 — 읽은 역·인원은 여기 칸에, 출발일·시는 날짜 줄에 채우고 바로 조회한다. -->
     <section id="ktxBox" class="ktx" aria-labelledby="ktxTitle" hidden>
       <div class="section-heading">
         <h2 id="ktxTitle">KTX 조회<span id="ktxCount" class="count"></span></h2>

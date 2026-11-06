@@ -26,9 +26,9 @@ function native(answer = () => result()) {
   }, { get: (target, key) => key in target ? target[key] : deny(String(key)) });
   return { api, calls, forbidden };
 }
-function panel({ answer, open, saved } = {}) {
+function panel({ answer, open, saved, parse } = {}) {
   const doc = new JSDOM(html).window.document;
-  const store = { ...(saved || {}) }, logs = [], opened = [], continued = [];
+  const store = { ...(saved || {}) }, logs = [], opened = [], continued = [], whens = [], views = [];
   const f = native(answer);
   const d = createDispatcher({ log: (line) => logs.push(line) });
   registerKtx(d, { ktxSearch: (input, options) => ktxSearch(input, { ...options, api: f.api }) });
@@ -38,11 +38,15 @@ function panel({ answer, open, saved } = {}) {
     when: () => ({ date, hour }),
     open: async (pick) => { continued.push(pick); return open ? open(pick) : { ok: true }; },
     openTab: async (url) => { opened.push(url); },
+    // 말로 찾기 — parse 는 테스트가 끼운 가짜(src/llm.js ktxSmart 의 자리), setWhen 은 날짜 줄(공통 날짜·시작 시)에 넣는 손.
+    ...(parse ? { parse } : {}),
+    setWhen: (w) => { whens.push(w); if (w.date) date = w.date; if (Number.isInteger(w.hour)) hour = w.hour; },
+    onView: (v) => views.push(v),
   });
   const $ = (id) => doc.getElementById(id);
   const change = (id, value) => { $(id).value = value; $(id).dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); };
   const choose = (view) => $('carViewControl').querySelector('[data-view="' + view + '"] svg').dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }));
-  return { ...f, box, doc, $, store, d, logs, opened, continued, change, choose,
+  return { ...f, box, doc, $, store, d, logs, opened, continued, change, choose, whens, views,
     setDate: (value) => { date = value; }, setHour: (value) => { hour = value; } };
 }
 
@@ -282,5 +286,86 @@ test('패널 배치 — 시간 옆 아이콘·예약 칸 다음 KTX·출장 바�
   assert.equal(f.$('carTabs'), null);
   assert.equal(f.$('ktxGo').tagName, 'BUTTON');
   const css = fs.readFileSync(new URL('../sidepanel.css', import.meta.url), 'utf8');
-  assert.match(css, /\.app\.ktx-view > \.ask, \.app\.ktx-view > \.schedule, \.app\.ktx-view > #booking \{ display: none; \}/);
+  // 말로 찾기 칸(.ask)은 KTX 보기에서 남는다(2026-11-06 "차량 ktx 부분에도 채팅으로 조회") — 항공권 보기에서는 숨는다.
+  assert.match(css, /\.app\.ktx-view > \.schedule, \.app\.ktx-view > #booking \{ display: none; \}/);
+  assert.doesNotMatch(css, /\.app\.ktx-view > \.ask/);
+  assert.match(css, /\.app\.flight-view > \.ask, \.app\.flight-view > \.schedule, \.app\.flight-view > #booking \{ display: none; \}/);
+  assert.equal(f.doc.querySelector('.ask').compareDocumentPosition(f.$('ktxBox')) & 4, 4, '말로 찾기 칸은 KTX 칸보다 앞(날짜 줄 바로 아래)');
+});
+
+console.log('말로 찾기 — KTX 보기에서 같은 칸이 KTX 조회 조건을 읽는다(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘")');
+
+test('행위 명세 — 말로 찾기 작업 search.ktx: per-kind·조각(partial)이라 다섯 칸 모두 필수가 아니고 지시문이 역 목록·달력 규칙을 말한다', () => {
+  const dom = ACTIONS.domains.ktx;
+  assert.deepEqual([dom.llm.mode, dom.llm.partial, dom.llm.input, dom.llm.consumer], ['per-kind', true, 'ktx', { module: 'src/ktx.js', export: 'ktxSearch' }]);
+  assert.deepEqual([ACTIONS.actions['ktx.search'].llm, ACTIONS.actions['ktx.search'].task], [true, 'search.ktx']);
+  const task = ACTIONS.tasks['search.ktx'];
+  assert.deepEqual(Object.keys(task.fields), ['from', 'to', 'date', 'hour', 'adults']);
+  assert.equal(task.partial, true);
+  for (const [key, f] of Object.entries(task.fields)) assert.equal(f.required, undefined, `${key} 는 조각이라 필수가 아니다`);
+  assert.deepEqual(task.fields.from.values, KTX_STATIONS.map(([name]) => name));
+  assert.match(task.fields.hour.desc, /"오후 2시" 는 14/);
+  assert.match(task.rules.join('\n'), /말하지 않은 칸은 null/);
+  assert.match(task.rules.join('\n'), /달력 줄에서 찾습니다/);
+});
+
+test('말로 찾기 — 읽은 조각을 역·인원 칸과 날짜 줄에 얹어 바로 조회한다(기록은 by llm, 활동 로그에 말과 길)', async () => {
+  const asked = [];
+  const f = panel({ parse: async (text, form) => { asked.push({ text, form }); return { patch: { to: '대전', hour: 14, date: '2026-11-13', adults: 2 }, via: 'cli', summary: '…→대전 · 2026-11-13 · 14시~ · 2명', costUsd: 0.01 }; } });
+  f.box.toggle(true);
+  f.choose('ktx');
+  assert.deepEqual([f.box.view(), f.views], ['ktx', ['ktx']]);
+  const r = await f.box.ask('다음 주 금요일 오후 2시 대전 2명');
+  assert.deepEqual(asked, [{ text: '다음 주 금요일 오후 2시 대전 2명', form: { from: '부산', to: '서울', date: INPUT.date, hour: INPUT.hour, adults: 1 } }], '지금 칸이 읽는 길에 간다');
+  assert.deepEqual([f.$('ktxFrom').value, f.$('ktxTo').value, f.$('ktxPax').value], ['부산', '대전', '2']);
+  assert.deepEqual(f.whens, [{ date: '2026-11-13', hour: 14 }]);
+  assert.deepEqual(f.calls.map((c) => c.message), [{ task: 'ktxSearch', input: { from: '부산', to: '대전', date: '2026-11-13', hour: 14, adults: 2 } }]);
+  assert.deepEqual({ via: r.via, read: r.read, head: r.head, ok: r.ok, rows: r.rows, costUsd: r.costUsd }, { via: 'cli', read: '…→대전 · 2026-11-13 · 14시~ · 2명', head: '부산→대전 11/13 14시~ 2명', ok: true, rows: 1, costUsd: 0.01 });
+  assert.equal(f.$('ktxList').children.length, 1);
+  assert.deepEqual(f.store[PREF_KEY], { from: '부산', to: '대전', adults: 2 });
+  assert.equal(f.logs.length, 1);
+  assert.deepEqual([f.logs[0].kind, f.logs[0].ok, f.logs[0].data.record.by, f.logs[0].data.record.via, f.logs[0].data.via], ['ktx', true, 'llm', 'cli', 'cli']);
+  assert.equal(f.logs[0].text, '"다음 주 금요일 오후 2시 대전 2명" → [로컬 CLI] KTX 부산→대전 11/13 14시~ 2명');
+});
+
+test('말로 찾기 — 말하지 않은 칸은 지금 값 그대로다. 역 하나만 읽어도 조회하고 날짜 줄은 건드리지 않는다', async () => {
+  const f = panel({ parse: async () => ({ patch: { from: '동대구' }, via: 'local', summary: '동대구→…' }) });
+  f.box.toggle(true);
+  f.choose('ktx');
+  f.change('ktxPax', '3');
+  const r = await f.box.ask('동대구에서');
+  assert.deepEqual(f.whens, []);
+  assert.deepEqual(f.calls.map((c) => c.message.input), [{ from: '동대구', to: '서울', date: INPUT.date, hour: INPUT.hour, adults: 3 }]);
+  assert.deepEqual([r.ok, r.via, r.head, f.logs[0].data.record.via], [true, 'local', `동대구→서울 ${INPUT.date.slice(5).replace('-', '/')} 05시~ 3명`, 'local']);
+});
+
+test('말로 찾기 — 못 읽으면(parse 가 던짐) 채우지도 조회하지도 않고, 읽은 역이 같으면 조회하지 않는다', async () => {
+  const f = panel({ parse: async (text) => { if (text === '아무거나') throw new Error('조건을 읽지 못했습니다 — 역·날짜·시각·인원 가운데 하나는 적어 주세요.'); return { patch: { to: '부산' }, via: 'api', summary: '…→부산' }; } });
+  f.box.toggle(true);
+  f.choose('ktx');
+  await assert.rejects(f.box.ask('아무거나'), /조건을 읽지 못했습니다/);
+  assert.deepEqual([f.$('ktxFrom').value, f.$('ktxTo').value, f.$('ktxPax').value, f.calls.length, f.logs.length, f.whens.length], ['부산', '서울', '1', 0, 0, 0]);
+  const r = await f.box.ask('부산');
+  assert.deepEqual([r.ok, r.error, f.calls.length, f.logs.length], [false, '출발역과 도착역이 같습니다.', 0, 0]);
+  assert.deepEqual([f.$('ktxTo').value, f.$('ktxNote').textContent, f.$('ktxNote').classList.contains('bad')], ['부산', '출발역과 도착역이 같습니다.', true]);
+  const g = panel();
+  await assert.rejects(g.box.ask('서울'), /말로 찾기를 쓸 수 없습니다/);
+});
+
+test('말로 찾기 — 조회가 도는 동안에는 받지 않고, 조회 실패는 알림과 결과로 돌아온다', async () => {
+  let release;
+  const f = panel({ answer: () => new Promise((resolve) => { release = () => resolve(result()); }), parse: async () => ({ patch: { to: '대전' }, via: 'cli', summary: '…→대전' }) });
+  f.box.toggle(true);
+  f.choose('ktx');
+  f.$('ktxGo').click();
+  await assert.rejects(f.box.ask('대전'), /조회가 끝난 뒤에/);
+  release();
+  await tick();
+  await tick();
+  assert.equal(f.calls.length, 1);
+  const g = panel({ answer: () => ({ ok: false, error: 'CODE : -8003', code: 'GUARD_BLOCKED' }), parse: async () => ({ patch: { to: '대전' }, via: 'cli', summary: '…→대전' }) });
+  g.box.toggle(true);
+  g.choose('ktx');
+  const r = await g.box.ask('대전');
+  assert.deepEqual([r.ok, r.error, g.$('ktxTo').value, g.$('ktxNote').classList.contains('bad'), g.logs[0].ok], [false, 'CODE : -8003', '대전', true, false]);
 });

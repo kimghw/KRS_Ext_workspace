@@ -16,12 +16,13 @@
 //
 // 회의실·차량 조회(search.room·search.car)와 근태 조각(attend)의 작업은 행위 명세(actions/spec/<갈래>/*.yaml → tools/gen-actions.mjs →
 // actions/spec.js 의 tasks)가 만든다. fillAction(행위 ID) 이 행위에서 작업 이름과 입력 글의 꼴(갈래 llm.input → INPUTS)을 정해 같은 사다리를
-// 탄다 — parseSmart·fillAttendSmart 는 그 위에 규칙 해석(3)을 더한 것이다.
+// 탄다 — parseSmart·fillAttendSmart·ktxSmart(KTX 말로 찾기 search.ktx — 답은 조각, 2026-11-06)는 그 위에 규칙 해석(3)을 더한 것이다.
 
 import { callClaude } from './ai.js';
 import { structure, InputError, TASKS } from './input.js';
 import { ACTIONS } from '../actions/spec.js';
 import { parseLocal } from './nlq.js';
+import { parseKtxLocal } from './ktxnlq.js';
 import { parseAttendLocal, fixRelativeDates } from './attend.js';
 import { parseSetupLocal, reasonInput, KINDS, REASON_KEYS } from './gongmun.js';
 import { RECIPE } from './gmrecipe.js';
@@ -280,18 +281,22 @@ export async function diagnoseSmart(digest, opts) {
 
 const WEEKDAYS = '일월화수목금토';
 
-/** Claude 에게 줄 글. 오늘(요일 포함)·지금 폼·앞선 대화·새 말을 한데 묶는다. 첨부파일 내용은 넣지 않는다. */
-export function attendInput(text, { form = {}, today, history = [] }) {
+/** 입력 글의 머리 — 오늘(요일)과 석 주 치 달력. 요일 셈을 모델에게 맡기지 않는다 — 달력을 적어 주고 거기서 찾게 한다(근태 attendInput·KTX ktxInput 이 같이 쓴다). */
+function calendarHead(today) {
   const [y, m, d] = today.split('-').map(Number);
-  const shown = { ...form, file: form.file ? '(첨부 있음)' : null };
-  const turns = history.slice(-6).map((h) => `${h.who === 'me' ? '사용자' : '도우미'}: ${h.text}`).join('\n');
-  // 요일 셈을 모델에게 맡기지 않는다. 석 주 치 달력을 적어 주고 거기서 찾게 한다.
   const days = Array.from({ length: 21 }, (_, i) => {
     const x = new Date(y, m - 1, d + i);
     return `${x.getMonth() + 1}/${x.getDate()}(${WEEKDAYS[x.getDay()]})`;
   }).join(' ');
   return `오늘은 ${today} (${WEEKDAYS[new Date(y, m - 1, d).getDay()]}요일) 입니다.\n`
-    + `달력(오늘부터, 한 주는 월요일에 시작): ${days}\n`
+    + `달력(오늘부터, 한 주는 월요일에 시작): ${days}\n`;
+}
+
+/** Claude 에게 줄 글. 오늘(요일 포함)·지금 폼·앞선 대화·새 말을 한데 묶는다. 첨부파일 내용은 넣지 않는다. */
+export function attendInput(text, { form = {}, today, history = [] }) {
+  const shown = { ...form, file: form.file ? '(첨부 있음)' : null };
+  const turns = history.slice(-6).map((h) => `${h.who === 'me' ? '사용자' : '도우미'}: ${h.text}`).join('\n');
+  return calendarHead(today)
     + `지금 폼: ${JSON.stringify(shown)}\n`
     + (turns ? `앞선 대화:\n${turns}\n` : '')
     + `\n새 요청: ${text}`;
@@ -326,11 +331,61 @@ export async function fillAttendSmart(text, opts) {
   return { patch: out.data, reply: local.reply, via: 'local', note: joined(got.fails, out.notes) };
 }
 
+/* ------------------------------------------------------------ KTX 말로 찾기 */
+
+/**
+ * KTX 조회 조건 읽기에 줄 글 — 오늘(요일)·석 주 달력·지금 조회 칸·요청. 행위 명세의 갈래 llm.input: ktx(actions/spec/ktx/_domain.yaml).
+ * 지금 칸을 적어 주는 것은 "2명으로"·"오후로" 처럼 한 칸만 바꾸는 말을 받으려는 것이다 — 답은 조각(partial)이라 말하지 않은 칸은 null 로 온다.
+ * @param {{today: string, form?: {from?:string, to?:string, date?:string, hour?:number, adults?:number}}} ctx form 은 지금 조회 칸(ktxbox.js 의 inputNow)
+ */
+export function ktxInput(text, { today, form = {} } = {}) {
+  const v = (x) => (x == null || x === '' ? '?' : x);
+  return calendarHead(today)
+    + `지금 조회 칸: 출발역 ${v(form.from)} · 도착역 ${v(form.to)} · 출발일 ${v(form.date)} · 출발 시 ${v(form.hour)} · 인원 ${v(form.adults)}\n`
+    + `\n요청: ${text}`;
+}
+
+/** 읽은 조각을 사람이 확인할 한 줄 — "부산→서울 · 2026-11-07 · 9시~ · 2명". 규칙 해석은 제 summary(parseKtxLocal)를 쓴다. */
+const ktxSummary = (p) => [
+  p.from || p.to ? `${p.from || '…'}→${p.to || '…'}` : '', p.date || '', p.hour != null ? `${p.hour}시~` : '', p.adults != null ? `${p.adults}명` : '',
+].filter(Boolean).join(' · ');
+
+/**
+ * 말로 KTX 조회 조건을 읽는다 — 로컬 CLI → API 키 → 규칙 해석(src/ktxnlq.js) 순이고 무엇을 썼는지 같이 돌려준다
+ * (2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘").
+ * 작업은 행위 명세가 만든 search.ktx(actions/spec/ktx/search.yaml) — 답은 **조각**(partial)이라 말한 칸만 들어 있고, 지금 칸 위에 얹는 것은 부르는 쪽(ktxbox.js ask)이다.
+ * "내일"·"다음 주 수요일" 같은 상대 날짜는 규칙으로 다시 셈해 Claude 의 답을 바로잡는다(근태의 dated 와 같다).
+ * 어느 길로도 읽은 칸이 하나도 없으면 던진다 — 조회할 조건이 없다(지금 칸 그대로 조회하려면 조회 단추다).
+ *
+ * @param {{apiKey?:string, today:string, useNative?:boolean, form?:object}} opts form 은 지금 조회 칸(입력 글에 적는다)
+ * @returns {Promise<{patch: object, summary: string, via: 'cli'|'api'|'local', costUsd?: number, note?: string}>}
+ */
+export async function ktxSmart(text, opts) {
+  const { today } = opts;
+  const local = parseKtxLocal(text, today);
+  const got = await askClaude('search.ktx', ktxInput(text, opts), { ...opts, kind: 'ktx' });
+  const fails = [...got.fails];
+  if (got.data) {
+    const patch = { ...got.data };
+    let fixed = '';
+    if (local.relative && patch.date !== local.patch.date) { patch.date = local.patch.date; fixed = '날짜는 달력으로 다시 셈했습니다'; }
+    if (Object.keys(patch).length) return { patch, summary: ktxSummary(patch), via: got.via, costUsd: got.costUsd, note: joined(fails, got.notes, fixed) };
+    fails.push(`${got.via === 'cli' ? '로컬 CLI' : 'API'} 가 읽은 조건이 없음`);
+  }
+
+  // 규칙 해석도 같은 관문을 지난다.
+  if (Object.keys(local.patch).length) {
+    const out = structure('search.ktx', local.patch, { kind: 'ktx' });
+    if (Object.keys(out.data).length) return { patch: out.data, summary: local.summary, via: 'local', note: joined(fails, out.notes) };
+  }
+  throw new Error(`조건을 읽지 못했습니다${fails.length ? `(${fails.join(', ')})` : ''} — 역·날짜·시각·인원 가운데 하나는 적어 주세요. 예) 내일 아침 9시 부산에서 서울 2명`);
+}
+
 /* ------------------------------------------------------------ 행위 명세(actions/)의 LLM 어댑터 */
 
 /**
  * 갈래 llm.input → 입력 글을 짓는 법. 행위 명세의 갈래마다 _domain.yaml 의 llm.input 이 여기의 키다(생성기는 이 표를 모른다 — 없는 이름이면 fillAction 이 던진다).
- *   input(text, ctx)       Claude 에게 줄 글 — attend 는 attendInput(오늘·달력·지금 폼·앞선 대화), search 는 searchInput(오늘·찾는 대상)
+ *   input(text, ctx)       Claude 에게 줄 글 — attend 는 attendInput(오늘·달력·지금 폼·앞선 대화), search 는 searchInput(오늘·찾는 대상), ktx 는 ktxInput(오늘·달력·지금 조회 칸)
  *   fix(data, text, ctx)   답을 받은 뒤의 규칙 보정 — attend 는 상대 날짜 되셈(dated, fillAttendSmart 와 같다)
  */
 const INPUTS = {
@@ -340,6 +395,9 @@ const INPUTS = {
   },
   search: {
     input: (text, { today, kind }) => searchInput(text, { today, kind }),
+  },
+  ktx: {
+    input: (text, { today, form }) => ktxInput(text, { today, form }),
   },
 };
 
