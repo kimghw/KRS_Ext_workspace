@@ -738,6 +738,21 @@ def _await_result(
 
 
 
+def _reload_result_page(page: Page, *, where: str) -> None:
+    """Wait for the new document and result UI, without relying on load events."""
+    try:
+        page.reload(wait_until="commit", timeout=20_000)
+    except PWTimeoutError as exc:
+        # A navigation that never commits can leave the old rows in the DOM.
+        # Do not read them as the response to this re-query.
+        raise SearchResultUnavailable(
+            "코레일 결과 화면의 새로고침 응답이 늦어 조회를 완료하지 못했습니다. 잠시 후 다시 조회해 주세요."
+        ) from exc
+    # Commit precedes React rendering. Wait before checking guards/conditions;
+    # callers still classify late guards and empty lists within their retry budget.
+    _wait_result_list(page, where=f"{where}/reload")
+
+
 def _requery_after_guard(
     page: Page, *, config: KTXAConfig | None, where: str, attempts: int = 2,
 ) -> List[Dict[str, Any]]:
@@ -751,15 +766,15 @@ def _requery_after_guard(
         button = page.locator(S.RESULT_SEARCH_SUBMIT).filter(visible=True).first
         if button.is_visible():
             human_click(button)
+            try:
+                page.wait_for_load_state("networkidle", timeout=12_000)
+            except PWTimeoutError:
+                pass
         else:
             # The compact result header hides its query button. Reload preserves
             # the selected day; never click the separate next-day query control.
-            page.reload(wait_until="domcontentloaded", timeout=20_000)
+            _reload_result_page(page, where=f"{where}/retry-{attempt}")
         _REQUERY_COUNT += 1
-        try:
-            page.wait_for_load_state("networkidle", timeout=12_000)
-        except PWTimeoutError:
-            pass
         human_pause(1.5, 2.5)
         if _check_guard(page, f"{where}/retry-{attempt}"):
             if attempt == attempts:
@@ -843,12 +858,8 @@ def _requery_when_empty(
     validate_query(page, config, f"before empty retry ({where})")
     LOGGER.warning("결과 목록 0행 (%s) — 차단 안내·열차 없음 마커 없음, 새로고침 1회 재조회", where)
     human_pause(1.0, 2.0)
-    page.reload(wait_until="domcontentloaded", timeout=20_000)
+    _reload_result_page(page, where=f"{where}/empty-retry")
     _REQUERY_COUNT += 1
-    try:
-        page.wait_for_load_state("networkidle", timeout=12_000)
-    except PWTimeoutError:
-        pass
     human_pause(1.5, 2.5)
     if _check_guard(page, f"{where}/empty-retry"):
         return _requery_after_guard(page, config=config, where=f"{where}/empty-retry")

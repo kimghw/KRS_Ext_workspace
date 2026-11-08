@@ -1,0 +1,96 @@
+# Reviewed reload handling; retain the same conditions and bounded retry flow.
+
+def _reload_result_page(page: Page, *, where: str) -> None:
+    """Wait for the new document and result UI, without relying on load events."""
+    try:
+        page.reload(wait_until="commit", timeout=20_000)
+    except PWTimeoutError as exc:
+        # A navigation that never commits can leave the old rows in the DOM.
+        # Do not read them as the response to this re-query.
+        raise SearchResultUnavailable(
+            "코레일 결과 화면의 새로고침 응답이 늦어 조회를 완료하지 못했습니다. 잠시 후 다시 조회해 주세요."
+        ) from exc
+    # Commit precedes React rendering. Wait before checking guards/conditions;
+    # callers still classify late guards and empty lists within their retry budget.
+    _wait_result_list(page, where=f"{where}/reload")
+
+
+
+def _requery_after_guard(
+    page: Page, *, config: KTXAConfig | None, where: str, attempts: int = 2,
+) -> List[Dict[str, Any]]:
+    """Bounded retry with unchanged query conditions; never assume a one-time guard."""
+    global _REQUERY_COUNT
+    for attempt in range(1, attempts + 1):
+        if config is not None:
+            validate_query(page, config, "before guard retry")
+        LOGGER.warning("Guard retry (%s) %d/%d", where, attempt, attempts)
+        human_pause(1.0, 2.0)
+        button = page.locator(S.RESULT_SEARCH_SUBMIT).filter(visible=True).first
+        if button.is_visible():
+            human_click(button)
+            try:
+                page.wait_for_load_state("networkidle", timeout=12_000)
+            except PWTimeoutError:
+                pass
+        else:
+            # The compact result header hides its query button. Reload preserves
+            # the selected day; never click the separate next-day query control.
+            _reload_result_page(page, where=f"{where}/retry-{attempt}")
+        _REQUERY_COUNT += 1
+        human_pause(1.5, 2.5)
+        if _check_guard(page, f"{where}/retry-{attempt}"):
+            if attempt == attempts:
+                raise GuardBlocked(f"Repeated explicit guard ({where}, {attempt} retries)",
+                                   explicit=True)
+            continue
+        if config is not None:
+            validate_query(page, config, "after guard retry")
+        _state, late_guard = _await_result(page, stage=f"{where}/retry-{attempt}")
+        if late_guard:
+            # 대기 중 뜬 차단 안내 — 위의 즉시 감지와 같은 규칙으로 센다
+            if attempt == attempts:
+                raise GuardBlocked(f"Repeated explicit guard ({where}, {attempt} retries, late)",
+                                   explicit=True)
+            continue
+        rows = _read_rows(page)
+        if rows:
+            LOGGER.info("Retry returned %d rows with the same conditions", len(rows))
+            return rows
+        if attempt < attempts:
+            # 안내도 마커도 없는 0행 — 렌더 지연일 수 있어 같은 조건으로 한 번 더 (refresh)
+            LOGGER.warning("Guard retry (%s) %d/%d: 목록 0행(새 안내 없음) — 재조회 1회 더",
+                           where, attempt, attempts)
+            continue
+        raise SearchResultUnavailable(
+            "Guard dismissed, but result list is empty without a new explicit notice")
+    raise GuardBlocked(f"Explicit guard persists ({where})", explicit=True)
+
+
+
+def _requery_when_empty(
+    page: Page, config: KTXAConfig, *, where: str,
+) -> List[Dict[str, Any]]:
+    """목록이 비었는데 차단 안내도 '열차 없음' 마커도 없을 때 — 같은 조건으로 새로고침 1회.
+
+    -8002 뒤의 _requery_after_guard 와 같은 원리(초기 응답이 비면 refresh 로 정상 목록).
+    조건은 바꾸지 않는다. 새로고침 후 차단 안내가 뜨면 가드 재조회 경로로 넘긴다.
+    """
+    global _REQUERY_COUNT
+    validate_query(page, config, f"before empty retry ({where})")
+    LOGGER.warning("결과 목록 0행 (%s) — 차단 안내·열차 없음 마커 없음, 새로고침 1회 재조회", where)
+    human_pause(1.0, 2.0)
+    _reload_result_page(page, where=f"{where}/empty-retry")
+    _REQUERY_COUNT += 1
+    human_pause(1.5, 2.5)
+    if _check_guard(page, f"{where}/empty-retry"):
+        return _requery_after_guard(page, config=config, where=f"{where}/empty-retry")
+    validate_query(page, config, f"after empty retry ({where})")
+    _state, late_guard = _await_result(page, stage=f"{where}/empty-retry")
+    if late_guard:
+        return _requery_after_guard(page, config=config, where=f"{where}/empty-retry")
+    rows = _read_rows(page)
+    if rows:
+        LOGGER.info("새로고침 재조회로 %d행 수신 (%s)", len(rows), where)
+    return rows
+

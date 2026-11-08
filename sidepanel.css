@@ -2357,6 +2357,7 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 /* KTX 조회(2026-11-06) — 조건은 브릿지로, 열차와 좌석 상태는 읽기 전용이다. */
 .ktx { margin-top: 23px; }
 .ktx .section-heading { justify-content: flex-start; }
+.ktx #ktxSite { margin-left: auto; }
 .ktx-card { padding: 12px 14px; }
 .ktx-help { margin: 8px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .ktx-bar { display: flex; align-items: center; gap: 6px; }
@@ -2365,18 +2366,11 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .ktx-bar #ktxSwap { flex: none; width: 28px; min-height: 30px; padding: 5px; background: transparent; color: var(--muted); }
 .ktx-bar #ktxSwap svg { width: 16px; height: 16px; }
 .ktx-bar #ktxGo { flex: none; min-height: 36px; border-radius: 10px; }
-.ktx-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.ktx-links [hidden] { display: none; }
 .ktx-list { margin: 8px 0 0; padding: 0; list-style: none; }
 .ktx-list:empty { display: none; }
-.ktx-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 8px; padding: 8px 2px; border-top: 1px solid var(--line); font-size: 13px; }
+.ktx-row { display: grid; align-items: center; gap: 3px; padding: 8px 2px; border-top: 1px solid var(--line); font-size: 13px; }
 .ktx-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ktx-train { grid-column: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.ktx-seats { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 8px; }
-.ktx-seat-status { display: flex; flex-direction: column; align-items: flex-end; font-size: 11px; line-height: 1.4; }
-.ktx-seat-status b { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.ktx-seat-status.sold { color: var(--muted); }
-.ktx-seat-status.soon small { color: var(--danger); font-size: 10px; }
 .ktx-note { margin: 8px 2px 0; font-size: 12.5px; color: var(--muted); }
 .ktx-note:empty { display: none; }
 .ktx-note.bad { color: var(--danger); }

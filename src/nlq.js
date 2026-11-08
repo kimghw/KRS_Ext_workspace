@@ -118,3 +118,25 @@ export function parseLocal(text, today) {
     guessed: !dates && !hours,
   };
 }
+
+/** Fast path for routine relative-date queries; complex wording still uses Claude. */
+export function simpleQuery(text, local) {
+  if (local.guessed) return false;
+  let rest = String(text || '').trim();
+  if ([...rest.matchAll(/서울|부산/g)].length > 1 || (/회의실/.test(rest) && /차량/.test(rest))) return false;
+  const dates = /내일모레|모레|내일|오늘|다음\s*주|담주|이번\s*주|금주/g;
+  if ([...rest.matchAll(dates)].length > 1) return false;
+  rest = rest.replace(dates, ' ');
+  const ranges = /(오전|오후)?\s*(\d{1,2})(시|:00)\s*(?:부터|~|-|–|에서)\s*(오전|오후)?\s*(\d{1,2})(?:시|:00)(?:까지)?/g;
+  const range = [...rest.matchAll(ranges)];
+  if (range.length > 1 || range.some((m) => (!m[1] && m[3] !== ':00' && Number(m[2]) < 7)
+    || (!m[4] && Number(m[5]) <= Number(m[2])))) return false;
+  rest = rest.replace(ranges, ' ');
+  if (range.length) {
+    if (/오전|오후/.test(rest)) return false;
+  } else if ([...rest.matchAll(/오전|오후/g)].length > 1) return false;
+  rest = rest.replace(/오전|오후/g, ' ');
+  if ([...rest.matchAll(/\d{1,3}\s*명/g)].length > 1 || [...rest.matchAll(/\d{1,2}(?:\.\d)?\s*시간/g)].length > 1) return false;
+  rest = rest.replace(/\d{1,3}\s*명|\d{1,2}(?:\.\d)?\s*시간|서울|부산|회의실|차량|빈|쓸|빌릴|연속|이상|평일|조회|찾아주세요|찾아줘|보여주세요|보여줘|해주세요|해줘|주세요|좀/g, ' ');
+  return !rest.replace(/[\s,.!?~→-]/g, '');
+}

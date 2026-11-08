@@ -113,6 +113,15 @@ export const busEnds = (form) => ({ home: stationOf(form?.workplace) || String(f
 /* ------------------------------------------------------------ 역과 운임 */
 
 const STATIONS = [...new Set(KTX_FARES.routes.flatMap((r) => [r.a, r.b]))];
+// Generated rows are fixed for this module. Preserve their object references so
+// date/grade-specific properties are still read from the current fare row.
+const ROUTES = new Map();
+for (const route of KTX_FARES.routes) {
+  for (const [a, b] of [[route.a, route.b], [route.b, route.a]]) {
+    if (!ROUTES.has(a)) ROUTES.set(a, new Map());
+    if (!ROUTES.get(a).has(b)) ROUTES.get(a).set(b, route);
+  }
+}
 // 역 이름과 같은 글이 길잡이(places)에도 있으면 길잡이가 이긴다 — "창원" 은 창원역이 아니라 창원중앙역이다.
 // 길잡이의 값은 역 하나이거나 후보 역의 목록이다(KTX 역이 없는 도시의 가까운 역들) — 모두 목록으로 맞춰 둔다.
 const PLACE_KEYS = [...new Map([...STATIONS.map((s) => [s, [s]]), ...Object.entries(KTX_FARES.places || {}).map(([key, v]) => [key, [].concat(v)])])];
@@ -184,7 +193,7 @@ export function fareOf(a, b, date, grade = 'standard') {
 
 /** 운임표에서 두 역을 잇는 구간. 구간은 방향이 없다. */
 function routeOf(a, b) {
-  return KTX_FARES.routes.find((r) => (r.a === a && r.b === b) || (r.a === b && r.b === a));
+  return ROUTES.get(a)?.get(b);
 }
 
 /**

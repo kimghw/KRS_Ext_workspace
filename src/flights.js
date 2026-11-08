@@ -1,6 +1,7 @@
 // 공식 항공사 예약 화면에서만 읽는다. API 키·임의 재고·사전 시간표는 사용하지 않는다.
 // URL 근거와 실사이트 검증 한계: docs/flights.md. DOM은 의미(편명·시각·조회 조건)로
 // 읽되 조건을 확인할 수 없으면 실패로 돌린다. 실패는 매진/운항 없음이 아니다.
+import { currentSiteTab } from './currenttab.js';
 
 // logo — 패널이 결과 줄·항공사 머리에 보이는 단색 SVG(확장 루트 기준 경로, 출처는 docs/flights.md "항공사 로고"). 2026-11-06 사용자 지정: "대한항공 부산에어 로고를 넣어줘".
 export const AIRLINES = Object.freeze({
@@ -369,24 +370,31 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
   pending.add(airline);
   let tabId;
   let previousEpoch = null;
+  let borrowed = false;
   try {
     onStage(`${AIRLINES[airline].name} 조회 중`);
     const old = await getHandle(api, airline);
-    let tab = old?.tabId != null ? await api.tabs.get(old.tabId).catch(() => null) : null;
+    const current = await currentSiteTab(AIRLINES[airline].home, { api });
+    let tab = null;
+    if (current) {
+      const state = await run(api, current.id, pageRead, [{ airline, input }]).catch(() => null);
+      if (state?.matched && !state.error) { tab = current; borrowed = true; }
+    }
+    if (!tab && !old?.borrowed && old?.tabId != null) tab = await api.tabs.get(old.tabId).catch(() => null);
     // 사람이 넘겨받은 탭(핸들이 지워짐)이나 다른 경로로 이동한 탭은 절대로 재조회하지 않는다.
-    if (tab && isOfficial(tab, airline) && tab.url === old.bookingUrl) {
+    if (!borrowed && tab && isOfficial(tab, airline) && tab.url === old.bookingUrl) {
       previousEpoch = await run(api, tab.id, pageEpoch).catch(() => null);
       // 문서가 바뀌었는지 확인할 수 없으면 새 창을 쓴다.
       if (typeof previousEpoch === 'number') tab = await api.tabs.update(tab.id, { url: bookingUrl });
       else { tab = null; previousEpoch = null; }
-    } else tab = null;
+    } else if (!borrowed) tab = null;
     if (!tab) {
       const win = await api.windows.create({ url: bookingUrl, state: 'minimized' });
       tab = win?.tabs?.[0];
     }
     if (!tab?.id) throw new Error('항공사 조회 창을 열지 못했습니다.');
     tabId = tab.id;
-    await api.storage?.session?.set?.({ [handleKey(airline)]: { tabId, bookingUrl, input } });
+    await api.storage?.session?.set?.({ [handleKey(airline)]: { tabId, bookingUrl, input, ...(borrowed ? { borrowed: true } : {}) } });
     const started = now();
     const end = started + waitMs;
     let last = null;
@@ -407,7 +415,7 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
       // 화면이 다 열리고도(ready) 8초 동안 아무 일이 없으면 — 조건이 안 실렸거나, 실렸는데 조회가 시작되지 않았으면 — 한 번 새로고침한다.
       // 에어부산은 도시 목록을 받은 뒤 스스로 조회하는데 첫 방문에서 그 요청이 403 으로 막힌 적이 있고(2026-11-05 실측),
       // 대기열 스크립트(agent-lib.stclab.com)가 안 실리면 조건만 실린 채 영영 조회하지 않는다(같은 날 막아서 재현).
-      if (!reloaded && !submitted && last.ready && !last.loading && !last.rows?.length && !last.empty && now() - started >= RELOAD_MS) {
+      if (!borrowed && !reloaded && !submitted && last.ready && !last.loading && !last.rows?.length && !last.empty && now() - started >= RELOAD_MS) {
         reloaded = true;
         presses = 0;
         await api.tabs.reload(tabId);
@@ -466,6 +474,12 @@ export async function flightOpen({ airline, tabId, input, row }, { api = globalT
     }
     // 손을 넘긴 다음의 조회는 이 탭을 바꾸지 않도록, 화면을 앞에 두기 전에 소유권을 해제한다.
     await api.storage?.session?.remove?.(handleKey(airline));
+    if (own.borrowed) {
+      await api.tabs.update(tab.id, { active: true });
+      await api.windows.update(tab.windowId, { focused: true });
+      const highlighted = row ? await run(api, tab.id, pageHighlight, [row]).catch(() => false) : false;
+      return { ok: true, highlighted: !!highlighted };
+    }
     const win = await api.windows.getCurrent().catch(() => null);
     if (win?.id != null && win.id !== tab.windowId) await api.tabs.move(tab.id, { windowId: win.id, index: -1 });
     await api.tabs.update(tab.id, { active: true });

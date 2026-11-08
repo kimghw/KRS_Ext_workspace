@@ -23,7 +23,7 @@ SEARCH_FUNCTIONS = (
     "_click_train_type_tab", "_parse_depart_time", "_parse_result_rows", "navigate_to_search",
     "_set_srt_option", "_ensure_srt_on_result", "_search_start_hour", "_query_signature",
     "_query_state", "_condition_errors", "validate_query", "fill_search_form", "_check_guard",
-    "_read_rows", "_await_result", "_requery_after_guard", "submit_search",
+    "_read_rows", "_await_result", "_reload_result_page", "_requery_after_guard", "submit_search",
     "_empty_marker_visible", "_requery_when_empty", "_settle_rows", "_route_matches",
 )
 CLIENT_FUNCTIONS = (
@@ -32,11 +32,13 @@ CLIENT_FUNCTIONS = (
     "dismiss_notice_modal", "_click_proceed_if_asked", "attach_context_popup_guard",
 )
 
-def extract(source, names):
-    tree = ast.parse(source)
-    lines = source.splitlines(keepends=True)
-    found = {n.name: "".join(lines[n.lineno - 1:n.end_lineno]) for n in tree.body
-             if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
+def extract(source, names, overrides=""):
+    found = {}
+    for text in (source, overrides):
+        tree = ast.parse(text)
+        lines = text.splitlines(keepends=True)
+        found.update({n.name: "".join(lines[n.lineno - 1:n.end_lineno]) for n in tree.body
+                      if isinstance(n, (ast.FunctionDef, ast.ClassDef))})
     return "\n\n\n".join(found[name] for name in names) + "\n"
 
 def main():
@@ -53,7 +55,8 @@ def main():
     write("__init__.py", '"""Reviewed binjari query subset; see ../../PROVENANCE.json."""\n')
     for name in ("browser.py", "dom.py", "diagnostics.py"):
         write(name, read(name))
-    search = extract(read("korail/search.py"), SEARCH_FUNCTIONS)
+    retry_overrides = (ROOT / "overrides" / "search_retry.py.txt").read_text(encoding="utf-8")
+    search = extract(read("korail/search.py"), SEARCH_FUNCTIONS, retry_overrides)
     search_header = '''"""Query form, guard re-query and row parsing extracted from binjari; bridge adds a one-shot entrypoint."""
 from __future__ import annotations
 import logging
@@ -102,6 +105,7 @@ _REQUERY_COUNT = 0
                               "No login, reservation, payment, '더보기' pagination or watcher result-page reuse.",
                               "One persistent dedicated Chrome profile; a live instance is reused, as binjari reuses its debug Chrome.",
                               "Result-list wait uses interval polling so background windows can finish rendering.",
+                              "Reviewed retry overrides wait for reload commit and rendered results instead of DOMContentLoaded; navigation timeouts return a query error.",
                               "Upstream browser library configuration is unchanged."]}
     (ROOT / "PROVENANCE.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 

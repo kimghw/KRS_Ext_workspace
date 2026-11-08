@@ -151,7 +151,7 @@ registerBooking(actions);
 registerDwr(actions);
 // 국제표준 올리기(board.standard — 공문 탭의 국제표준 업로드 칸이 표준 PDF 하나마다, 2026-10-30).
 registerBoard(actions);
-// KTX 조회(ktx.search — 기존 브릿지를 통해 binjari에서 추출한 조회 모듈 실행, 2026-11-06). 조회라 확인 없이 돈다.
+// KTX 시간표 조회(ktx.search — 공식 시간표를 확장 안에서 즉시 검색, 2026-11-07).
 registerKtx(actions);
 registerFlight(actions);
 
@@ -325,7 +325,7 @@ function applyAuto() {
     // 고르는 중이거나 회의주제를 쓰는 중이면 건드리지 않는다.
     // 새로 고치면 선택이 지워져서, 폼을 채우는 사이에 고른 게 날아간다.
     if (state.picks.length || state.drag) return;
-    if (document.activeElement === el.title && el.title.value.trim()) return;
+    if ([el.title, el.place, el.passenger].some((input) => document.activeElement === input && input.value.trim())) return;
     load();
   }, AUTO_MS);
 }
@@ -1920,19 +1920,18 @@ const ASK_OFF_TEXT = 'claude가 연결되지 않았습니다';
 const ASK_OFF_HINT = '연결 지침을 복사해 Claude Code·Codex 에 붙여 넣거나, 아래 설정에 API 키를 넣으면 쓸 수 있습니다';
 
 /**
- * 말로 찾기는 Claude 가 문장을 읽어준다는 전제 위에 서 있다.
- * 붙을 곳(로컬 CLI·API 키)이 하나도 없으면 눌러도 헛일이라 칸을 잠그고, 왜 잠겼는지
- * 플레이스홀더에 적는다 — 적어 넣고 눌렀는데 아무 일도 일어나지 않는 편보다 낫다.
+ * 회의실·차량의 문장 해석은 Claude 연결을 확인한다. KTX의 흔한 조건은
+ * 로컬에서 즉시 읽을 수 있으므로 연결 확인을 기다리지 않는다.
  */
 function paintAskReady() {
-  const ready = state.cli || !!state.apiKey;
+  const ktxAsk = isKtxAsk();
+  const ready = ktxAsk || state.cli || !!state.apiKey;
   // 키 칸은 접혀 있다. 넣어 뒀는지는 펼치지 않아도 보이게 요약 줄에 적는다.
   el.apiKeyState.textContent = state.apiKey ? '저장됨' : 'CLI 가 없을 때만';
   el.ask.disabled = !ready;
   el.askGo.disabled = !ready || state.asking;
   document.querySelector('.ask')?.classList.toggle('off', !ready);
   // 차량 탭에서 KTX 를 골랐으면 같은 칸이 KTX 조회 조건을 읽는다(runKtxAsk) — 플레이스홀더와 예문이 그것을 말한다.
-  const ktxAsk = isKtxAsk();
   el.ask.placeholder = ready ? (ktxAsk ? ASK_PLACEHOLDER_KTX : ASK_PLACEHOLDER) : ASK_OFF_TEXT;
   el.ask.title = ready
     ? (ktxAsk ? '예) 내일 아침 9시 부산에서 서울 가는 KTX 2명' : isCar() ? '예) 내일 오후 2시부터 3시간 쓸 차량' : '예) 내일 오후 2시, 8명이 쓸 회의실')
@@ -2048,7 +2047,7 @@ const gongmun = createGongmunPanel({
 createStdBox({ actions, me: () => state.myName, compareTab: COMPARE_KIND });
 
 /**
- * 차량 탭의 KTX 조회 칸(전용 실행부 조회, 2026-11-06). 날짜·시작 시는 공통 날짜 줄을 따른다.
+ * 차량 탭의 KTX 시간표 조회 칸. 날짜·시작 시는 공통 날짜 줄을 따른다.
  * 말로 찾기(같은 날 "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게") — 읽는 길(parse)은 회의실·차량과 같은 사다리(src/llm.js ktxSmart: 로컬 CLI → API 키 → 규칙 해석),
  * 읽은 출발일·시는 날짜 줄·시작 시간에 손으로 고친 것과 같은 이벤트로 넣는다(setWhen — 차량 현황도 그 날로 간다). 보기가 바뀌면 말로 찾기 칸의 플레이스홀더를 다시 그린다.
  */

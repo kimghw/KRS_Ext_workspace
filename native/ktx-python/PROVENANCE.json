@@ -17,7 +17,7 @@
     "dom.py": "a2ea3d3050ac873b7b23d607fc3b42d4a7b0461996f88a922a6b1fe7ee1d0de0",
     "korail/__init__.py": "3e8bac771c28cf5b0850b045ce3429c0e1702537c60ba57c53647303d390f81f",
     "korail/client.py": "1fc5bab1b7cf2d560f1e2290ce0fe08c1ebc4bf865de32db65e1f46f3c5f4b4f",
-    "korail/search.py": "c369a059f6b01f36c14214e3a6e7b63aa30b159aca069175d403a926092caec3",
+    "korail/search.py": "9edff41f8026be33761ee8a5a913aaf47bb67f343744a138359a5283c4c86b2f",
     "korail/selectors.py": "dfd04c9e7db4254baeba963e582657321cd765350ca3b1115f5b83aa6aea16be"
   },
   "changes": [
@@ -28,6 +28,7 @@
     "No login, reservation, payment, '더보기' pagination or watcher result-page reuse.",
     "One persistent dedicated Chrome profile; a live instance is reused, as binjari reuses its debug Chrome.",
     "Result-list wait uses interval polling so background windows can finish rendering.",
+    "Reviewed retry overrides wait for reload commit and rendered results instead of DOMContentLoaded; navigation timeouts return a query error.",
     "Upstream browser library configuration is unchanged."
   ]
 }

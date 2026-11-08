@@ -1,10 +1,11 @@
-// 차량 탭의 KTX 조회. 조건은 기존 브릿지의 Python 조회 모듈로 보내고 결과는 읽기 전용으로 표시한다.
-// 2026-11-06 사용자 정정: binjari의 필요한 조회 코드만 추출·병합하고 기존 브릿지 통로를 유지한다.
+// 차량 탭의 KTX 시간표. 공식 시간표를 확장 안에서 즉시 조회하고 코레일 바로가기를 제공한다.
+// 2026-11-07 사용자 정정: 시간표와 바로가기만 필요하다. 브라우저 자동화·좌석 조회를 쓰지 않는다.
 // 차량·KTX·항공권 전환은 이 파일이 맡으며 패널을 열 때의 기본은 차량이다(2026-11-05).
 // 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 날짜 줄 아래의 말로 찾기 칸(sidepanel.js runKtxAsk)이
 // KTX 보기에서는 여기의 ask(text) 로 온다: parse(src/llm.js ktxSmart)가 읽은 조각을 지금 칸 위에 얹어 역·인원은 이 칸에, 출발일·시는 날짜 줄(setWhen)에 채우고 바로 조회한다.
 import { TRANSPORT_ICON } from './src/icons.js';
-import { KTX_STATIONS, KORAIL_MAIN, ktxOpen } from './src/ktx.js';
+import { KTX_STATIONS, KORAIL_SEARCH } from './src/ktx.js';
+import { openCurrentTab } from './src/currenttab.js';
 
 export const PREF_KEY = 'ktxPref';
 const DEFAULT = { from: '부산', to: '서울', adults: 1 };
@@ -16,22 +17,22 @@ const same = (a, b) => a && b && ['from', 'to', 'date', 'hour', 'adults'].every(
 const headOf = (input) => `${input.from}→${input.to} ${String(input.date).slice(5).replace('-', '/')} ${String(input.hour).padStart(2, '0')}시~`;
 
 /**
- * 패널은 입력·표시만 맡는다. 브라우저 열기는 사람이 누른 계속/코레일 열기 단추에서만 한다.
+ * 패널은 입력·표시만 맡는다. 브라우저 열기는 코레일 바로가기 단추에서만 한다.
  * parse(text, form) 은 말로 찾기의 읽는 길(src/llm.js ktxSmart — { patch, summary, via, note, costUsd }, 못 읽으면 던진다), setWhen({ date, hour }) 은 읽은 출발일·시를
  * 공통 날짜 줄에 넣는 손, onView(view) 는 차량·KTX·항공권 보기가 바뀌었다는 알림(패널이 말로 찾기 칸의 플레이스홀더를 바꾼다).
  */
 export function createKtxBox({
   doc = document, storage = globalThis.chrome?.storage?.local, actions = null,
-  when = () => ({ date: '', hour: 8 }), open = ktxOpen,
-  openTab = (url) => chrome.tabs.create({ url, active: true }),
+  when = () => ({ date: '', hour: 8 }),
+  openTab = (url) => openCurrentTab(url),
   parse = null, setWhen = () => {}, onView = () => {},
 } = {}) {
   const $ = (id) => doc.getElementById(id);
   const box = $('ktxBox');
   if (!box) return { toggle() {}, invalidate() {} };
   const el = { from: $('ktxFrom'), to: $('ktxTo'), pax: $('ktxPax'), swap: $('ktxSwap'), go: $('ktxGo'),
-    site: $('ktxSite'), next: $('ktxContinue'), note: $('ktxNote'), list: $('ktxList'), count: $('ktxCount') };
-  const st = { rows: [], session: null, input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car' };
+    site: $('ktxSite'), note: $('ktxNote'), list: $('ktxList'), count: $('ktxCount') };
+  const st = { rows: [], input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car' };
   const viewWrap = $('carViewControl');
   for (const [view, icon] of [['car', 'car'], ['ktx', 'train'], ['flight', 'plane']]) {
     const b = viewWrap?.querySelector(`[data-view="${view}"]`);
@@ -78,25 +79,17 @@ export function createKtxBox({
     return { from: el.from.value, to: el.to.value, date, hour: +hour, adults: +el.pax.value };
   };
   const note = (text, bad = false) => { el.note.textContent = text; el.note.classList.toggle('bad', bad); };
-  const seat = (label, value) => {
-    if (!value) return '';
-    const status = value.soldOut ? '매진' : value.price || '상태 확인 필요';
-    return `<span class="ktx-seat-status${value.soldOut ? ' sold' : ''}${value.soon ? ' soon' : ''}"><span>${label}</span><b>${esc(status)}</b>${value.soon && !value.soldOut ? '<small>매진임박</small>' : ''}</span>`;
-  };
   function paint() {
     el.go.disabled = st.busy || st.opening;
     el.count.textContent = st.rows.length ? String(st.rows.length) : '';
-    el.next.hidden = !st.session;
-    el.next.disabled = st.busy || st.opening;
-    el.list.innerHTML = st.rows.map((r) => `<li class="ktx-row"><span class="ktx-time"><b>${esc(r.dep)}</b> → ${esc(r.arr)}</span>`
-      + `<span class="ktx-train">${esc(r.train)} ${esc(r.no)}${r.took ? ' · ' + esc(r.took) : ''}</span>`
-      + `<span class="ktx-seats">${seat('일반실', r.gen)}${seat('특실', r.spec)}</span></li>`).join('');
+    el.site.disabled = st.opening;
+    el.list.innerHTML = st.rows.map((r) => `<li class="ktx-row"><span class="ktx-time"><b>${esc(r.dep)}</b> → ${esc(r.arr)}${r.nextDay ? ' <small>다음 날</small>' : ''}</span>`
+      + `<span class="ktx-train">${esc(r.train)} ${esc(r.no)}${r.took ? ' · ' + esc(r.took) : ''}</span></li>`).join('');
   }
   function invalidate() {
     if (!st.input || same(st.input, inputNow())) return;
     st.revision++;
     st.rows = [];
-    st.session = null;
     st.input = null;
     paint();
     note(st.busy ? '조회 조건이 바뀌었습니다. 진행 중인 조회가 끝나면 다시 조회해 주세요.' : '조회 조건이 바뀌었습니다. 다시 조회해 주세요.');
@@ -118,7 +111,6 @@ export function createKtxBox({
     st.busy = true;
     st.input = input;
     st.rows = [];
-    st.session = null;
     paint();
     const head = headOf(input);
     note(`${head} · 조회 중`);
@@ -130,17 +122,16 @@ export function createKtxBox({
       });
       if (revision !== st.revision || !same(input, inputNow())) {
         st.rows = [];
-        st.session = null;
         st.input = null;
         const stale = '조회 조건이 바뀌어 이전 결과를 표시하지 않았습니다. 다시 조회해 주세요.';
         note(stale);
         return { ok: false, error: stale };
       }
       if (!result?.ok) return fail(result?.error || 'KTX를 조회하지 못했습니다.');
-      if (!Array.isArray(result.rows) || !result.session) return fail('조회 결과 형식이 올바르지 않습니다.');
+      if (!Array.isArray(result.rows)) return fail('조회 결과 형식이 올바르지 않습니다.');
       st.rows = result.rows;
-      st.session = result.session;
-      note(st.rows.length ? `${head} · ${st.rows.length}편 — 첫 결과 목록입니다. 좌석 선택·예매는 코레일에서 진행해 주세요.` : `${head} · 표시할 열차가 없습니다. 코레일 화면에서 확인할 수 있습니다.`);
+      const basis = result.basis ? ` · ${result.basis} 시행 시간표` : '';
+      note(st.rows.length ? `${st.rows.length}편${basis}` : `조건에 맞는 열차가 없습니다${basis}`);
       return { ok: true, rows: st.rows.length };
     } catch (error) {
       if (revision === st.revision) note(messageOf(error), true);
@@ -152,7 +143,7 @@ export function createKtxBox({
   }
 
   /**
-   * 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 말을 조각으로 읽어(parse: 로컬 CLI → API 키 → 규칙 해석)
+   * 말로 찾기 — 흔한 조건은 즉시 읽고, 나머지는 CLI → API → 규칙 순으로 조각을 읽는다.
    * 지금 칸 위에 얹고, 역·인원은 이 칸에, 출발일·시는 날짜 줄(setWhen)에 채운 뒤 바로 조회한다(기록은 by llm — 활동 로그에 말과 길이 남는다).
    * 읽은 것이 하나도 없으면 parse 가 던진다 — 채우지도 조회하지도 않는다. 돌려주는 것은 말로 찾기 칸의 알림에 적을 것(읽은 조각 read · 조회한 조건 head · 조회 결과).
    * @returns {Promise<{via: string, read: string, head: string, ok: boolean, rows?: number, error?: string, note?: string, costUsd?: number}>}
@@ -193,28 +184,14 @@ export function createKtxBox({
   for (const event of ['input', 'change']) doc.addEventListener(event, (e) => {
     if (['date', 'hourStart'].includes(e.target.id)) invalidate();
   });
-  el.next.addEventListener('click', async () => {
-    if (st.busy || st.opening || !st.session || !st.input) return;
-    if (!same(st.input, inputNow())) return invalidate();
-    const session = st.session;
+  el.site.addEventListener('click', async () => {
+    if (st.opening) return;
     st.opening = true;
     paint();
     try {
-      const result = await open({ session });
-      if (session !== st.session) return;
-      note(result?.ok ? '조회한 코레일 화면을 열었습니다. 좌석 선택·예매·결제는 직접 진행해 주세요.' : result?.error || '코레일 화면을 열지 못했습니다.', !result?.ok);
-    } catch (error) {
-      if (session === st.session) note(messageOf(error), true);
-    } finally {
-      st.opening = false;
-      paint();
-    }
-  });
-  el.site.addEventListener('click', async () => {
-    try {
-      await openTab(KORAIL_MAIN);
-      note('코레일을 새 탭으로 열었습니다. 조회 조건은 직접 입력해 주세요.');
+      await openTab(KORAIL_SEARCH);
     } catch (error) { note(messageOf(error), true); }
+    finally { st.opening = false; paint(); }
   });
   paint();
   return { toggle(on) { st.on = !!on; paintView(); }, invalidate, ask, view: () => st.view };

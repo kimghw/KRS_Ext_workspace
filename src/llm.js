@@ -4,7 +4,7 @@
 //   2) Anthropic API 키
 //   3) 규칙 기반 해석 — 아무 설정 없이도 흔한 문장은 처리된다
 //
-// 앞의 것이 안 되면 다음으로 내려가고, 무엇을 썼는지 항상 같이 돌려준다.
+// 명확한 항목:값 입력과 흔한 조회는 규칙으로 먼저 처리한다. 그 밖의 문장은 위 순서로 내려가고, 무엇을 썼는지 돌려준다.
 //
 // 첨부(출장 증빙·공문 문서)는 어느 길이든 글자를 먼저 뽑는다 — 다리는 다리에서(native/doctext.mjs), API 길은 브라우저에서(doctext/).
 // 글자 층이 있는 PDF 는 글자만 보내고 파일을 붙이지 않으며, 그림·스캔본은 OCR 글자를 입력에 적고 파일도 붙인다. 어떻게 읽었는지는
@@ -21,8 +21,9 @@
 import { callClaude } from './ai.js';
 import { structure, InputError, TASKS } from './input.js';
 import { ACTIONS } from '../actions/spec.js';
-import { parseLocal } from './nlq.js';
-import { parseKtxLocal } from './ktxnlq.js';
+import { parseLocal, simpleQuery } from './nlq.js';
+import { parseKtxLocal, simpleKtxRequest } from './ktxnlq.js';
+import { explicitAttendFields } from './quickinput.js';
 import { parseAttendLocal, fixRelativeDates } from './attend.js';
 import { parseSetupLocal, reasonInput, KINDS, REASON_KEYS } from './gongmun.js';
 import { RECIPE } from './gmrecipe.js';
@@ -147,7 +148,7 @@ export function searchInput(text, { today, kind = 'room' } = {}) {
  * 작업은 행위 명세가 종류마다 만든 search.room·search.car(actions/spec/<갈래>/search.yaml 의 llm.task)다 — 차량 작업은 받지 않는 조건
  * (좌석 수·지역)을 variants.car.clear 로 비우고 note 에 적는다. 규칙 해석(parseLocal)도 같은 작업의 관문을 지난다.
  *
- * @param {{apiKey?:string, today:string, useNative?:boolean, kind?:'room'|'car'}} opts
+ * @param {{apiKey?:string, today:string, useNative?:boolean, kind?:'room'|'car', preferLocal?:boolean}} opts preferLocal:false 는 기존 백엔드 순서를 명시한다.
  * @returns {Promise<{filter: object, via: 'cli'|'api'|'local', costUsd?: number, note?: string, guessed?: boolean}>}
  *   guessed 는 규칙 해석이 날짜도 시간도 못 읽어 기본값으로 돌았다는 뜻이다.
  */
@@ -155,11 +156,16 @@ export async function parseSmart(text, opts) {
   const { today } = opts;
   const kind = opts.kind === 'car' ? 'car' : 'room';
   const task = `search.${kind}`;
+  const quick = parseLocal(text, today);
+  if (opts.preferLocal !== false && simpleQuery(text, quick)) {
+    const out = structure(task, quick, { kind });
+    return { filter: out.data, via: 'local', guessed: false, note: joined(out.notes) };
+  }
   const got = await askClaude(task, searchInput(text, { today, kind }), { ...opts, kind });
   if (got.data) return { filter: got.data, via: got.via, costUsd: got.costUsd, note: joined(got.fails, got.notes) };
 
   // 규칙 해석도 같은 관문을 지난다. 여기서도 어긋나면 더 내려갈 길이 없다 — 찾지 않고 다시 적게 한다.
-  const local = parseLocal(text, today);
+  const local = quick;
   try {
     const out = structure(task, local, { kind });
     return { filter: out.data, via: 'local', guessed: !!local.guessed, note: joined(got.fails, out.notes) };
@@ -309,16 +315,21 @@ function dated(data, text, today) {
 }
 
 /**
- * 말로 근태 폼을 채운다. 로컬 CLI → API 키 → 규칙 해석 순이고, 무엇을 썼는지 같이 돌려준다.
+ * 말로 근태 폼을 채운다. 명시적인 항목:값은 즉시 검증하고, 그 밖의 문장은 CLI → API → 규칙 순으로 읽는다.
  * 돌려주는 patch 는 명세의 관문을 지난 **부분 수정**이다(말하지 않은 칸은 들어 있지 않다). 종류와 갈래의
  * 짝 같은 폼 규칙은 여기서 보지 않는다 — 부르는 쪽이 src/attend.js 의 applyPatch 로 폼에 얹으며 가린다.
  * 받을 수 없어 뺀 값이 있으면 note 에 적는다.
  *
- * @param {{apiKey?:string, today:string, useNative?:boolean, form?:object, history?:object[]}} opts
+ * @param {{apiKey?:string, today:string, useNative?:boolean, form?:object, history?:object[], preferLocal?:boolean}} opts
  * @returns {Promise<{patch: object, reply: string, via: 'cli'|'api'|'local', costUsd?: number, note?: string}>}
  */
 export async function fillAttendSmart(text, opts) {
   const { today, form = {} } = opts;
+  const quick = opts.preferLocal !== false && explicitAttendFields(text, form);
+  if (quick) {
+    const out = structure('attend', quick, { kind: 'attend' });
+    if (!out.notes.length) return { patch: out.data, reply: `${Object.keys(out.data).length}칸을 채웠습니다.`, via: 'local', note: '' };
+  }
   const got = await askClaude('attend', attendInput(text, opts), { ...opts, kind: 'attend' });
   if (got.data) {
     const { reply = '', ...patch } = got.data;
@@ -351,18 +362,22 @@ const ktxSummary = (p) => [
 ].filter(Boolean).join(' · ');
 
 /**
- * 말로 KTX 조회 조건을 읽는다 — 로컬 CLI → API 키 → 규칙 해석(src/ktxnlq.js) 순이고 무엇을 썼는지 같이 돌려준다
+ * 말로 KTX 조회 조건을 읽는다 — 흔한 조건은 즉시 읽고, 그 밖의 문장은 CLI → API → 규칙 순으로 읽는다.
  * (2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘").
  * 작업은 행위 명세가 만든 search.ktx(actions/spec/ktx/search.yaml) — 답은 **조각**(partial)이라 말한 칸만 들어 있고, 지금 칸 위에 얹는 것은 부르는 쪽(ktxbox.js ask)이다.
  * "내일"·"다음 주 수요일" 같은 상대 날짜는 규칙으로 다시 셈해 Claude 의 답을 바로잡는다(근태의 dated 와 같다).
  * 어느 길로도 읽은 칸이 하나도 없으면 던진다 — 조회할 조건이 없다(지금 칸 그대로 조회하려면 조회 단추다).
  *
- * @param {{apiKey?:string, today:string, useNative?:boolean, form?:object}} opts form 은 지금 조회 칸(입력 글에 적는다)
+ * @param {{apiKey?:string, today:string, useNative?:boolean, form?:object, preferLocal?:boolean}} opts form 은 지금 조회 칸(입력 글에 적는다)
  * @returns {Promise<{patch: object, summary: string, via: 'cli'|'api'|'local', costUsd?: number, note?: string}>}
  */
 export async function ktxSmart(text, opts) {
   const { today } = opts;
   const local = parseKtxLocal(text, today);
+  if (opts.preferLocal !== false && simpleKtxRequest(text, local)) {
+    const out = structure('search.ktx', local.patch, { kind: 'ktx' });
+    return { patch: out.data, summary: local.summary, via: 'local', note: joined(out.notes) };
+  }
   const got = await askClaude('search.ktx', ktxInput(text, opts), { ...opts, kind: 'ktx' });
   const fails = [...got.fails];
   if (got.data) {

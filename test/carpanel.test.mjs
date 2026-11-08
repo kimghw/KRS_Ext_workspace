@@ -372,5 +372,43 @@ t('근무지가 부산이면 안내가 붙지 않은 부산 차량만 눌린다 
   });
 }
 
+{
+  type('at_workplace', '부산');
+  const input = doc.getElementById('at_carPlace');
+  const list = box().querySelector('.at-cars-list');
+  const first = list.firstElementChild;
+  const scans = site.scans.length;
+  input.focus();
+  type('at_carPlace', '대전시청');
+  t('행선지 입력은 차량 목록·버튼·초점을 유지하고 현황을 다시 읽지 않는다', () => {
+    assert.equal(box().querySelector('.at-cars-list'), list);
+    assert.equal(list.firstElementChild, first);
+    assert.equal(doc.activeElement, input);
+    assert.equal(site.scans.length, scans);
+    assert.ok(notes().some((text) => text.includes('행선지 대전시청')));
+  });
+  const before = notes().join('\n');
+  input.value = '대전시';
+  input.dispatchEvent(new window.InputEvent('input', { bubbles: true, isComposing: true }));
+  t('한글 조합 중에는 입력을 막지 않고 목록·파생 안내를 다시 만들지 않는다', () => {
+    assert.equal(input.value, '대전시');
+    assert.equal(notes().join('\n'), before);
+    assert.equal(box().querySelector('.at-cars-list'), list);
+  });
+  input.dispatchEvent(new window.CompositionEvent('compositionend', { bubbles: true }));
+  t('한글 조합을 마치면 최종 행선지를 안내와 신청 값에 반영한다', () => {
+    assert.ok(notes().some((text) => text.includes('행선지 대전시')));
+    assert.equal(box().querySelector('.at-cars-list'), list);
+    assert.equal(site.scans.length, scans);
+  });
+  const observer = new window.MutationObserver(() => {});
+  observer.observe(doc.getElementById('atFields'), { childList: true, subtree: true, attributes: true });
+  input.dispatchEvent(new window.Event('change', { bubbles: true }));
+  t('입력 뒤 같은 값의 change 이벤트가 와도 중복으로 화면을 갱신하지 않는다', () => {
+    assert.equal(observer.takeRecords().length, 0);
+  });
+  observer.disconnect();
+}
+
 console.log(`\n통과 ${pass}건`);
 process.exit(0);

@@ -610,56 +610,66 @@ export function createAttendPanel({
   }
 
   /** 빈 필수칸은 파란 윤곽선으로, 맞지 않는 칸은 붉게 표시하고, 올릴 수 있는지를 한 줄로 말한다. */
-  function paintNeed() {
+  function paintNeed(changedKey = '') {
+    const textOnly = ['place', 'venue', 'purpose', 'carPlace', 'workplace'].includes(changedKey);
+    const attribute = (node, name, value) => {
+      const text = String(value);
+      if (node.getAttribute(name) !== text) node.setAttribute(name, text);
+    };
     const fields = fieldsFor(st.form);
     const miss = new Set(missingFields(st.form));
     const bad = new Map(problems(st.form).map((p) => [p.key, p.message]));
-    for (const node of el.fields.querySelectorAll('.at-field')) {
+    const selector = textOnly ? `.at-field[data-key="${changedKey}"]${changedKey === 'place' ? ', .at-field[data-key="workplace"]' : ''}` : '.at-field';
+    for (const node of el.fields.querySelectorAll(selector)) {
       const key = node.dataset.key;
       node.classList.toggle('need', miss.has(key));
       node.classList.toggle('bad', bad.has(key));
       node.classList.toggle('filled', st.filled.has(key) && !miss.has(key));
       const input = node.querySelector('input, select');
       if (input) {
-        input.setAttribute('aria-describedby', `at_${key}_msg`);
-        input.setAttribute('aria-required', String(fields.some((f) => f.key === key && f.required)));
-        input.setAttribute('aria-invalid', String(bad.has(key)));
+        attribute(input, 'aria-describedby', `at_${key}_msg`);
+        attribute(input, 'aria-required', fields.some((f) => f.key === key && f.required));
+        attribute(input, 'aria-invalid', bad.has(key));
         // 목록의 잠금을 지금 폼에 맞춘다 — 당일 유연근무는 날짜를 옮기면 07:00·11:00 이 잠기거나 풀린다.
         const locked = new Set((fields.find((f) => f.key === key)?.options || []).filter((o) => o.disabled).map((o) => o.value));
-        for (const o of input.options || []) o.disabled = locked.has(o.value);
+        for (const o of input.options || []) if (o.disabled !== locked.has(o.value)) o.disabled = locked.has(o.value);
       }
       // 빈 칸에는 따로 적지 않는다 — 이름 옆의 "필수"와 파란 윤곽선으로 충분하다(2026-10-02 사용자 지정).
-      node.querySelector('.at-msg').textContent = bad.get(key) || '';
+      const message = node.querySelector('.at-msg'), text = bad.get(key) || '';
+      if (message.textContent !== text) message.textContent = text;
     }
     // 며칠간: 칩과 끝나는 날이 같은 값을 가리키게 맞춘다. 달력에서 고르는 중이면 그 칸은 건드리지 않는다.
-    for (const b of el.fields.querySelectorAll('button[data-days]')) {
+    for (const b of textOnly ? [] : el.fields.querySelectorAll('button[data-days]')) {
       const on = +b.dataset.days === st.form.days;
       b.classList.toggle('active', on);
       b.setAttribute('aria-pressed', String(on));
     }
     // 끝나는 날 달력(휴가의 며칠간 줄 · 출장의 도착일 칸)을 폼의 종료일에 맞춘다. 고르는 중이면 그 칸은 건드리지 않는다.
-    for (const endDay of [$('at_days'), $('at_dateTo')]) {
+    for (const endDay of textOnly ? [] : [$('at_days'), $('at_dateTo')]) {
       if (!endDay) continue;
-      endDay.min = st.form.dateFrom || '';
-      if (document.activeElement !== endDay) endDay.value = st.form.dateTo || '';
+      if (endDay.min !== (st.form.dateFrom || '')) endDay.min = st.form.dateFrom || '';
+      if (document.activeElement !== endDay && endDay.value !== (st.form.dateTo || '')) endDay.value = st.form.dateTo || '';
     }
-    paintHalfNote();
-    paintSpanNote();
-    paintFlexNote();
+    if (!textOnly) {
+      paintHalfNote();
+      paintSpanNote();
+      paintFlexNote();
+    }
     // 빈 칸은 윤곽선으로, 맞지 않는 칸은 그 칸에 칠하고 적어 알린다. 여기서는 다 채워졌을 때 무엇이 올라가는지만 한 줄로 말한다
     // (빈 칸 이름을 한 번 더 늘어놓던 줄은 뺐다 — 2026-10-02 사용자 지정).
     // 출근이 정시가 아닌 날의 반차는 알람이 뜨고 올리지 못한다(구분 칸 아래 — paintHalfNote). "유연근무를 먼저 올리고 반차 쓰기"를 고르면 풀린다.
     const ready = !miss.size && !bad.size && !!KINDS[st.form.kind] && !halfBlocked();
     el.need.className = 'at-need';
-    el.need.textContent = ready ? `${st.wfaFor ? '열 내용' : '올릴 내용'} — ${sendSummary()}` : '';
+    const summary = ready ? `${st.wfaFor ? '열 내용' : '올릴 내용'} — ${sendSummary()}` : '';
+    if (el.need.textContent !== summary) el.need.textContent = summary;
     el.submit.disabled = !ready || st.busy || !!st.wfaFor;
     el.save.disabled = !ready || st.busy || !!st.wfaFor || modifying();
     // 기념일 상자의 "신청 화면만 열기" — 연차를 이미 올렸을 때 쓴다. 칸이 다 맞으면 반차 알람과 상관없이 열 수 있다(HR 에 올리지 않는다).
     const wfaOnly = $('atWfaOpen');
     if (wfaOnly) wfaOnly.disabled = !!miss.size || !!bad.size || st.busy;
     el.chatGo.disabled = st.busy;
-    paintCars();
-    seedBusFares();
+    if (!textOnly || changedKey !== 'purpose') paintCars();
+    if (!textOnly || changedKey === 'place' || changedKey === 'workplace') seedBusFares();
   }
 
   /* ---------------------------------------------------------------- 차량 조회 */
@@ -670,12 +680,32 @@ export function createAttendPanel({
   // days 는 사이트에서 읽은 그 기간의 현황, result 는 그것을 근무지에 맞춰 가른 것(carsInWindow)이다.
   // booking 은 신청을 보내는 중인 차량의 이름, note 는 방금 한 신청의 결과 글({text, error})이다.
   const carIdle = () => ({ key: '', win: null, loading: false, days: null, result: null, error: '', booking: '', note: null });
+  let carFilter = null;
+  const carMarkup = new WeakMap();
   /** 차량 상자를 다시 그린다. 어느 차량을 고를 수 있는지는 근무지에 달려 있어, 그릴 때마다 지금의 근무지로 다시 가른다(사이트를 다시 읽지는 않는다). */
   const drawCars = () => {
     const box = $('atCars');
     if (!box) return;
-    if (st.cars.days) st.cars.result = carsInWindow(st.cars.win, st.cars.days, { region: regionOf(st.form.workplace) });
-    box.innerHTML = carsHtml();
+    const region = regionOf(st.form.workplace);
+    if (st.cars.days) {
+      if (!carFilter || carFilter.days !== st.cars.days || carFilter.key !== st.cars.key || carFilter.region !== region) {
+        carFilter = { days: st.cars.days, key: st.cars.key, region,
+          result: carsInWindow(st.cars.win, st.cars.days, { region }) };
+      }
+      st.cars.result = carFilter.result;
+    }
+    // Destination edits change a note, not the car buttons. Keep unchanged
+    // sections mounted instead of replacing the entire list on every key.
+    const parts = carsParts().filter(Boolean), previous = carMarkup.get(box) || [];
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === previous[i]) continue;
+      const template = document.createElement('template');
+      template.innerHTML = parts[i];
+      const node = template.content.firstElementChild, old = box.children[i];
+      if (old) old.replaceWith(node); else box.append(node);
+    }
+    while (box.children.length > parts.length) box.lastElementChild.remove();
+    carMarkup.set(box, parts);
   };
 
   /**
@@ -718,19 +748,19 @@ export function createAttendPanel({
    * 차량 상자의 내용 — 머리 줄(기간 · 다시 조회), 차량마다 한 줄(네 줄쯤 보이고 나머지는 스크롤 — CSS), 그 아래 알림.
    * 빈 차량의 줄만 누를 수 있고, 누르면 그 차량을 이 기간으로 신청한다. 무엇이 나가는지(기간·행선지)는 상자에 적혀 있다.
    */
-  function carsHtml() {
+  function carsParts() {
     const c = st.cars;
     const note = (text, cls = '') => `<p class="at-cars-note${cls}">${escapeHtml(text)}</p>`;
-    if (!c.win) return note('날짜와 시간을 넣으면 그 시간에 빈 차량을 찾습니다.');
+    if (!c.win) return [note('날짜와 시간을 넣으면 그 시간에 빈 차량을 찾습니다.')];
     const long = windowDays(c.win).length > MAX_CAR_DAYS;
     const again = long ? '' : `<button type="button" class="small ghost at-web" data-car-act="again" title="${CAR_AGAIN_TITLE}" aria-label="${CAR_AGAIN_TITLE}"`
       + `${c.loading || c.booking ? ' disabled' : ''}>${CAR_AGAIN_ICON}</button>`;
     const head = `<div class="at-cars-head"><strong>차량</strong><span class="at-cars-when">${escapeHtml(windowLabel(c.win))}</span>${again}</div>`;
     // 방금 한 신청의 결과. 현황을 다시 읽는 동안에도 남아 있다.
     const done = c.note ? note(c.note.text, c.note.error ? ' error' : ' ok') : '';
-    if (long) return head + note(`차량 조회는 ${MAX_CAR_DAYS}일까지만 봅니다 — 더 긴 기간은 차량 탭에서 확인하세요.`);
-    if (c.loading) return head + done + note('차량 현황을 읽는 중...');
-    if (c.error) return head + done + note(`차량 현황을 읽지 못했습니다: ${c.error}`, ' error');
+    if (long) return [head, note(`차량 조회는 ${MAX_CAR_DAYS}일까지만 봅니다 — 더 긴 기간은 차량 탭에서 확인하세요.`)];
+    if (c.loading) return [head, done, note('차량 현황을 읽는 중...')];
+    if (c.error) return [head, done, note(`차량 현황을 읽지 못했습니다: ${c.error}`, ' error')];
     const region = regionOf(st.form.workplace);
     const rows = c.result.cars.map((row, i) => {
       const name = `<span class="at-car-name">${escapeHtml(row.car.label || row.car.name)}</span>`;
@@ -768,7 +798,7 @@ export function createAttendPanel({
       notes.push(note(`${c.result.unsure.map((u) => md(u.date)).join('·')} 의 현황을 확신할 수 없어 비어 있다고 하지 않습니다 — 차량 탭에서 확인하세요. (${c.result.unsure[0].reason})`, ' error'));
     }
     if (c.win.rounded) notes.push(note('차량은 한 시간 단위로 잡습니다 — 폼의 시간을 정시에 맞춰 넓혀 봤습니다.'));
-    return head + done + (rows ? `<ul class="at-cars-list">${rows}</ul>` : '') + notes.join('');
+    return [head, done, rows ? `<ul class="at-cars-list">${rows}</ul>` : '', ...notes];
   }
 
   /** 차량의 행선지를 받는 칸의 이름 — 출장이면 출장지, 아니면 행선지. */
@@ -1551,6 +1581,14 @@ export function createAttendPanel({
     if (!node) return;
     const key = node.dataset.key;
     const input = e.target;
+    // Korean IME emits intermediate input events. Keep the value immediately,
+    // then update dependent content once the composition is complete.
+    if (input.type === 'text' && e.isComposing) {
+      st.form[key] = input.value;
+      st.filled.delete(key);
+      return;
+    }
+    if (input.type === 'text' && e.type === 'change' && st.form[key] === input.value) return;
     disarm();
     st.filled.delete(key);
     if (key === 'days' || key === 'dateTo') {
@@ -1603,7 +1641,7 @@ export function createAttendPanel({
     st.form = settle(st.form);
     // 적은 출장지가 지난번에 간 곳이면 그때 고른 교통편을 되살린다 — 폼을 새로 그리지 않고 아이콘만 바꾼다(치는 중의 커서가 남는다).
     if (key === 'place' && recallTransport()) paintTransport();
-    paintNeed();
+    paintNeed(key);
   }
 
   /**
@@ -1691,7 +1729,7 @@ export function createAttendPanel({
   const CHAT_PLACEHOLDER = '예) 내일 오후 2~4시 부산시청 외근';
   const CHAT_TITLE = '문장을 적으면 아래 입력칸에 반영합니다. 목적도 함께 적어 주세요.';
   const CHAT_OFF_TEXT = 'claude 미연결 — 규칙으로만 읽습니다';
-  const CHAT_OFF_HINT = '종류·날짜·시각 같은 흔한 말만 규칙으로 읽고 목적은 채우지 못합니다. 아래 연결 지침을 복사해 Claude Code·Codex 에 붙여 넣거나 설정에 API 키를 넣으면 Claude 가 읽습니다.';
+  const CHAT_OFF_HINT = '종류·날짜·시각과 "출장지: 대전", "목적: 업무 협의"처럼 지정한 값은 바로 채웁니다. 복잡한 문장은 Claude 연결이나 API 키가 필요합니다.';
 
   /**
    * Claude 에 닿을 길(로컬 CLI·API 키)이 있는지에 따라 말로 채우기 칸의 낯을 바꾼다.
@@ -4143,6 +4181,7 @@ export function createAttendPanel({
     });
     el.fields.addEventListener('input', onFieldInput);
     el.fields.addEventListener('change', onFieldInput);
+    el.fields.addEventListener('compositionend', onFieldInput);
     el.fields.addEventListener('click', onChipClick);
     el.fields.addEventListener('click', onCarClick);
     el.fields.addEventListener('click', onNoteClick);

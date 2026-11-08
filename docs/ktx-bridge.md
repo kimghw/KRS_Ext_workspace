@@ -1,4 +1,36 @@
-# KTX 조회 모듈과 기존 브릿지
+# KTX 시간표 조회
+
+2026-11-07 사용자 정정: 시간만 조회하고 코레일로 바로 이동하면 된다. 조회 경로를 확장 안의 공식 시간표 검색으로 바꿨다.
+
+`ktxbox.js → ktx.search → src/ktx.js → src/ktxtimes.js`
+
+조회는 운행 요일·정차역·출발 시각을 메모리에서 검색한다. 네트워크 요청, CDP, 전용 Chrome, Python, 네이티브 브릿지가 필요 없다. 결과는 열차 번호·출발/도착·소요 시간이며, 자정을 넘는 구간과 이전 날 출발한 열차의 새벽 정차를 구분한다. 코레일 바로가기는 `https://www.korail.com/ticket/search/general`을 사이드패널 옆 현재 탭에서 열고 조건 입력·예매는 사람이 한다. 현재 창에 탭이 없을 때만 새 탭을 연다.
+
+## 시간표 출처와 갱신
+
+[코레일 공식 시간표 게시판](https://www.korail.com/com/userBoard.do?mode=list&schBcid=ticketTable)의 [2026-11-01 시행 KTX 시간표](https://www.korail.com/file/cubedata/COMMON/jfile/202610/13/202610131a130b1ac0b200.xlsx)에서 625편을 가져왔다. 원본 주소·시행일·SHA-256은 생성물 `src/ktxtimes.js`에 보관한다. 화면에도 시행일을 표시한다. 공개 시간표이므로 임시 운행·운휴·좌석 재고는 코레일에서 확인한다. 시행일 이전 날짜는 현재 표로 조회하지 않는다.
+
+```powershell
+node tools/import-ktx-timetable.mjs
+```
+
+위 명령은 공식 게시판에서 최신 시행표를 찾아 내려받고 `src/ktxtimes.js`를 다시 만든다. XLSX 공유 문자열·정차역·시각·요일을 읽으며 모르는 운행 조건이나 표 구조는 거부한다. 이미 받은 파일은 다음처럼 가져온다.
+
+```powershell
+node tools/import-ktx-timetable.mjs <xlsx 파일> --basis YYYY-MM-DD --source <공식 XLSX 주소>
+```
+
+생성 후 관련 테스트를 실행하고 확장을 다시 불러온다. 예전 네이티브 KTX 모듈은 현재 패널에서 호출하지 않는다.
+
+```powershell
+node --test test/ktx.test.mjs test/ktx-timetable.test.mjs test/ktxnlq.test.mjs
+```
+
+검증: 위 28개 테스트와 패널 연결 553건·행위 명세 40건·명세 보기 14건이 통과했다. Chrome에서 실제 패널 컴포넌트의 조회 클릭부터 부산→서울 51편 표시까지 30ms였고, 조회 중 네트워크 요청은 0건이었다. 상단 코레일 바로가기의 목적지도 확인했다. 브라우저의 확장 관리 화면에서 확장을 새로고침하고 패널을 다시 열면 적용된다.
+
+## 이전 브릿지 구현 기록
+
+아래는 시간표 검색으로 바꾸기 전의 구현·진단 기록이다.
 
 2026-11-06 사용자 정정: binjari에서 필요한 조회 코드만 추출해 프로젝트에 포함하고, 기존 브릿지를 통해 사용한다. 기존 기능과 KTX 사이의 코드·설정 의존성을 줄이며 네이티브 호스트를 따로 만들지 않는다.
 
@@ -94,3 +126,9 @@ native\ktx-runtime\.venv\Scripts\python.exe -I -X utf8 -m unittest discover -s n
 ```
 
 기존 `claude-bridge.bat`의 `ping` 응답도 유지한다. 기존 기능 파일이 없는 환경의 KTX 경로와 KTX 파일이 없는 환경의 기존 경로를 각각 검사한다. 이전 독립 호스트 `com.krs.ktx` 등록이 남아 있어도 현재 코드와 설치 프로그램은 이를 사용하거나 생성하지 않는다. 개인 경로·확장 ID가 적힌 옛 매니페스트도 Git에서 제외한다.
+
+## 2026-11-07 새로고침 시간 초과 수정
+
+차단 뒤 재조회와 빈 목록 재조회에서 `Page.reload: Timeout 20000ms exceeded`가 그대로 반환되는 경로를 수정했다. 새로고침은 새 문서 응답(`commit`)을 기다린 뒤 목록·열차 없음·안내창 렌더를 확인한다. 응답 자체가 오지 않으면 이전 행을 읽지 않고 한국어 오류를 반환한다. 조회 조건 검증과 재시도 횟수 제한은 유지하며, `overrides/search_retry.py.txt`와 추출 도구에 변경을 반영해 vendor 갱신 후에도 보존한다.
+
+Node 54개·Python 44개, 총 **98개** 테스트 통과. 로컬 Chrome에서 지연 스크립트로 `DOMContentLoaded`가 끝나지 않는 상황을 재현했고, 수정한 대기는 목록·빈 결과·안내창을 모두 인식했다. 실제 네이티브 프레임 조회 응답도 확인했으며, 검증용 부산→대전 **2026-11-13 07시, 어른 1명** 탭의 같은 조건 새로고침은 **2.5초**에 KTX 10편을 반환했다. 검증 기록은 Git에서 제외되는 `state/query-reload-20261107.json`, `state/reload-live-verification-20261107.json`, `state/reload-local-regression-20261107.json`에 있다.

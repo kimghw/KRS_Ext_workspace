@@ -29,7 +29,7 @@
 
 `lifecycle.py`는 Windows가 소유하는 파일 잠금으로 여러 브릿지의 조회·열기 요청을 직렬화합니다. 프로세스가 종료되면 잠금도 자동 해제됩니다. 부모 브릿지는 안정된 프로세스 핸들로 0.5초마다 감시하며, 연결이 끊기면 작업과 그 작업이 새로 만든 Chrome·드라이버를 Job Object로 함께 종료합니다. 정상 응답 전에는 Job Object의 자동 종료를 해제하여 조회 창을 남깁니다. `open`으로 연결한 기존 조회 창은 이 작업의 자식 프로세스가 아니므로 종료 대상이 아닙니다. Node는 전용 Python 본체를 `detached: true`로 실행하고 `__PYVENV_LAUNCHER__`를 고정된 venv 경로로 지정합니다. Windows venv 실행기와 Node의 자동 종료 Job이 완료된 Chrome까지 닫지 않도록 하면서 기존 venv 의존성과 작업 취소 감시는 유지합니다.
 
-binjari 출처와 원본·포함 파일의 SHA-256은 `PROVENANCE.json`에 있습니다. `vendor/`는 조회에 쓰이는 함수·선택자만 추출한 사본입니다. `overrides/`는 연결부(`client_head` — 팝업 가드 부착, 빈 탭 재사용, 차단 코드 추출)와 한 번 조회 진입부(`search_tail` — `perform_query`, 배경 창용 간격 폴링)입니다. 차단 재조회는 binjari 원본 함수를 그대로 씁니다. 코드 추출은 실제 관측한 `-8001/-8002/-8003/-8202`를 보존하도록 보완했고, 최종 실패에도 기록한 차단 코드와 안내문을 전달합니다. `tools/update_vendor.py <binjari 경로>`는 공개 코드 파일만 읽어 추출하며 환경 파일을 읽지 않습니다. 갱신 후 코드 검토와 테스트가 필요합니다.
+binjari 출처와 원본·포함 파일의 SHA-256은 `PROVENANCE.json`에 있습니다. `vendor/`는 조회에 쓰이는 함수·선택자만 추출한 사본입니다. `overrides/`는 연결부(`client_head` — 팝업 가드 부착, 빈 탭 재사용, 차단 코드 추출), 한 번 조회 진입부(`search_tail` — `perform_query`, 배경 창용 간격 폴링), 새로고침 대기 보완(`search_retry`)입니다. 차단 재조회는 binjari의 같은 조건·최대 2회 흐름을 유지합니다. 새로고침은 새 문서의 응답 수신(`commit`) 뒤 목록·빈 결과·안내창 렌더를 기다리며, `DOMContentLoaded`를 기다리다 20초 후 종료되는 문제를 피합니다. 응답 자체가 오지 않으면 이전 화면의 행을 읽지 않고 한국어 오류를 반환합니다. 코드 추출은 실제 관측한 `-8001/-8002/-8003/-8202`를 보존하도록 보완했고, 최종 실패에도 기록한 차단 코드와 안내문을 전달합니다. `tools/update_vendor.py <binjari 경로>`는 공개 코드 파일만 읽어 추출하며 환경 파일을 읽지 않습니다. 갱신 후 코드 검토와 테스트가 필요합니다.
 
 ```powershell
 native/ktx-runtime/.venv/Scripts/python.exe -I -m unittest discover -s native/ktx-python/tests -v

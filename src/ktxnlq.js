@@ -160,3 +160,23 @@ export function parseKtxLocal(text, today) {
   if (adults) { patch.adults = adults; parts.push(`${adults}명`); }
   return { patch, summary: parts.join(' · '), relative: !!date?.relative };
 }
+
+/** Only take the fast path when every part of a routine request is understood. */
+export function simpleKtxRequest(text, local) {
+  if (!Object.keys(local.patch).length) return false;
+  let rest = String(text || '').trim();
+  const consume = (re, key) => {
+    const matches = [...rest.matchAll(re)];
+    if (matches.length > 1 || (matches.length && local.patch[key] == null)) return false;
+    rest = rest.replace(re, ' ');
+    return true;
+  };
+  if (!consume(/(?:\d{4}\s*[-./년]\s*)?\d{1,2}\s*[-./월]\s*\d{1,2}(?:일)?|(?:다다음\s*주|다음\s*주|담주|이번\s*주|금주)?\s*[일월화수목금토]요일|\d{1,2}\s*일\s*(?:뒤|후)|오늘|내일|모레|글피/g, 'date')) return false;
+  if (!consume(/(?:(?:오전|오후|아침|저녁|밤|새벽)\s*)?\d{1,2}\s*시|오전|오후|아침|저녁|밤|새벽/g, 'hour')) return false;
+  if (!consume(/\d+\s*(?:명|인|사람)|혼자|둘이|셋이|넷이|(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉)\s*(?:명|사람)/g, 'adults')) return false;
+  const stationRe = new RegExp(NAMES.map(([name]) => escapeRe(name)).join('|'), 'g');
+  if ([...rest.matchAll(stationRe)].length > 2) return false;
+  rest = rest.replace(stationRe, ' ');
+  rest = rest.replace(/KTX|ktx|열차|기차|시간표|조회|역|에서|부터|출발|까지|도착|가는|으로|이후|찾아주세요|찾아줘|보여주세요|보여줘|해주세요|해줘|주세요|좀|로|행|발/g, ' ');
+  return !rest.replace(/[\s,.!?~→-]/g, '');
+}

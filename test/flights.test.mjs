@@ -237,6 +237,39 @@ function fakeChrome(answers, probe = null) {
 const result = (rows = [], over = {}) => ({ at: 2, matched: true, rows, empty: false, ready: true, ...over });
 const FLIGHT = { no: 'KE1402', dep: '09:10', arr: '10:10', availability: 'available', seats: 4, price: '79,000원' };
 
+test('현재 항공사 탭의 조건이 맞으면 별도 창·탭 없이 그 결과를 조회한다', async () => {
+  const f = fakeChrome({ KE: [result([FLIGHT])] });
+  f.tabs.set(999, { id: 999, windowId: 1, status: 'complete', url: 'https://www.koreanair.com/booking/select-flight/departure' });
+  f.api.tabs.query = async () => [f.tabs.get(999)];
+  const r = await flightSearch(INPUT, f.options);
+  assert.equal(r.ok, true);
+  assert.equal(r.results[0].tabId, 999);
+  assert.deepEqual(r.results[0].rows, [FLIGHT]);
+  assert.equal(f.calls.some(([kind]) => ['window', 'create', 'reload'].includes(kind)), false);
+  assert.equal(f.calls.some(([kind, , options]) => kind === 'update' && options?.url), false);
+  const opened = await flightOpen({ airline: 'KE', tabId: 999, input: INPUT, row: FLIGHT }, { api: f.api });
+  assert.equal(opened.ok, true);
+  assert.equal(f.calls.some(([kind]) => ['move', 'window', 'create'].includes(kind)), false);
+});
+
+test('현재 항공사 탭의 조건이 다르면 그 페이지를 바꾸지 않는다', async () => {
+  const f = fakeChrome({ KE: [result([], { matched: false }), result([FLIGHT])] });
+  f.tabs.set(999, { id: 999, windowId: 1, status: 'complete', url: 'https://www.koreanair.com/booking/search' });
+  f.api.tabs.query = async () => [f.tabs.get(999)];
+  assert.equal((await flightSearch(INPUT, f.options)).ok, true);
+  assert.equal(f.calls.some(([kind, id]) => kind === 'update' && id === 999), false);
+});
+
+test('재사용한 현재 항공사 탭은 결과 대기 중에도 자동 새로고침하지 않는다', async () => {
+  const f = fakeChrome({ BX: [result([])] });
+  f.tabs.set(999, { id: 999, windowId: 1, status: 'complete', url: flightBookingUrl('BX', INPUT) });
+  f.api.tabs.query = async () => [f.tabs.get(999)];
+  const r = await flightSearch({ ...INPUT, airline: 'BX' }, { ...f.options, waitMs: 12000 });
+  assert.equal(r.ok, false);
+  assert.equal(r.results[0].tabId, 999);
+  assert.equal(f.calls.some(([kind]) => ['window', 'create', 'reload'].includes(kind)), false);
+});
+
 test('one provider failure preserves the other result, filtered and sorted by departure time', async () => {
   const f = fakeChrome({ KE: [result([{ ...FLIGHT, no: 'KE1404', dep: '12:00' }, { ...FLIGHT, dep: '07:30' }, FLIGHT])], BX: [{ error: 'Access Denied' }] });
   const r = await flightSearch({ ...INPUT, airline: 'all' }, f.options);

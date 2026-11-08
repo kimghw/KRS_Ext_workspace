@@ -2,7 +2,7 @@
 //
 // HR 은 eclass 와 다른 시스템이다. eclass 에 로그인돼 있으면 SSO 주소(홈의 "HR System" 링크와 같은 주소)가
 // HR 세션을 만들어 준다. HR 화면은 X-Frame-Options: SAMEORIGIN 이라 패널 안에 넣을 수 없고, 폼은 HR 껍데기
-// 안의 iframe 에서만 제대로 돈다. 그래서 **HR 작업 탭**을 뒷전에 하나 열고 그 안에서 일한다.
+// 안의 iframe 에서만 제대로 돈다. 현재 탭이 HR이면 재사용하고, 아니면 HR 작업 탭을 뒷전에 열어 쓴다.
 //
 // 값을 넣고 저장하는 일은 요청을 흉내 내지 않는다. 폼 화면을 작업 탭의 숨은 iframe 에 띄우고, 그 화면의
 // 자기 함수(saveTrav100·apprRequest·apprReqCancel …)를 그대로 부른다. 결재선·문서번호·숨은 칸을 사이트가
@@ -10,6 +10,7 @@
 
 import { ORIGIN } from './config.js';
 import { AuthError, portalState } from './net.js';
+import { currentSiteTab } from './currenttab.js';
 
 export const HR_ORIGIN = 'https://hr.krs.co.kr';
 /** eclass 홈의 "HR System 열기" 링크가 여는 주소. 로그인돼 있으면 HR 첫 화면으로 넘어간다. */
@@ -387,9 +388,9 @@ async function knownTab() {
 const sessionDead = (r) => !r || [0, 401, 403, 419].includes(r.status)
   || /loggedout|\/login/i.test(r.url || '') || /^\s*</.test(r.text || '');
 
-async function whoAmI(tabId) {
+async function whoAmI(tabId, { requireShell = true } = {}) {
   const shell = await firstResult(exec(tabId, pageShell)).catch(() => null);
-  if (!shell?.shell || shell.login) return null;
+  if (!shell || shell.login || (requireShell && !shell.shell)) return null;
   const r = await firstResult(exec(tabId, pageFetch, ['/api/user', null])).catch(() => null);
   if (sessionDead(r)) return null;
   try {
@@ -408,11 +409,23 @@ let session = null;   // { tabId, user, at }
 let workerTabId = null;   // 이 패널이 쓰고 있는 작업 탭. 닫힐 때 치울 것을 바로 알기 위해 따로 든다.
 
 /**
- * HR 작업 탭을 준비한다. 살아 있는 탭이 있으면 그대로 쓰고, 없으면 SSO 주소를 뒷전 탭으로 연다.
+ * 현재 HR 탭을 우선 쓴다. 없으면 기존 작업 탭을 쓰거나 SSO 주소를 뒷전 탭으로 연다.
+ * 재사용한 현재 탭은 작업 탭으로 기록하거나 패널 종료 때 닫지 않는다.
  * eclass 로그인이 풀려 있으면 SSO 를 열지 않는다 — 풀린 채로 따라가면 남은 쿠키까지 지워진다.
  * @returns {Promise<{tabId:number, user:{emplNo:string,name:string,dept:string}}>}
  */
 export async function hrSession({ onStage = () => {} } = {}) {
+  const current = await currentSiteTab(HR_ORIGIN);
+  if (current) {
+    if (session?.tabId === current.id && session.borrowed && Date.now() - session.at < SESSION_TRUST_MS) return session;
+    const user = await whoAmI(current.id, { requireShell: false });
+    if (!user) throw new AuthError('현재 HR 탭에서 로그인을 완료한 뒤 다시 조회해 주세요.', { portal: 'unknown' });
+    // 사용 중인 탭은 패널 종료 때 닫는 작업 탭으로 기록하지 않는다.
+    const saved = (await chrome.storage.local.get(TAB_KEY))?.[TAB_KEY];
+    if (saved?.id === current.id) await rememberTab(null);
+    if (workerTabId === current.id) workerTabId = null;
+    return (session = { tabId: current.id, user, at: Date.now(), borrowed: true });
+  }
   // 방금 확인한 세션은 다시 묻지 않는다. 한 번의 조작이 요청 서너 개로 이어지기 때문이다.
   if (session && Date.now() - session.at < SESSION_TRUST_MS) return session;
   const tab = await knownTab();
@@ -482,6 +495,10 @@ async function request(path, init, opts) {
   let s = await hrSession(opts);
   let r = await firstResult(exec(s.tabId, pageFetch, [path, init || null])).catch(() => null);
   if (sessionDead(r)) {
+    if (s.borrowed) {
+      session = null;
+      throw new AuthError('현재 HR 탭의 로그인이 만료됐습니다. 그 탭에서 다시 로그인한 뒤 조회해 주세요.', { portal: 'unknown' });
+    }
     // 세션이 그 사이 풀렸다. 한 번만 다시 들어가 본다.
     session = null;
     await chrome.tabs.update(s.tabId, { url: 'about:blank' }).catch(() => {});

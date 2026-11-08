@@ -1,4 +1,5 @@
 import { ORIGIN, PORTAL_HOME_URL } from './config.js';
+import { currentSiteTab } from './currenttab.js';
 
 /**
  * 로그인이 필요하거나 세션이 끊겼을 때 던진다.
@@ -180,6 +181,8 @@ const LOGIN_MESSAGE = {
 
 /** 로그인된 eclass 탭을 찾는다. */
 async function findSiteTab() {
+  const current = await currentSiteTab(ORIGIN);
+  if (current) return current;
   const tabs = await chrome.tabs.query({ url: `${ORIGIN}/*` });
   if (!tabs.length) return null;
   return tabs.find((t) => t.status === 'complete') || tabs[0];
@@ -187,10 +190,10 @@ async function findSiteTab() {
 
 /**
  * 탭 안에서 같은 출처로 요청한다.
- * SameSite 등으로 확장에서의 직접 요청이 막히는 환경을 위한 폴백.
+ * 현재 eclass 탭의 조회와 직접 요청이 막히는 환경의 폴백에 쓴다.
  */
-async function tabFetch(url, init) {
-  const tab = await findSiteTab();
+async function tabFetch(url, init, current = null) {
+  const tab = current || await findSiteTab();
   if (!tab) throw new NoTabError('열려 있는 eclass 탭이 없습니다.');
   const [injection] = await withTimeout(chrome.scripting.executeScript({
     target: { tabId: tab.id },
@@ -261,7 +264,8 @@ export async function directSend(url, init) {
 /* ------------------------------------------------------------ 본 요청 */
 
 /**
- * 사이트에 요청한다. 직접 요청 → (미인증이면) 탭 경유 → (그래도 미인증이면) 포털 상태 확인 순이다.
+ * 조회는 현재 eclass 탭을 우선한다. 없거나 실패하면 직접 요청 → 탭 경유 → 포털 상태 확인 순이다.
+ * POST는 기존 직접 요청 우선 순서를 유지한다.
  *
  * 앱이 "sign in" 을 돌려줬다고 바로 "로그인하세요" 라고 하지 않는다. 포털이 살아 있는지 확인해
  *   - 포털도 풀렸으면: 만료됐다고, 다시 로그인하면 자동으로 이어진다고 말한다(portal 'expired').
@@ -275,6 +279,22 @@ export async function directSend(url, init) {
 export async function siteFetch(url, init) {
   let directError = null;
   let unauthenticated = false;
+  let usedCurrent = false;
+  // 패널 옆 eclass 탭의 세션으로 먼저 조회한다. 저장 요청의 실행 순서는 바꾸지 않는다.
+  const read = ['GET', 'HEAD'].includes(String(init?.method || 'GET').toUpperCase());
+  let sameOrigin = false;
+  try { sameOrigin = new URL(url, ORIGIN).origin === ORIGIN; } catch { /* normal request reports bad URLs */ }
+  if (read && sameOrigin && canTabFetch()) {
+    const current = await currentSiteTab(ORIGIN);
+    if (current) {
+      usedCurrent = true;
+      try {
+        const r = await tabFetch(url, init, current);
+        if (!looksUnauthenticated(r.html)) return { ...r, via: 'tab' };
+        unauthenticated = true;
+      } catch { /* direct request remains available */ }
+    }
+  }
   try {
     const r = await directFetch(url, init);
     if (!looksUnauthenticated(r.html)) return { ...r, via: 'direct' };
@@ -284,7 +304,7 @@ export async function siteFetch(url, init) {
   }
 
   // 탭 경유. 탭이 없으면 그냥 다음으로 넘어간다 — 없는 것은 실패가 아니다.
-  if (canTabFetch()) {
+  if (canTabFetch() && !usedCurrent) {
     try {
       const r = await tabFetch(url, init);
       if (!looksUnauthenticated(r.html)) return { ...r, via: 'tab' };
