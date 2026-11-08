@@ -36,12 +36,18 @@ globalThis.chrome = {
 const blank = { docType: null, vendor: null, seller: null, sellerBiz: null, bizNo: null, payDate: null, payPlace: null, atDestination: null, checkIn: null, checkOut: null, nights: null,
   total: null, totalKRW: null, supply: null, vat: null, currency: 'KRW', corporateCard: null, transport: null, airline: null, flightNo: null, flightDate: null, depPlace: null, arrPlace: null,
   depTime: null, arrTime: null, seatClass: null, retDate: null, retDepPlace: null, retArrPlace: null, retDepTime: null, retFlightNo: null, mileage: null, passenger: null, extra: null, summary: '' };
+// 출장 날짜는 오늘 기준이다 — 홈 카드의 여비계산서 목록(tripStages)은 오늘부터 56일 전까지의 출장만 담아 두므로(src/settling.js stagesWindow),
+// 2026-09-09 로 고정했더니 11월에 창 밖으로 밀려 "그 계산서도 바뀐다" 가 깨졌다(2026-11-08). 지난주 1박 출장으로 잡는다.
+const day = (n) => { const t = new Date(); const x = new Date(t.getFullYear(), t.getMonth(), t.getDate() + n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+const md = (s) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`;
+const D1 = day(-8), D2 = day(-7);             // 출장 첫날·둘째 날(1박)
+const T_FROM = day(-70), T_TO = day(30);      // 패널이 읽어 둔 여비계산서 목록의 기간(출장을 덮는다)
 // 같은 숙박의 영수증과 예약서 — 상한액(120,000원) 안이라 묻지 않고 올라간다.
 const RECORDS = {
-  '영수증.png': { ...blank, docType: 'lodging_receipt', vendor: '킨텍스호텔', bizNo: '128-81-00000', payDate: '2026-09-10', checkIn: '2026-09-09', checkOut: '2026-09-10', nights: 1,
+  '영수증.png': { ...blank, docType: 'lodging_receipt', vendor: '킨텍스호텔', bizNo: '128-81-00000', payDate: D2, checkIn: D1, checkOut: D2, nights: 1,
     total: 110000, supply: 100000, vat: 10000, summary: '킨텍스호텔 1박 110,000원' },
-  '예약서.png': { ...blank, docType: 'lodging_booking', vendor: '킨텍스호텔', checkIn: '2026-09-09', checkOut: '2026-09-10', nights: 1, summary: '킨텍스호텔 1박 예약 확인서' },
-  '점심.png': { ...blank, docType: 'other_receipt', vendor: '고양식당', payDate: '2026-09-09', atDestination: true, total: 12000, summary: '점심 12,000원' },
+  '예약서.png': { ...blank, docType: 'lodging_booking', vendor: '킨텍스호텔', checkIn: D1, checkOut: D2, nights: 1, summary: '킨텍스호텔 1박 예약 확인서' },
+  '점심.png': { ...blank, docType: 'other_receipt', vendor: '고양식당', payDate: D1, atDestination: true, total: 12000, summary: '점심 12,000원' },
 };
 
 const page = (body) => new Response(`<html><body>${body}${' '.repeat(1600)}</body></html>`, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -49,7 +55,7 @@ const page = (body) => new Response(`<html><body>${body}${' '.repeat(1600)}</bod
 const site = { pre: '완료', post: '대기', lodges: [], next: 81561, gets: [], saves: 0, confirms: 0, reads: [], now: 0, peak: 0, slow: {}, fail: '' };
 const LIST = () => '<div class="bt-topmenu"><span class="bt-user"> 김거화 (kimghw) / KOR | ENG </span></div><table id="mainList"><tbody>'
   + '<tr><td data-href="/BusinessTrip/CalPrint?seq=145580">145580</td><td>김거화</td><td data-href="/BusinessTrip/CalPrint?seq=145580&amp;trseq=157777"> </td>'
-  + `<td><span>${site.pre}</span></td><td><span>${site.post}</span></td><td>2026-09-09~2026-09-10</td><td>서울</td><td>김거화</td><td>2026-09-01</td></tr>`
+  + `<td><span>${site.pre}</span></td><td><span>${site.post}</span></td><td>${D1}~${D2}</td><td>서울</td><td>김거화</td><td>2026-09-01</td></tr>`
   + '</tbody></table><div class="bt-pager"><div>전체 1건 · 1/1 페이지</div></div>';
 const LODGE_KEYS = ['paydate', 'sday', 'company', 'companycode', 'cocard', 'total', 'samount', 'vat', 'comment'];
 // 저장된 숙박 줄 — 실제 화면의 칸 차례 그대로다(국가 select 가 줄의 처음).
@@ -116,8 +122,8 @@ const panel = createAttendPanel({
   logEvent: (kind, ok, text, extra) => logs.push({ kind, ok, text, extra }), ai: () => ({ apiKey: 'sk-x', cli: false }), evidence,
 });
 panel.wire();
-const NIGHT = { docNo: 'TR-1', formId: 'TR', status: '5', statusName: '결재완료', kindName: '국내출장', summary: '국내출장 9/9~9/10 07:00~20:00', reason: '세미나',
-  from: '2026-09-09', to: '2026-09-10', start: '07:00', end: '20:00', actions: [], web: false };
+const NIGHT = { docNo: 'TR-1', formId: 'TR', status: '5', statusName: '결재완료', kindName: '국내출장', summary: `국내출장 ${md(D1)}~${md(D2)} 07:00~20:00`, reason: '세미나',
+  from: D1, to: D2, start: '07:00', end: '20:00', actions: [], web: false };
 const KTX = (date, dep, arr) => ({ seq: '1', trseq: '7380', revno: '', date, dep, arr, transport: 'Train', grade: '일반석', total: 54400, currency: 'KRW' });
 const st = panel.state;
 const dom = (body) => new JSDOM(body).window.document;
@@ -128,8 +134,8 @@ async function open() {
   for (const k of Object.keys(store)) delete store[k];
   Object.assign(st, {
     view: 'all', items: [NIGHT], all: [NIGHT], loadedOnce: true, openDoc: 'TR-1', workplace: '부산', lodgeMine: {}, lodgeInfo: {}, lodgeOpen: {},
-    trips: { rows: parseTripList(dom(LIST())), me: '김거화', from: '2026-08-01', to: '2026-10-31', pages: 1 },
-    after: { 145580: { detail: { rows: [KTX('2026-09-09', '부산', '서울'), KTX('2026-09-10', '서울', '부산')], transports: ['Train', 'Train'] } } },
+    trips: { rows: parseTripList(dom(LIST())), me: '김거화', from: T_FROM, to: T_TO, pages: 1 },
+    after: { 145580: { detail: { rows: [KTX(D1, '부산', '서울'), KTX(D2, '서울', '부산')], transports: ['Train', 'Train'] } } },
   });
   await panel.reload();   // HR 에는 닿지 못한다 — 앉혀 둔 신청 내역이 그대로 그려진다
   await wait(60);         // 카드를 펴며 읽는 것(숙박비 내역)이 끝나기를 기다린다
@@ -180,7 +186,7 @@ await ta('올린 뒤 여비계산서 목록(Home/List)을 한 번만 읽는다 �
 });
 await ta('카드는 다시 읽은 그 줄대로 그려진다 — 사후정산이 "작성"이 되고, 담아 둔 목록의 기간·다른 값은 그대로다', async () => {
   const row = st.trips.rows.find((r) => r.seq === '145580');
-  assert.deepEqual([row.travelers[0].post, row.travelers[0].trseq, st.trips.me, st.trips.from, st.trips.to, st.trips.pages], ['작성', '157777', '김거화', '2026-08-01', '2026-10-31', 1]);
+  assert.deepEqual([row.travelers[0].post, row.travelers[0].trseq, st.trips.me, st.trips.from, st.trips.to, st.trips.pages], ['작성', '157777', '김거화', T_FROM, T_TO, 1]);
   assert.match(card().querySelector('.at-lodges').textContent, /킨텍스호텔[\s\S]*110,000/, '방금 올린 줄이 숙박비 내역에 보인다');
   assert.ok(card().querySelector('.at-lodges button[data-act="lodge-info"][data-lodge="81561"]'), '그 줄에 증빙 표시가 선다');
 });
@@ -191,7 +197,7 @@ await ta('홈 카드가 같은 단계를 보게, 오늘 담아 둔 여비계산�
   const today = todayStr();
   const other = { seq: '140001', from: today, to: today, pre: '완료', location: '부산', travelers: [{ name: '김거화', post: '완료', trseq: '1' }] };
   store[STAGES_KEY] = { day: today, since: stagesWindow(today).from, until: today, me: '김거화',
-    rows: [other, { seq: '145580', from: '2026-09-09', to: '2026-09-10', pre: '완료', location: '서울', travelers: [{ name: '김거화', post: '대기', trseq: '157777' }] }] };
+    rows: [other, { seq: '145580', from: D1, to: D2, pre: '완료', location: '서울', travelers: [{ name: '김거화', post: '대기', trseq: '157777' }] }] };
   give('영수증.png');
   await settled('한 장을 읽고 올리기');
   await wait(60);

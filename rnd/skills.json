@@ -14,30 +14,30 @@
         },
         {
           "path": "architecture.svg",
-          "bytes": 18875
+          "bytes": 18616
         },
         {
           "path": "profiles/kr_default.yaml",
-          "bytes": 5652
+          "bytes": 5575
         },
         {
           "path": "profiles/kr_structured.yaml",
-          "bytes": 6451
+          "bytes": 6343
         },
         {
           "path": "references/extract_fields.yaml",
-          "bytes": 10761
+          "bytes": 10643
         },
         {
           "path": "references/structured_output.md",
-          "bytes": 18343
+          "bytes": 18080
         },
         {
           "path": "scripts/year_slice.py",
           "bytes": 22928
         }
       ],
-      "bytes": 148383
+      "bytes": 147558
     },
     {
       "name": "rnd-kr-history",
@@ -59,11 +59,11 @@
         },
         {
           "path": "templates/history/budget_history.yaml",
-          "bytes": 984
+          "bytes": 965
         },
         {
           "path": "templates/history/objectives_history.yaml",
-          "bytes": 879
+          "bytes": 859
         },
         {
           "path": "templates/history/researchers_history.yaml",
@@ -71,10 +71,10 @@
         },
         {
           "path": "templates/history/revisions.yaml",
-          "bytes": 697
+          "bytes": 683
         }
       ],
-      "bytes": 112057
+      "bytes": 112004
     },
     {
       "name": "rnd-manpower-change",
@@ -100,14 +100,14 @@
         },
         {
           "path": "scripts/md2pdf.py",
-          "bytes": 7210
+          "bytes": 7038
         },
         {
           "path": "scripts/to_pending.py",
           "bytes": 3791
         }
       ],
-      "bytes": 125395
+      "bytes": 125223
     },
     {
       "name": "rnd-budget-change",
@@ -117,7 +117,7 @@
       "files": [
         {
           "path": "SKILL.md",
-          "bytes": 13048
+          "bytes": 12907
         },
         {
           "path": "architecture.svg",
@@ -140,7 +140,7 @@
           "bytes": 3791
         }
       ],
-      "bytes": 59815
+      "bytes": 59674
     },
     {
       "name": "rnd-export-latest",
@@ -150,22 +150,22 @@
       "files": [
         {
           "path": "SKILL.md",
-          "bytes": 23558
+          "bytes": 23368
         },
         {
           "path": "architecture.svg",
-          "bytes": 21446
+          "bytes": 21195
         },
         {
           "path": "export.config.tpl.yaml",
-          "bytes": 2930
+          "bytes": 2909
         },
         {
           "path": "export_latest.py",
-          "bytes": 24343
+          "bytes": 23868
         }
       ],
-      "bytes": 72277
+      "bytes": 71340
     }
   ]
 }

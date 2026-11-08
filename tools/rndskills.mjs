@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEST = path.join(ROOT, 'rnd', 'skills');
 const MANIFEST = path.join(ROOT, 'rnd', 'skills.json');
+/** 줄바꿈을 LF 로 — 원본은 Windows 의 CRLF 일 수 있는데, 목록의 바이트 크기를 어느 PC 에서 받아도 같게 하려면 복사본은 한 꼴이어야 한다(.gitattributes 도 rnd/skills/** 를 LF 로 고정, 2026-11-08). 다섯 스킬은 모두 글 파일(md·py·svg·yaml)이다. */
+const lf = (buf) => Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'));
 const DEFAULT_SOURCE = 'E:/dev/RND/.claude/skills';
 /** 차년도 YAML 파이프라인의 스킬 — 뽑기 → 이력 → 변경(인건비·비목) → 최신본 모으기. 게시(rnd-project-publish)는 YAML 을 뽑는 일이 아니라 뺀다. */
 export const SKILLS = ['rnd-kr-extract', 'rnd-kr-history', 'rnd-manpower-change', 'rnd-budget-change', 'rnd-export-latest'];
@@ -88,7 +90,7 @@ function sync(source) {
     for (const rel of walk(from)) {
       const target = path.join(to, rel);
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.copyFileSync(path.join(from, rel), target);
+      fs.writeFileSync(target, lf(fs.readFileSync(path.join(from, rel))));   // 줄바꿈은 LF 로
     }
   }
   const manifest = buildManifest(source.split(path.sep).join('/'));
@@ -109,7 +111,7 @@ function check(source) {
       const b = path.join(from, f.path);
       if (!fs.existsSync(b)) diffs.push(`${s.name}/${f.path}: 원본에 없음`);
       else if (!fs.existsSync(a)) diffs.push(`${s.name}/${f.path}: 복사본에 없음`);
-      else if (!fs.readFileSync(a).equals(fs.readFileSync(b))) diffs.push(`${s.name}/${f.path}: 내용이 다름`);
+      else if (!lf(fs.readFileSync(a)).equals(lf(fs.readFileSync(b)))) diffs.push(`${s.name}/${f.path}: 내용이 다름`);   // 줄바꿈 차이는 다른 것이 아니다
     }
   }
   return diffs;

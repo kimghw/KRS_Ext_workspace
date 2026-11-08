@@ -2203,7 +2203,7 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 | `tools/rerp.mjs` | `rerp/` 가 옮긴 뒤로 kr_ext_rerp 원본이 바뀌었는지 보고(`check` — `npm run rerp`, `test/rerp-origin.test.mjs` 가 같은 것을 돌림), 반영한 뒤 지문·커밋을 다시 적는다(`stamp` — 다 옮겼을 때만: 옮기지 않은 `render.js`·`rnd-api.js`·`settings.js` 의 드리프트를 가리므로 일부만 옮겼으면 `rerp/origin.json` 의 그 파일 지문만 손으로). `list` 는 무엇이 어디서 왔는지 |
 | `vendor/yaml/` | npm `yaml` 2.9.1 의 브라우저 빌드(ISC — `vendor/yaml.LICENSE`) 그대로 — 고치지 않는다. R&D 탭이 YAML 을 넣을 때만 읽어 들인다 |
 | `rnd/` | 차년도 YAML 을 뽑는 RND 프로젝트의 Claude Code 스킬 다섯 개의 **복사본**(`skills/`)과 목록(`skills.json`). R&D 탭이 zip 으로 내려받게 한다 — 여기서 고치지 않고 `node tools/rndskills.mjs sync` 로 다시 복사한다(`rnd/README.md`) |
-| `tools/rndskills.mjs` · `.claude/skills/…` 아님 | RND 프로젝트(`E:\dev\RND\.claude\skills`)에서 스킬 다섯 개를 `rnd/skills/` 로 복사하고(파이썬 캐시·실값 설정 제외) 목록을 만드는 도구 — `sync` · `check`(원본과 다른지) · `list` |
+| `tools/rndskills.mjs` · `.claude/skills/…` 아님 | RND 프로젝트(`E:\dev\RND\.claude\skills`)에서 스킬 다섯 개를 `rnd/skills/` 로 복사하고(파이썬 캐시·실값 설정 제외, 줄바꿈은 LF 로 맞춤 — 목록에 적는 크기가 어느 PC 에서나 같게, `.gitattributes` 도 같은 뜻) 목록을 만드는 도구 — `sync` · `check`(원본과 다른지) · `list` |
 | `src/rndskills.js` | R&D 탭의 "차년도 YAML 뽑는 스킬" 칸: 목록 검사, 쓰는 법 글(풀 곳·차례·명령·산출물·R&D 탭에 넣기), 스킬 파일을 zip 하나로(맨 앞에 README.md) |
 | `src/zip.js` | 압축 없이 담는 작은 ZIP 쓰기(CRC-32·UTF-8 이름)와 검사용 읽기 — 스킬 묶음 내려받기에 쓴다 |
 | `src/attend.js` | 근태의 순수 로직: 종류·갈래별 입력칸·빈 칸·모순, HR 폼에 넣는 순서(일감), 반차 계획(오전 출근~12시·오후 13시~퇴근, 정시가 아니면 막힘 `blocked`), 연차현황 읽기(`leaveBalance`), 신청 내역의 상태별 버튼, 현황에 보일 근태 고르기, 말에서 읽기 · 출/퇴근기록 변경신청 일감(`buildCommuteJob` — 2026-10-27) |

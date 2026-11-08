@@ -15,7 +15,8 @@ const nativePython = fileURLToPath(new URL('../native/ktx-python', import.meta.u
 const hasPython = process.platform === 'win32' && fs.existsSync(PYTHON) && fs.existsSync(BASE_PYTHON);
 function fixture(t, code, python = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'krs-ktx-test-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // 죽인 워커(python)가 상태 폴더의 잠금을 놓기 전에 지우면 Windows 가 EBUSY 를 낸다(전체 스위트를 나란히 돌릴 때 가끔, 2026-11-08) — 잠깐씩 다시 해 본다.
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const worker = path.join(root, python ? 'worker.py' : 'worker.mjs');
   fs.writeFileSync(worker, code);
   return { root, worker, stateDir: path.join(root, 'state'), python: python ? PYTHON : process.execPath,

@@ -14,17 +14,24 @@ let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
 const ta = async (name, fn) => { await fn(); pass++; console.log('  ok  ' + name); };
 const wait = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+// 출장은 홈 카드가 단계를 담아 두는 창(오늘부터 BACK_MAX_DAYS=56일 전까지 — src/settling.js) 안이어야 한다. 2026-09-09 로 고정했더니 11월에 창 밖으로
+// 밀려 noteStages 가 걸러 냈다(2026-11-08). 지난주로 잡아 언제 돌려도 창 안이다. md 는 패널이 알림에 적는 M/D 꼴.
+const TODAY = todayStr();
+const day = (n) => { const [y, m, d] = TODAY.split('-').map(Number); const x = new Date(y, m - 1, d + n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+const md = (s) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`;
+const D1 = day(-8), D2 = day(-7);     // 출장 첫날(가는 날)·둘째 날(오는 날, 1박)
+const J1 = day(-20), J2 = day(-19);   // 출장 기간 밖의 숙박(제주)
 
-const TRIP = { seq: '145580', from: '2026-09-09', to: '2026-09-10', location: '경기도 고양시' };
+const TRIP = { seq: '145580', from: D1, to: D2, location: '경기도 고양시' };
 const KTX = (date, dep, arr) => ({ seq: '', trseq: '7380', revno: '', date, dep, arr, transport: 'Train', grade: '일반석', total: 59800, currency: 'KRW' });
-const HOTEL = { docType: 'lodging_receipt', vendor: '킨텍스호텔', seller: null, sellerBiz: null, bizNo: '128-81-00000', payDate: '2026-09-10', checkIn: '2026-09-09', checkOut: '2026-09-10',
+const HOTEL = { docType: 'lodging_receipt', vendor: '킨텍스호텔', seller: null, sellerBiz: null, bizNo: '128-81-00000', payDate: D2, checkIn: D1, checkOut: D2,
   nights: 1, total: 110000, totalKRW: null, supply: 100000, vat: 10000, currency: 'KRW', corporateCard: null, summary: '킨텍스호텔 1박 110,000원', extra: null };
 const BOOKING = { ...HOTEL, docType: 'lodging_booking', payDate: null, total: 110000, supply: null, vat: null, summary: '킨텍스호텔 예약 확인서' };
 const AGODA = { ...HOTEL, vendor: '고양 그랜드', seller: 'Agoda', bizNo: null, total: 88.46, supply: null, vat: null, currency: 'USD', summary: 'Agoda 88.46 USD' };
 const SUITE = { ...HOTEL, vendor: '일산스위트', total: 150000, supply: null, vat: null, summary: '일산스위트 1박 150,000원' };
-const FLY = (over) => ({ docType: 'flight_ticket', airline: '대한항공', flightNo: 'KE1104', flightDate: '2026-09-09', depPlace: '김해', arrPlace: '김포', depTime: '07:30', arrTime: '08:35',
+const FLY = (over) => ({ docType: 'flight_ticket', airline: '대한항공', flightNo: 'KE1104', flightDate: D1, depPlace: '김해', arrPlace: '김포', depTime: '07:30', arrTime: '08:35',
   total: 89000, currency: 'KRW', seatClass: '일반석', mileage: null, corporateCard: null, summary: '김해→김포 KE1104', extra: null, ...over });
-const LUNCH = { docType: 'other_receipt', payDate: '2026-09-09', total: 12000, atDestination: true, summary: '점심 12,000원', extra: null };
+const LUNCH = { docType: 'other_receipt', payDate: D1, total: 12000, atDestination: true, summary: '점심 12,000원', extra: null };
 const png = (name) => ({ name, type: 'image/png', dataUrl: `data:image/png;base64,${Buffer.from(name).toString('base64')}` });
 
 function fakeStorage(init = {}) {
@@ -40,7 +47,7 @@ function fakeStorage(init = {}) {
  * 여비계산서 사이트 흉내(src/trip.js 의 tripList·tripPreDetail·tripPreConfirm·tripLodgeMax·tripAfterSave 와 같은 모양).
  * saves 에 올린 사후정산이, calls 에 부른 차례가 적힌다. lodges 는 화면에 지금 있는 숙박 줄이다.
  */
-function fakeSite({ pre = '완료', post = '대기', rows = [KTX('2026-09-09', '부산', '행신'), KTX('2026-09-10', '행신', '부산')], max = '120000', fail = null } = {}) {
+function fakeSite({ pre = '완료', post = '대기', rows = [KTX(D1, '부산', '행신'), KTX(D2, '행신', '부산')], max = '120000', fail = null } = {}) {
   const s = { pre, post, lodges: [], saves: [], calls: [], next: 81561 };
   const row = () => ({ ...TRIP, pre: s.pre, travelers: [{ name: '김거화', post: s.post, trseq: s.pre === '완료' ? '157777' : '' }] });
   const stage = () => ({ phase: 'post', done: false, label: '사후정산 작성' });
@@ -105,7 +112,7 @@ await ta('숙박 영수증 — 그때 읽은 기록으로 숙박 줄을 올리�
   assert.match(r.text, /^사후정산을 올렸습니다 — 숙박 킨텍스호텔 1박 110,000원/);
   assert.equal(r.brief, '사후정산을 올렸습니다 — 숙박 킨텍스호텔 1박 110,000원', '접어 둔 알림에 적을 한 줄 — 무엇을 올렸는지만');
   assert.deepEqual(site.saves, [{ trseq: '157777', trans: [], air: null,
-    lodge: [{ company: '킨텍스호텔', paydate: '2026-09-10', sday: 1, total: 110000, samount: 100000, vat: 10000, comment: '', file: 'hotel.png', bytes: png('hotel.png').dataUrl }] }]);
+    lodge: [{ company: '킨텍스호텔', paydate: D2, sday: 1, total: 110000, samount: 100000, vat: 10000, comment: '', file: 'hotel.png', bytes: png('hotel.png').dataUrl }] }]);
   assert.deepEqual(site.calls, ['list', 'preDetail', 'lodgeMax:157777', 'afterSave'], '사전정산이 완료돼 있으면 확정하지 않는다');
   assert.deepEqual(await s.todo(), []);
   assert.deepEqual((await s.store.list('TR-1')).map((k) => [k.name, !!k.todo, !!k.record]), [['lunch.png', false, false], ['hotel.png', false, true]]);
@@ -161,10 +168,10 @@ await ta('가는 편 항공권 — 그 편이 비행기로, 나머지 편은 사
   await s.drop('go.pdf', FLY());
   const r = await up(s.deps(site, storage));
   assert.equal(r.sent, true);
-  assert.deepEqual(site.saves[0].trans, ['2026-09-09 김해→김포 비행기 89000', '2026-09-10 행신→부산 기차(KTX등) 59800']);
+  assert.deepEqual(site.saves[0].trans, [`${D1} 김해→김포 비행기 89000`, `${D2} 행신→부산 기차(KTX등) 59800`]);
   assert.deepEqual([site.saves[0].air.abroad, site.saves[0].air.airline, site.saves[0].lodge.length], ['Y', '대한항공', 0]);
   assert.equal(storage.data.attendLegs['TR-1'].go.t, 'plane', '홈 카드의 가는 편 아이콘과 패널의 출장 카드가 본다');
-  assert.match(r.text, /^사후정산을 올렸습니다 — 비행기 2026-09-09 김해→김포 89,000원/);
+  assert.match(r.text, new RegExp(`^사후정산을 올렸습니다 — 비행기 ${D1} 김해→김포 89,000원`));
   assert.deepEqual(await s.todo(), []);
 });
 await ta('오는 편 항공권을 나중에 넣어도 앞서 올린 가는 편 항공권과 같이 묶인다 — 두 편이 다 비행기로 올라간다', async () => {
@@ -173,10 +180,10 @@ await ta('오는 편 항공권을 나중에 넣어도 앞서 올린 가는 편 �
   const storage = fakeStorage();
   await s.drop('go.pdf', FLY());
   await up(s.deps(site, storage));
-  await s.drop('back.pdf', FLY({ flightNo: 'KE1105', flightDate: '2026-09-10', depPlace: '김포', arrPlace: '김해', depTime: '18:00', arrTime: '19:05', total: 91000, summary: '김포→김해 KE1105' }));
+  await s.drop('back.pdf', FLY({ flightNo: 'KE1105', flightDate: D2, depPlace: '김포', arrPlace: '김해', depTime: '18:00', arrTime: '19:05', total: 91000, summary: '김포→김해 KE1105' }));
   const r = await up(s.deps(site, storage));
   assert.equal(r.sent, true);
-  assert.deepEqual(site.saves[1].trans, ['2026-09-09 김해→김포 비행기 89000', '2026-09-10 김포→김해 비행기 91000']);
+  assert.deepEqual(site.saves[1].trans, [`${D1} 김해→김포 비행기 89000`, `${D2} 김포→김해 비행기 91000`]);
   assert.deepEqual([storage.data.attendLegs['TR-1'].go.t, storage.data.attendLegs['TR-1'].back.t], ['plane', 'plane']);
 });
 await ta('앞서 올린 숙박 증빙은 다시 묶지 않는다 — 사후정산에서 지운 숙박 줄이 항공권을 넣었다고 되살아나지 않는다', async () => {
@@ -332,7 +339,7 @@ await ta('당일 출장의 숙박 영수증은 사후정산에 넣을 것이 없
   const day = { ...TRIP, to: TRIP.from };
   await s.drop('hotel.png', HOTEL);
   site.list = async () => ({ rows: [{ ...day, pre: '완료', travelers: [{ name: '김거화', post: '대기', trseq: '157777' }] }], me: '김거화' });
-  site.preDetail = async () => ({ rows: [KTX('2026-09-09', '부산', '행신'), KTX('2026-09-09', '행신', '부산')], transports: ['Train', 'Train'] });
+  site.preDetail = async () => ({ rows: [KTX(D1, '부산', '행신'), KTX(D1, '행신', '부산')], transports: ['Train', 'Train'] });
   const r = await up(s.deps(site), { row: day });
   assert.deepEqual([r.ok, r.sent, r.hold, r.text, site.saves.length], [true, false, false, '당일 출장이고 비행기를 타지 않아 사후정산은 올리지 않습니다', 0]);
   assert.deepEqual([await s.todo(), (await s.store.list('TR-1')).length], [[], 1]);
@@ -365,8 +372,8 @@ await ta('이미 사후정산에 올라가 있는 숙박 줄이면 상한액을 
       [{ ok: true, sent: false, hold: false, text: '같은 숙박 줄이 사후정산에 이미 있어 다시 올리지 않았습니다' }, 1, []], how);
   }
   // 금액이 다른 줄(다른 숙박)은 같은 줄이 아니다 — 묻는다
-  assert.deepEqual([lodgeKnown({ paydate: '2026-09-10', company: '킨텍스호텔', sday: 1, actual: 150000, maxconv: '120000' },
-    [{ del: '0', paydate: '2026-09-10', company: '킨텍스호텔', sday: '1', total: '99000' }, { del: '1', paydate: '2026-09-10', company: '킨텍스호텔', sday: '1', total: '150000' }])], [''],
+  assert.deepEqual([lodgeKnown({ paydate: D2, company: '킨텍스호텔', sday: 1, actual: 150000, maxconv: '120000' },
+    [{ del: '0', paydate: D2, company: '킨텍스호텔', sday: '1', total: '99000' }, { del: '1', paydate: D2, company: '킨텍스호텔', sday: '1', total: '150000' }])], [''],
   '금액이 다르거나 지운 줄은 치지 않는다');
 });
 // 2026-10-05 사용자 지정: "출장 기간동안의 내용이 아니면 알림을 줘 안맞다고, 맞는것만 선별취급 해서 올리고 해당 없는거는 문서보관에 알림표지 하고
@@ -374,10 +381,10 @@ await ta('이미 사후정산에 올라가 있는 숙박 줄이면 상한액을 
 await ta('출장 기간의 것이 아닌 증빙은 올리지 않는다 — 맞는 것만 올라가고, 안 맞는 것은 알림 표시로 남는다. 확정하면 그때 올라간다', async () => {
   const s = shelf();
   const site = fakeSite();
-  const JEJU = { ...HOTEL, vendor: '제주호텔', payDate: '2026-09-21', checkIn: '2026-09-20', checkOut: '2026-09-21', total: 90000, supply: null, vat: null, summary: '제주호텔 1박' };
+  const JEJU = { ...HOTEL, vendor: '제주호텔', payDate: J2, checkIn: J1, checkOut: J2, total: 90000, supply: null, vat: null, summary: '제주호텔 1박' };
   const a = await s.drop('hotel.png', HOTEL);
   const b = await s.drop('jeju.png', JEJU);
-  assert.deepEqual([a.warn, a.todo, b.warn, b.todo], [undefined, true, '묵은 기간(9/20~9/21)이 출장 기간(9/9~9/10) 밖입니다', false]);
+  assert.deepEqual([a.warn, a.todo, b.warn, b.todo], [undefined, true, `묵은 기간(${md(J1)}~${md(J2)})이 출장 기간(${md(D1)}~${md(D2)}) 밖입니다`, false]);
   const r = await up(s.deps(site));
   assert.deepEqual([r.sent, site.saves.length, site.saves[0].lodge.map((l) => l.company)], [true, 1, ['킨텍스호텔']], '맞는 것만 올라간다');
   assert.deepEqual((await s.store.list('TR-1')).map((k) => [k.name, !!k.warn, !!k.todo]), [['hotel.png', false, false], ['jeju.png', true, false]]);
