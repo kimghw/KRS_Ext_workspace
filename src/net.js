@@ -223,6 +223,41 @@ async function tabFetch(url, init) {
 export const canTabFetch = () =>
   typeof chrome !== 'undefined' && !!chrome.tabs?.query && !!chrome.scripting?.executeScript;
 
+/* ------------------------------------------------------------ 쓰기 요청(저장·삭제·확정) */
+
+/**
+ * 저장·삭제·확정 같은 쓰기 POST 를 직접 보내되 **리다이렉트는 따라가지 않는다**. 여비계산서 앱은 쓰기가 끝나면 302 로 다음 화면(계산서 화면·목록)에
+ * 보내는데, 부르는 쪽은 그 화면을 읽지 않고 목록을 다시 읽어 성공을 판정한다. 따라가면 그 화면을 만드는 시간을 그냥 기다린다
+ * (2026-11-08 실측: Write/Save 1.79초 가운데 저장 자체 0.43초, 계산서 화면 따라 받기 1.35초 — 같은 날 사용자 지정 "1은 줄여주고").
+ *   3xx(확장 출처의 fetch 는 type 'opaqueredirect'·status 0 으로 준다) → 보낸 것으로 친다({ redirected: true, html: '' })
+ *   2xx → 본문을 돌려준다(서버가 화면을 그대로 돌려준 때 — 미인증 안내일 수 있어 부르는 쪽이 본다)
+ *   4xx·5xx·네트워크 오류 → 던진다(본문을 달아서, directFetch 와 같다)
+ * 직접 요청뿐이다 — 읽기가 탭 경유로 된 환경에서는 부르는 쪽이 전처럼 siteFetch 로 보낸다.
+ * @returns {Promise<{html: string, finalUrl: string, redirected: boolean}>}
+ */
+export async function directSend(url, init) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { credentials: 'include', ...init, redirect: 'manual', signal: ac.signal });
+    if (res.type === 'opaqueredirect' || res.status === 0 || (res.status >= 300 && res.status < 400)) {
+      return { html: '', finalUrl: url, redirected: true };
+    }
+    if (!res.ok) {
+      const body = await decodeResponse(res).catch(() => '');
+      throw httpError(res.status, res.statusText, body);
+    }
+    return { html: await decodeResponse(res), finalUrl: res.url || url, redirected: false };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`응답이 ${REQUEST_TIMEOUT_MS / 1000}초 안에 오지 않았습니다.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /* ------------------------------------------------------------ 본 요청 */
 
 /**

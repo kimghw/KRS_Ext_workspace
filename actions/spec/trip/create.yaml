@@ -1,5 +1,6 @@
 # 여비계산서(사전정산) 새로 올리기 — 출장 결재요청(attend.trip)이 HR 에 올라간 뒤 **같은 누름**으로 이어진다(attendpanel.js makeTripDoc,
-# attend/trip.yaml 의 then: trip.create when settle). 디스패처는 잇지 않는다 — 패널이 차례로 부른다.
+# attend/trip.yaml 의 then: trip.create when settle). 디스패처는 잇지 않는다 — 패널이 HR 의 답을 받은 순간 부르고, HR 신청 내역 확인과 나란히 돈다(2026-11-08).
+# 저장 POST 뒤 사이트가 보내는 계산서 화면은 따라가지 않는다(src/net.js directSend — 2026-11-08 실측: 따라가면 1.35초. 성공은 목록으로 판정한다).
 #
 # 칸은 src/travel.js settlePlan(form, memo) 이 읽는 출장 폼의 키 그대로다(dateFrom·start·dateTo·end·days·place·venue·purpose·workplace·go·back —
 # src/attend.js blankForm('trip')). 실행기(trip.create)는 formOf(rec) 로 폼을 되살려 tripCreate(settlePlan(form, ctx.memo), { emplNo: preset.hrMe.emplNo, name: preset.hrMe.name, onStage }) 를 부른다:

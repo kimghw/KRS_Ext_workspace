@@ -146,7 +146,7 @@ runner: attend.apply           # 실행기 이름 — actions/runners/<갈래>.j
 uses:                          # 사람이 읽는 실행 경로 — 테스트가 module 에 export 가 있는지 본다(input.yaml 의 consumer 와 같은 뜻)
   - { module: src/attend.js, export: buildJob }
   - { module: src/hr.js, export: hrRunJob }
-then:                          # 뒤따르는 행위(사람이 같은 누름으로 승인한 범위). 디스패처가 **자동으로 잇지 않는다** — 패널이 차례로 부른다. 테스트는 action 이 있는지만 본다
+then:                          # 뒤따르는 행위(사람이 같은 누름으로 승인한 범위). 디스패처가 **자동으로 잇지 않는다** — 패널이 부른다(출장의 trip.create 는 HR 이 받았다고 답한 순간 HR 신청 내역 확인과 나란히 — 2026-11-08). 테스트는 action 이 있는지만 본다
   - { action: trip.create, when: settle }
   - { action: car.reserve, when: car }
 next: 결재요청 뒤 HR 신청 내역에서 상태를 확인한다 …   # 사람이 읽는 다음 길

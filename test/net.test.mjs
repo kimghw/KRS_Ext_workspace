@@ -2,7 +2,7 @@
 // 포털 상태를 확인해 만료·재시도·안내를 가려 말하는지.
 // chrome.tabs 가 없다고 TypeError 로 죽으면 카드는 "Cannot read properties of undefined" 를 보여주게 된다.
 import assert from 'node:assert/strict';
-import { siteFetch, AuthError, canTabFetch, portalState } from '../src/net.js';
+import { siteFetch, directSend, AuthError, canTabFetch, portalState } from '../src/net.js';
 import { PORTAL_HOME_URL } from '../src/config.js';
 
 let pass = 0;
@@ -139,6 +139,26 @@ await ta('탭이 있고 탭에서는 로그인돼 있으면 그 결과를 쓴다
   globalThis.fetch = fakeFetch({ app: page(SIGN_IN), home: redirect() });
   const r = await siteFetch('https://eclass.krs.co.kr/x');
   assert.equal(r.via, 'tab');
+});
+
+console.log('directSend — 쓰기 POST 는 리다이렉트를 따라가지 않는다(2026-11-08)');
+await ta('3xx(opaqueredirect)는 보낸 것으로 치고 다음 화면을 받지 않는다 — 요청은 manual 로 한 번', async () => {
+  const f = globalThis.fetch = fakeFetch({ app: redirect() });
+  const r = await directSend('https://eclass.krs.co.kr/BusinessTrip/Write/Save', { method: 'POST', body: 'a=1' });
+  assert.equal(r.redirected, true);
+  assert.equal(r.html, '');
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].redirect, 'manual');
+});
+await ta('200 이면 본문을 돌려준다(부르는 쪽이 미인증 안내인지 본다)', async () => {
+  globalThis.fetch = fakeFetch({ app: page(SIGN_IN) });
+  const r = await directSend('https://eclass.krs.co.kr/BusinessTrip/Write/Save', { method: 'POST', body: 'a=1' });
+  assert.equal(r.redirected, false);
+  assert.match(r.html, /sign in/);
+});
+await ta('500 은 본문을 달아 던진다', async () => {
+  globalThis.fetch = fakeFetch({ app: page('<title>Runtime Error</title><b>Exception Details:</b> NullReference', { ok: false, status: 500 }) });
+  await assert.rejects(directSend('https://eclass.krs.co.kr/BusinessTrip/Write/Save', { method: 'POST', body: 'a=1' }), /HTTP 500.*NullReference/);
 });
 
 console.log(`\n통과 ${pass}건`);

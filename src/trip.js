@@ -9,7 +9,7 @@
 // 그래서 사이트의 말을 믿지 않고, 보낸 뒤 목록을 다시 읽어 새 계산서가 생겼는지로 성공을 판정한다.
 
 import { ORIGIN } from './config.js';
-import { AuthError, siteFetch, directFetch } from './net.js';
+import { AuthError, siteFetch, directSend } from './net.js';
 import { TRAVEL_RULES } from './travelspec.js';
 import {
   parseTripList, tripListPages, tripUser, tripDocFor, tripStage, formFields, saveBody, preEditBody, parseFeeRows, pickFeeRow, parseTransRows,
@@ -80,18 +80,26 @@ async function linkFees(plan) {
  *
  * @param {object} plan src/travel.js settlePlan 의 결과
  * @param {{emplNo:string, name?:string, onStage?:Function}} who 출장자(HR 의 사번). 이름은 여비계산서 화면이 아는 것을 먼저 쓴다
- * @returns {Promise<{row:object, existing:boolean, linked:number}>}
+ * @returns {Promise<{row:object, existing:boolean, linked:number, via:string, feeAsks:number, msList:number, msWrite:number, msFees:number, msSave:number, msVerify:number, msTotal:number}>}
+ *   ms* 는 단계마다 걸린 시간(밀리초 — 목록·작성 화면·요금표 조회·저장·확인 목록)이고 via 는 목록 읽기가 간 길(direct·tab·retry), feeAsks 는 요금표를 물은 줄 수다.
+ *   활동 로그의 result 에 그대로 남아(actions/record.js clipResult 는 평평한 숫자·글만 담는다) 어디서 시간이 가는지 뒤에 볼 수 있다(2026-11-08).
  */
 export async function tripCreate(plan, { emplNo, name, onStage = () => {} }) {
   const range = { from: plan.sDate, to: plan.eDate };
+  const t0 = Date.now();
+  const ms = { msList: 0, msWrite: 0, msFees: 0, msSave: 0, msVerify: 0 };
+  let at = t0;
+  const lap = (key) => { const now = Date.now(); ms[key] = now - at; at = now; };
   onStage('여비계산서 목록을 확인하는 중...');
   const before = await tripList(range);
+  lap('msList');
   const me = before.me || name || '';
   const dup = tripDocFor(range, before.rows, me);
-  if (dup) return { row: dup, existing: true, linked: 0 };
+  if (dup) return { row: dup, existing: true, linked: 0, via: before.via, feeAsks: 0, ...ms, msTotal: Date.now() - t0 };
 
   onStage('여비계산서 작성 화면을 여는 중...');
   const page = await siteFetch(`${BASE}/Write?returnUrl=${RETURN}`);
+  lap('msWrite');
   const fields = formFields(toDoc(page.html));
   if (!fields) {
     if (looksLogin(page.html)) throw new AuthError(LOGIN);
@@ -99,21 +107,26 @@ export async function tripCreate(plan, { emplNo, name, onStage = () => {} }) {
   }
   const draft = { ...plan, trans: plan.trans.map((t) => ({ ...t })) };
   const linked = await linkFees(draft);
+  lap('msFees');
   const body = saveBody(fields, draft, emplNo);
 
   onStage('여비계산서(사전정산)를 올리는 중...');
-  // 저장은 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 저장도 직접 요청으로만 보낸다(탭 경유로 되풀이하지 않는다).
-  const post = page.via === 'tab' ? siteFetch : directFetch;
-  await post(`${BASE}/Write/Save`, {
+  // 저장은 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 저장도 직접 요청으로만 보내고(탭 경유로 되풀이하지 않는다), 저장 뒤 사이트가 보내는
+  // 계산서 화면은 따라가지 않는다(directSend — 성공은 아래에서 목록으로 판정한다. 2026-11-08 실측: 따라가면 1.35초).
+  const post = page.via === 'tab' ? siteFetch : directSend;
+  const sent = await post(`${BASE}/Write/Save`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body,
   });
+  if (sent.html && looksLogin(sent.html)) throw new AuthError(LOGIN);
+  lap('msSave');
 
   const known = new Set(before.rows.map((r) => r.seq));
   const after = await tripList(range);
+  lap('msVerify');
   const made = after.rows.filter((r) => !known.has(r.seq));
   const row = tripDocFor(range, made, me) || tripDocFor(range, made);
   if (!row) throw new Error('저장을 보냈지만 목록에서 새 여비계산서를 확인하지 못했습니다. eclass 의 여비계산서 목록에서 확인해 주세요.');
-  return { row, existing: false, linked };
+  return { row, existing: false, linked, via: page.via, feeAsks: draft.trans.length, ...ms, msTotal: Date.now() - t0 };
 }
 
 /* ------------------------------------------------------------ 사전정산 완료(확정) */
@@ -144,8 +157,8 @@ async function sendConfirm(row, page, cal) {
   if (form.seq !== String(row.seq) || !form.trseq || !form.__RequestVerificationToken) {
     throw new Error('계산서 화면의 확정 폼이 이 계산서의 것이 아니어서 보내지 않았습니다. eclass 의 계산서 화면에서 확정해 주세요.');
   }
-  // 확정은 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 확정도 직접 요청으로만 보낸다(탭 경유로 되풀이하지 않는다).
-  const post = page.via === 'tab' ? siteFetch : directFetch;
+  // 확정은 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 확정도 직접 요청으로만 보내고, 확정 뒤의 화면은 따라가지 않는다(directSend — 2026-11-08).
+  const post = page.via === 'tab' ? siteFetch : directSend;
   await post(`${BASE}/CalPrint/Confirm`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: new URLSearchParams(cal.confirm).toString(),
@@ -251,8 +264,8 @@ export async function tripDelete(row, { name = '', onStage = () => {} } = {}) {
     throw new Error('계산서 화면의 삭제 폼이 이 계산서의 것이 아니어서 보내지 않았습니다. eclass 의 계산서 화면에서 지워 주세요.');
   }
   onStage(`여비계산서 ${row.seq} 을(를) 지우는 중...`);
-  // 삭제는 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 삭제도 직접 요청으로만 보낸다(탭 경유로 되풀이하지 않는다).
-  const post = page.via === 'tab' ? siteFetch : directFetch;
+  // 삭제는 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 삭제도 직접 요청으로만 보내고, 삭제 뒤의 목록 화면은 따라가지 않는다(directSend — 2026-11-08 실측: 따라가면 1초쯤).
+  const post = page.via === 'tab' ? siteFetch : directSend;
   await post(`${BASE}/CalPrint/Delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: new URLSearchParams(cal.del).toString(),
@@ -359,11 +372,12 @@ export async function tripPreSave(row, plan, { name = '', onStage = () => {} } =
   const wantMeals = meals ? mealSum(parseStayRows(doc), meals) : null;
 
   onStage('여비계산서(사전정산)를 다시 저장하는 중...');
-  // 저장은 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 저장도 직접 요청으로만 보낸다(탭 경유로 되풀이하지 않는다).
-  const post = page.via === 'tab' ? siteFetch : directFetch;
-  await post(`${BASE}/Write/Save`, {
+  // 저장은 한 번만 나가야 한다. 읽기가 직접 요청으로 됐으면 저장도 직접 요청으로만 보내고, 저장 뒤의 계산서 화면은 따라가지 않는다(directSend — 2026-11-08).
+  const post = page.via === 'tab' ? siteFetch : directSend;
+  const sent = await post(`${BASE}/Write/Save`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body,
   });
+  if (sent.html && looksLogin(sent.html)) throw new AuthError(LOGIN);
 
   const detail = await tripPreDetail(row.seq);
   const hr = (v) => Number(v) || 0;
@@ -451,7 +465,7 @@ export async function tripAfterSave(row, trseq, plan, { name = '', onStage = () 
     else body.append(key, value ?? '');
   }
   onStage('여비계산서(사후정산)를 올리는 중...');
-  await directFetch(`${BASE}/AfterTrip/Save`, { method: 'POST', body });
+  await directSend(`${BASE}/AfterTrip/Save`, { method: 'POST', body });
 
   const after = await tripList({ from: row.from, to: row.to });
   const fresh = after.rows.find((r) => r.seq === row.seq) || null;
@@ -539,7 +553,7 @@ export async function tripAfterLodgeDelete(seq, trseq, lodgeSeq) {
   if (via === 'tab') throw new Error('확장의 직접 요청이 막혀 숙박 줄을 지우지 못했습니다. eclass 의 사후정산 입력 화면에서 지워 주세요.');
   const body = new FormData();
   for (const [i, [name, value]] of fields.entries()) body.append(name, i === at ? '1' : value ?? '');
-  await directFetch(`${BASE}/AfterTrip/Save`, { method: 'POST', body });
+  await directSend(`${BASE}/AfterTrip/Save`, { method: 'POST', body });
 
   const left = await tripAfterLodges(seq, trseq);
   if (left.some((r) => r.seq === String(lodgeSeq))) {
@@ -597,7 +611,7 @@ async function putLodgeFields(seq, trseq, lodgeSeq, put, what, check) {
   const values = new Map(keys.map((k) => [at[k], put[k]]));
   const body = new FormData();
   for (const [i, [name, value]] of fields.entries()) body.append(name, values.has(i) ? String(values.get(i) ?? '') : value ?? '');
-  await directFetch(`${BASE}/AfterTrip/Save`, { method: 'POST', body });
+  await directSend(`${BASE}/AfterTrip/Save`, { method: 'POST', body });
 
   const left = await tripAfterLodges(seq, trseq);
   const row = left.find((r) => r.seq === String(lodgeSeq));

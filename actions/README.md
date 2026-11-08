@@ -75,7 +75,7 @@ fields:
 rules: [ … ]                   # 이 종류만의 LLM 규칙
 runner: attend.apply           # runners/attend.js 가 이 이름으로 등록한다 — LLM 은 이름을 못 정한다
 uses: [{ module: src/attend.js, export: buildJob }, { module: src/hr.js, export: hrRunJob }]
-then: [{ action: trip.create, when: settle }]   # 뒤따르는 행위(패널이 차례로 부른다 — 자동으로 잇지 않는다)
+then: [{ action: trip.create, when: settle }]   # 뒤따르는 행위(패널이 부른다 — 자동으로 잇지 않는다. 출장의 trip.create 는 HR 의 답과 함께 HR 신청 내역 확인과 나란히 돈다, 2026-11-08)
 ```
 
 - **모든 칸에 `read` 가 있다.** 지금 LLM 이 채우지 않는 칸(`llm: false` — 첨부·체크박스·교통편 …)도 read 를 둔다 — 나중에 LLM 을 넣을 때 그대로 쓴다.

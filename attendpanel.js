@@ -916,8 +916,10 @@ export function createAttendPanel({
   /**
    * 출장 결재요청이 올라간 뒤 여비계산서(사전정산)를 만든다. 던지지 않는다 — 출장은 이미 올라갔으므로
    * 여비계산서가 안 만들어진 것은 따로 말해 준다. 돌려주는 글은 상태 줄 끝에 붙는다.
+   * HR 이 결재요청을 받았다고 답한 순간 HR 신청 내역 확인과 **나란히** 돈다(2026-11-08 사용자 지정: "근태 올리고 사전정산 하지 말고 … 병렬로") —
+   * after 는 결재요청의 활동 로그 줄이 남은 뒤 풀리는 약속이고, 이쪽 로그 줄이 그 뒤에 서도록 outcome 이 기다린다. onStage 는 그동안의 상태 줄.
    */
-  async function makeTripDoc(form) {
+  async function makeTripDoc(form, { after = null, onStage = setStatus } = {}) {
     const plan = settlePlan(form, memoOf(form));
     const what = `${describePlan(plan)}${plan.notes.length ? ` (${plan.notes.join(' / ')})` : ''}`;
     try {
@@ -928,11 +930,14 @@ export function createAttendPanel({
         workplace: form.workplace, ...formLegs(form),
       });
       const r = await runRecord(record, {
-        memo: memoOf(form), onStage: setStatus, text: '여비계산서(사전정산) 작성 실패', data: { plan },
-        outcome: async (r) => ({
-          text: r.existing ? `여비계산서가 이미 있어 만들지 않음: ${r.row.seq}` : `여비계산서(사전정산) 작성: ${r.row.seq} · ${what}`,
-          data: { seq: r.row.seq, existing: r.existing, linked: r.linked, plan },
-        }),
+        memo: memoOf(form), onStage, text: '여비계산서(사전정산) 작성 실패', data: { plan },
+        outcome: async (r) => {
+          if (after) await after;
+          return {
+            text: r.existing ? `여비계산서가 이미 있어 만들지 않음: ${r.row.seq}` : `여비계산서(사전정산) 작성: ${r.row.seq} · ${what}`,
+            data: { seq: r.row.seq, existing: r.existing, linked: r.linked, plan },
+          };
+        },
       });
       // 이 출장지로 이렇게 갔다고 기억해 둔다 — 다음에 같은 출장지를 적으면 이 교통편·이 길이 먼저다.
       if (!r.existing) keepTripRoute(form.place, routeOfPlan(plan));
@@ -1826,21 +1831,33 @@ export function createAttendPanel({
         }
       }
       // 최종 성공은 HR 의 말이 아니라 목록에서 확인한 것으로 정한다 — outcome 이 그것을 정하고, 로그 한 줄이 그 결과를 담는다.
+      // 출장의 여비계산서(사전정산)는 HR 이 결재요청을 받았다고 답한 순간 시작해 그 목록 확인과 **나란히** 돈다(2026-11-08 사용자 지정:
+      // "근태 올리고 사전정산 하지 말고 … 병렬로"). HR 이 거절하면 시작하지 않는다(없는 출장의 계산서를 만들지 않게). 임시저장에서는 만들지 않는다.
+      // 활동 로그는 결재요청 줄이 먼저 서도록 계산서 쪽이 그 줄을 기다린다(makeTripDoc 의 after — runRecord 가 끝나면 풀린다).
       let state = null;
       let seen = false;
-      const r = await runRecord(record, {
-        files: sent.file ? [sent.file] : [], onStage: setStatus, text: `${verb} 실패: ${summary}`, data: { action, kind },
-        outcome: async (r) => {
-          if (!r.ok) return { ok: false, text: `${verb} 실패: ${summary} — ${failText(r)}`, data: { action, kind, stage: r.stage, docNo: r.docNo, said: said(r), read: r.read } };
-          state = await confirmInList(r.docNo);
-          const want = action === 'request' ? [STATUS.REQUESTED, STATUS.WAIT, STATUS.APPROVED] : [STATUS.TEMP];
-          seen = !!state && want.includes(state.status);
-          return {
-            ok: seen, text: `${verb}: ${summary} · ${r.docNo}${seen ? '' : ' (목록에서 미확인)'}`,
-            data: { action, kind, docNo: r.docNo, status: state?.statusName, read: r.read, edited: !!editing, ...(modify ? { modifyOf: editing.docNo } : {}) },
-          };
-        },
-      });
+      let tripWait = null;
+      let attendLogged = () => {};
+      const logged = new Promise((res) => { attendLogged = res; });
+      let r;
+      try {
+        r = await runRecord(record, {
+          files: sent.file ? [sent.file] : [], onStage: setStatus, text: `${verb} 실패: ${summary}`, data: { action, kind },
+          outcome: async (r) => {
+            if (!r.ok) return { ok: false, text: `${verb} 실패: ${summary} — ${failText(r)}`, data: { action, kind, stage: r.stage, docNo: r.docNo, said: said(r), read: r.read } };
+            if (action === 'request' && wantsTrip(sent)) tripWait = makeTripDoc(sent, { after: logged, onStage: (m) => setStatus(`${verb} 확인 중 · ${m}`) });
+            state = await confirmInList(r.docNo);
+            const want = action === 'request' ? [STATUS.REQUESTED, STATUS.WAIT, STATUS.APPROVED] : [STATUS.TEMP];
+            seen = !!state && want.includes(state.status);
+            return {
+              ok: seen, text: `${verb}: ${summary} · ${r.docNo}${seen ? '' : ' (목록에서 미확인)'}`,
+              data: { action, kind, docNo: r.docNo, status: state?.statusName, read: r.read, edited: !!editing, ...(modify ? { modifyOf: editing.docNo } : {}) },
+            };
+          },
+        });
+      } finally {
+        attendLogged();
+      }
       if (!r.ok) {
         // 누르기 전에 멈춘 것(값이 안 들어감)과 누른 뒤 사이트가 거절한 것을 가려 말한다.
         const where = r.stage === 'done' ? 'HR 이 받지 않았습니다' : '올리지 않았습니다';
@@ -1851,8 +1868,8 @@ export function createAttendPanel({
       }
       // 올라간 것은 확인됐는데 지금 보는 기간 밖의 날짜면 목록에는 없다. 없어진 줄 알지 않게 말해 준다.
       const hidden = seen && !st.items.includes(state) ? ' · 지금 보는 기간 밖의 날짜라 목록에는 보이지 않습니다' : '';
-      // 출장이 결재요청으로 올라갔으면 이어서 여비계산서(사전정산)를 만든다(then: trip.create — 같은 누름이 승인한 범위). 임시저장에서는 만들지 않는다.
-      let trip = seen && action === 'request' && wantsTrip(sent) ? await makeTripDoc(sent) : '';
+      // 여비계산서(사전정산 — then: trip.create, 같은 누름이 승인한 범위)는 위에서 HR 의 답과 함께 시작했다. 여기서는 끝나기를 기다려 상태 줄에 붙인다.
+      let trip = tripWait ? await tripWait : '';
       let fine = seen && !/못했습니다/.test(trip);
       // 연차에 기념일 지원을 붙였으면 결재요청이 올라간 뒤 eclass 의 기념일 지원 신청 화면을 채워 연다(임시저장에서는 열지 않는다).
       if (seen && action === 'request' && isWelfare(sent)) {
@@ -1866,7 +1883,7 @@ export function createAttendPanel({
       const kept = modify ? ` · 기존 근태(${editing.docNo})는 수정결재가 승인될 때까지 그대로입니다` : '';
       setStatus(seen
         ? `${verb}했습니다 — ${summary} · ${r.docNo} (${state.statusName})${kept}${hidden}${trip}`
-        : `${verb}했다고 HR 이 답했지만 목록에서 확인하지 못했습니다 — ${r.docNo || '문서번호 없음'}. HR 에서 확인해 주세요.`,
+        : `${verb}했다고 HR 이 답했지만 목록에서 확인하지 못했습니다 — ${r.docNo || '문서번호 없음'}. HR 에서 확인해 주세요.${trip}`,
       fine ? '' : 'error');
       onChanged();
       st.sched = null;   // 올린 것이 그 날의 근무시간을 바꿨을 수 있다(유연근무). 다음 반차 때 다시 읽는다.

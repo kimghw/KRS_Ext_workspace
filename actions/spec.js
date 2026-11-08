@@ -734,7 +734,7 @@ export const ACTIONS = {
           "when": "car"
         }
       ],
-      "next": "결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 trip.create 가, 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
+      "next": "결재요청(op=request) 뒤 HR 신청 내역에서 상태를 확인한다(confirmInList — 최종 성공은 그 뒤). 사전정산을 켰으면 HR 이 받았다고 답한 순간 trip.create 가 그 확인과 나란히 돌고(2026-11-08), 차량 조회에서 누른 차는 car.reserve 가 이어진다(패널이 부른다). G캘린더를 켰으면 패널이 구글 캘린더 일정 만들기 창을 채워 연다(src/gcal.js gcalUrl)"
     },
     "attend.out": {
       "id": "attend.out",
