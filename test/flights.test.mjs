@@ -196,6 +196,7 @@ function fakeChrome(answers, probe = null) {
   const calls = [];
   const session = {};
   const tabs = new Map();
+  const cookie = [];
   let serial = 10;
   let time = Date.UTC(2026, 10, 5);
   const makeTab = (options, windowId) => {
@@ -226,16 +227,101 @@ function fakeChrome(answers, probe = null) {
       if (func.name === 'pageHighlight') return [{ result: true }];
       if (func.name === 'pageEpoch') return [{ result: 1 }];
       if (func.name === 'pageProbe') { if (!probe) throw new Error('no probe'); return [{ result: probe }]; }
+      if (func.name === 'pageCookie') return [{ result: { pressed: cookie.length ? cookie.shift() : false } }];
       const sequence = answers[args[0].airline];
       const answer = sequence.length > 1 ? sequence.shift() : sequence[0];
       if (answer instanceof Error) throw answer;
       return [{ result: answer }];
     } },
   };
-  return { api, calls, session, tabs, options: { api, today: '2026-11-05', waitMs: 6000, pause: async () => { time += 600; }, now: () => time } };
+  return { api, calls, session, tabs, cookie, options: { api, today: '2026-11-05', waitMs: 6000, pause: async () => { time += 600; }, now: () => time } };
 }
 const result = (rows = [], over = {}) => ({ at: 2, matched: true, rows, empty: false, ready: true, ...over });
 const FLIGHT = { no: 'KE1402', dep: '09:10', arr: '10:10', availability: 'available', seats: 4, price: '79,000원' };
+
+console.log('대한항공 쿠키 안내(2026-11-09 사용자 지정: "자동으로 눌러 줄 수 있으면 눌러줘") — 필수 쿠키만 허용');
+
+const windowCalls = (f) => f.calls.filter(([kind]) => kind === 'focus').map(([, , options]) => options);
+const hiddenPage = (over = {}) => result([], { loading: true, hidden: true, ...over });
+
+test('쿠키 안내가 뜨면 필수 쿠키만 허용을 누르고 시간을 새로 재어 조회를 잇는다', async () => {
+  const f = fakeChrome({ KE: [result([FLIGHT])] });
+  f.cookie.push(true);
+  const stages = [];
+  const r = await flightSearch(INPUT, { ...f.options, onStage: (s) => stages.push(s) });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.results[0].rows, [FLIGHT]);
+  assert.deepEqual(f.calls.filter(([kind]) => kind === 'script').map(([, name]) => name), ['pageCookie', 'pageCookie', 'pageRead'], '안내창이 닫히면 조회를 잇는다');
+  assert.ok(stages.some((s) => /필수 쿠키만 허용/.test(s)), '누른 것을 알린다');
+  assert.deepEqual(windowCalls(f), [], '이미 안내창이 보이면 창을 건드리지 않는다');
+  const bx = fakeChrome({ BX: [result([{ ...FLIGHT, no: 'BX8801' }])] });
+  await flightSearch({ ...INPUT, airline: 'BX' }, bx.options);
+  assert.equal(bx.calls.some(([, name]) => name === 'pageCookie'), false, '에어부산에는 쓰지 않는다');
+});
+
+test('누르는 함수는 보이는 필수 쿠키만 허용 단추만 누르고 대한항공 밖에서는 아무것도 하지 않는다', (t) => {
+  const page = (visible = true, url = 'https://www.koreanair.com/booking/search') => {
+    const dom = new JSDOM('<kc-global-cookie-banner></kc-global-cookie-banner>', { url });
+    const doc = dom.window.document;
+    const root = doc.querySelector('kc-global-cookie-banner').attachShadow({ mode: 'open' });
+    root.innerHTML = '<button>모든 쿠키 허용</button><button><span> 필수 쿠키만 허용 </span></button><button>쿠키 설정</button>';
+    const clicks = [];
+    for (const b of root.querySelectorAll('button')) {
+      b.addEventListener('click', () => clicks.push(b.textContent.trim()));
+      b.getClientRects = () => (visible ? [{}] : []);
+    }
+    const saved = { document: globalThis.document, location: globalThis.location, getComputedStyle: globalThis.getComputedStyle };
+    t.after(() => { for (const [k, v] of Object.entries(saved)) if (v === undefined) delete globalThis[k]; else Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true }); });
+    for (const [k, v] of Object.entries({ document: doc, location: dom.window.location, getComputedStyle: dom.window.getComputedStyle })) Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
+    return { clicks, answer: injected.pageCookie() };
+  };
+  const shown = page();
+  assert.deepEqual([shown.answer, shown.clicks], [{ pressed: true }, ['필수 쿠키만 허용']]);
+  const unseen = page(false);
+  assert.deepEqual([unseen.answer, unseen.clicks], [{ pressed: false }, []], '뜨기 전에는 누르지 않는다');
+  const other = page(true, 'https://example.com/');
+  assert.deepEqual([other.answer, other.clicks], [{ pressed: false }, []]);
+});
+
+test('본문이 숨어 있으면 최소화 창을 보이게 해 안내창을 띄우고 누른 뒤 다시 최소화한다', async () => {
+  // 5초(바퀴당 0.6초)가 지나야 보이게 한다 — 그 전에는 창을 건드리지 않는다.
+  const answers = Array.from({ length: 12 }, () => hiddenPage());
+  const f = fakeChrome({ KE: [...answers, result([FLIGHT])] });
+  const cookie = f.cookie;
+  const original = f.api.windows.update;
+  f.api.windows.update = async (...args) => { await original(...args); if (args[1].state === 'normal') cookie.push(true); };
+  const r = await flightSearch(INPUT, { ...f.options, waitMs: 20000 });
+  assert.equal(r.ok, true);
+  const windowId = f.calls.find(([kind]) => kind === 'focus')[1];
+  assert.ok(Number.isInteger(windowId));
+  assert.deepEqual(windowCalls(f), [{ state: 'normal', focused: false }, { state: 'minimized' }]);
+});
+
+test('포커스 없이 보여도 안 뜨면 앞으로 가져오고, 끝내 안 뜨면 창을 다시 내리고 까닭을 알린다', async () => {
+  const f = fakeChrome({ KE: [hiddenPage()] });
+  const r = await flightSearch(INPUT, { ...f.options, waitMs: 12000 });
+  assert.equal(r.ok, false);
+  assert.match(r.results[0].error, /쿠키 안내가 뜨기까지/);
+  assert.deepEqual(windowCalls(f), [{ state: 'normal', focused: false }, { state: 'normal', focused: true }, { state: 'minimized' }]);
+  assert.equal(f.calls.filter(([kind]) => kind === 'reload').length, 0);
+});
+
+test('사람이 보던 탭을 빌린 조회에서는 숨은 본문이어도 창을 건드리지 않는다', async () => {
+  const f = fakeChrome({ KE: [hiddenPage()] });
+  f.tabs.set(999, { id: 999, windowId: 1, status: 'complete', url: 'https://www.koreanair.com/booking/search' });
+  f.api.tabs.query = async () => [f.tabs.get(999)];
+  await flightSearch(INPUT, { ...f.options, waitMs: 12000 });
+  assert.deepEqual(windowCalls(f), []);
+});
+
+test('쿠키 단추를 눌러도 안 닫히면 그만 누르고 안내창 까닭으로 끝낸다', async () => {
+  const f = fakeChrome({ KE: [result([]), result([], { blocked: true })] });
+  f.cookie.push(true, true, true, true);
+  const r = await flightSearch(INPUT, f.options);
+  assert.equal(r.ok, false);
+  assert.match(r.results[0].error, /안내창/);
+  assert.equal(f.cookie.length, 2, '두 번까지만 누른다');
+});
 
 test('현재 항공사 탭의 조건이 맞으면 별도 창·탭 없이 그 결과를 조회한다', async () => {
   const f = fakeChrome({ KE: [result([FLIGHT])] });
@@ -321,14 +407,14 @@ test('timeout or transient empty screens are failure, while a stable explicit em
   const late = fakeChrome({ KE: [result([]), result([]), result([]), result([]), result([]), result([], { submitted: true }), result([]), result([]), result([FLIGHT])] });
   const pressed = await flightSearch(INPUT, late.options);
   assert.deepEqual(pressed.results[0].rows.map((row) => row.no), ['KE1402']);
-  assert.equal(late.calls.filter(([kind]) => kind === 'script').length, 9, 'no press after the one that landed');
+  assert.equal(late.calls.filter(([kind, name]) => kind === 'script' && name === 'pageRead').length, 9, 'no press after the one that landed');
   const transient = fakeChrome({ KE: [result([], { empty: true }), result([], { loading: true }), result([], { empty: true }), result([FLIGHT])] });
   assert.equal((await flightSearch(INPUT, transient.options)).results[0].rows.length, 1);
   const empty = fakeChrome({ KE: [result([], { empty: true })] });
   const settled = await flightSearch(INPUT, empty.options);
   assert.equal(settled.ok, true);
   assert.deepEqual(settled.results[0].rows, []);
-  assert.equal(empty.calls.filter(([kind]) => kind === 'script').length, 3);
+  assert.equal(empty.calls.filter(([kind, name]) => kind === 'script' && name === 'pageRead').length, 3);
 });
 
 test('handoff releases ownership, focuses the result without booking, and future searches use a new tab', async () => {
@@ -339,7 +425,7 @@ test('handoff releases ownership, focuses the result without booking, and future
   assert.equal(f.session['flightTabs.KE'], undefined);
   const removeIndex = f.calls.findIndex(([kind]) => kind === 'remove');
   assert.ok(removeIndex < f.calls.findIndex(([kind]) => kind === 'move'));
-  assert.deepEqual(f.calls.filter(([kind]) => kind === 'script').map(([, name]) => name), ['pageRead', 'pageHighlight']);
+  assert.deepEqual(f.calls.filter(([kind, name]) => kind === 'script' && name !== 'pageCookie').map(([, name]) => name), ['pageRead', 'pageHighlight']);
   const next = (await flightSearch(INPUT, f.options)).results[0];
   assert.notEqual(next.tabId, first.tabId);
   assert.equal(f.calls.some(([kind, id, options]) => kind === 'update' && id === first.tabId && options.url), false);

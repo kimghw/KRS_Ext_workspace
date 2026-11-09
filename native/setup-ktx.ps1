@@ -1,5 +1,7 @@
 <#
-  Prepare the private KTX Python runtime without changing system Python, PATH or registry.
+  Prepare the private KTX runtime without changing system Python, PATH or registry.
+  The environment is built from this PC's Authenticode-signed Python 3.12. Python itself is not downloaded:
+  unsigned builds are refused by Windows Smart App Control (os error 4551), see spec/settings.md 2026-11-09.
   -CheckOnly checks imports offline; -Plan reports fixed paths without changing anything.
   Official uv archive and digest: https://github.com/astral-sh/uv/releases/tag/0.13.7
 #>
@@ -18,7 +20,7 @@ $ktxPython = Join-Path $ktxRuntimeDir '.venv\Scripts\python.exe'
 $ktxWorker = Join-Path $ktxSourceDir 'worker.py'
 $ktxLock = Join-Path $ktxSourceDir 'uv.lock'
 $ktxUvVersion = '0.13.7'
-$ktxPythonVersion = '3.12.12'
+$ktxPythonMinor = '3.12'
 $ktxArchiveName = 'uv-x86_64-pc-windows-msvc.zip'
 $ktxArchiveSha256 = '0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021'
 $ktxArchiveUrl = "https://github.com/astral-sh/uv/releases/download/$ktxUvVersion/$ktxArchiveName"
@@ -26,6 +28,25 @@ $ktxArchiveUrl = "https://github.com/astral-sh/uv/releases/download/$ktxUvVersio
 function Assert-KtxFileHash([string]$LiteralPath, [string]$Expected) {
   $actual = (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash
   if ($actual -ne $Expected) { throw "KTX runtime download checksum mismatch: $LiteralPath" }
+}
+
+# Only a validly signed interpreter of the locked minor version. Signature first: an unsigned candidate is never executed.
+function Find-KtxSystemPython {
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  if (Get-Command py -ErrorAction SilentlyContinue) {
+    try { $found = & py "-$ktxPythonMinor" -c 'import sys;print(sys.executable)' 2>$null; if ($LASTEXITCODE -eq 0 -and $found) { $candidates.Add([string]$found) } } catch { }
+  }
+  foreach ($command in @(Get-Command python -All -CommandType Application -ErrorAction SilentlyContinue)) { $candidates.Add($command.Source) }
+  $digits = $ktxPythonMinor.Replace('.', '')
+  $candidates.Add((Join-Path $env:LOCALAPPDATA "Programs\Python\Python$digits\python.exe"))
+  if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles "Python$digits\python.exe")) }
+  foreach ($candidate in ($candidates | Select-Object -Unique)) {
+    if ($candidate -match '\\WindowsApps\\' -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+    if ((Get-AuthenticodeSignature -LiteralPath $candidate).Status -ne 'Valid') { continue }
+    try { $version = & $candidate -I -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null } catch { continue }
+    if ($LASTEXITCODE -eq 0 -and $version -eq $ktxPythonMinor) { return $candidate }
+  }
+  return $null
 }
 
 function Invoke-KtxImportCheck {
@@ -49,12 +70,11 @@ if ($Plan) {
     runtime = $ktxRuntimeDir
     source = $ktxSourceDir
     python = $ktxPython
-    pythonVersion = $ktxPythonVersion
+    pythonVersion = $ktxPythonMinor
     uvVersion = $ktxUvVersion
     archive = $ktxArchiveUrl
     sha256 = $ktxArchiveSha256
     environment = (Join-Path $ktxRuntimeDir '.venv')
-    managedPython = (Join-Path $ktxRuntimeDir 'python')
     lock = $ktxLock
   } | ConvertTo-Json
   return
@@ -74,12 +94,10 @@ foreach ($required in @($ktxWorker, $ktxLock, (Join-Path $ktxSourceDir 'pyprojec
 # All uv state lives beside this bridge. Never target an inherited system/active environment.
 $ktxEnv = @{
   UV_PROJECT_ENVIRONMENT = (Join-Path $ktxRuntimeDir '.venv')
-  UV_PYTHON_INSTALL_DIR = (Join-Path $ktxRuntimeDir 'python')
-  UV_PYTHON_BIN_DIR = (Join-Path $ktxRuntimeDir 'bin')
   UV_CACHE_DIR = (Join-Path $ktxRuntimeDir 'cache')
   UV_NO_ENV_FILE = '1'
   UV_NO_CONFIG = '1'
-  UV_PYTHON_DOWNLOADS = 'automatic'
+  UV_PYTHON_DOWNLOADS = 'never'
   PYTHONPATH = $null
   PYTHONHOME = $null
   VIRTUAL_ENV = $null
@@ -110,14 +128,15 @@ try {
   $ktxUv = Join-Path $ktxBootstrapDir 'uv.exe'
   if (-not (Test-Path -LiteralPath $ktxUv -PathType Leaf)) { throw 'uv.exe is missing from the verified archive.' }
 
-  Write-Host "Preparing private Python $ktxPythonVersion..."
-  & $ktxUv python install $ktxPythonVersion --no-bin --no-registry --no-config
-  if ($LASTEXITCODE -ne 0) { throw "Python installation failed (exit $LASTEXITCODE). Run setup again to retry." }
-  & $ktxUv sync --project $ktxSourceDir --locked --no-dev --no-install-project --managed-python --python $ktxPythonVersion --no-config
+  $ktxSystemPython = Find-KtxSystemPython
+  if (-not $ktxSystemPython) { throw "A signed Python $ktxPythonMinor is required. Install it from https://www.python.org/downloads/windows/ and run setup again." }
+  Write-Host "Building the private environment from signed Python: $ktxSystemPython"
+  & $ktxUv sync --project $ktxSourceDir --locked --no-dev --no-install-project --no-managed-python --python $ktxSystemPython --no-config
   if ($LASTEXITCODE -ne 0) { throw "KTX dependency installation failed (exit $LASTEXITCODE). Run setup again to retry." }
   $ktxCheck = Invoke-KtxImportCheck
   $ktxMetadata = [ordered]@{
-    python = $ktxPythonVersion
+    python = $ktxCheck.python
+    basePython = $ktxSystemPython
     uv = $ktxUvVersion
     lockSha256 = (Get-FileHash -LiteralPath $ktxLock -Algorithm SHA256).Hash.ToLowerInvariant()
     installedAt = [DateTime]::UtcNow.ToString('o')

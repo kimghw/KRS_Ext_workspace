@@ -6,11 +6,18 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PYTHON = path.join(HERE, 'ktx-runtime', '.venv', 'Scripts', 'python.exe');
-// Keep in step with setup-ktx.ps1's managed Python version. Launch the interpreter
-// directly: Windows' venv redirector owns an outer kill-on-close Job Object that
-// would kill Chrome even after ParentWatch releases its own job on completion.
-export const PYTHON_VERSION = '3.12.12';
-export const BASE_PYTHON = path.join(HERE, 'ktx-runtime', 'python', `cpython-${PYTHON_VERSION}-windows-x86_64-none`, 'python.exe');
+export const VENV_CONFIG = path.join(HERE, 'ktx-runtime', '.venv', 'pyvenv.cfg');
+/**
+ * The signed Python 3.12 that setup-ktx.ps1 built the venv from, as recorded in pyvenv.cfg (never from a request).
+ * Launch this interpreter directly: Windows' venv redirector owns an outer kill-on-close Job Object that
+ * would kill Chrome even after ParentWatch releases its own job on completion.
+ */
+export function basePython(config = VENV_CONFIG) {
+  try {
+    const home = fs.readFileSync(config, 'utf8').match(/^home\s*=\s*(.+?)\s*$/m)?.[1];
+    return home && path.isAbsolute(home) ? path.join(home, 'python.exe') : null;
+  } catch { return null; }
+}
 export const WORKER = path.join(HERE, 'ktx-python', 'worker.py');
 export const STATE = path.join(HERE, 'ktx-runtime', 'state');
 export const SEARCH_MS = 120_000;
@@ -43,8 +50,8 @@ export function workerEnv() {
 // Overrides are for local tests only; extension requests never supply them.
 export async function invoke(request, { python = PYTHON, worker = WORKER, stateDir = STATE, launch = spawn,
   timeoutMs = SEARCH_MS, maxOutput = MAX_OUTPUT } = {}) {
-  const executable = python === PYTHON ? BASE_PYTHON : python;
-  if (!fs.existsSync(python) || !fs.existsSync(executable) || !fs.existsSync(worker)) return fail('RUNTIME_MISSING', 'KTX 실행 환경이 없습니다. native/setup-ktx.ps1을 실행해 주세요.');
+  const executable = python === PYTHON ? basePython() : python;
+  if (!fs.existsSync(python) || !executable || !fs.existsSync(executable) || !fs.existsSync(worker)) return fail('RUNTIME_MISSING', 'KTX 실행 환경이 없습니다. native/setup-ktx.ps1을 실행해 주세요.');
   const env = workerEnv();
   // CPython's own redirector uses this value to select the venv even with -I.
   // It is fixed by the host, never copied from the caller's environment/request.

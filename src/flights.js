@@ -25,6 +25,14 @@ const PAUSE_MS = 400;
 const RELOAD_MS = 8000;
 /** 조회 단추를 찾아 누르기를 시도하는 횟수(한 번 눌리면 그만) — 대한항공은 진행 표시가 걷힐 때까지 1.5초쯤 눌리지 않는다. */
 const MAX_PRESSES = 15;
+/** 쿠키 안내의 "필수 쿠키만 허용"을 누르는 횟수. 눌러도 안 닫히면 그만 누르고 까닭을 알린다. */
+const MAX_COOKIE_PRESSES = 2;
+/**
+ * 처음 방문한 대한항공은 쿠키 안내를 고를 때까지 본문을 숨기는데, 탭이 보이지 않으면(최소화 창) 그 안내창이 그려지지 않아 영영 멈춘다(2026-11-09 실측: 76초 동안 안 뜸, 창을 보이자 0.4초).
+ * 본문이 이만큼 숨어 있으면 조회 창을 포커스 없이 보이게 하고, 그래도 숨어 있으면(다른 창에 가려 보이지 않는 것으로 친다) 앞으로 가져온다. 안내창을 닫으면 곧바로 다시 최소화한다.
+ */
+const HIDDEN_SHOW_MS = 5000;
+const HIDDEN_FOCUS_MS = 10000;
 const pending = new Set();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export const koreaToday = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
@@ -294,7 +302,7 @@ function pageRead({ airline, input, submit = false }) {
   if (submit && keWidget && keMatches && !rows.length && !empty) {
     const hosts = [...document.querySelectorAll('.booking-gate__button kds-button_1')].filter((host) =>
       host.getAttribute('is-disabled') !== 'true' && host.getAttribute('is-aria-disabled') !== 'true' && /^항공편\s*검색$/.test(host.textContent.replace(/\s+/g, ' ').trim()));
-    // 쿠키 안내(kc-global-cookie-banner) 같은 안내창이 떠 있으면 본문이 inert 라 단추가 듣지 않는다 — 동의는 사람이 고른다. 누르지 않고 알린다.
+    // 쿠키 안내(kc-global-cookie-banner) 같은 안내창이 떠 있으면 본문이 inert 라 단추가 듣지 않는다. 쿠키 안내는 pageCookie 가 먼저 닫으므로 여기까지 온 것은 닫지 못한 안내창이다 — 알린다.
     // 안내창이 떠 있을 때만 본문이 inert 다. 진행 표시 동안의 aria-hidden 은 안내창이 아니고, 안내창 요소(kc-global-cookie-banner)는 뜨기 전에도
     // 있어(visibility 만 다르다) 그 요소로는 가리지 못한다(2026-11-05 실측) — 눌리지 않으면 다음 바퀴에 다시 본다.
     if (hosts.length === 1 && hosts[0].closest('[inert]')) return result({ matched, rows: [], blocked: true });
@@ -321,6 +329,19 @@ function pageRead({ airline, input, submit = false }) {
 
 function pageEpoch() { return performance.timeOrigin; }
 
+/**
+ * 대한항공 쿠키 안내창의 "필수 쿠키만 허용"을 누른다(2026-11-09 사용자 지정: "자동으로 눌러 줄 수 있으면 눌러줘"). 안내창이 뜬 동안은 본문이 inert 라 조회 단추가 듣지 않는다.
+ * 조회에 필요한 만큼만 고른다 — "모든 쿠키 허용"·"쿠키 설정"은 누르지 않는다. 안내창 요소는 뜨기 전에도 있어(visibility 만 다르다) 보일 때만 누른다.
+ */
+function pageCookie() {
+  if (location.protocol !== 'https:' || location.hostname !== 'www.koreanair.com') return { pressed: false };
+  const root = document.querySelector('kc-global-cookie-banner')?.shadowRoot;
+  const button = [...(root?.querySelectorAll('button') || [])].find((b) => /^필수\s*쿠키만\s*허용$/.test(b.textContent.trim()));
+  if (!button || button.disabled || !button.getClientRects().length || getComputedStyle(button).visibility !== 'visible') return { pressed: false };
+  button.click();
+  return { pressed: true };
+}
+
 /** 항공편을 보이게만 한다. 선택/예약/결제 버튼을 누르지 않는다. */
 function pageHighlight(row) {
   if (!row) return false;
@@ -346,7 +367,7 @@ function pageProbe() {
   /* eslint-enable no-undef */
 }
 
-export const injected = { pageRead, pageHighlight, pageEpoch, pageProbe };
+export const injected = { pageRead, pageHighlight, pageEpoch, pageProbe, pageCookie };
 const run = async (api, tabId, func, args = [], world = 'ISOLATED') => (await api.scripting.executeScript({ target: { tabId }, world, func, args }))?.[0]?.result;
 /** 대기열 스크립트가 왜 안 도는지 한 줄 — 잴 수 없으면 빈 글. */
 const probeReason = (probe) => {
@@ -371,6 +392,14 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
   let tabId;
   let previousEpoch = null;
   let borrowed = false;
+  let shownStep = 0;
+  let windowId;
+  // 쿠키 안내를 띄우려고 보이게 한 조회 창을 다시 내린다. 닫혔으면 그만이다.
+  const hideAgain = async () => {
+    if (!shownStep) return;
+    shownStep = 0;
+    await api.windows.update(windowId, { state: 'minimized' }).catch(() => {});
+  };
   try {
     onStage(`${AIRLINES[airline].name} 조회 중`);
     const old = await getHandle(api, airline);
@@ -394,24 +423,49 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
     }
     if (!tab?.id) throw new Error('항공사 조회 창을 열지 못했습니다.');
     tabId = tab.id;
+    windowId = tab.windowId;
     await api.storage?.session?.set?.({ [handleKey(airline)]: { tabId, bookingUrl, input, ...(borrowed ? { borrowed: true } : {}) } });
     const started = now();
-    const end = started + waitMs;
+    let end = started + waitMs;
     let last = null;
     let emptyCount = 0;
     let submitted = false;
     let presses = 0;
     let reloaded = false;
+    let cookiePresses = 0;
     while (now() < end) {
       await pause(PAUSE_MS);
       tab = await api.tabs.get(tabId).catch(() => null);
       if (!tab) throw new Error('항공사 조회 창이 닫혔습니다.');
       if (tab.status !== 'complete') continue;
       if (!isOfficial(tab, airline)) throw new Error('항공사 공식 화면에서 벗어났습니다.');
+      if (airline === 'KE' && cookiePresses < MAX_COOKIE_PRESSES) {
+        const cookie = await run(api, tabId, pageCookie).catch(() => null);
+        if (cookie?.pressed) {
+          cookiePresses++;
+          onStage('대한항공 쿠키 안내를 필수 쿠키만 허용으로 닫았습니다');
+          await hideAgain();
+          // 안내창을 기다리느라 쓴 시간은 조회 시간으로 치지 않는다.
+          end = now() + waitMs;
+          continue;
+        }
+      }
       last = await run(api, tabId, pageRead, [{ airline, input }]).catch(() => null);
       if (!last) continue;
       if (previousEpoch != null && (!Number.isFinite(last.at) || last.at === previousEpoch)) continue;
       if (last.error) throw new Error(last.error);
+      // 본문이 숨어 있으면 쿠키 안내를 기다리는 것이다 — 최소화 창에서는 안내창이 그려지지 않으므로 창을 보이게 한다. 사람의 탭(borrowed)은 이미 보인다.
+      if (last.hidden && !borrowed && !cookiePresses && windowId != null) {
+        const hiddenFor = now() - started;
+        const step = hiddenFor >= HIDDEN_FOCUS_MS ? 2 : hiddenFor >= HIDDEN_SHOW_MS ? 1 : 0;
+        if (step > shownStep) {
+          shownStep = step;
+          onStage('대한항공 쿠키 안내를 띄우려고 조회 창을 잠깐 엽니다');
+          await api.windows.update(windowId, { state: 'normal', focused: step === 2 }).catch(() => {});
+          end = Math.max(end, now() + waitMs);
+          continue;
+        }
+      }
       // 화면이 다 열리고도(ready) 8초 동안 아무 일이 없으면 — 조건이 안 실렸거나, 실렸는데 조회가 시작되지 않았으면 — 한 번 새로고침한다.
       // 에어부산은 도시 목록을 받은 뒤 스스로 조회하는데 첫 방문에서 그 요청이 403 으로 막힌 적이 있고(2026-11-05 실측),
       // 대기열 스크립트(agent-lib.stclab.com)가 안 실리면 조건만 실린 채 영영 조회하지 않는다(같은 날 막아서 재현).
@@ -440,13 +494,14 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
     const probe = idle ? await run(api, tabId, pageProbe, [], 'MAIN').catch(() => null) : null;
     throw new Error(last?.challenge ? '항공사 보안 확인 화면이 끝나지 않았습니다. 예약 페이지에서 확인해 주세요.'
       : last?.queued ? `${AIRLINES[airline].name} 접속 대기열이 끝나지 않았습니다. 예약 페이지에서 확인해 주세요.`
-      : last?.hidden ? '대한항공 화면이 아직 보이지 않습니다 — 처음 방문이면 쿠키 안내가 뜨기까지 30초쯤 걸립니다. 예약 페이지에서 안내를 한 번 닫은 뒤 다시 조회해 주세요.'
+      : last?.hidden ? '대한항공 화면이 아직 보이지 않습니다 — 처음 방문이면 쿠키 안내가 뜨기까지 기다려야 합니다. 예약 페이지에서 안내를 한 번 닫은 뒤 다시 조회해 주세요.'
       : last?.matched === false ? '항공사 화면에 출발지·도착지·날짜·인원이 반영됐는지 확인하지 못했습니다. 예약 페이지에서 조건을 확인해 주세요.'
       : idle ? `에어부산 화면이 조회를 시작하지 않았습니다.${probeReason(probe) || ' 대기열 스크립트(agent-lib.stclab.com)가 막혔거나 응답이 없으면 그렇습니다.'} 예약 페이지에서 확인해 주세요.`
       : '항공편 시간표와 좌석을 읽지 못했습니다. 예약 페이지에서 확인해 주세요.');
   } catch (error) {
     return { ...base, ok: false, tabId, error: error?.message || String(error) };
   } finally {
+    await hideAgain();
     pending.delete(airline);
   }
 }

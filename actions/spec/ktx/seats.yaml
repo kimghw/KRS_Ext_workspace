@@ -1,0 +1,59 @@
+# KTX 좌석 상태 — 브릿지의 조회 실행부(native/entry.mjs → ktx.mjs → ktx-python/worker.py)가 코레일 결과 첫 화면을 읽는다(2026-11-09 사용자 지정: "현재 좌석정보랑 누르면 코에릴 예매정보로 가야지").
+# 시간표(ktx.search)가 먼저 서고 이것이 뒤따라 줄에 좌석을 얹는다. 좌석을 고르거나 예매하지 않는다. 받은 session 은 그 결과 창을 앞으로 가져오는 손잡이다(ktx.open 의 ctx — 기록에 넣지 않는다).
+id: ktx.seats
+title: KTX 좌석 상태 조회
+hint: 코레일 결과 첫 화면
+confirm: false
+effect: none
+summary: 'KTX 좌석 {from}→{to} {date} {hour}시~ {adults}명'
+fields:
+  from:
+    type: enum
+    required: true
+    label: 출발역
+    values: [서울, 용산, 영등포, 행신, 광명, 수원, 천안아산, 오송, 대전, 서대전, 김천구미, 서대구, 동대구, 경산, 밀양, 구포, 부산, 경주, 울산(통도사), 포항, 마산, 창원중앙, 논산, 익산, 정읍, 광주송정, 목포, 전주, 순천, 여수EXPO, 강릉, 정동진]
+    desc: 코레일에 조회할 출발역
+    read: '출발역 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 부산
+    example: 부산
+  to:
+    type: enum
+    required: true
+    label: 도착역
+    values: [서울, 용산, 영등포, 행신, 광명, 수원, 천안아산, 오송, 대전, 서대전, 김천구미, 서대구, 동대구, 경산, 밀양, 구포, 부산, 경주, 울산(통도사), 포항, 마산, 창원중앙, 논산, 익산, 정읍, 광주송정, 목포, 전주, 순천, 여수EXPO, 강릉, 정동진]
+    desc: 코레일에 조회할 도착역
+    read: '도착역 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 서울
+    example: 서울
+  date:
+    type: date
+    required: true
+    label: 출발일
+    desc: 차량 탭 날짜 줄의 출발일
+    read: '출발일 — 패널의 날짜 줄에서 온다. 말로 채우지 않는다'
+    example: '2026-11-12'
+  hour:
+    type: integer
+    required: true
+    label: 출발 시
+    min: 0
+    max: 23
+    desc: 이 시각 이후 출발 열차의 좌석을 읽는다
+    read: '출발 시 — 패널의 시작 시간에서 온다. 말로 채우지 않는다'
+    default: 8
+    example: 8
+  adults:
+    type: integer
+    required: true
+    label: 인원
+    min: 1
+    max: 9
+    desc: 조회할 어른 인원
+    read: '어른 인원 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 1
+    example: 1
+llm: false
+runner: ktx.seats
+uses:
+  - { module: src/ktx.js, export: ktxSeats }
+next: 시간표 줄에 일반실·특실 상태를 얹는다. 줄을 누르면 ktx.open 이 그 조회 창을 앞으로 가져온다.
