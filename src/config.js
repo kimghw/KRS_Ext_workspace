@@ -203,8 +203,11 @@ export const MAIL_DOMAIN = 'krs.co.kr';
 
 /** Teams 1:1 채팅 딥링크. `?users=<메일>` 을 붙이면 앱·웹이 그 사람과의 채팅을 연다. 설치·인증 없이 URL 만으로 된다. */
 export const TEAMS_CHAT_URL = 'https://teams.microsoft.com/l/chat/0/0';
-/** Teams 웹의 나와의 채팅(○○(나) — 대화 48:notes). `/l/chat/…` 딥링크는 "앱으로 열까요" 안내에서 멈춰서 그 안내가 넘겨 주는 웹 경로를
- *  바로 연다 — teams.cloud.microsoft 로 넘어가 "채팅 | ○○(나)" 가 뜬다(2026-11-05 9333 크롬 실측). 머리의 Teams 단추(sidepanel.js). */
-export const TEAMS_NOTES_URL = 'https://teams.microsoft.com/_#/l/chat/48:notes/conversations';
+/** Teams 웹의 나와의 채팅(○○(나) — 대화 48:notes). `/l/chat/…` 딥링크는 "앱으로 열까요" 안내에서 멈춰서 웹 앱의 해시 경로를
+ *  바로 연다 — "채팅 | ○○(나)" 가 뜬다. 새 도메인(teams.cloud.microsoft)으로 바로 간다: 옛 주소 `teams.microsoft.com/_#/…` 는
+ *  거기서 앱 껍데기를 한 번 띄운 뒤 새 도메인으로 넘어가 다시 띄워 글쓰기 칸까지 7.5~9.4초, 바로 열면 5.7~6.7초(2026-11-10
+ *  9333 크롬 실측, 캐시 있는 상태 — 2026-11-10 사용자 지정: "workspace, rerp 모두 수정해줘"). 머리의 Teams 단추(sidepanel.js).
+ *  kr_ext_rerp 의 같은 단추(popup/popup.js)도 이 주소다. */
+export const TEAMS_NOTES_URL = 'https://teams.cloud.microsoft/#/l/chat/48:notes/conversations';
 /** 머리의 Teams (나) 단추를 보일지 — 설정 → 일반의 스위치, 기본 켬. */
 export const TEAMS_NOTES_KEY = 'teamsNotes';

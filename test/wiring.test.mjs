@@ -549,7 +549,7 @@ console.log('머리의 Teams (나) 단추와 설정(일반)의 스위치 (2026-1
   btn.click();
   await new Promise((r) => setTimeout(r, 20));
   t('누르면 지금 탭 바로 옆에 Teams 웹의 나와의 채팅(48:notes)을 연다', () => {
-    assert.deepEqual(calls.tabs.at(-1), { url: 'https://teams.microsoft.com/_#/l/chat/48:notes/conversations', index: 3, openerTabId: 7 });
+    assert.deepEqual(calls.tabs.at(-1), { url: 'https://teams.cloud.microsoft/#/l/chat/48:notes/conversations', index: 3, openerTabId: 7 });
   });
   box.checked = false;
   box.dispatchEvent(new window.Event('change'));
