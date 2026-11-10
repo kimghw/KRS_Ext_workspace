@@ -2367,8 +2367,13 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .ktx-bar #ktxGo { flex: none; min-height: 36px; border-radius: 10px; }
 .ktx-list { margin: 8px 0 0; padding: 0; list-style: none; }
 .ktx-list:empty { display: none; }
-.ktx-row { border-top: 1px solid var(--line); }
-.ktx-go { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 8px; width: 100%; padding: 8px 2px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.ktx-row { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); }
+/* 빈자리 대기(2026-11-10) — 자리가 없고 예약대기도 안 되는 줄에만 서는 단추. 기다리는 중은 aria-pressed, 자리가 난 줄은 .found. */
+.ktx-row.found { background: var(--pick-soft); }
+.ktx-watch { flex: none; min-height: 26px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
+.ktx-watch:hover { background: var(--surface-soft); }
+.ktx-watch[aria-pressed="true"] { border-color: currentColor; color: var(--pick); font-weight: 600; }
+.ktx-go { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 8px; width: 100%; padding: 8px 2px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .ktx-go:hover:not(:disabled) { background: var(--surface-soft); }
 .ktx-go:disabled { cursor: progress; }
 .ktx-time { grid-column: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }

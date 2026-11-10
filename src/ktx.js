@@ -79,7 +79,9 @@ function checkedSeatRows(rows) {
   const seat = (value) => {
     if (value == null) return null;
     if (typeof value !== 'object' || typeof value.soldOut !== 'boolean' || typeof value.soon !== 'boolean') throw new Error('좌석 정보 형식이 올바르지 않습니다.');
-    return { price: text(value.price, 80), soldOut: value.soldOut, soon: value.soon, note: text(value.note ?? '', 80) };
+    const note = text(value.note ?? '', 80);
+    // wait — 코레일 예약대기를 걸 수 있는 칸(빈자리 대기를 두지 않는다). 전용 창에서 읽은 줄은 코레일이 적은 말로 가린다.
+    return { price: text(value.price, 80), soldOut: value.soldOut, soon: value.soon, note, ...(value.wait === true || note.includes('예약대기') ? { wait: true } : {}) };
   };
   return rows.map((row) => {
     if (!row || typeof row !== 'object') throw new Error('열차 정보 형식이 올바르지 않습니다.');
@@ -116,6 +118,12 @@ async function inTab(api, tabId, func, args, ms = FILL_MS) {
 
 const REQUERIES = 2;
 let seatTabId = null;
+const blocked = (guard) => failure(`코레일 조회가 제한되었습니다 (${guard.code || '차단 안내'}). ${guard.message || ''}`.trim().slice(0, 1800), 'GUARD_BLOCKED');
+/** 결과 화면의 조건이 요청과 같은가 — 다른 조건의 줄을 싣지 않는다. */
+const sameCond = (cond, query) => {
+  const people = String(cond?.people || '').match(/(\d+)\s*명/);
+  return cond?.from === query.from && cond?.to === query.to && String(cond?.date || '').startsWith(query.date) && +people?.[1] === query.adults;
+};
 const onKorail = (tab, urls) => Number.isInteger(tab?.id) && urls.some((url) => String(tab.url || '').startsWith(url));
 
 /**
@@ -135,8 +143,10 @@ async function seatTab(api) {
  * 차단 안내는 닫고 같은 조건으로 다시 조회한다(전용 창 조회와 같게 최대 2회). 보던 탭을 앞에서 밀어내지 않는다.
  * @returns {Promise<{ok: true, rows: object[], tabId: number}|{ok: false, error: string, code: string}>}
  */
-export async function ktxSeatsTab(query, { api = globalThis.chrome, onStage = () => {}, wait = pause } = {}) {
+export async function ktxSeatsTab(query, { api = globalThis.chrome, onStage = () => {}, wait = pause, forWatch = false } = {}) {
   if (!api?.tabs?.query || !api.tabs.create || !api.scripting?.executeScript) return failure('옆 탭에서 코레일을 열 수 없습니다.', 'TAB_UNAVAILABLE');
+  // 같은 탭을 5초마다 다시 읽는 빈자리 대기가 돌고 있으면 끝낸 뒤에 조회한다 — 새 조회가 그 탭을 예매 화면으로 돌린다.
+  if (!forWatch) await ktxWatchStop('새로 조회해 빈자리 대기를 멈췄습니다.');
   let tab;
   try {
     tab = await seatTab(api);
@@ -146,7 +156,6 @@ export async function ktxSeatsTab(query, { api = globalThis.chrome, onStage = ()
     return failure(`옆 탭에서 코레일을 열지 못했습니다. ${errorText(error)}`, 'TAB_UNAVAILABLE');
   }
   const tabId = seatTabId = tab.id;
-  const blocked = (guard) => failure(`코레일 조회가 제한되었습니다 (${guard.code || '차단 안내'}). ${guard.message || ''}`.trim().slice(0, 1800), 'GUARD_BLOCKED');
   try {
     if (!await formLoaded(api, tabId, { wait })) return failure('코레일 화면이 열리지 않아 좌석을 읽지 못했습니다.', 'FORM_NOT_LOADED');
     onStage('코레일 탭에 조건을 넣는 중');
@@ -184,11 +193,7 @@ export async function ktxSeatsTab(query, { api = globalThis.chrome, onStage = ()
         continue;
       }
       if (page?.state === 'rows' || page?.state === 'empty') {
-        const cond = page.cond || {};
-        const people = String(cond.people || '').match(/(\d+)\s*명/);
-        if (cond.from !== query.from || cond.to !== query.to || !String(cond.date || '').startsWith(query.date) || +people?.[1] !== query.adults) {
-          return failure('코레일 결과 화면의 조건이 요청과 달라 좌석을 싣지 않았습니다.', 'CONDITION_MISMATCH');
-        }
+        if (!sameCond(page.cond, query)) return failure('코레일 결과 화면의 조건이 요청과 달라 좌석을 싣지 않았습니다.', 'CONDITION_MISMATCH');
         return { ok: true, rows: checkedSeatRows(shapeSeatRows(page.rows, query)), tabId };
       }
       // 안내도 '열차 없음'도 없는 빈 화면 — 그리다 만 것일 수 있어 새로고침으로 한 번만 더.
@@ -201,6 +206,126 @@ export async function ktxSeatsTab(query, { api = globalThis.chrome, onStage = ()
     if (/Cannot access|permission/i.test(why)) return failure('코레일 사이트 권한이 없어 옆 탭에서 좌석을 읽지 못했습니다. 확장을 다시 불러와 주세요.', 'NO_PERMISSION');
     return failure(`옆 탭에서 좌석을 읽지 못했습니다. ${why}`, 'TAB_FAILED');
   }
+}
+
+// ── 빈자리 대기(2026-11-10 사용자 지정: "한번에 3개 까지. 예약대기가 안되는 경우만 … 간격은 5초, 1시간 지나면 정지 … 알림만. 패널이 열린경우만") ──
+// 옆 코레일 탭의 결과 화면을 다시 읽어 지켜보는 열차에 살 수 있는 자리가 나오면 알린다. 좌석을 고르거나 예매하지 않는다.
+// 조회 하나(같은 조건·같은 탭)에 열차를 셋까지 얹는다 — 열차마다 ktxWatch 한 번이고, 도는 것은 하나다. 패널의 페이지에서만 돈다(닫히면 같이 끝난다).
+export const WATCH_MAX = 3;
+export const WATCH_GAP_MS = 5000;
+export const WATCH_LIMIT_MS = 60 * 60 * 1000;
+const WATCH_BLANKS = 3;
+let watcher = null;
+const trainNo = (no) => String(no ?? '').replace(/^0+(?=\d)/, '');
+/** 살 수 있는 자리 — 값이 있고 매진이 아닌 칸. "입석 + 좌석"·예약대기는 자리가 아니다. */
+export const openSeat = (seat) => !!seat && !seat.soldOut && !!seat.price;
+
+/** 결과 화면을 한 번 다시 읽는다. 차단 안내는 확인으로 닫고 새로고침 한 번, 그래도 뜨면 막힌 것이다. */
+async function watchPoll(w, { api, wait }) {
+  const read = () => inTab(api, w.tabId, korailSeatsPage, ['read', { ktx: true, have: [...w.targets.keys()] }]);
+  let guard = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await api.tabs.reload(w.tabId);
+    await wait(1000);
+    await formLoaded(api, w.tabId, { wait, url: KORAIL_LIST, tries: 60 });
+    const page = await read().catch(async () => { await wait(1500); return read(); });
+    if (page?.guard) { guard = page.guard; continue; }
+    if (page?.state === 'rows' || page?.state === 'empty') {
+      if (!sameCond(page.cond, w.query)) return failure('코레일 탭의 조회 조건이 바뀌어 빈자리 대기를 멈췄습니다.', 'CONDITION_MISMATCH');
+      w.blanks = 0;
+      return { ok: true, rows: checkedSeatRows(shapeSeatRows(page.rows, w.query)) };
+    }
+    // 그리다 만 화면 — 다음 차례에 다시 본다. 거듭되면 끝낸다.
+    if (++w.blanks >= WATCH_BLANKS) return failure('코레일 결과 화면에서 열차 목록을 거듭 확인하지 못해 빈자리 대기를 멈췄습니다.', 'RESULT_UNAVAILABLE');
+    return { ok: true, rows: null };
+  }
+  return blocked(guard);
+}
+
+async function watchLoop(w, { api, wait, now, gapMs }) {
+  const endAll = (result) => { for (const target of [...w.targets.values()]) target.done(result); };
+  try {
+    let rows = null;
+    const tab = Number.isInteger(w.tabId) ? await Promise.resolve().then(() => api.tabs.get(w.tabId)).catch(() => null) : null;
+    if (!onKorail(tab, [KORAIL_LIST])) {
+      // 결과 탭이 없다(전용 창에서 읽었거나 닫혔다) — 옆 탭에서 한 번 조회해 세운다.
+      const set = await ktxSeatsTab(w.query, { api, wait, forWatch: true });
+      if (!set.ok) return endAll(set);
+      w.tabId = set.tabId;
+      rows = set.rows;
+    }
+    while (w.targets.size) {
+      if (!rows) {
+        // 기다리는 열차가 없어지면(멈춤) 간격을 다 채우지 않고 깬다.
+        await Promise.race([wait(gapMs), new Promise((resolve) => { w.wake = resolve; })]);
+        for (const target of [...w.targets.values()]) {
+          if (now() >= target.deadline) target.done({ ok: true, found: false, expired: true, note: '1시간이 지나 빈자리 대기를 멈췄습니다.' });
+        }
+        if (!w.targets.size) break;
+        const at = await Promise.resolve().then(() => api.tabs.get(w.tabId)).catch(() => null);
+        if (!onKorail(at, [KORAIL_LIST])) return endAll(failure('코레일 탭이 닫혔거나 다른 화면으로 넘어가 빈자리 대기를 멈췄습니다.', 'WATCH_TAB_GONE'));
+        // 그 탭을 보고 있는 동안은 새로고침하지 않는다 — 예매하려는 화면을 밀어내지 않는다.
+        if (at.active) { for (const target of w.targets.values()) target.onTick({ paused: true, count: w.count, tabId: w.tabId }); continue; }
+        const polled = await watchPoll(w, { api, wait });
+        if (!polled.ok) return endAll(polled);
+        rows = polled.rows;
+        if (!rows) continue;
+      }
+      w.count++;
+      const seen = rows;
+      rows = null;
+      for (const target of [...w.targets.values()]) {
+        const row = seen.find((r) => trainNo(r.no) === target.no);
+        if (row && (openSeat(row.gen) || openSeat(row.spec))) target.done({ ok: true, found: true, row, rows: seen, tabId: w.tabId, count: w.count });
+        else target.onTick({ rows: seen, count: w.count, tabId: w.tabId });
+      }
+    }
+  } catch (error) {
+    const why = errorText(error);
+    endAll(/Cannot access|permission/i.test(why)
+      ? failure('코레일 사이트 권한이 없어 빈자리 대기를 멈췄습니다. 확장을 다시 불러와 주세요.', 'NO_PERMISSION')
+      : failure(`빈자리 대기 중에 코레일 탭을 읽지 못했습니다. ${why}`, 'WATCH_FAILED'));
+  } finally {
+    if (watcher === w) watcher = null;
+  }
+}
+
+/** 돌고 있는 빈자리 대기를 모두 끝내고, 도는 것이 멎을 때까지 기다린다. */
+export async function ktxWatchStop(note = '빈자리 대기를 멈췄습니다.') {
+  const w = watcher;
+  if (!w) return;
+  for (const target of [...w.targets.values()]) target.done({ ok: true, found: false, stopped: true, note });
+  await w.running;
+}
+
+/**
+ * 열차 하나의 빈자리를 기다린다 — 자리가 나오거나(found), 1시간이 지나거나(expired), 멈추거나(stopped — signal), 막히면 끝난다.
+ * tabId 는 좌석을 읽은 코레일 결과 탭(없으면 옆 탭에서 새로 조회한다), onTick 은 읽을 때마다의 줄({ rows, count, tabId } · 탭을 보고 있어 쉬면 { paused }).
+ * @returns {Promise<{ok: true, found: boolean, row?: object, rows?: object[], tabId?: number, count?: number, expired?: boolean, stopped?: boolean, note?: string}|{ok: false, error: string, code: string}>}
+ */
+export function ktxWatch(input, { api = globalThis.chrome, tabId = null, signal = null, onTick = () => {}, wait = pause, now = () => Date.now(), gapMs = WATCH_GAP_MS, limitMs = WATCH_LIMIT_MS } = {}) {
+  let query;
+  try { query = checkedInput(input); } catch (error) { return Promise.resolve(failure(error.message, 'INPUT_INVALID')); }
+  if (typeof input.train !== 'string' || !/^\d{1,4}$/.test(input.train)) return Promise.resolve(failure('기다릴 열차 번호를 확인해 주세요.', 'INPUT_INVALID'));
+  if (!api?.tabs?.get || !api.tabs.reload || !api.scripting?.executeScript) return Promise.resolve(failure('옆 탭에서 코레일을 열 수 없어 빈자리를 기다리지 못합니다.', 'TAB_UNAVAILABLE'));
+  if (signal?.aborted) return Promise.resolve({ ok: true, found: false, stopped: true, note: '빈자리 대기를 멈췄습니다.' });
+  const no = trainNo(input.train), key = JSON.stringify(query);
+  if (watcher && watcher.key !== key) return Promise.resolve(failure('다른 조건의 빈자리 대기가 돌고 있습니다. 그것을 멈춘 뒤에 다시 눌러 주세요.', 'WATCH_OTHER'));
+  if (watcher?.targets.has(no)) return Promise.resolve(failure('이미 기다리고 있는 열차입니다.', 'WATCH_DUPLICATE'));
+  if (watcher && watcher.targets.size >= WATCH_MAX) return Promise.resolve(failure(`빈자리 대기는 한 번에 ${WATCH_MAX}편까지입니다.`, 'WATCH_FULL'));
+  return new Promise((resolve) => {
+    const w = watcher || (watcher = { key, query, tabId, targets: new Map(), count: 0, blanks: 0, running: null, wake: null });
+    const stop = () => target.done({ ok: true, found: false, stopped: true, note: '빈자리 대기를 멈췄습니다.' });
+    const target = { no, deadline: now() + limitMs, onTick, done: (result) => {
+      if (!w.targets.delete(no)) return;
+      if (!w.targets.size) w.wake?.();
+      signal?.removeEventListener?.('abort', stop);
+      resolve(result);
+    } };
+    w.targets.set(no, target);
+    signal?.addEventListener?.('abort', stop, { once: true });
+    if (!w.running) w.running = watchLoop(w, { api, wait, now, gapMs });
+  });
 }
 
 /** 브릿지의 조회 실행부(전용 창)로 좌석 상태를 읽는다 — 옆 탭에서 못 읽었을 때의 예비. */

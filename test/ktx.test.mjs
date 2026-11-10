@@ -19,9 +19,9 @@ const TABLE = { basis: '2026-11-01', source: 'https://www.korail.com/official.xl
   { no: ROW.no, train: ROW.train, days: 127, stops: [['부산', 313], ['서울', 471]] },
 ] };
 const result = (rows = [ROW]) => ({ ok: true, rows, basis: TABLE.basis, source: TABLE.source, url: KORAIL_SEARCH });
-function panel({ answer = () => result(), saved, parse, openTab, seats = () => new Promise(() => {}) } = {}) {
+function panel({ answer = () => result(), saved, parse, openTab, seats = () => new Promise(() => {}), watch = () => new Promise(() => {}) } = {}) {
   const doc = new JSDOM(html).window.document;
-  const store = { ...(saved || {}) }, logs = [], opened = [], openInputs = [], openSessions = [], seatCalls = [], whens = [], views = [], calls = [];
+  const store = { ...(saved || {}) }, logs = [], opened = [], openInputs = [], openSessions = [], seatCalls = [], whens = [], views = [], calls = [], watchCalls = [], notices = [];
   const d = createDispatcher({ log: (line) => logs.push(line) });
   registerKtx(d, {
     ktxSearch: (input, options) => { calls.push({ message: { task: 'ktxSearch', input } }); return answer(input, options); },
@@ -30,6 +30,7 @@ function panel({ answer = () => result(), saved, parse, openTab, seats = () => n
       opened.push(KORAIL_SEARCH); openInputs.push(input); openSessions.push(options.session);
       return openTab ? openTab(input, options) : { ok: true, filled: true, note: '채웠습니다. 코레일에서 "열차 조회"를 눌러 주세요.' };
     },
+    ktxWatch: (input, options) => { watchCalls.push({ input, options }); return watch(input, options); },
   });
   let date = INPUT.date, hour = INPUT.hour;
   const box = createKtxBox({
@@ -38,11 +39,12 @@ function panel({ answer = () => result(), saved, parse, openTab, seats = () => n
     ...(parse ? { parse } : {}),
     setWhen: (w) => { whens.push(w); if (w.date) date = w.date; if (Number.isInteger(w.hour)) hour = w.hour; },
     onView: (v) => views.push(v),
+    notify: (title, message) => notices.push([title, message]),
   });
   const $ = (id) => doc.getElementById(id);
   const change = (id, value) => { $(id).value = value; $(id).dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); };
   const choose = (view) => $('carViewControl').querySelector('[data-view="' + view + '"] svg').dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }));
-  return { calls, box, doc, $, store, d, logs, opened, openInputs, openSessions, seatCalls, change, choose, whens, views,
+  return { calls, box, doc, $, store, d, logs, opened, openInputs, openSessions, seatCalls, change, choose, whens, views, watchCalls, notices,
     setDate: (value) => { date = value; }, setHour: (value) => { hour = value; } };
 }
 
@@ -573,4 +575,87 @@ test('말로 찾기 — 조회가 도는 동안에는 받지 않고, 조회 실�
   g.choose('ktx');
   const r = await g.box.ask('대전');
   assert.deepEqual([r.ok, r.error, g.$('ktxTo').value, g.$('ktxNote').classList.contains('bad'), g.logs[0].ok], [false, 'CODE : -8003', '대전', true, false]);
+});
+
+console.log('빈자리 대기(2026-11-10 사용자 지정: "한번에 3개 까지. 예약대기가 안되는 경우만 할거야. 간격은 5초, 1시간 지나면 정지 … 알림만. 패널이 열린경우만")');
+
+const SOLD = { price: '', soldOut: true, soon: false, note: '' };
+const FREE = { price: '59,800원', soldOut: false, soon: false, note: '' };
+const train = (no, dep, gen = SOLD, spec = SOLD) => ({ ...ROW, no, dep, arr: '09:00', gen, spec });
+const FIVE = [train('101', '05:13'), train('103', '05:30'), train('105', '05:40'), train('107', '05:50'),
+  train('109', '06:00', { ...SOLD, wait: true }), train('111', '06:10', FREE), train('113', '06:20', { price: '', soldOut: false, soon: false, note: '입석 + 좌석' })];
+const sold = (options = {}) => panel({ answer: () => result(FIVE.map(({ gen, spec, ...row }) => row)), seats: () => ({ ok: true, rows: FIVE, tabId: 9 }), ...options });
+const pills = (f) => [...f.$('ktxList').querySelectorAll('.ktx-watch')];
+
+test('빈자리 대기 단추는 자리가 없고 예약대기도 안 되는 줄에만 서고, 좌석을 읽기 전에는 없다', async () => {
+  const waiting = sold({ seats: () => new Promise(() => {}) });
+  waiting.$('ktxGo').click(); await tick(); await tick();
+  assert.equal(pills(waiting).length, 0, '좌석을 읽기 전');
+  const f = sold();
+  f.$('ktxGo').click(); await tick(); await tick();
+  assert.deepEqual(pills(f).map((b) => [b.dataset.no, b.textContent, b.getAttribute('aria-pressed')]),
+    [['101', '빈자리 대기', 'false'], ['103', '빈자리 대기', 'false'], ['105', '빈자리 대기', 'false'], ['107', '빈자리 대기', 'false'], ['113', '빈자리 대기', 'false']],
+    '예약대기가 되는 109 와 자리가 있는 111 에는 없다');
+  assert.deepEqual(f.opened, [], '대기 단추는 줄 누르기(코레일로)가 아니다');
+});
+
+test('대기를 누르면 그 열차로 ktx.watch 를 돌리고(결과 탭·멈춤 신호는 ctx) 읽을 때마다 좌석을 고쳐 얹으며 자리가 나면 알리기만 한다', async () => {
+  let finish;
+  const f = sold({ watch: () => new Promise((resolve) => { finish = resolve; }) });
+  f.$('ktxGo').click(); await tick(); await tick();
+  pills(f)[0].click(); await tick();
+  const { input, options } = f.watchCalls[0];
+  assert.deepEqual(input, { ...INPUT, train: '101' });
+  assert.deepEqual([options.tabId, options.signal.aborted, typeof options.onTick], [9, false, 'function']);
+  assert.deepEqual(pills(f).map((b) => b.textContent)[0], '대기 중');
+  assert.match(f.$('ktxSeatNote').textContent, /KTX 101 05:13 빈자리 대기 시작.*5초/);
+  options.onTick({ rows: [train('103', '05:30', FREE)], count: 2, tabId: 9 });
+  assert.match(f.$('ktxSeatNote').textContent, /빈자리 대기 1편 · 2번째 확인/);
+  assert.match(f.$('ktxList').children[1].textContent, /59,800원/, '함께 읽은 다른 줄도 새로 얹는다');
+  options.onTick({ paused: true, count: 2, tabId: 9 });
+  assert.match(f.$('ktxSeatNote').textContent, /보고 있는 동안은 쉽니다/);
+  const found = train('101', '05:13', SOLD, { ...FREE, price: '83,700원' });
+  finish({ ok: true, found: true, row: found, rows: [found], tabId: 9, count: 3 }); await tick();
+  assert.match(f.$('ktxSeatNote').textContent, /KTX 101 05:13 빈자리가 났습니다 — 특실 83,700원.*줄을 눌러/);
+  assert.deepEqual(f.notices, [['KTX 빈자리 — KTX 101 05:13', '부산→서울 11/12 05시~ 특실 83,700원']]);
+  assert.equal(f.$('ktxList').children[0].classList.contains('found'), true);
+  assert.equal(pills(f).some((b) => b.dataset.no === '101'), false, '자리가 난 줄에는 대기 단추가 없다');
+  assert.deepEqual(f.opened, [], '코레일로 넘어가지 않는다 — 알리기만 한다');
+  const last = f.logs.at(-1);
+  assert.deepEqual([last.kind, last.ok, /빈자리 대기 101/.test(last.text)], ['ktx', true, true]);
+  assert.doesNotMatch(JSON.stringify(last.data.record), /signal|tabId/);
+});
+
+test('한 번에 3편까지이고, 다시 누르면 그 열차만 멈추며, 조건이 바뀌거나 다시 조회하면 모두 멈춘다', async () => {
+  const f = sold({ watch: (input, { signal }) => new Promise((resolve) => signal.addEventListener('abort', () => resolve({ ok: true, found: false, stopped: true, note: '빈자리 대기를 멈췄습니다.' }))) });
+  f.$('ktxGo').click(); await tick(); await tick();
+  for (let i = 0; i < 4; i++) { pills(f)[i].click(); await tick(); }
+  assert.equal(f.watchCalls.length, 3);
+  assert.match(f.$('ktxSeatNote').textContent, /한 번에 3편까지/);
+  assert.equal(f.$('ktxSeatNote').classList.contains('bad'), true);
+  pills(f)[1].click(); await tick(); await tick();
+  assert.deepEqual(f.watchCalls.map((c) => c.options.signal.aborted), [false, true, false]);
+  assert.match(f.$('ktxSeatNote').textContent, /KTX 103 05:30 — 빈자리 대기를 멈췄습니다/);
+  assert.deepEqual(pills(f).map((b) => b.getAttribute('aria-pressed')), ['true', 'false', 'true', 'false', 'false']);
+  f.change('ktxPax', '2'); await tick();
+  assert.deepEqual(f.watchCalls.map((c) => c.options.signal.aborted), [true, true, true]);
+  assert.equal(f.$('ktxList').children.length, 0);
+});
+
+test('대기가 막히면(차단 안내 등) 까닭을 알리고 단추를 되돌린다', async () => {
+  const f = sold({ watch: async () => ({ ok: false, code: 'GUARD_BLOCKED', error: '코레일 조회가 제한되었습니다 (-8002).' }) });
+  f.$('ktxGo').click(); await tick(); await tick();
+  pills(f)[0].click(); await tick(); await tick();
+  assert.match(f.$('ktxSeatNote').textContent, /KTX 101 05:13 빈자리 대기를 멈췄습니다 — .*-8002/);
+  assert.equal(f.$('ktxSeatNote').classList.contains('bad'), true);
+  assert.equal(pills(f)[0].getAttribute('aria-pressed'), 'false');
+  assert.deepEqual(f.notices, []);
+});
+
+test('행위 명세 ktx.watch — 확인 없는 조회이고 말로 채우지 않으며 열차 번호가 기록에 든다', () => {
+  const entry = ACTIONS.actions['ktx.watch'];
+  assert.deepEqual(Object.keys(entry.fields), ['from', 'to', 'date', 'hour', 'adults', 'train']);
+  assert.deepEqual([entry.confirm, entry.effect, entry.llm, entry.runner], [false, 'none', false, 'ktx.watch']);
+  const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
+  assert.ok(manifest.permissions.includes('notifications'));
 });

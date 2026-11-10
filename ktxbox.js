@@ -15,6 +15,36 @@ const same = (a, b) => a && b && ['from', 'to', 'date', 'hour', 'adults'].every(
 /** 알림·활동 로그의 머리 — "부산→서울 11/07 09시~". */
 const headOf = (input) => `${input.from}→${input.to} ${String(input.date).slice(5).replace('-', '/')} ${String(input.hour).padStart(2, '0')}시~`;
 
+const WATCH_MAX = 3;
+const trainNo = (no) => String(no ?? '').replace(/^0+(?=\d)/, '');
+/** 살 수 있는 자리(값이 있고 매진이 아님) — src/ktx.js openSeat 와 같다. */
+const openSeat = (seat) => !!seat && !seat.soldOut && !!seat.price;
+/** 빈자리 대기를 둘 수 있는 줄 — 좌석을 읽었고, 살 수 있는 자리가 없고, 코레일 예약대기도 안 되는 열차. */
+const watchable = (r) => /^\d{1,4}$/.test(String(r.no ?? '')) && !!(r.gen || r.spec) && !openSeat(r.gen) && !openSeat(r.spec) && !r.gen?.wait && !r.spec?.wait;
+
+/** 자리가 났다는 알림 — 시스템 알림과 짧은 소리. 어느 쪽이 안 돼도 패널의 줄에는 남는다. */
+function defaultNotify(title, message) {
+  try {
+    const c = globalThis.chrome;
+    c?.notifications?.create?.({ type: 'basic', iconUrl: c.runtime.getURL('icons/icon128.png'), title, message, priority: 2 });
+  } catch { /* 알림 권한이 없으면 소리와 줄만 */ }
+  try {
+    const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Ctx) return;
+    const audio = new Ctx();
+    for (const [at, freq] of [[0, 880], [0.25, 1175], [0.5, 1568]]) {
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.2, audio.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + at + 0.22);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(audio.currentTime + at);
+      osc.stop(audio.currentTime + at + 0.23);
+    }
+    setTimeout(() => audio.close().catch(() => {}), 1500);
+  } catch { /* 소리를 못 내도 알림과 줄은 남는다 */ }
+}
+
 /**
  * 패널은 입력·표시만 맡는다. 코레일로 넘어가는 것은 사람이 줄을 눌렀을 때뿐이다.
  * parse(text, form) 은 말로 찾기의 읽는 길(src/llm.js ktxSmart — { patch, summary, via, note, costUsd }, 못 읽으면 던진다), setWhen({ date, hour }) 은 읽은 출발일·시를
@@ -23,7 +53,7 @@ const headOf = (input) => `${input.from}→${input.to} ${String(input.date).slic
 export function createKtxBox({
   doc = document, storage = globalThis.chrome?.storage?.local, actions = null,
   when = () => ({ date: '', hour: 8 }),
-  parse = null, setWhen = () => {}, onView = () => {},
+  parse = null, setWhen = () => {}, onView = () => {}, notify = defaultNotify,
 } = {}) {
   const $ = (id) => doc.getElementById(id);
   const box = $('ktxBox');
@@ -31,7 +61,9 @@ export function createKtxBox({
   const el = { from: $('ktxFrom'), to: $('ktxTo'), pax: $('ktxPax'), swap: $('ktxSwap'), go: $('ktxGo'),
     note: $('ktxNote'), seats: $('ktxSeatNote'), list: $('ktxList'), count: $('ktxCount') };
   // seats — idle: 아직 · checking: 코레일에서 읽는 중 · done: 읽음 · failed: 못 읽음. tab·session 은 좌석을 읽은 코레일 결과 탭·전용 창의 손잡이(화면을 연 동안만 든다).
-  const st = { rows: [], input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car', seats: 'idle', session: null, tab: null };
+  const st = { rows: [], input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car', seats: 'idle', session: null, tab: null,
+    // 빈자리 대기(2026-11-10) — watch: 열차 번호 → 멈춤 손잡이(AbortController), found: 자리가 난 열차 번호.
+    watch: new Map(), found: new Set() };
   const viewWrap = $('carViewControl');
   for (const [view, icon] of [['car', 'car'], ['ktx', 'train'], ['flight', 'plane']]) {
     const b = viewWrap?.querySelector(`[data-view="${view}"]`);
@@ -89,15 +121,28 @@ export function createKtxBox({
   function paint() {
     el.go.disabled = st.busy || st.opening;
     el.count.textContent = st.rows.length ? String(st.rows.length) : '';
-    el.list.innerHTML = st.rows.map((r) => `<li class="ktx-row"><button type="button" class="ktx-go"${st.opening ? ' disabled' : ''} title="코레일 예매 화면으로">`
+    // 빈자리 대기 단추는 자리가 없고 예약대기도 안 되는 줄에만 선다(기다리는 중이면 눌러서 멈춘다).
+    const watchOf = (r) => {
+      const no = trainNo(r.no), on = st.watch.has(no);
+      if (!on && !(st.seats === 'done' && watchable(r))) return '';
+      return `<button type="button" class="ktx-watch" data-no="${esc(no)}" aria-pressed="${on}" title="${on ? '빈자리 대기를 멈춥니다' : '빈자리가 나면 알립니다 — 5초마다 다시 읽고 1시간 뒤에 멈춥니다'}">${on ? '대기 중' : '빈자리 대기'}</button>`;
+    };
+    el.list.innerHTML = st.rows.map((r) => `<li class="ktx-row${st.found.has(trainNo(r.no)) ? ' found' : ''}"><button type="button" class="ktx-go"${st.opening ? ' disabled' : ''} title="코레일 예매 화면으로">`
       + `<span class="ktx-time"><b>${esc(r.dep)}</b> → ${esc(r.arr)}${r.nextDay ? ' <small>다음 날</small>' : ''}</span>`
       + `<span class="ktx-train">${esc(r.train)} ${esc(r.no)}${r.took ? ' · ' + esc(r.took) : ''}</span>`
-      + `<span class="ktx-seats">${seatsOf(r)}</span></button></li>`).join('');
+      + `<span class="ktx-seats">${seatsOf(r)}</span></button>${watchOf(r)}</li>`).join('');
+  }
+  /** 빈자리 대기를 모두 멈춘다 — 조건이 바뀌거나 새로 조회할 때. 끝난 실행의 답은 revision 이 달라 버려진다. */
+  function stopWatches() {
+    for (const ctrl of st.watch.values()) ctrl.abort();
+    st.watch.clear();
+    st.found.clear();
   }
   const seatNote = (text = '', bad = false) => { el.seats.textContent = text; el.seats.classList.toggle('bad', bad); };
   function invalidate() {
     if (!st.input || same(st.input, inputNow())) return;
     st.revision++;
+    stopWatches();
     st.rows = [];
     st.input = null;
     st.session = null;
@@ -150,6 +195,56 @@ export function createKtxBox({
   }
 
   /**
+   * 빈자리 대기(ktx.watch, 2026-11-10 사용자 지정: "한번에 3개 까지. 예약대기가 안되는 경우만 … 간격은 5초, 1시간 지나면 정지 … 알림만. 패널이 열린경우만").
+   * 열차 하나에 실행 하나 — 자리가 나오거나, 1시간이 지나거나, 멈추거나, 막힐 때까지 돈다. 읽을 때마다 줄의 좌석을 새로 얹는다. 자리가 나면 알리기만 한다.
+   */
+  async function watch(row) {
+    const no = trainNo(row.no), input = st.input, revision = st.revision;
+    if (!input || st.watch.has(no)) return;
+    if (st.watch.size >= WATCH_MAX) { seatNote(`빈자리 대기는 한 번에 ${WATCH_MAX}편까지입니다. 하나를 멈춘 뒤에 눌러 주세요.`, true); return; }
+    const ctrl = new (doc.defaultView?.AbortController || globalThis.AbortController)();
+    const name = `${row.train} ${row.no} ${row.dep}`;
+    const live = () => revision === st.revision && st.watch.get(no) === ctrl;
+    st.watch.set(no, ctrl);
+    st.found.delete(no);
+    seatNote(`${name} 빈자리 대기 시작 — 5초마다 코레일 탭을 다시 읽습니다(${st.watch.size}편 대기 중)`);
+    paint();
+    let result;
+    try {
+      const { record } = actions.build('ktx.watch', { input: { ...input, train: String(row.no) }, by: 'ui' });
+      result = await actions.run(record, {
+        tabId: st.tab, signal: ctrl.signal,
+        onTick: (tick) => {
+          if (!live()) return;
+          if (Number.isInteger(tick.tabId)) st.tab = tick.tabId;
+          if (Array.isArray(tick.rows)) st.rows = mergeSeats(tick.rows);
+          seatNote(tick.paused ? `빈자리 대기 ${st.watch.size}편 — 코레일 탭을 보고 있는 동안은 쉽니다`
+            : `빈자리 대기 ${st.watch.size}편 · ${tick.count}번째 확인`);
+          paint();
+        },
+      });
+    } catch (error) {
+      result = { ok: false, error: messageOf(error) };
+    }
+    if (!live()) return;
+    st.watch.delete(no);
+    if (Number.isInteger(result?.tabId)) st.tab = result.tabId;
+    if (Array.isArray(result?.rows)) st.rows = mergeSeats(result.rows);
+    if (result?.found) {
+      st.found.add(no);
+      const seats = [['일반실', result.row?.gen], ['특실', result.row?.spec]].filter(([, seat]) => openSeat(seat)).map(([label, seat]) => `${label} ${seat.price}`).join(' · ');
+      const said = `${name} 빈자리가 났습니다${seats ? ` — ${seats}` : ''}. 줄을 눌러 코레일에서 예매해 주세요`;
+      seatNote(said);
+      try { notify(`KTX 빈자리 — ${name}`, `${headOf(input)} ${seats}`.trim()); } catch { /* 알림 실패는 줄의 표시를 막지 않는다 */ }
+    } else if (result?.ok) {
+      seatNote(`${name} — ${result.note || '빈자리 대기를 멈췄습니다.'}`);
+    } else {
+      seatNote(`${name} 빈자리 대기를 멈췄습니다 — ${result?.error || '코레일 탭을 읽지 못했습니다.'}`, true);
+    }
+    paint();
+  }
+
+  /**
    * 조회 — 지금 칸으로 ktx.search 기록을 지어 돌린다. 말로 찾기(ask)에서 왔으면 by llm·via 와 활동 로그 문장(text·data)을 받는다.
    * 돌려주는 { ok, rows?, error? } 는 화면의 알림(note)과 같은 내용이다 — ask 가 말로 찾기 칸에도 적는다.
    */
@@ -162,6 +257,7 @@ export function createKtxBox({
     if (input.from === input.to) return fail('출발역과 도착역이 같습니다.');
     savePref();
     const revision = ++st.revision;
+    stopWatches();
     st.busy = true;
     st.input = input;
     st.rows = [];
@@ -245,6 +341,13 @@ export function createKtxBox({
   });
   // 줄을 누르면 코레일 예매 화면으로(ktx.open) — 좌석을 읽은 결과 탭(없으면 전용 창)이 있으면 그리로, 없으면 현재 탭에 조건을 채운 예매 화면을. 좌석 선택·예매는 사람이 한다.
   el.list.addEventListener('click', async (e) => {
+    const toggle = e.target.closest?.('.ktx-watch');
+    if (toggle && actions) {
+      const no = toggle.dataset.no, row = st.rows.find((r) => trainNo(r.no) === no);
+      if (st.watch.has(no)) st.watch.get(no).abort();   // 멈춤 — 실행이 끝나며 줄과 알림을 고친다
+      else if (row) watch(row);
+      return;
+    }
     if (!e.target.closest?.('.ktx-go') || st.opening || !actions) return;
     st.opening = true;
     paint();

@@ -1,4 +1,4 @@
-# KTX 갈래 — 코레일 열차 조회. 종류: search(공식 시간표 검색, 확장 안에서) · seats(현재 좌석 상태, 브릿지) · open(줄을 눌렀을 때 코레일 화면으로). 모두 confirm 없음.
+# KTX 갈래 — 코레일 열차 조회. 종류: search(공식 시간표 검색, 확장 안에서) · seats(현재 좌석 상태, 옆 탭 → 브릿지) · open(줄을 눌렀을 때 코레일 화면으로) · watch(빈자리 대기, 2026-11-10). 모두 confirm 없음.
 # 2026-11-09: 시간표가 먼저 서고 좌석이 뒤따른다 — "현재 좌석정보랑 누르면 코에릴 예매정보로 가야지". 브릿지가 없어도 시간표는 그대로 쓴다.
 # 패널은 조건과 결과만 다루며 좌석 선택·예약·결제는 사람이 코레일에서 진행한다.
 #
@@ -8,7 +8,7 @@
 domain: ktx
 title: KTX
 log: ktx
-kinds: [search, seats, open]
+kinds: [search, seats, open, watch]
 llm:
   task: search                 # 작업 이름의 머리 — 실제 이름은 종류 파일의 llm.task(search.ktx)
   mode: per-kind

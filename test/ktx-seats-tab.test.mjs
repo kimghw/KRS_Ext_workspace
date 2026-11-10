@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { KORAIL_SEARCH, KORAIL_LIST, ktxSeats, ktxSeatsTab, ktxOpen } from '../src/ktx.js';
+import { KORAIL_SEARCH, KORAIL_LIST, WATCH_LIMIT_MS, ktxSeats, ktxSeatsTab, ktxOpen, ktxWatch, ktxWatchStop, openSeat } from '../src/ktx.js';
 import { korailFillPage } from '../src/korailfill.js';
 import { korailSeatsPage, shapeSeatRows } from '../src/korailseats.js';
 const require = createRequire(process.env.JSDOM_BASE || import.meta.url);
@@ -195,4 +195,96 @@ test('탭 안 — 결과의 줄·칸·조건을 읽고, 차단 안내는 확인�
   const none = await (await inPage(t, `${FORM}<div class="tck_confirm_no-data">해당 스케줄에 운행하는 열차가 없습니다</div>`, 'read', { waitMs: 300 })).run();
   assert.equal(none.state, 'empty');
   assert.doesNotMatch(korailSeatsPage.toString(), /예매|결제|btn_rsv|reserv/i, '좌석 선택·예매는 건드리지 않는다');
+});
+
+console.log('빈자리 대기(2026-11-10 사용자 지정: "한번에 3개 까지. 예약대기가 안되는 경우만 … 간격은 5초, 1시간 지나면 정지 … 알림만. 패널이 열린경우만")');
+
+const SOLD = { cls: 'price_box fl-l  sold_out ', text: '매진' };
+const raw = (no, dep, gen = SOLD, spec = SOLD) => ({ text: `KTX ${no} 부산 → 서울(${dep} ~ 12:00) 소요시간: 2시간 40분`, origin: '부산', dest: '서울', gen, spec });
+const FREE = { cls: 'price_box gen', text: '59,800원' };
+const soldPage = (extra = {}) => page({ rows: [raw('182', '09:59'), raw('032', '10:54')], ...extra });
+const watching = (options) => tabsApi({ open: [{ id: 1, url: 'https://eclass.krs.co.kr/', active: true }, { id: 4, url: KORAIL_LIST }], ...options });
+const W = { ...INPUT, train: '182' };
+
+test('빈자리 대기 — 결과 탭을 다시 읽다가 살 수 있는 자리가 나오면 그 줄과 함께 끝난다(좌석은 고르지 않는다)', async () => {
+  const f = watching({ reads: [soldPage(), soldPage(), page({ rows: [raw('182', '09:59', SOLD, FREE), raw('032', '10:54')] })] });
+  const ticks = [];
+  const r = await ktxWatch(W, { api: f.api, tabId: 4, wait: noWait, onTick: (t) => ticks.push(t.count) });
+  assert.deepEqual([r.ok, r.found, r.row.no, r.row.spec.price, r.tabId, r.count], [true, true, '182', '59,800원', 4, 3]);
+  assert.deepEqual(ticks, [1, 2]);
+  assert.deepEqual(f.kinds(), ['reload', 'read', 'reload', 'read', 'reload', 'read'], '조건을 다시 채우거나 조회를 누르지 않고 새로고침으로만 읽는다');
+  assert.deepEqual(f.calls.find((c) => c[2] === 'read').slice(0, 2), ['script', 4]);
+  assert.equal(f.tabs.get(1).url, 'https://eclass.krs.co.kr/');
+});
+
+test('빈자리 대기 — 열차마다 1시간이 지나면 멈추고, 멈춤 신호로 그 열차만 끝난다', async () => {
+  let clock = 0;
+  const f = watching({ reads: [soldPage()] });
+  const expired = await ktxWatch(W, { api: f.api, tabId: 4, wait: async () => { clock += 5000; }, now: () => clock });
+  assert.deepEqual([expired.ok, expired.found, expired.expired], [true, false, true]);
+  assert.match(expired.note, /1시간/);
+  assert.ok(clock >= WATCH_LIMIT_MS && clock < WATCH_LIMIT_MS + 2 * 6500, '한 시간에서 멈춘다');
+  const ctrl = new AbortController();
+  let polls = 0;
+  const g = watching({ reads: [soldPage()] });
+  const both = [ktxWatch(W, { api: g.api, tabId: 4, signal: ctrl.signal, wait: noWait }),
+    ktxWatch({ ...W, train: '032' }, { api: g.api, tabId: 4, wait: noWait, now: () => (++polls > 60 ? WATCH_LIMIT_MS * 3 : 0) })];
+  ctrl.abort();
+  const [stopped, other] = await Promise.all(both);
+  assert.deepEqual([stopped.stopped, other.expired], [true, true], '하나를 멈춰도 나머지는 계속 돈다');
+});
+
+test('빈자리 대기 — 차단 안내는 확인 뒤 새로고침 한 번, 그래도 뜨면 대기를 모두 끝낸다', async () => {
+  const guard = page({ state: 'guard', guard: GUARD, rows: [] });
+  const once = watching({ reads: [guard, page({ rows: [raw('182', '09:59', FREE)] })] });
+  assert.equal((await ktxWatch(W, { api: once.api, tabId: 4, wait: noWait })).found, true);
+  assert.deepEqual(once.kinds(), ['reload', 'read', 'reload', 'read']);
+  const twice = watching({ reads: [soldPage(), guard, guard] });
+  const all = await Promise.all([ktxWatch(W, { api: twice.api, tabId: 4, wait: noWait }), ktxWatch({ ...W, train: '032' }, { api: twice.api, tabId: 4, wait: noWait })]);
+  assert.deepEqual(all.map((r) => [r.ok, r.code]), [[false, 'GUARD_BLOCKED'], [false, 'GUARD_BLOCKED']]);
+  assert.match(all[0].error, /-8002/);
+  assert.equal(twice.kinds().filter((k) => k === 'reload').length, 3, '막힌 뒤에는 더 읽지 않는다');
+});
+
+test('빈자리 대기 — 한 번에 3편까지·같은 조건만, 탭이 다른 화면으로 가면 멈추고 보고 있는 동안은 새로고침하지 않는다', async () => {
+  const f = watching({ reads: [soldPage()] });
+  const ctrl = new AbortController();
+  const runs = ['182', '032', '034'].map((train) => ktxWatch({ ...W, train }, { api: f.api, tabId: 4, signal: ctrl.signal, wait: () => new Promise((r) => setImmediate(r)) }));
+  assert.equal((await ktxWatch({ ...W, train: '036' }, { api: f.api, tabId: 4 })).code, 'WATCH_FULL');
+  assert.equal((await ktxWatch({ ...W, train: '0182' }, { api: f.api, tabId: 4 })).code, 'WATCH_DUPLICATE');
+  assert.equal((await ktxWatch({ ...W, adults: 2 }, { api: f.api, tabId: 4 })).code, 'WATCH_OTHER');
+  assert.equal((await ktxWatch({ ...W, train: 'x' }, { api: f.api, tabId: 4 })).code, 'INPUT_INVALID');
+  await ktxWatchStop();
+  assert.deepEqual((await Promise.all(runs)).map((r) => r.stopped), [true, true, true]);
+
+  const gone = watching({ reads: [soldPage()] });
+  let n = 0;
+  const left = await ktxWatch(W, { api: gone.api, tabId: 4, wait: async () => { if (++n === 4) gone.tabs.get(4).url = 'https://www.korail.com/ticket/reservation'; } });
+  assert.equal(left.code, 'WATCH_TAB_GONE');
+
+  const front = watching({ reads: [soldPage()] });
+  front.tabs.get(4).active = true;
+  const paused = [];
+  let turns = 0;
+  const viewed = await ktxWatch(W, { api: front.api, tabId: 4, wait: async () => { turns++; }, now: () => (turns > 3 ? WATCH_LIMIT_MS * 2 : 0), onTick: (t) => paused.push(t.paused) });
+  assert.equal(viewed.expired, true);
+  assert.deepEqual([paused.every(Boolean), paused.length > 0, front.kinds()], [true, true, []], '보고 있는 탭은 건드리지 않는다');
+});
+
+test('빈자리 대기 — 결과 탭이 없으면 옆 탭에서 한 번 조회해 세우고, 새 좌석 조회는 돌던 대기를 끝낸 뒤에 간다', async () => {
+  const f = tabsApi({ open: [{ id: 4, url: KORAIL_SEARCH }], reads: [soldPage(), page({ rows: [raw('182', '09:59', FREE)] })] });
+  const r = await ktxWatch(W, { api: f.api, tabId: null, wait: noWait });
+  assert.deepEqual([r.found, r.tabId], [true, 4]);
+  assert.deepEqual(f.kinds().slice(-5), ['fill', 'submit', 'read', 'reload', 'read']);
+  const g = watching({ reads: [soldPage()] });
+  const run = ktxWatch(W, { api: g.api, tabId: 4, wait: () => new Promise((res) => setImmediate(res)) });
+  const seats = await ktxSeatsTab(INPUT, { api: g.api, wait: noWait });
+  assert.equal((await run).stopped, true);
+  assert.equal(seats.ok, true);
+});
+
+test('줄 꼴 — 예약대기를 걸 수 있는 칸은 wait 로 가린다', () => {
+  const rows = shapeSeatRows([raw('024', '09:26', { cls: 'price_box fl-l  yms_wait ', text: '입석 + 좌석 예약대기' }, { cls: 'price_box fl-l  sold_out_wait ', text: '매진' }), raw('182', '09:59')], INPUT);
+  assert.deepEqual([rows[0].gen.wait, rows[0].spec.wait, rows[0].spec.soldOut, rows[1].gen.wait, openSeat(rows[1].gen)], [true, true, true, undefined, false]);
+  assert.equal(openSeat({ price: '59,800원', soldOut: false, soon: true, note: '' }), true);
 });

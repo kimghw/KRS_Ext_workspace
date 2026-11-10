@@ -8,7 +8,7 @@
  * 'requery': 결과 화면의 조회 단추로 같은 조건을 다시 조회한다(단추가 없으면 clicked false — 부른 쪽이 새로고침한다).
  * 차단 안내(-8xxx 등)는 확인을 눌러 닫고 guard 로 돌려준다. 공지는 창닫기만 누른다.
  * @param {'submit'|'read'|'requery'} step
- * @param {{ktx?: boolean, waitMs?: number}} [opts]
+ * @param {{ktx?: boolean, waitMs?: number, have?: string[]}} [opts]
  * @returns {Promise<{url: string, state: string, clicked: boolean, guard: {code: string, message: string}|null, rows: object[], cond: object}>}
  */
 export async function korailSeatsPage(step, opts = {}) {
@@ -91,7 +91,11 @@ export async function korailSeatsPage(step, opts = {}) {
     await sleep(400); // 줄이 선 뒤에 뒤늦게 뜨는 차단 안내를 본다.
     if (guardOf()) state = 'guard';
   }
-  if (state === 'rows' && opts.ktx) {
+  // 빈자리 대기는 지켜보는 열차(have)가 이미 첫 화면에 다 있으면 KTX 탭을 누르지 않는다 — 5초마다 도는 조회에 요청을 더하지 않는다.
+  const named = (no) => new RegExp(`(?:KTX(?:-[가-힣A-Za-z]+)?|청룡)\\s*0*${no}(?!\\d)`);
+  const haveAll = Array.isArray(opts.have) && opts.have.length > 0 && opts.have.every((no) => /^\d{1,4}$/.test(no)
+    && [...document.querySelectorAll(ROWS)].some((li) => named(no).test(text(li))));
+  if (state === 'rows' && opts.ktx && !haveAll) {
     const tab = document.querySelector('ul.tab_bar button:has(div.korail_logo_tab)');
     const active = tab && (/active|current/i.test(tab.className) || tab.getAttribute('aria-selected') === 'true' || tab.getAttribute('aria-pressed') === 'true');
     if (tab && !active) {
@@ -118,14 +122,18 @@ export async function korailSeatsPage(step, opts = {}) {
   return answer({ state, rows });
 }
 
-/** 일반실·특실 칸 하나 → 패널의 좌석 꼴. 값도 매진도 아니면 코레일이 적은 말이 상태다("입석 + 좌석 예약대기"). */
+/**
+ * 일반실·특실 칸 하나 → 패널의 좌석 꼴. 값도 매진도 아니면 코레일이 적은 말이 상태다("입석 + 좌석 예약대기").
+ * wait 는 코레일 예약대기를 걸 수 있는 칸이다(클래스 yms_wait·sold_out_wait 또는 "예약대기" 글) — 그런 열차는 빈자리 대기를 두지 않는다.
+ */
 function shapeSeat(box) {
   if (!box || typeof box !== 'object') return null;
   const words = String(box.text || ''), cls = String(box.cls || '');
   const price = words.match(/[\d,]+\s*원/)?.[0].replace(/\s+/g, '') || '';
   const soon = /sold_out_soon/.test(cls) || words.includes('매진임박');
-  const soldOut = (/\bsold_out\b/.test(cls) && !/sold_out_soon/.test(cls)) || words.replace(/매진임박/g, '').includes('매진');
-  return { price, soldOut, soon, note: price || soldOut ? '' : words.slice(0, 40) };
+  const soldOut = (/\bsold_out(_wait)?\b/.test(cls) && !/sold_out_soon/.test(cls)) || words.replace(/매진임박/g, '').includes('매진');
+  const wait = /_wait\b/.test(cls) || words.includes('예약대기');
+  return { price, soldOut, soon, note: price || soldOut ? '' : words.slice(0, 40), ...(wait ? { wait: true } : {}) };
 }
 
 /** 탭에서 읽은 줄 → 패널의 줄. 요청한 구간의 KTX 이고 출발 시 이후인 것만 남긴다(옆 역·다른 열차종류는 버린다). */
