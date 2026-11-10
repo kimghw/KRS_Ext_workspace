@@ -217,13 +217,14 @@ test('빈자리 대기 — 결과 탭을 다시 읽다가 살 수 있는 자리�
   assert.equal(f.tabs.get(1).url, 'https://eclass.krs.co.kr/');
 });
 
-test('빈자리 대기 — 열차마다 1시간이 지나면 멈추고, 멈춤 신호로 그 열차만 끝난다', async () => {
+test('빈자리 대기 — 열차마다 24시간이 지나면 멈추고, 멈춤 신호로 그 열차만 끝난다', async () => {
   let clock = 0;
   const f = watching({ reads: [soldPage()] });
   const expired = await ktxWatch(W, { api: f.api, tabId: 4, wait: async () => { clock += 5000; }, now: () => clock });
   assert.deepEqual([expired.ok, expired.found, expired.expired], [true, false, true]);
-  assert.match(expired.note, /1시간/);
-  assert.ok(clock >= WATCH_LIMIT_MS && clock < WATCH_LIMIT_MS + 2 * 6500, '한 시간에서 멈춘다');
+  assert.equal(WATCH_LIMIT_MS, 24 * 60 * 60 * 1000);
+  assert.match(expired.note, /24시간/);
+  assert.ok(clock >= WATCH_LIMIT_MS && clock < WATCH_LIMIT_MS + 2 * 6500, '24시간에서 멈춘다');
   const ctrl = new AbortController();
   let polls = 0;
   const g = watching({ reads: [soldPage()] });
@@ -246,16 +247,16 @@ test('빈자리 대기 — 차단 안내는 확인 뒤 새로고침 한 번, 그
   assert.equal(twice.kinds().filter((k) => k === 'reload').length, 3, '막힌 뒤에는 더 읽지 않는다');
 });
 
-test('빈자리 대기 — 한 번에 3편까지·같은 조건만, 탭이 다른 화면으로 가면 멈추고 보고 있는 동안은 새로고침하지 않는다', async () => {
+test('빈자리 대기 — 한 번에 10편까지·같은 조건만, 탭이 다른 화면으로 가면 멈추고 보고 있는 동안은 새로고침하지 않는다', async () => {
   const f = watching({ reads: [soldPage()] });
   const ctrl = new AbortController();
-  const runs = ['182', '032', '034'].map((train) => ktxWatch({ ...W, train }, { api: f.api, tabId: 4, signal: ctrl.signal, wait: () => new Promise((r) => setImmediate(r)) }));
-  assert.equal((await ktxWatch({ ...W, train: '036' }, { api: f.api, tabId: 4 })).code, 'WATCH_FULL');
+  const runs = ['182', '032', '034', '036', '038', '040', '042', '044', '046', '048'].map((train) => ktxWatch({ ...W, train }, { api: f.api, tabId: 4, signal: ctrl.signal, wait: () => new Promise((r) => setImmediate(r)) }));
+  assert.equal((await ktxWatch({ ...W, train: '050' }, { api: f.api, tabId: 4 })).code, 'WATCH_FULL');
   assert.equal((await ktxWatch({ ...W, train: '0182' }, { api: f.api, tabId: 4 })).code, 'WATCH_DUPLICATE');
   assert.equal((await ktxWatch({ ...W, adults: 2 }, { api: f.api, tabId: 4 })).code, 'WATCH_OTHER');
   assert.equal((await ktxWatch({ ...W, train: 'x' }, { api: f.api, tabId: 4 })).code, 'INPUT_INVALID');
   await ktxWatchStop();
-  assert.deepEqual((await Promise.all(runs)).map((r) => r.stopped), [true, true, true]);
+  assert.deepEqual((await Promise.all(runs)).map((r) => r.stopped), Array(10).fill(true));
 
   const gone = watching({ reads: [soldPage()] });
   let n = 0;

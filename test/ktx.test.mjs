@@ -657,19 +657,25 @@ test('대기를 누르면 그 열차로 ktx.watch 를 돌리고(결과 탭·멈�
   assert.doesNotMatch(JSON.stringify(last.data.record), /signal|tabId/);
 });
 
-test('한 번에 3편까지이고, 다시 누르면 그 열차만 멈추며, 조건이 바뀌거나 다시 조회하면 모두 멈춘다', async () => {
-  const f = sold({ watch: (input, { signal }) => new Promise((resolve) => signal.addEventListener('abort', () => resolve({ ok: true, found: false, stopped: true, note: '빈자리 대기를 멈췄습니다.' }))) });
+test('한 번에 10편까지이고, 다시 누르면 그 열차만 멈추며, 조건이 바뀌거나 다시 조회하면 모두 멈춘다', async () => {
+  // 매진 열 한 편 — 목록은 10편까지라 열한 번째는 코레일이 보인 열차로 더해지지 않는다. 대기 단추 열 개를 다 누른 뒤 하나를 멈추고 다시 건다.
+  const ELEVEN = Array.from({ length: 10 }, (_, i) => train(String(201 + 2 * i), `05:${String(10 + i).padStart(2, '0')}`));
+  const f = sold({
+    answer: () => result(ELEVEN.map(({ gen, spec, ...row }) => row)), seats: () => ({ ok: true, rows: ELEVEN, tabId: 9 }),
+    watch: (input, { signal }) => new Promise((resolve) => signal.addEventListener('abort', () => resolve({ ok: true, found: false, stopped: true, note: '빈자리 대기를 멈췄습니다.' }))),
+  });
   f.$('ktxGo').click(); await tick(); await tick();
-  for (let i = 0; i < 4; i++) { pills(f)[i].click(); await tick(); }
-  assert.equal(f.watchCalls.length, 3);
-  assert.match(f.$('ktxSeatNote').textContent, /한 번에 3편까지/);
-  assert.equal(f.$('ktxSeatNote').classList.contains('bad'), true);
+  assert.equal(pills(f).length, 10);
+  assert.match(pills(f)[0].title, /24시간 뒤에 멈춥니다/);
+  for (let i = 0; i < 10; i++) { pills(f)[i].click(); await tick(); }
+  assert.equal(f.watchCalls.length, 10);
+  assert.match(f.$('ktxSeatNote').textContent, /10편 대기 중/);
   pills(f)[1].click(); await tick(); await tick();
-  assert.deepEqual(f.watchCalls.map((c) => c.options.signal.aborted), [false, true, false]);
-  assert.match(f.$('ktxSeatNote').textContent, /KTX 103 05:30 — 빈자리 대기를 멈췄습니다/);
-  assert.deepEqual(pills(f).map((b) => b.getAttribute('aria-pressed')), ['true', 'false', 'true', 'false', 'false']);
+  assert.deepEqual(f.watchCalls.map((c) => c.options.signal.aborted), [false, true, ...Array(8).fill(false)]);
+  assert.match(f.$('ktxSeatNote').textContent, /KTX 203 05:11 — 빈자리 대기를 멈췄습니다/);
+  assert.deepEqual(pills(f).map((b) => b.getAttribute('aria-pressed')), ['true', 'false', ...Array(8).fill('true')]);
   f.change('ktxPax', '2'); await tick();
-  assert.deepEqual(f.watchCalls.map((c) => c.options.signal.aborted), [true, true, true]);
+  assert.deepEqual(f.watchCalls.map((c) => c.options.signal.aborted), Array(10).fill(true));
   assert.equal(f.$('ktxList').children.length, 0);
 });
 

@@ -216,10 +216,11 @@ export async function ktxSeatsTab(query, { api = globalThis.chrome, onStage = ()
 
 // ── 빈자리 대기(2026-11-10 사용자 지정: "한번에 3개 까지. 예약대기가 안되는 경우만 … 간격은 5초, 1시간 지나면 정지 … 알림만. 패널이 열린경우만") ──
 // 옆 코레일 탭의 결과 화면을 다시 읽어 지켜보는 열차에 살 수 있는 자리가 나오면 알린다. 좌석을 고르거나 예매하지 않는다.
-// 조회 하나(같은 조건·같은 탭)에 열차를 셋까지 얹는다 — 열차마다 ktxWatch 한 번이고, 도는 것은 하나다. 패널의 페이지에서만 돈다(닫히면 같이 끝난다).
-export const WATCH_MAX = 3;
+// 조회 하나(같은 조건·같은 탭)에 열차를 열 편까지 얹는다 — 열차마다 ktxWatch 한 번이고, 도는 것은 하나다. 패널의 페이지에서만 돈다(닫히면 같이 끝난다).
+// 편수·시간은 처음의 3편·1시간에서 10편·24시간으로 바꿨다(2026-11-10 사용자 지정: "빈자리 대기에 적용해줘" — 한 번에 10편, 열차마다 24시간). 간격은 그대로 5초.
+export const WATCH_MAX = 10;
 export const WATCH_GAP_MS = 5000;
-export const WATCH_LIMIT_MS = 60 * 60 * 1000;
+export const WATCH_LIMIT_MS = 24 * 60 * 60 * 1000;
 const WATCH_BLANKS = 3;
 let watcher = null;
 const trainNo = (no) => String(no ?? '').replace(/^0+(?=\d)/, '');
@@ -265,7 +266,7 @@ async function watchLoop(w, { api, wait, now, gapMs }) {
         // 기다리는 열차가 없어지면(멈춤) 간격을 다 채우지 않고 깬다.
         await Promise.race([wait(gapMs), new Promise((resolve) => { w.wake = resolve; })]);
         for (const target of [...w.targets.values()]) {
-          if (now() >= target.deadline) target.done({ ok: true, found: false, expired: true, note: '1시간이 지나 빈자리 대기를 멈췄습니다.' });
+          if (now() >= target.deadline) target.done({ ok: true, found: false, expired: true, note: '24시간이 지나 빈자리 대기를 멈췄습니다.' });
         }
         if (!w.targets.size) break;
         const at = await Promise.resolve().then(() => api.tabs.get(w.tabId)).catch(() => null);
@@ -311,7 +312,7 @@ export async function ktxWatchStop(note = '빈자리 대기를 멈췄습니다.'
 }
 
 /**
- * 열차 하나의 빈자리를 기다린다 — 자리가 나오거나(found), 1시간이 지나거나(expired), 멈추거나(stopped — signal), 막히면 끝난다.
+ * 열차 하나의 빈자리를 기다린다 — 자리가 나오거나(found), 24시간이 지나거나(expired), 멈추거나(stopped — signal), 막히면 끝난다.
  * tabId 는 좌석을 읽은 코레일 결과 탭(없으면 옆 탭에서 새로 조회한다), onTick 은 읽을 때마다의 줄({ rows, count, tabId } · 탭을 보고 있어 쉬면 { paused }).
  * onFound({ row, tabId }) 를 주면 자리가 났을 때 그것(예약 — 패널이 ktx.reserve 를 돌린다)이 끝나기를 기다려 그 답을 reserve 로 싣는다.
  * @returns {Promise<{ok: true, found: boolean, row?: object, rows?: object[], tabId?: number, count?: number, expired?: boolean, stopped?: boolean, note?: string}|{ok: false, error: string, code: string}>}

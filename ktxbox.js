@@ -4,7 +4,7 @@
 // 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 날짜 줄 아래의 말로 찾기 칸(sidepanel.js runKtxAsk)이
 // KTX 보기에서는 여기의 ask(text) 로 온다: parse(src/llm.js ktxSmart)가 읽은 조각을 지금 칸 위에 얹어 역·인원은 이 칸에, 출발일·시는 날짜 줄(setWhen)에 채우고 바로 조회한다.
 import { TRANSPORT_ICON } from './src/icons.js';
-import { KTX_STATIONS, KTX_LIMIT } from './src/ktx.js';
+import { KTX_STATIONS, KTX_LIMIT, WATCH_MAX } from './src/ktx.js';
 
 export const PREF_KEY = 'ktxPref';
 const DEFAULT = { from: '부산', to: '서울', adults: 1 };
@@ -15,7 +15,6 @@ const same = (a, b) => a && b && ['from', 'to', 'date', 'hour', 'adults'].every(
 /** 알림·활동 로그의 머리 — "부산→서울 11/07 09시~". */
 const headOf = (input) => `${input.from}→${input.to} ${String(input.date).slice(5).replace('-', '/')} ${String(input.hour).padStart(2, '0')}시~`;
 
-const WATCH_MAX = 3;
 const WEEKDAY = '일월화수목금토';
 /** 날을 넘긴 열차의 출발 날짜 — "11/14(토)". */
 const dayLabel = (date) => `${String(date).slice(5).replace('-', '/')}(${WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()] || ''})`;
@@ -136,7 +135,7 @@ export function createKtxBox({
       const no = trainNo(r.no), on = st.watch.has(no);
       if (!on && !(st.seats === 'done' && watchable(r))) return '';
       const hint = el.reserve?.checked ? '빈자리가 나면 예약까지 합니다(결제는 직접)' : '빈자리가 나면 알립니다';
-      return `<button type="button" class="ktx-watch" data-no="${esc(no)}" aria-pressed="${on}" title="${on ? '빈자리 대기를 멈춥니다' : `${hint} — 5초마다 다시 읽고 1시간 뒤에 멈춥니다`}">${on ? '대기 중' : '빈자리 대기'}</button>`;
+      return `<button type="button" class="ktx-watch" data-no="${esc(no)}" aria-pressed="${on}" title="${on ? '빈자리 대기를 멈춥니다' : `${hint} — 5초마다 다시 읽고 24시간 뒤에 멈춥니다`}">${on ? '대기 중' : '빈자리 대기'}</button>`;
     };
     el.list.innerHTML = st.rows.map((r, i) => `<li class="ktx-row${st.found.has(trainNo(r.no)) ? ' found' : ''}"><button type="button" class="ktx-go" data-i="${i}"${st.opening ? ' disabled' : ''} title="코레일 예매 화면으로">`
       + `<span class="ktx-time">${otherDay(r) ? `<small class="ktx-day">${esc(dayLabel(dayOf(r)))}</small> ` : ''}<b>${esc(r.dep)}</b> → ${esc(r.arr)}${r.nextDay ? ' <small>다음 날</small>' : ''}</span>`
@@ -212,7 +211,7 @@ export function createKtxBox({
 
   /**
    * 빈자리 대기(ktx.watch, 2026-11-10 사용자 지정: "한번에 3개 까지. 예약대기가 안되는 경우만 … 간격은 5초, 1시간 지나면 정지 … 알림만. 패널이 열린경우만").
-   * 열차 하나에 실행 하나 — 자리가 나오거나, 1시간이 지나거나, 멈추거나, 막힐 때까지 돈다. 읽을 때마다 줄의 좌석을 새로 얹는다. 자리가 나면 알리기만 한다.
+   * 한 번에 10편, 열차마다 24시간(2026-11-10 사용자 지정: "빈자리 대기에 적용해줘" — 한 번에 10편, 열차마다 24시간). 열차 하나에 실행 하나 — 자리가 나오거나, 24시간이 지나거나, 멈추거나, 막힐 때까지 돈다. 읽을 때마다 줄의 좌석을 새로 얹는다. 자리가 나면 알리기만 한다.
    */
   async function watch(row) {
     const no = trainNo(row.no), input = st.input, revision = st.revision;
