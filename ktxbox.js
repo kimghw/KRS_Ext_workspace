@@ -1,4 +1,4 @@
-// 차량 탭의 KTX. 공식 시간표를 확장 안에서 즉시 보이고, 브릿지가 코레일에서 읽은 좌석 상태를 뒤이어 줄에 얹는다.
+// 차량 탭의 KTX. 공식 시간표를 확장 안에서 즉시 보이고, 옆 탭의 코레일에서 읽은 좌석 상태를 뒤이어 줄에 얹는다(2026-11-10 — 옆 탭에서 못 읽으면 브릿지의 전용 창).
 // 2026-11-09 사용자 지정: "코레일 바로 가기 말고.. 현재 좌석정보랑 누르면 코에릴 예매정보로 가야지" — 줄을 누르면 코레일 예매 화면으로 간다(ktx.open). 좌석 선택·예매는 사람이.
 // 차량·KTX·항공권 전환은 이 파일이 맡으며 패널을 열 때의 기본은 차량이다(2026-11-05).
 // 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 날짜 줄 아래의 말로 찾기 칸(sidepanel.js runKtxAsk)이
@@ -30,8 +30,8 @@ export function createKtxBox({
   if (!box) return { toggle() {}, invalidate() {} };
   const el = { from: $('ktxFrom'), to: $('ktxTo'), pax: $('ktxPax'), swap: $('ktxSwap'), go: $('ktxGo'),
     note: $('ktxNote'), seats: $('ktxSeatNote'), list: $('ktxList'), count: $('ktxCount') };
-  // seats — idle: 아직 · checking: 코레일에서 읽는 중 · done: 읽음 · failed: 못 읽음. session 은 좌석 조회가 연 코레일 결과 창의 손잡이(화면을 연 동안만 든다).
-  const st = { rows: [], input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car', seats: 'idle', session: null };
+  // seats — idle: 아직 · checking: 코레일에서 읽는 중 · done: 읽음 · failed: 못 읽음. tab·session 은 좌석을 읽은 코레일 결과 탭·전용 창의 손잡이(화면을 연 동안만 든다).
+  const st = { rows: [], input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car', seats: 'idle', session: null, tab: null };
   const viewWrap = $('carViewControl');
   for (const [view, icon] of [['car', 'car'], ['ktx', 'train'], ['flight', 'plane']]) {
     const b = viewWrap?.querySelector(`[data-view="${view}"]`);
@@ -101,6 +101,7 @@ export function createKtxBox({
     st.rows = [];
     st.input = null;
     st.session = null;
+    st.tab = null;
     st.seats = 'idle';
     seatNote();
     paint();
@@ -120,16 +121,17 @@ export function createKtxBox({
     return merged.sort((a, b) => a.dep.localeCompare(b.dep));
   }
 
-  /** 좌석 상태 읽기 — 시간표가 선 뒤에 뒤따른다. 수십 초 걸릴 수 있어 기다리지 않는다. 실패해도 시간표는 그대로 둔다. */
+  /** 좌석 상태 읽기 — 시간표가 선 뒤에 뒤따른다. 옆 탭에서 코레일을 조회하느라 수십 초 걸릴 수 있어 기다리지 않는다. 실패해도 시간표는 그대로 둔다. */
   async function checkSeats(input, revision) {
     st.seats = 'checking';
     st.session = null;
-    seatNote('코레일에서 좌석 확인 중 — 처음에는 조회 창이 열리며 1분쯤 걸릴 수 있습니다');
+    st.tab = null;
+    seatNote('코레일에서 좌석 확인 중 — 옆 탭에서 조회합니다');
     paint();
     let result;
     try {
       const { record } = actions.build('ktx.seats', { input, by: 'ui' });
-      result = await actions.run(record);
+      result = await actions.run(record, { onStage: (stage) => { if (revision === st.revision && st.seats === 'checking') seatNote(stage); } });
     } catch (error) {
       result = { ok: false, error: messageOf(error) };
     }
@@ -137,6 +139,7 @@ export function createKtxBox({
     if (result?.ok) {
       st.rows = mergeSeats(Array.isArray(result.rows) ? result.rows : []);
       st.session = result.session || null;
+      st.tab = Number.isInteger(result.tabId) ? result.tabId : null;
       st.seats = 'done';
       seatNote(`코레일 첫 화면의 ${result.rows?.length || 0}편까지 좌석을 읽었습니다. 줄을 누르면 코레일로 갑니다`);
     } else {
@@ -163,6 +166,7 @@ export function createKtxBox({
     st.input = input;
     st.rows = [];
     st.session = null;
+    st.tab = null;
     st.seats = 'idle';
     seatNote();
     paint();
@@ -239,7 +243,7 @@ export function createKtxBox({
   for (const event of ['input', 'change']) doc.addEventListener(event, (e) => {
     if (['date', 'hourStart'].includes(e.target.id)) invalidate();
   });
-  // 줄을 누르면 코레일 예매 화면으로(ktx.open) — 좌석 조회가 연 결과 창이 있으면 그 창을, 없으면 현재 탭에 조건을 채운 예매 화면을. 좌석 선택·예매는 사람이 한다.
+  // 줄을 누르면 코레일 예매 화면으로(ktx.open) — 좌석을 읽은 결과 탭(없으면 전용 창)이 있으면 그리로, 없으면 현재 탭에 조건을 채운 예매 화면을. 좌석 선택·예매는 사람이 한다.
   el.list.addEventListener('click', async (e) => {
     if (!e.target.closest?.('.ktx-go') || st.opening || !actions) return;
     st.opening = true;
@@ -247,7 +251,7 @@ export function createKtxBox({
     try {
       const input = inputNow();
       const { record } = actions.build('ktx.open', { input, by: 'ui' });
-      const result = await actions.run(record, { session: st.session, onStage: (stage) => note(`${headOf(input)} · ${stage}`) });
+      const result = await actions.run(record, { session: st.session, tabId: st.tab, onStage: (stage) => note(`${headOf(input)} · ${stage}`) });
       if (result?.ok) note(result.note || '');
       else note(result?.error || '코레일 화면으로 가지 못했습니다.', true);
     } catch (error) { note(messageOf(error), true); }

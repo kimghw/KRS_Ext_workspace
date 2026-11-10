@@ -462,13 +462,13 @@ export function registerFlight(d)
 // ktx.js
 export function registerKtx(d)
   'ktx.search' (rec, { onStage }) → ktxSearch(rec.input, { onStage })   // 조회(confirm false) — 확장에 넣은 공식 시간표를 검색. { ok, rows, basis, source, url } 반환.
-  'ktx.seats' (rec, { onStage }) → ktxSeats(rec.input, { onStage })   // 좌석 상태(confirm false) — 브릿지 ktxSearch → entry.mjs → ktx.mjs → Python worker.py. { ok, rows, session } 반환.
-  'ktx.open' (rec, { onStage, session }) → ktxOpen(rec.input, { onStage, session })   // 줄 누르기(confirm false, effect draft) — 결과 창을 앞으로, 없으면 예매 화면에 조건 채워 두기. 좌석 선택·예매는 사람이 한다.
+  'ktx.seats' (rec, { onStage }) → ktxSeats(rec.input, { onStage })   // 좌석 상태(confirm false) — 옆 탭(ktxSeatsTab: korailFillPage → korailSeatsPage)에서 읽어 { ok, rows, tabId }, 못 읽으면 브릿지 ktxSearch → entry.mjs → ktx.mjs → Python worker.py 로 { ok, rows, session }.
+  'ktx.open' (rec, { onStage, session, tabId }) → ktxOpen(rec.input, { onStage, session, tabId })   // 줄 누르기(confirm false, effect draft) — 결과 탭·창을 앞으로, 없으면 예매 화면에 조건 채워 두기. 좌석 선택·예매는 사람이 한다.
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.
 
-KTX 의 `ktx.search` 는 확장에 넣은 공식 시간표만 검색하고 네이티브 호스트를 부르지 않습니다. `ktx.seats` 는 기록의 역·날짜·시·인원만 `com.krs.meetingroom` 으로 보내고, `native/entry.mjs` 가 KTX 요청만 `ktx.mjs` 로 보내 전용 Python 의 조회 코드를 실행합니다. 받은 `session` 은 패널이 화면을 연 동안만 들고 있다가 `ktx.open` 의 ctx 로 넘깁니다(기록에 넣지 않습니다). `ktx.open` 은 그 결과 창을 앞으로 가져오고, 없으면 코레일 탭을 열어 `executeScript` 로 역·날짜·시각·인원 팝업을 눌러 조건을 채워 둡니다. 조회 제출은 하지 않고, 코레일 차단 안내가 떠 있으면 멈춰 까닭을 돌려줍니다. 호스트와 디스패처는 재시도하지 않습니다(차단 안내에 대한 같은 조건 재조회는 실행부 안의 흐름). 자세히는 [KTX 시간표·좌석 조회](ktx-bridge.md)를 참고합니다.
+KTX 의 `ktx.search` 는 확장에 넣은 공식 시간표만 검색하고 네이티브 호스트를 부르지 않습니다. `ktx.seats` 는 먼저 사이드 패널이 붙은 창의 코레일 탭에서 읽습니다(2026-11-10) — 코레일 승차권 조회 탭을 다시 쓰거나 뒤쪽에 하나 열어 `executeScript` 로 조건을 채우고 열차 조회를 눌러 결과 첫 화면의 줄을 읽으며, 차단 안내는 닫고 같은 조건으로 두 번까지 다시 조회합니다(이 흐름은 `src/ktx.js ktxSeatsTab` 안에 있습니다). 거기서 못 읽으면 기록의 역·날짜·시·인원만 `com.krs.meetingroom` 으로 보내고, `native/entry.mjs` 가 KTX 요청만 `ktx.mjs` 로 보내 전용 Python 의 조회 코드를 실행합니다. 받은 `tabId`(옆 탭)·`session`(전용 창)은 패널이 화면을 연 동안만 들고 있다가 `ktx.open` 의 ctx 로 넘깁니다(기록에 넣지 않습니다). `ktx.open` 은 그 결과 탭·창을 앞으로 가져오고, 없으면 코레일 탭을 열어 `executeScript` 로 역·날짜·시각·인원 팝업을 눌러 조건을 채워 둡니다. 조회 제출은 하지 않고, 코레일 차단 안내가 떠 있으면 멈춰 까닭을 돌려줍니다. 호스트와 디스패처는 재시도하지 않습니다(차단 안내에 대한 같은 조건 재조회는 실행부 안의 흐름). 자세히는 [KTX 시간표·좌석 조회](ktx-bridge.md)를 참고합니다.
 
 ### 6.7 `src/llm.js` — LLM 쪽 어댑터(2차 물결, U3)
 

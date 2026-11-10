@@ -1,5 +1,7 @@
-# KTX 좌석 상태 — 브릿지의 조회 실행부(native/entry.mjs → ktx.mjs → ktx-python/worker.py)가 코레일 결과 첫 화면을 읽는다(2026-11-09 사용자 지정: "현재 좌석정보랑 누르면 코에릴 예매정보로 가야지").
-# 시간표(ktx.search)가 먼저 서고 이것이 뒤따라 줄에 좌석을 얹는다. 좌석을 고르거나 예매하지 않는다. 받은 session 은 그 결과 창을 앞으로 가져오는 손잡이다(ktx.open 의 ctx — 기록에 넣지 않는다).
+# KTX 좌석 상태 — 코레일 결과 첫 화면을 읽는다(2026-11-09 사용자 지정: "현재 좌석정보랑 누르면 코에릴 예매정보로 가야지").
+# 사이드 패널이 붙은 창의 코레일 탭에서 조건을 채우고 열차 조회를 눌러 읽는다(src/korailfill.js · src/korailseats.js — 2026-11-10 사용자 지정: "사이드 패널 옆에 열린 탭중에 하나로 하면 안될까?").
+# 그 창에 코레일 승차권 조회 탭이 없으면 뒤쪽 탭을 하나 연다. 옆 탭에서 못 읽으면 브릿지의 조회 실행부(native/entry.mjs → ktx.mjs → ktx-python/worker.py)의 전용 창에서 읽는다.
+# 시간표(ktx.search)가 먼저 서고 이것이 뒤따라 줄에 좌석을 얹는다. 좌석을 고르거나 예매하지 않는다. 받은 tabId(옆 탭)·session(전용 창)은 그 결과 화면으로 넘어가는 손잡이다(ktx.open 의 ctx — 기록에 넣지 않는다).
 id: ktx.seats
 title: KTX 좌석 상태 조회
 hint: 코레일 결과 첫 화면
@@ -56,4 +58,4 @@ llm: false
 runner: ktx.seats
 uses:
   - { module: src/ktx.js, export: ktxSeats }
-next: 시간표 줄에 일반실·특실 상태를 얹는다. 줄을 누르면 ktx.open 이 그 조회 창을 앞으로 가져온다.
+next: 시간표 줄에 일반실·특실 상태를 얹는다. 줄을 누르면 ktx.open 이 그 조회 탭(전용 창에서 읽었으면 그 창)으로 넘어간다.
