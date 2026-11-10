@@ -14,7 +14,7 @@ const { JSDOM } = require('jsdom');
 const html = fs.readFileSync(new URL('../sidepanel.html', import.meta.url), 'utf8');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const INPUT = { from: '부산', to: '서울', date: '2026-11-12', hour: 5, adults: 1 };
-const ROW = { train: 'KTX', no: '101', dep: '05:13', arr: '07:51', took: '2시간 38분', nextDay: false };
+const ROW = { train: 'KTX', no: '101', date: '2026-11-12', dep: '05:13', arr: '07:51', took: '2시간 38분', nextDay: false };
 const TABLE = { basis: '2026-11-01', source: 'https://www.korail.com/official.xlsx', trains: [
   { no: ROW.no, train: ROW.train, days: 127, stops: [['부산', 313], ['서울', 471]] },
 ] };
@@ -64,7 +64,7 @@ test('잘못된 조건과 시간표 시행일 이전 날짜는 명확히 거부�
     assert.equal(r.code, 'INPUT_INVALID');
   }
   assert.equal((await ktxSearch({ ...INPUT, date: '2026-10-31' }, { timetable: TABLE })).code, 'TIMETABLE_DATE');
-  assert.deepEqual((await ktxSearch({ ...INPUT, hour: 6 }, { timetable: TABLE })).rows, []);
+  assert.deepEqual((await ktxSearch({ ...INPUT, hour: 6 }, { timetable: TABLE })).rows, [{ ...ROW, date: '2026-11-13' }], '6시 뒤로는 24시간 안의 다음 날 열차');
 });
 
 test('코레일 바로가기는 사이드패널이 있는 창의 현재 탭에서 연다', async () => {
@@ -361,6 +361,36 @@ test('줄을 누르면 좌석 조회가 연 결과 창의 손잡이로 ktx.open 
   failed.$('ktxList').querySelector('.ktx-go').click(); await tick();
   assert.match(failed.$('ktxNote').textContent, /출발일/);
   assert.equal(failed.$('ktxNote').classList.contains('bad'), true);
+});
+
+test('24시간 조회 — 다음 날 열차는 날짜를 붙이고 좌석을 얹지 않으며, 누르면 그 날짜·출발 시로 조건을 채운다', async () => {
+  const tomorrow = { ...ROW, date: '2026-11-13', dep: '04:50', arr: '07:30' };
+  const f = panel({
+    answer: () => result([ROW, tomorrow]),
+    seats: seated([{ ...ROW, gen: GEN, spec: null }]),
+  });
+  f.$('ktxGo').click(); await tick(); await tick();
+  const [today, next] = [...f.$('ktxList').children];
+  assert.equal(today.querySelector('.ktx-day'), null, '고른 날의 열차는 날짜를 붙이지 않는다');
+  assert.match(today.textContent, /59,800원/);
+  assert.equal(next.querySelector('.ktx-day').textContent, '11/13(금)');
+  assert.doesNotMatch(next.textContent, /일반실/, '같은 열차 번호라도 다음 날 줄에는 좌석을 얹지 않는다');
+  next.querySelector('.ktx-go').click(); await tick();
+  assert.deepEqual(f.openInputs, [{ ...INPUT, date: '2026-11-13', hour: 4 }]);
+  assert.deepEqual(f.openSessions, [null], '좌석을 읽은 결과 창은 조회한 날짜라 쓰지 않는다');
+});
+
+test('코레일에서 읽은 줄을 더해도 10편까지만 보인다', async () => {
+  const many = Array.from({ length: 10 }, (_, i) => ({ ...ROW, no: String(201 + i), dep: `06:${String(10 + i).padStart(2, '0')}` }));
+  const f = panel({
+    answer: () => result(many),
+    seats: seated([{ train: 'KTX-청룡', no: '900', dep: '05:30', arr: '07:50', took: '', gen: GEN, spec: null }]),
+  });
+  f.$('ktxGo').click(); await tick(); await tick();
+  const rows = [...f.$('ktxList').children].map((li) => li.textContent);
+  assert.equal(rows.length, 10);
+  assert.match(rows[0], /KTX-청룡 900/);
+  assert.doesNotMatch(rows.join('|'), /KTX 210/, '출발이 가장 늦은 줄이 밀려난다');
 });
 
 test('조건이 바뀌면 늦게 온 좌석과 결과 창 손잡이를 버린다', async () => {

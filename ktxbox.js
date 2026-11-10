@@ -4,7 +4,7 @@
 // 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 날짜 줄 아래의 말로 찾기 칸(sidepanel.js runKtxAsk)이
 // KTX 보기에서는 여기의 ask(text) 로 온다: parse(src/llm.js ktxSmart)가 읽은 조각을 지금 칸 위에 얹어 역·인원은 이 칸에, 출발일·시는 날짜 줄(setWhen)에 채우고 바로 조회한다.
 import { TRANSPORT_ICON } from './src/icons.js';
-import { KTX_STATIONS } from './src/ktx.js';
+import { KTX_STATIONS, KTX_LIMIT } from './src/ktx.js';
 
 export const PREF_KEY = 'ktxPref';
 const DEFAULT = { from: '부산', to: '서울', adults: 1 };
@@ -16,6 +16,9 @@ const same = (a, b) => a && b && ['from', 'to', 'date', 'hour', 'adults'].every(
 const headOf = (input) => `${input.from}→${input.to} ${String(input.date).slice(5).replace('-', '/')} ${String(input.hour).padStart(2, '0')}시~`;
 
 const WATCH_MAX = 3;
+const WEEKDAY = '일월화수목금토';
+/** 날을 넘긴 열차의 출발 날짜 — "11/14(토)". */
+const dayLabel = (date) => `${String(date).slice(5).replace('-', '/')}(${WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()] || ''})`;
 const trainNo = (no) => String(no ?? '').replace(/^0+(?=\d)/, '');
 /** 살 수 있는 자리(값이 있고 매진이 아님) — src/ktx.js openSeat 와 같다. */
 const openSeat = (seat) => !!seat && !seat.soldOut && !!seat.price;
@@ -118,6 +121,9 @@ export function createKtxBox({
   // 좌석을 읽은 줄은 일반실·특실, 아직 읽는 중이면 그렇게, 코레일 첫 화면 밖이라 못 읽은 줄은 비워 둔다(누르면 코레일에서 본다).
   const seatsOf = (r) => (r.gen || r.spec ? seat('일반실', r.gen) + seat('특실', r.spec)
     : st.seats === 'checking' ? '<span class="ktx-seat-status wait">좌석 확인 중</span>' : '');
+  // 줄의 승차 날짜 — 시간표 줄은 date 를 들고, 코레일에서 읽은 줄은 조회한 날짜다. 24시간 조회라 다음 날 열차가 섞인다(2026-11-10).
+  const dayOf = (r) => r.date || st.input?.date || '';
+  const otherDay = (r) => !!st.input && dayOf(r) !== st.input.date;
   function paint() {
     el.go.disabled = st.busy || st.opening;
     el.count.textContent = st.rows.length ? String(st.rows.length) : '';
@@ -127,8 +133,8 @@ export function createKtxBox({
       if (!on && !(st.seats === 'done' && watchable(r))) return '';
       return `<button type="button" class="ktx-watch" data-no="${esc(no)}" aria-pressed="${on}" title="${on ? '빈자리 대기를 멈춥니다' : '빈자리가 나면 알립니다 — 5초마다 다시 읽고 1시간 뒤에 멈춥니다'}">${on ? '대기 중' : '빈자리 대기'}</button>`;
     };
-    el.list.innerHTML = st.rows.map((r) => `<li class="ktx-row${st.found.has(trainNo(r.no)) ? ' found' : ''}"><button type="button" class="ktx-go"${st.opening ? ' disabled' : ''} title="코레일 예매 화면으로">`
-      + `<span class="ktx-time"><b>${esc(r.dep)}</b> → ${esc(r.arr)}${r.nextDay ? ' <small>다음 날</small>' : ''}</span>`
+    el.list.innerHTML = st.rows.map((r, i) => `<li class="ktx-row${st.found.has(trainNo(r.no)) ? ' found' : ''}"><button type="button" class="ktx-go" data-i="${i}"${st.opening ? ' disabled' : ''} title="코레일 예매 화면으로">`
+      + `<span class="ktx-time">${otherDay(r) ? `<small class="ktx-day">${esc(dayLabel(dayOf(r)))}</small> ` : ''}<b>${esc(r.dep)}</b> → ${esc(r.arr)}${r.nextDay ? ' <small>다음 날</small>' : ''}</span>`
       + `<span class="ktx-train">${esc(r.train)} ${esc(r.no)}${r.took ? ' · ' + esc(r.took) : ''}</span>`
       + `<span class="ktx-seats">${seatsOf(r)}</span></button>${watchOf(r)}</li>`).join('');
   }
@@ -153,17 +159,22 @@ export function createKtxBox({
     note(st.busy ? '조회 조건이 바뀌었습니다. 진행 중인 조회가 끝나면 다시 조회해 주세요.' : '조회 조건이 바뀌었습니다. 다시 조회해 주세요.');
   }
 
-  /** 시간표 줄에 좌석을 얹는다 — 열차 번호로 맞춘다(코레일은 앞에 0 을 붙여 "022" 로 적는다). 시간표에 없는 열차(임시 운행 등)는 코레일이 보인 대로 더한다. */
+  /**
+   * 시간표 줄에 좌석을 얹는다 — 열차 번호로 맞춘다(코레일은 앞에 0 을 붙여 "022" 로 적는다). 코레일 화면은 조회한 날짜뿐이라 그날 줄에만 얹는다.
+   * 시간표에 없는 열차(임시 운행 등)는 코레일이 보인 대로 더하고, 날짜·출발 순으로 앞의 KTX_LIMIT(10)편만 남긴다(대기 중인 열차는 남긴다).
+   */
   function mergeSeats(rows) {
     const numberOf = (no) => String(no ?? '').replace(/^0+(?=\d)/, '');
+    const day = st.input?.date || '';
     const seen = new Map(rows.map((r) => [numberOf(r.no), r]));
-    const known = new Set(st.rows.map((r) => numberOf(r.no)));
+    const known = new Set(st.rows.filter((r) => !otherDay(r)).map((r) => numberOf(r.no)));
     const merged = st.rows.map((r) => {
-      const found = seen.get(numberOf(r.no));
+      const found = otherDay(r) ? null : seen.get(numberOf(r.no));
       return found ? { ...r, gen: found.gen, spec: found.spec } : r;
     });
-    for (const r of rows) if (!known.has(numberOf(r.no))) merged.push(r);
-    return merged.sort((a, b) => a.dep.localeCompare(b.dep));
+    for (const r of rows) if (!known.has(numberOf(r.no))) merged.push({ ...r, date: day });
+    return merged.sort((x, y) => dayOf(x).localeCompare(dayOf(y)) || x.dep.localeCompare(y.dep))
+      .filter((r, i) => i < KTX_LIMIT || st.watch.has(trainNo(r.no)));
   }
 
   /** 좌석 상태 읽기 — 시간표가 선 뒤에 뒤따른다. 옆 탭에서 코레일을 조회하느라 수십 초 걸릴 수 있어 기다리지 않는다. 실패해도 시간표는 그대로 둔다. */
@@ -348,13 +359,17 @@ export function createKtxBox({
       else if (row) watch(row);
       return;
     }
-    if (!e.target.closest?.('.ktx-go') || st.opening || !actions) return;
+    const go = e.target.closest?.('.ktx-go');
+    if (!go || st.opening || !actions) return;
+    // 다음 날 열차는 좌석을 읽은 탭(조회한 날짜)이 아니라 그 날짜·출발 시로 코레일 조건을 채운다.
+    const row = st.rows[+go.dataset.i];
+    const later = !!row && otherDay(row);
     st.opening = true;
     paint();
     try {
-      const input = inputNow();
+      const input = later ? { ...inputNow(), date: dayOf(row), hour: Number(String(row.dep).slice(0, 2)) || 0 } : inputNow();
       const { record } = actions.build('ktx.open', { input, by: 'ui' });
-      const result = await actions.run(record, { session: st.session, tabId: st.tab, onStage: (stage) => note(`${headOf(input)} · ${stage}`) });
+      const result = await actions.run(record, { session: later ? null : st.session, tabId: later ? null : st.tab, onStage: (stage) => note(`${headOf(input)} · ${stage}`) });
       if (result?.ok) note(result.note || '');
       else note(result?.error || '코레일 화면으로 가지 못했습니다.', true);
     } catch (error) { note(messageOf(error), true); }

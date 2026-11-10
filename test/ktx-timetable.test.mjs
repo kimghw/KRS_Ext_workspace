@@ -15,7 +15,7 @@ test('요일·방향·정차 여부·출발 시각으로 거르고 중복을 제
   const train = { no: '001', train: 'KTX', days: operatingDays('금토일'), stops: [['서울', 540], ['대전', 600], ['부산', 700]] };
   const table = { trains: [train, { ...train }] };
   const query = { from: '서울', to: '부산', date: '2026-11-07', hour: 9 };
-  assert.deepEqual(timetableRows(table, query), [{ train: 'KTX', no: '001', dep: '09:00', arr: '11:40', took: '2시간 40분', nextDay: false }]);
+  assert.deepEqual(timetableRows(table, query), [{ train: 'KTX', no: '001', date: '2026-11-07', dep: '09:00', arr: '11:40', took: '2시간 40분', nextDay: false }]);
   for (const patch of [{ date: '2026-11-09' }, { hour: 10 }, { from: '부산', to: '서울' }, { to: '광명' }]) {
     assert.deepEqual(timetableRows(table, { ...query, ...patch }), []);
   }
@@ -35,10 +35,33 @@ test('포함한 공식 시간표는 양방향·주말 열차·역 별칭을 포�
   assert.match(KTX_TIMETABLE.source, /^https:\/\/www\.korail\.com\/file\/cubedata\/COMMON\/jfile\//);
   const rows = timetableRows(KTX_TIMETABLE, { from: '부산', to: '서울', date: '2026-11-08', hour: 9 });
   assert.equal(rows.length, 51);
-  assert.deepEqual(rows[0], { train: 'KTX-산천', no: '022', dep: '09:05', arr: '11:49', took: '2시간 44분', nextDay: false });
+  assert.deepEqual(rows[0], { train: 'KTX-산천', no: '022', date: '2026-11-08', dep: '09:05', arr: '11:49', took: '2시간 44분', nextDay: false });
   for (const [from, to] of [['서울', '부산'], ['서울', '강릉'], ['용산', '여수EXPO'], ['울산(통도사)', '서울'], ['서울', '포항']]) {
     assert.ok(timetableRows(KTX_TIMETABLE, { from, to, date: '2026-11-08', hour: 0 }).length > 0, `${from}→${to}`);
   }
+});
+
+test('24시간 조회는 날을 넘겨 다음 날 그 시각 전까지 찾고, 출발 순으로 앞의 몇 편만 남긴다', () => {
+  const day = (no, dep, days = '매일') => ({ no, train: 'KTX', days: operatingDays(days), stops: [['서울', dep], ['부산', dep + 160]] });
+  const table = { trains: [day('005', 360), day('011', 1260), day('013', 1320), day('001', 300, '토'), day('007', 420)] };
+  const query = { from: '서울', to: '부산', date: '2026-11-13', hour: 21 };   // 금요일 21시
+  const rows = timetableRows(table, query, { hours: 24 });
+  assert.deepEqual(rows.map((r) => `${r.date} ${r.dep} ${r.no}`), [
+    '2026-11-13 21:00 011', '2026-11-13 22:00 013', '2026-11-14 05:00 001', '2026-11-14 06:00 005', '2026-11-14 07:00 007',
+  ]);
+  assert.deepEqual(timetableRows(table, query, { hours: 24, limit: 2 }).map((r) => r.no), ['011', '013']);
+  assert.deepEqual(timetableRows(table, { ...query, hour: 7 }, { hours: 24 }).map((r) => `${r.date} ${r.no}`),
+    ['2026-11-13 007', '2026-11-13 011', '2026-11-13 013', '2026-11-14 001', '2026-11-14 005'], '다음 날 7시 열차는 24시간 밖');
+  assert.deepEqual(timetableRows(table, query).map((r) => r.no), ['011', '013'], 'hours 를 주지 않으면 그날만');
+});
+
+test('공식 시간표의 조회는 24시간 안에서 10편이다', async () => {
+  const { ktxSearch } = await import('../src/ktx.js');
+  const r = await ktxSearch({ from: '부산', to: '서울', date: '2026-11-13', hour: 21, adults: 1 });
+  assert.equal(r.rows.length, 10);
+  assert.ok(r.rows.some((row) => row.date === '2026-11-14'), '밤 9시 조회는 다음 날 열차까지 채운다');
+  const morning = await ktxSearch({ from: '부산', to: '서울', date: '2026-11-13', hour: 9, adults: 1 });
+  assert.deepEqual([morning.rows.length, morning.rows[0].dep, morning.rows.every((row) => row.date === '2026-11-13')], [10, '09:05', true]);
 });
 
 function workbook(note = '금토일', value = '0.375') {

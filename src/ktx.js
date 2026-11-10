@@ -33,13 +33,17 @@ function checkedInput(input) {
   return { from: input.from, to: input.to, date, hour: input.hour, adults };
 }
 
-/** 시간표만 조회한다. 브라우저 상태나 좌석 재고를 기다리지 않는다. */
+/** 시간표 조회의 범위 — 고른 출발 시각부터 24시간 안, 출발 순으로 앞의 10편(2026-11-10 사용자 지정: "KTX 조회 시간을 24시간 그리고 10개 조회 할 수 있도록"). */
+export const KTX_HOURS = 24;
+export const KTX_LIMIT = 10;
+
+/** 시간표만 조회한다. 브라우저 상태나 좌석 재고를 기다리지 않는다. 날을 넘긴 열차의 줄은 date 가 다음 날이다. */
 export async function ktxSearch(input, { timetable = KTX_TIMETABLE, onStage = () => {} } = {}) {
   let query;
   try { query = checkedInput(input); } catch (error) { return failure(error.message, 'INPUT_INVALID'); }
   if (query.date < timetable.basis) return failure(`${timetable.basis} 시행 시간표입니다. 이전 날짜는 코레일에서 확인해 주세요.`, 'TIMETABLE_DATE');
   onStage('시간표 조회 중');
-  return { ok: true, rows: timetableRows(timetable, query), basis: timetable.basis, source: timetable.source, url: KORAIL_SEARCH };
+  return { ok: true, rows: timetableRows(timetable, query, { hours: KTX_HOURS, limit: KTX_LIMIT }), basis: timetable.basis, source: timetable.source, url: KORAIL_SEARCH };
 }
 
 const SEATS_MS = 130_000;

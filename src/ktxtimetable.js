@@ -82,24 +82,37 @@ export async function readKorailTimetable(bytes) {
 
 const clock = (minute) => `${String(Math.floor(minute / 60) % 24).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
 
-/** date is the boarding date, including stops after midnight on a previous day's train. */
-export function timetableRows(table, { from, to, date, hour }) {
-  const requestedDay = new Date(`${date}T00:00:00Z`).getUTCDay();
+/** 승차 날짜(YYYY-MM-DD)에 날수를 더한다. */
+const addDays = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+
+/**
+ * date is the boarding date, including stops after midnight on a previous day's train.
+ * hours 를 주면 date 의 hour 시부터 그만큼(최대 48시간) 안에 출발하는 열차를 날을 넘겨서도 찾는다(2026-11-10 사용자 지정: "KTX 조회 시간을 24시간 그리고 10개").
+ * 주지 않으면 그날 hour 시 이후만. limit 은 출발 순으로 앞의 몇 편만 남긴다. 줄의 date 는 그 열차를 타는 날이다.
+ */
+export function timetableRows(table, { from, to, date, hour }, { hours = null, limit = Infinity } = {}) {
+  const startMin = hour * 60, endMin = hours == null ? 1440 : startMin + Math.min(hours, 48) * 60;
   const rows = [], seen = new Set();
-  for (const train of table.trains) {
-    const begin = train.stops.findIndex(([name]) => name === from);
-    const end = train.stops.findIndex(([name], i) => i > begin && name === to);
-    if (begin < 0 || end < 0) continue;
-    const dep = train.stops[begin][1], arr = train.stops[end][1];
-    const originDay = (requestedDay - Math.floor(dep / 1440) + 7) % 7;
-    if (!(train.days & (1 << originDay)) || dep % 1440 < hour * 60 || arr <= dep) continue;
-    const key = `${train.no}/${dep}/${arr}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const took = arr - dep, h = Math.floor(took / 60), m = took % 60;
-    rows.push({ train: train.train, no: train.no, dep: clock(dep), arr: clock(arr),
-      took: `${h ? `${h}시간` : ''}${h && m ? ' ' : ''}${m ? `${m}분` : ''}`,
-      nextDay: Math.floor(arr / 1440) > Math.floor(dep / 1440) });
+  for (let offset = 0; offset * 1440 < endMin; offset++) {
+    const day = addDays(date, offset);
+    const requestedDay = new Date(`${day}T00:00:00Z`).getUTCDay();
+    for (const train of table.trains) {
+      const begin = train.stops.findIndex(([name]) => name === from);
+      const end = train.stops.findIndex(([name], i) => i > begin && name === to);
+      if (begin < 0 || end < 0) continue;
+      const dep = train.stops[begin][1], arr = train.stops[end][1];
+      const originDay = (requestedDay - Math.floor(dep / 1440) + 7) % 7;
+      const at = offset * 1440 + dep % 1440;   // date 0시부터 센 출발 분
+      if (!(train.days & (1 << originDay)) || at < startMin || at >= endMin || arr <= dep) continue;
+      const key = `${day}/${train.no}/${dep}/${arr}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const took = arr - dep, h = Math.floor(took / 60), m = took % 60;
+      rows.push({ at, row: { train: train.train, no: train.no, date: day, dep: clock(dep), arr: clock(arr),
+        took: `${h ? `${h}시간` : ''}${h && m ? ' ' : ''}${m ? `${m}분` : ''}`,
+        nextDay: Math.floor(arr / 1440) > Math.floor(dep / 1440) } });
+    }
   }
-  return rows.sort((a, b) => a.dep.localeCompare(b.dep) || a.arr.localeCompare(b.arr) || a.no.localeCompare(b.no));
+  return rows.sort((a, b) => a.at - b.at || a.row.arr.localeCompare(b.row.arr) || a.row.no.localeCompare(b.row.no))
+    .slice(0, limit).map(({ row }) => row);
 }
