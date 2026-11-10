@@ -31,18 +31,18 @@ function fixture(t) {
   return { dir, script };
 }
 
-test('KTX setup plans a private pinned runtime without browser registration or system Python changes', { skip: !windows }, (t) => {
+test('KTX setup plans a private runtime from signed system Python without browser registration or system Python changes', { skip: !windows }, (t) => {
   const { dir, script } = fixture(t);
   const run = powershell(['-File', script, '-Plan']);
   assert.equal(run.status, 0, run.stderr);
   const plan = JSON.parse(run.stdout);
   assert.equal(plan.runtime, path.join(dir, 'ktx-runtime'));
   assert.equal(plan.python, path.join(plan.runtime, '.venv', 'Scripts', 'python.exe'));
-  assert.equal(plan.managedPython, path.join(plan.runtime, 'python'));
+  assert.equal(plan.managedPython, undefined, 'Python 을 내려받지 않는다');
   assert.equal(plan.lock, path.join(dir, 'ktx-python', 'uv.lock'));
   assert.equal(plan.registryKeys, undefined);
   assert.equal(plan.manifest, undefined);
-  assert.match(plan.pythonVersion, /^3\.12\.\d+$/);
+  assert.equal(plan.pythonVersion, '3.12');
   assert.equal(plan.archive, `https://github.com/astral-sh/uv/releases/download/${plan.uvVersion}/uv-x86_64-pc-windows-msvc.zip`);
   assert.match(plan.sha256, /^[0-9a-f]{64}$/);
   assert.deepEqual(fs.readdirSync(dir), ['setup-ktx.ps1']);

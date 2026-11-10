@@ -1,0 +1,60 @@
+# 시간표 줄을 누르면 코레일 예매 화면으로 간다(2026-11-09 사용자 지정: "현재 좌석정보랑 누르면 코에릴 예매정보로 가야지").
+# 좌석 조회(ktx.seats)가 읽은 결과 탭이 있으면 그 탭으로 넘어가고(tabId 는 ctx — 2026-11-10), 전용 창에서 읽었으면 그 창을 앞으로 가져오고(session 은 ctx), 없거나 닫혔으면 현재 탭에 예매 화면을 열어 조건을 채워 둔다("조건만 채워두기 해봐").
+# 어느 쪽이든 열차 조회 제출·좌석 선택·예매·결제를 하지 않는다. 말로 찾기는 없다(사람이 누른 줄에서만 돈다).
+id: ktx.open
+title: 코레일 예매 화면으로
+hint: 코레일 승차권 예매 화면
+confirm: false
+effect: draft
+summary: '코레일로 {from}→{to} {date} {hour}시~ {adults}명'
+fields:
+  from:
+    type: enum
+    required: true
+    label: 출발역
+    values: [서울, 용산, 영등포, 행신, 광명, 수원, 천안아산, 오송, 대전, 서대전, 김천구미, 서대구, 동대구, 경산, 밀양, 구포, 부산, 경주, 울산(통도사), 포항, 마산, 창원중앙, 논산, 익산, 정읍, 광주송정, 목포, 전주, 순천, 여수EXPO, 강릉, 정동진]
+    desc: 코레일 화면에 채울 출발역
+    read: '출발역 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 부산
+    example: 부산
+  to:
+    type: enum
+    required: true
+    label: 도착역
+    values: [서울, 용산, 영등포, 행신, 광명, 수원, 천안아산, 오송, 대전, 서대전, 김천구미, 서대구, 동대구, 경산, 밀양, 구포, 부산, 경주, 울산(통도사), 포항, 마산, 창원중앙, 논산, 익산, 정읍, 광주송정, 목포, 전주, 순천, 여수EXPO, 강릉, 정동진]
+    desc: 코레일 화면에 채울 도착역
+    read: '도착역 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 서울
+    example: 서울
+  date:
+    type: date
+    required: true
+    label: 출발일
+    desc: 차량 탭 날짜 줄의 출발일
+    read: '출발일 — 패널의 날짜 줄에서 온다. 말로 채우지 않는다'
+    example: '2026-11-12'
+  hour:
+    type: integer
+    required: true
+    label: 출발 시
+    min: 0
+    max: 23
+    desc: 코레일 화면에 채울 출발 시. 오늘의 지난 시각은 코레일이 받지 않아 고를 수 있는 시각으로 남는다
+    read: '출발 시 — 패널의 시작 시간에서 온다. 말로 채우지 않는다'
+    default: 8
+    example: 8
+  adults:
+    type: integer
+    required: true
+    label: 인원
+    min: 1
+    max: 9
+    desc: 코레일 화면에 채울 어른 인원
+    read: '어른 인원 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 1
+    example: 1
+llm: false
+runner: ktx.open
+uses:
+  - { module: src/ktx.js, export: ktxOpen }
+next: 코레일 결과 탭·창이 앞에 있거나 예매 화면에 조건이 채워져 있다. 그 다음은 사람이 코레일에서 누른다.

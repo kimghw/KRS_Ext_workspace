@@ -866,7 +866,6 @@
     <section id="ktxBox" class="ktx" aria-labelledby="ktxTitle" hidden>
       <div class="section-heading">
         <h2 id="ktxTitle">KTX 조회<span id="ktxCount" class="count"></span></h2>
-        <button id="ktxSite" class="ghost" type="button" title="현재 탭에서 코레일 승차권 조회 페이지 열기">코레일 바로가기</button>
       </div>
       <div class="ktx-card card">
         <div class="ktx-bar">
@@ -876,8 +875,9 @@
           <select id="ktxPax" aria-label="인원"></select>
           <button id="ktxGo" class="primary" type="button">조회</button>
         </div>
-        <p class="ktx-help">위 날짜·시간 이후의 시간표입니다. 예매는 코레일에서 진행해 주세요.</p>
+        <p class="ktx-help">위 날짜·시간 이후의 열차입니다. 줄을 누르면 코레일 예매 화면으로 갑니다 — 좌석 선택과 예매는 코레일에서 진행해 주세요.</p>
         <p id="ktxNote" class="ktx-note" role="status" aria-live="polite"></p>
+        <p id="ktxSeatNote" class="ktx-note" role="status" aria-live="polite"></p>
         <ul id="ktxList" class="ktx-list"></ul>
       </div>
     </section>

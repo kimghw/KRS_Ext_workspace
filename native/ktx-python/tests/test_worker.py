@@ -63,9 +63,14 @@ class WorkerTests(unittest.TestCase):
         rows = worker.shape_rows([row, {**row, "origin": "구포"}, {**row, "train_name": "SRT"},
                                   {**row, "depart_raw": "KTX 101(04:00 ~ 07:00)"}], config)
         self.assertEqual(rows, [{"train": "KTX-산천", "no": "211", "dep": "05:40", "arr": "08:20", "took": "2시간 40분",
-                                 "gen": {"price": "59,800원", "soldOut": False, "soon": True},
-                                 "spec": {"price": "83,700원", "soldOut": True, "soon": False}}])
+                                 "gen": {"price": "59,800원", "soldOut": False, "soon": True, "note": ""},
+                                 "spec": {"price": "83,700원", "soldOut": True, "soon": False, "note": ""}}])
         self.assertIsNone(worker.shape_seat(None))
+
+    def test_shape_seat_keeps_the_page_words_when_there_is_no_price(self):
+        self.assertEqual(worker.shape_seat({"text": " 입석 + 좌석\n 예약대기 "}),
+                         {"price": "", "soldOut": False, "soon": False, "note": "입석 + 좌석 예약대기"})
+        self.assertEqual(worker.shape_seat({"text": "매진", "sold_out": True})["note"], "")
 
     def test_guard_notice_detection_matches_binjari(self):
         self.assertIsNone(_guard_notice_from_state({"modals": [], "body": "운행하는 열차가 없습니다"}))

@@ -78,8 +78,10 @@ def shape_seat(value):
     price = re.search(r"[\d,]+\s*원", text)
     soon = bool(value.get("imminent")) or "매진임박" in text
     sold = bool(value.get("sold_out")) or "매진" in text.replace("매진임박", "")
+    # No price and not sold out: the page's own words ("입석 + 좌석 예약대기") are the status.
+    note = "" if price or sold else re.sub(r"\s+", " ", text).strip()[:40]
     return {"price": re.sub(r"\s+", "", price.group(0)) if price else "",
-            "soldOut": sold, "soon": soon}
+            "soldOut": sold, "soon": soon, "note": note}
 
 def shape_rows(raw, config):
     from ktx_watcher.korail.search import _route_matches

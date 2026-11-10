@@ -7,12 +7,12 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { once } from 'node:events';
-import { invoke, search, open, searchInput, workerEnv, PYTHON, BASE_PYTHON, PYTHON_VERSION } from '../native/ktx.mjs';
+import { invoke, search, open, searchInput, workerEnv, basePython, PYTHON } from '../native/ktx.mjs';
 
 const input = { from: '부산', to: '서울', date: '2026-11-12', hour: 8, adults: 1 };
 const session = 'a'.repeat(32);
 const nativePython = fileURLToPath(new URL('../native/ktx-python', import.meta.url));
-const hasPython = process.platform === 'win32' && fs.existsSync(PYTHON) && fs.existsSync(BASE_PYTHON);
+const hasPython = process.platform === 'win32' && fs.existsSync(PYTHON) && !!basePython() && fs.existsSync(basePython());
 function fixture(t, code, python = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'krs-ktx-test-'));
   // 죽인 워커(python)가 상태 폴더의 잠금을 놓기 전에 지우면 Windows 가 EBUSY 를 낸다(전체 스위트를 나란히 돌릴 때 가끔, 2026-11-08) — 잠깐씩 다시 해 본다.
@@ -49,9 +49,28 @@ test('missing runtime gives actionable error without spawning', async () => {
   assert.equal(result.code, 'RUNTIME_MISSING');
 });
 
-test('bridge managed interpreter version matches the installer pin', () => {
+test('installer builds from a signed system Python and never downloads one', () => {
   const setup = fs.readFileSync(new URL('../native/setup-ktx.ps1', import.meta.url), 'utf8');
-  assert.equal(setup.match(/\$ktxPythonVersion = '([^']+)'/)[1], PYTHON_VERSION);
+  assert.match(setup, /Get-AuthenticodeSignature/);
+  assert.match(setup, /--no-managed-python --python \$ktxSystemPython/);
+  assert.match(setup, /UV_PYTHON_DOWNLOADS = 'never'/);
+  assert.doesNotMatch(setup, /python install/);
+  assert.match(setup, /\$ktxPythonMinor = '3\.12'/);
+  const project = fs.readFileSync(new URL('../native/ktx-python/pyproject.toml', import.meta.url), 'utf8');
+  assert.match(project, /requires-python = ">=3\.12,<3\.13"/);
+});
+
+test('the base interpreter comes only from the venv record', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'krs-ktx-cfg-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const cfg = path.join(dir, 'pyvenv.cfg');
+  fs.writeFileSync(cfg, 'home = C:\\Python312\r\nversion_info = 3.12.10\r\n');
+  assert.equal(basePython(cfg), path.join('C:\\Python312', 'python.exe'));
+  fs.writeFileSync(cfg, 'home = relative\\path\n');
+  assert.equal(basePython(cfg), null);
+  fs.writeFileSync(cfg, 'version_info = 3.12.10\n');
+  assert.equal(basePython(cfg), null);
+  assert.equal(basePython(path.join(dir, 'absent.cfg')), null);
 });
 
 test('worker guard failure is preserved once, without session or diagnostic data', async t => {
