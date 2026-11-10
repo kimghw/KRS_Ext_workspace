@@ -19,9 +19,9 @@ const TABLE = { basis: '2026-11-01', source: 'https://www.korail.com/official.xl
   { no: ROW.no, train: ROW.train, days: 127, stops: [['부산', 313], ['서울', 471]] },
 ] };
 const result = (rows = [ROW]) => ({ ok: true, rows, basis: TABLE.basis, source: TABLE.source, url: KORAIL_SEARCH });
-function panel({ answer = () => result(), saved, parse, openTab, seats = () => new Promise(() => {}), watch = () => new Promise(() => {}) } = {}) {
+function panel({ answer = () => result(), saved, parse, openTab, seats = () => new Promise(() => {}), watch = () => new Promise(() => {}), reserve = async () => ({ ok: true, reserved: true, seat: '일반실', price: '59,800원', note: '일반실 59,800원 좌석을 잡았습니다. 결제는 코레일 탭에서 직접 해 주세요(기한이 지나면 자동 취소).' }) } = {}) {
   const doc = new JSDOM(html).window.document;
-  const store = { ...(saved || {}) }, logs = [], opened = [], openInputs = [], openSessions = [], seatCalls = [], whens = [], views = [], calls = [], watchCalls = [], notices = [];
+  const store = { ...(saved || {}) }, logs = [], opened = [], openInputs = [], openSessions = [], seatCalls = [], whens = [], views = [], calls = [], watchCalls = [], notices = [], reserveCalls = [];
   const d = createDispatcher({ log: (line) => logs.push(line) });
   registerKtx(d, {
     ktxSearch: (input, options) => { calls.push({ message: { task: 'ktxSearch', input } }); return answer(input, options); },
@@ -31,6 +31,7 @@ function panel({ answer = () => result(), saved, parse, openTab, seats = () => n
       return openTab ? openTab(input, options) : { ok: true, filled: true, note: '채웠습니다. 코레일에서 "열차 조회"를 눌러 주세요.' };
     },
     ktxWatch: (input, options) => { watchCalls.push({ input, options }); return watch(input, options); },
+    ktxReserve: (input, options) => { reserveCalls.push({ input, options }); return reserve(input, options); },
   });
   let date = INPUT.date, hour = INPUT.hour;
   const box = createKtxBox({
@@ -44,7 +45,7 @@ function panel({ answer = () => result(), saved, parse, openTab, seats = () => n
   const $ = (id) => doc.getElementById(id);
   const change = (id, value) => { $(id).value = value; $(id).dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); };
   const choose = (view) => $('carViewControl').querySelector('[data-view="' + view + '"] svg').dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }));
-  return { calls, box, doc, $, store, d, logs, opened, openInputs, openSessions, seatCalls, change, choose, whens, views, watchCalls, notices,
+  return { calls, box, doc, $, store, d, logs, opened, openInputs, openSessions, seatCalls, change, choose, whens, views, watchCalls, notices, reserveCalls,
     setDate: (value) => { date = value; }, setHour: (value) => { hour = value; } };
 }
 
@@ -559,7 +560,7 @@ test('말로 찾기 — 읽은 조각을 역·인원 칸과 날짜 줄에 얹어
   assert.deepEqual(f.calls.map((c) => c.message), [{ task: 'ktxSearch', input: { from: '부산', to: '대전', date: '2026-11-13', hour: 14, adults: 2 } }]);
   assert.deepEqual({ via: r.via, read: r.read, head: r.head, ok: r.ok, rows: r.rows, costUsd: r.costUsd }, { via: 'cli', read: '…→대전 · 2026-11-13 · 14시~ · 2명', head: '부산→대전 11/13 14시~ 2명', ok: true, rows: 1, costUsd: 0.01 });
   assert.equal(f.$('ktxList').children.length, 1);
-  assert.deepEqual(f.store[PREF_KEY], { from: '부산', to: '대전', adults: 2 });
+  assert.deepEqual(f.store[PREF_KEY], { from: '부산', to: '대전', adults: 2, reserve: false });
   assert.equal(f.logs.length, 1);
   assert.deepEqual([f.logs[0].kind, f.logs[0].ok, f.logs[0].data.record.by, f.logs[0].data.record.via, f.logs[0].data.via], ['ktx', true, 'llm', 'cli', 'cli']);
   assert.equal(f.logs[0].text, '"다음 주 금요일 오후 2시 대전 2명" → [로컬 CLI] KTX 부산→대전 11/13 14시~ 2명');
@@ -688,4 +689,78 @@ test('행위 명세 ktx.watch — 확인 없는 조회이고 말로 채우지 �
   assert.deepEqual([entry.confirm, entry.effect, entry.llm, entry.runner], [false, 'none', false, 'ktx.watch']);
   const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.ok(manifest.permissions.includes('notifications'));
+});
+
+test('자리가 나면 예약까지 — 켠 채 누르면 대기가 자리를 찾았을 때 그 결과 탭으로 ktx.reserve 를 돌리고(확인은 그 누름) 잡았다고 알린다', async () => {
+  const f = sold({ watch: async (input, options) => {
+    const reserve = await options.onFound({ row: { ...FIVE[0], gen: FREE }, tabId: 9 });
+    return { ok: true, found: true, row: { ...FIVE[0], gen: FREE }, tabId: 9, reserve };
+  } });
+  assert.equal(f.$('ktxReserve').checked, false, '기본은 꺼짐');
+  f.$('ktxReserve').click(); await tick();
+  assert.equal(f.store[PREF_KEY].reserve, true, '고른 값을 기억한다');
+  f.$('ktxGo').click(); await tick(); await tick();
+  pills(f)[0].click(); await tick(); await tick(); await tick();
+  assert.equal(f.reserveCalls.length, 1);
+  assert.deepEqual(f.reserveCalls[0].input, { ...INPUT, train: '101', dep: '05:13', seat: 'any' });
+  assert.equal(f.reserveCalls[0].options.tabId, 9);
+  const logged = f.logs.find((line) => line.data?.record?.action === 'ktx.reserve');
+  assert.ok(logged?.ok, '예약은 활동 로그에 따로 한 줄');
+  assert.doesNotMatch(JSON.stringify(logged.data.record), /tabId/);
+  assert.match(f.$('ktxSeatNote').textContent, /좌석을 잡았습니다.*결제는 코레일 탭에서 직접/);
+  assert.match(f.notices.at(-1)[0], /KTX 좌석 예약/);
+});
+
+test('자리가 나면 예약까지 — 끈 채 누르면 예약하지 않고, 예약을 못 하면 그 까닭과 함께 직접 예매하라고 알린다', async () => {
+  const off = sold({ watch: async (input, options) => ({ ok: true, found: true, row: { ...FIVE[0], gen: FREE }, hasFound: typeof options.onFound }) });
+  off.$('ktxGo').click(); await tick(); await tick();
+  pills(off)[0].click(); await tick(); await tick();
+  assert.deepEqual([off.watchCalls[0].options.onFound, off.reserveCalls.length], [undefined, 0]);
+  assert.match(off.$('ktxSeatNote').textContent, /빈자리가 났습니다.*줄을 눌러 코레일에서 예매/);
+  const missed = sold({
+    saved: { [PREF_KEY]: { from: '부산', to: '서울', adults: 1, reserve: true } },
+    reserve: async () => ({ ok: false, error: '코레일 로그인 화면이 나와 예약하지 못했습니다.', code: 'RESERVE_LOGIN' }),
+    watch: async (input, options) => ({ ok: true, found: true, row: { ...FIVE[0], gen: FREE }, reserve: await options.onFound({ row: FIVE[0], tabId: 9 }) }),
+  });
+  await tick();
+  assert.equal(missed.$('ktxReserve').checked, true, '기억한 값을 다시 켠다');
+  missed.$('ktxGo').click(); await tick(); await tick();
+  pills(missed)[0].click(); await tick(); await tick(); await tick();
+  assert.match(missed.$('ktxSeatNote').textContent, /빈자리가 났습니다.*예약하지 못했습니다 — 코레일 로그인 화면.*직접|줄을 눌러/);
+  assert.equal(missed.$('ktxSeatNote').classList.contains('bad'), true);
+});
+
+test('예약 단추 — "예약까지"를 켜면 자리가 있는 줄에만 서고, 누르면 그 결과 탭으로 ktx.reserve 를 바로 돌린다(그 누름이 확인)', async () => {
+  const off = sold();
+  off.$('ktxGo').click(); await tick(); await tick();
+  assert.equal(off.$('ktxList').querySelectorAll('.ktx-book').length, 0, '끈 채로는 없다');
+  const f = sold();
+  f.$('ktxReserve').click(); await tick();
+  f.$('ktxGo').click(); await tick(); await tick();
+  const books = [...f.$('ktxList').querySelectorAll('.ktx-book')];
+  assert.equal(books.length, 1);
+  assert.match(books[0].closest('li').textContent, /KTX 111/);
+  books[0].click(); await tick(); await tick(); await tick();
+  assert.deepEqual(f.reserveCalls.map((c) => [c.input, c.options.tabId]), [[{ ...INPUT, train: '111', dep: '06:10', seat: 'any' }, 9]]);
+  assert.match(f.$('ktxSeatNote').textContent, /KTX 111 06:10 — .*좌석을 잡았습니다/);
+  assert.match(f.notices.at(-1)[0], /KTX 좌석 예약/);
+  assert.ok(f.logs.some((line) => line.data?.record?.action === 'ktx.reserve' && line.ok));
+});
+
+test('예약 단추 — 빈자리 대기가 같은 탭을 읽는 동안은 예약하지 않고, 못 잡으면 까닭을 알린다', async () => {
+  const f = sold({
+    reserve: async () => ({ ok: false, error: '코레일 로그인 화면이 나와 예약하지 못했습니다.', code: 'RESERVE_LOGIN' }),
+    watch: (input, options) => new Promise((resolve) => options.signal.addEventListener('abort', () => resolve({ ok: true, found: false, stopped: true, note: '빈자리 대기를 멈췄습니다.' }))),
+  });
+  f.$('ktxReserve').click(); await tick();
+  f.$('ktxGo').click(); await tick(); await tick();
+  pills(f)[0].click(); await tick();
+  f.$('ktxList').querySelector('.ktx-book').click(); await tick();
+  assert.equal(f.reserveCalls.length, 0);
+  assert.match(f.$('ktxSeatNote').textContent, /대기를 멈춘 뒤 예약/);
+  pills(f)[0].click(); await tick(); await tick();
+  f.$('ktxList').querySelector('.ktx-book').click(); await tick(); await tick(); await tick();
+  assert.equal(f.reserveCalls.length, 1);
+  assert.match(f.$('ktxSeatNote').textContent, /예약하지 못했습니다 — 코레일 로그인/);
+  assert.equal(f.$('ktxSeatNote').classList.contains('bad'), true);
 });

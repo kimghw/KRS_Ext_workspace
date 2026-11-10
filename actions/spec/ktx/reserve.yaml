@@ -1,0 +1,84 @@
+# KTX 좌석 예약 — 빈자리 대기(ktx.watch)가 자리를 찾았을 때 그 코레일 결과 탭에서 그 열차의 좌석을 골라 예매를 눌러 결제 직전 화면(좌석이 잡힌 화면)까지 간다
+# (2026-11-10 사용자 지정: "좌석이 생기면 결재는 아니고 좌석 예약까지 할 수 있도록 구현해 줄래?" · "이미 로그인이 되었다고 가정하고"). 결제는 하지 않는다 — 코레일의 결제 기한이 지나면 코레일이 스스로 푼다.
+# 패널의 "자리가 나면 예약까지"를 켠 채 빈자리 대기를 누른 것이 확인이다 — 그 누름에서 이 기록을 짓고 confirmed 를 넣어 두었다가 자리가 나면 돌린다(LLM 은 짓지 않는다).
+# 순서와 선택자는 binjari 의 예약 흐름(ktx_watcher/korail/reserve.py)과 같다 — src/korailreserve.js. 다른 열차로 대신하지 않고 재시도하지 않는다. 결과 탭 손잡이(tabId)는 ctx.
+id: ktx.reserve
+title: KTX 좌석 예약
+hint: 결제 직전까지 — 결제는 사람이
+confirm: true                  # "자리가 나면 예약까지"를 켜고 빈자리 대기를 누른 것이 확인이다
+effect: write
+summary: 'KTX 좌석 예약 {train} {dep} {from}→{to} {date} {adults}명'
+fields:
+  from:
+    type: enum
+    required: true
+    label: 출발역
+    values: [서울, 용산, 영등포, 행신, 광명, 수원, 천안아산, 오송, 대전, 서대전, 김천구미, 서대구, 동대구, 경산, 밀양, 구포, 부산, 경주, 울산(통도사), 포항, 마산, 창원중앙, 논산, 익산, 정읍, 광주송정, 목포, 전주, 순천, 여수EXPO, 강릉, 정동진]
+    desc: 좌석을 조회한 출발역
+    read: '출발역 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 부산
+    example: 부산
+  to:
+    type: enum
+    required: true
+    label: 도착역
+    values: [서울, 용산, 영등포, 행신, 광명, 수원, 천안아산, 오송, 대전, 서대전, 김천구미, 서대구, 동대구, 경산, 밀양, 구포, 부산, 경주, 울산(통도사), 포항, 마산, 창원중앙, 논산, 익산, 정읍, 광주송정, 목포, 전주, 순천, 여수EXPO, 강릉, 정동진]
+    desc: 좌석을 조회한 도착역
+    read: '도착역 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 서울
+    example: 서울
+  date:
+    type: date
+    required: true
+    label: 출발일
+    desc: 차량 탭 날짜 줄의 출발일
+    read: '출발일 — 패널의 날짜 줄에서 온다. 말로 채우지 않는다'
+    example: '2026-11-12'
+  hour:
+    type: integer
+    required: true
+    label: 출발 시
+    min: 0
+    max: 23
+    desc: 좌석을 조회한 출발 시 — 예약할 열차가 이 조회의 결과 화면에 있어야 한다
+    read: '출발 시 — 패널의 시작 시간에서 온다. 말로 채우지 않는다'
+    default: 8
+    example: 8
+  adults:
+    type: integer
+    required: true
+    label: 인원
+    min: 1
+    max: 9
+    desc: 조회한 어른 인원
+    read: '어른 인원 — 패널의 KTX 칸에서 온다. 말로 채우지 않는다'
+    default: 1
+    example: 1
+  train:
+    type: string
+    required: true
+    label: 열차 번호
+    desc: 예약할 열차의 번호(숫자 1~4자리)
+    read: '열차 번호 — 사람이 대기를 누른 줄에서 온다. 말로 채우지 않는다'
+    example: '022'
+  dep:
+    type: string
+    required: true
+    label: 출발 시각
+    desc: 예약할 열차의 출발 시각(HH:MM) — 결과 화면에서 같은 번호·같은 출발 시각의 줄이 꼭 하나여야 고른다
+    read: '출발 시각 — 사람이 대기를 누른 줄에서 온다. 말로 채우지 않는다'
+    example: '09:05'
+  seat:
+    type: enum
+    required: true
+    label: 좌석 등급
+    values: [any, gen, spec]
+    desc: 고를 등급 — any 는 일반실, 없으면 특실 · gen 은 일반실만 · spec 은 특실만
+    read: '좌석 등급 — 패널에서 온다. 말로 채우지 않는다'
+    default: any
+    example: any
+llm: false
+runner: ktx.reserve
+uses:
+  - { module: src/ktx.js, export: ktxReserve }
+next: 좌석을 잡으면 그 코레일 탭(결제 직전 화면)을 앞으로 가져오고 알린다. 결제는 사람이 코레일에서 결제 기한 안에 한다.

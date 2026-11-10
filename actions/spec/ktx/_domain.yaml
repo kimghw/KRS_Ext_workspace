@@ -1,6 +1,6 @@
-# KTX 갈래 — 코레일 열차 조회. 종류: search(공식 시간표 검색, 확장 안에서) · seats(현재 좌석 상태, 옆 탭 → 브릿지) · open(줄을 눌렀을 때 코레일 화면으로) · watch(빈자리 대기, 2026-11-10). 모두 confirm 없음.
+# KTX 갈래 — 코레일 열차 조회. 종류: search(공식 시간표 검색, 확장 안에서) · seats(현재 좌석 상태, 옆 탭 → 브릿지) · open(줄을 눌렀을 때 코레일 화면으로) · watch(빈자리 대기, 2026-11-10) · reserve(빈자리가 나면 좌석 예약 — 결제 직전까지, 2026-11-10). reserve 만 confirm 이다.
 # 2026-11-09: 시간표가 먼저 서고 좌석이 뒤따른다 — "현재 좌석정보랑 누르면 코에릴 예매정보로 가야지". 브릿지가 없어도 시간표는 그대로 쓴다.
-# 패널은 조건과 결과만 다루며 좌석 선택·예약·결제는 사람이 코레일에서 진행한다.
+# 패널은 조건과 결과만 다루며 좌석 선택·예약·결제는 사람이 코레일에서 진행한다 — 빈자리 대기에 "자리가 나면 예약까지"를 켰을 때만 확장이 예매까지 누르고, 결제는 그때도 사람이 한다.
 #
 # LLM 작업은 per-kind 모드 — search.yaml 이 `llm: { task: search.ktx }` 로 이름을 적는다(말로 찾기, 2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘").
 # 회의실·차량의 search 와 같은 사다리(src/llm.js ktxSmart — 로컬 CLI → API 키 → 규칙 해석 src/ktxnlq.js)지만 답은 조각(partial)이다 — 말하지 않은 칸은 null 이고,
@@ -8,7 +8,7 @@
 domain: ktx
 title: KTX
 log: ktx
-kinds: [search, seats, open, watch]
+kinds: [search, seats, open, watch, reserve]
 llm:
   task: search                 # 작업 이름의 머리 — 실제 이름은 종류 파일의 llm.task(search.ktx)
   mode: per-kind

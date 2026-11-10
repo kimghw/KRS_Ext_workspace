@@ -2378,6 +2378,8 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .ktx-go:disabled { cursor: progress; }
 .ktx-time { grid-column: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ktx-day { color: var(--pick); font-size: 11px; font-weight: 600; }
+.ktx-reserve { display: flex; align-items: center; gap: 6px; margin: 6px 2px 0; font-size: 12.5px; cursor: pointer; }
+.ktx-reserve small { color: var(--muted); font-size: 11px; }
 .ktx-train { grid-column: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .ktx-seats { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 8px; }
 .ktx-seats:empty { display: none; }

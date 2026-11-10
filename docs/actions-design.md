@@ -464,7 +464,8 @@ export function registerKtx(d)
   'ktx.search' (rec, { onStage }) → ktxSearch(rec.input, { onStage })   // 조회(confirm false) — 확장에 넣은 공식 시간표를 검색. { ok, rows, basis, source, url } 반환.
   'ktx.seats' (rec, { onStage }) → ktxSeats(rec.input, { onStage })   // 좌석 상태(confirm false) — 옆 탭(ktxSeatsTab: korailFillPage → korailSeatsPage)에서 읽어 { ok, rows, tabId }, 못 읽으면 브릿지 ktxSearch → entry.mjs → ktx.mjs → Python worker.py 로 { ok, rows, session }.
   'ktx.open' (rec, { onStage, session, tabId }) → ktxOpen(rec.input, { onStage, session, tabId })   // 줄 누르기(confirm false, effect draft) — 결과 탭·창을 앞으로, 없으면 예매 화면에 조건 채워 두기. 좌석 선택·예매는 사람이 한다.
-  'ktx.watch' (rec, { tabId, signal, onTick }) → ktxWatch(rec.input, { tabId, signal, onTick })   // 빈자리 대기(confirm false, 2026-11-10) — 열차 하나에 실행 하나. 자리가 나오거나(found)·1시간이 지나거나(expired)·멈추거나(stopped)·막힐 때까지 돈다.
+  'ktx.reserve' (rec, { tabId, onStage }) → ktxReserve(rec.input, { tabId, onStage })   // 좌석 예약(confirm true, effect write, 2026-11-10) — 결과 탭에서 그 열차의 가격 → 예매 → 결제 직전 화면까지. 결제는 하지 않는다. 확인은 "예약까지"를 켜고 대기·예약 단추를 누른 그 누름.
+  'ktx.watch' (rec, { tabId, signal, onTick, onFound }) → ktxWatch(rec.input, { tabId, signal, onTick, onFound })   // onFound(ctx) 가 있으면 자리가 났을 때 패널이 미리 지어 둔 ktx.reserve 기록을 돌리고 그 답을 reserve 로 싣는다.   // 빈자리 대기(confirm false, 2026-11-10) — 열차 하나에 실행 하나. 자리가 나오거나(found)·1시간이 지나거나(expired)·멈추거나(stopped)·막힐 때까지 돈다.
 ```
 
 실행기 어댑터는 **기록을 기존 함수의 인자로 바꾸는 일만** 한다. 실행 순서·다시 조회·되돌리기 판단·단계 표시는 기존 함수와 패널에 그대로 있다.
