@@ -2358,7 +2358,6 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .ktx { margin-top: 23px; }
 .ktx .section-heading { justify-content: flex-start; }
 .ktx-card { padding: 12px 14px; }
-.ktx-help { margin: 8px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .ktx-bar { display: flex; align-items: center; gap: 6px; }
 .ktx-bar select { min-width: 0; min-height: 36px; padding: 4px 6px; border: 0; border-radius: 9px; background: var(--surface-soft); font-size: 13px; cursor: pointer; }
 .ktx-bar #ktxFrom, .ktx-bar #ktxTo { flex: 1; }

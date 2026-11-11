@@ -66,6 +66,35 @@ test('reservation press routes without loading search or legacy modules', async 
   assert.deepEqual(result.messages, [{ ok: true, pressed: false, input }]);
 });
 
+test('flight read repair routes snapshot and input without loading legacy or KTX modules', async t => {
+  const entry = fixture(t, { 'flightread.mjs': 'export function repair(snapshot,input){return {ok:true,snapshot,input};}' });
+  const snapshot = { version: 1, airline: 'KE', url: 'https://www.koreanair.com/booking/search', at: 1234.5 };
+  const input = { airline: 'KE', from: 'PUS', to: 'GMP', date: '2026-11-13', hour: 8, adults: 1 };
+  const result = await call(entry, frame({ task: 'flightReadRepair', snapshot, input }));
+  assert.equal(result.code, 0);
+  assert.deepEqual(result.messages, [{ ok: true, snapshot, input }]);
+});
+
+test('flight read repair loads once for concurrent requests and keeps other branches unloaded', async () => {
+  let loads = 0;
+  const calls = [];
+  const forbidden = () => { assert.fail('Flight read repair must not load a browser or legacy host module'); };
+  const route = createRouter({
+    loadKtx: forbidden, loadPress: forbidden, loadLegacy: forbidden,
+    loadFlightRead: async () => {
+      loads++;
+      await Promise.resolve();
+      return { repair: (snapshot, input) => { calls.push([snapshot, input]); return { ok: true, at: snapshot.at }; } };
+    },
+  });
+  assert.equal(loads, 0);
+  const first = { task: 'flightReadRepair', snapshot: { at: 1 }, input: { from: 'PUS' } };
+  const second = { task: 'flightReadRepair', snapshot: { at: 2 }, input: { from: 'GMP' } };
+  assert.deepEqual(await Promise.all([route(first), route(second)]), [{ ok: true, at: 1 }, { ok: true, at: 2 }]);
+  assert.equal(loads, 1);
+  assert.deepEqual(calls, [[first.snapshot, first.input], [second.snapshot, second.input]]);
+});
+
 test('router loads each branch lazily and prunes legacy once', async () => {
   let trains = 0, hosts = 0, prunes = 0;
   const route = createRouter({ loadKtx: async () => { trains++; return { search: x => x, open: x => x }; },

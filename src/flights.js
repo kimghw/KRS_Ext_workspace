@@ -2,6 +2,7 @@
 // URL 근거와 실사이트 검증 한계: docs/flights.md. DOM은 의미(편명·시각·조회 조건)로
 // 읽되 조건을 확인할 수 없으면 실패로 돌린다. 실패는 매진/운항 없음이 아니다.
 import { currentSiteTab } from './currenttab.js';
+import { requestFlightReadRepair } from './flightrepair.js';
 
 // logo — 패널이 결과 줄·항공사 머리에 보이는 단색 SVG(확장 루트 기준 경로, 출처는 docs/flights.md "항공사 로고"). 2026-11-06 사용자 지정: "대한항공 부산에어 로고를 넣어줘".
 export const AIRLINES = Object.freeze({
@@ -27,6 +28,8 @@ const RELOAD_MS = 8000;
 const MAX_PRESSES = 15;
 /** 쿠키 안내의 "필수 쿠키만 허용"을 누르는 횟수. 눌러도 안 닫히면 그만 누르고 까닭을 알린다. */
 const MAX_COOKIE_PRESSES = 2;
+/** 표시 형식 복구는 검색/결과 문서마다 한 번, 조회 전체에서 두 번까지만 시도한다. */
+const MAX_READ_REPAIRS = 2;
 /**
  * 처음 방문한 대한항공은 쿠키 안내를 고를 때까지 본문을 숨기는데, 탭이 보이지 않으면(최소화 창) 그 안내창이 그려지지 않아 영영 멈춘다(2026-11-09 실측: 76초 동안 안 뜸, 창을 보이자 0.4초).
  * 본문이 이만큼 숨어 있으면 조회 창을 포커스 없이 보이게 하고, 그래도 숨어 있으면(다른 창에 가려 보이지 않는 것으로 친다) 앞으로 가져온다. 안내창을 닫으면 곧바로 다시 최소화한다.
@@ -68,8 +71,9 @@ export function flightBookingUrl(airline, input) {
 }
 
 /** executeScript로 전달되므로 바깥 변수·함수에 의존하지 않는 읽기 전용 함수. */
-function pageRead({ airline, input, submit = false }) {
-  const result = (data) => ({ ...data, at: performance.timeOrigin });
+function pageRead({ airline, input, submit = false, inspect = false, repairProof = null }) {
+  let repaired = false;
+  const result = (data) => ({ ...data, ...(repaired ? { repaired: true } : {}), at: performance.timeOrigin });
   const expected = airline === 'KE' ? 'www.koreanair.com' : 'www.airbusan.com';
   if (location.protocol !== 'https:' || location.hostname !== expected) return result({ error: '항공사 공식 화면이 아닙니다.' });
   const visibility = new WeakMap();
@@ -146,6 +150,9 @@ function pageRead({ airline, input, submit = false }) {
   const keRoute = keWidget?.querySelector('kds-fromto_1[is-from-code][is-to-code]');
   const kePax = keWidget?.querySelector('kds-passenger_1[has-adult-number]');
   const keDates = [...(keWidget?.querySelectorAll('ke-kds-calendar .ui-datepicker__td.-start[id]') || [])];
+  // 2026-11-11 실측: 선택 날짜 id 앞에 달력별 32자리 hex 식별자가 붙는다.
+  // 예전 YYYYMMDD와 이 형식만 읽고, 선택되지 않은 날짜·주소의 날짜로 대체하지 않는다.
+  const keSelectedDate = keDates.length === 1 ? keDates[0].id.match(/^(?:[a-f0-9]{32})?(\d{8})$/i)?.[1] : '';
   const keDateText = keWidget?.querySelector('[slot="from-date"]')?.textContent || '';
   const keActiveDay = document.querySelector('.flexible-date__link.-active .flexible-date__date')?.textContent;
   const keMatches = !!keWidget && keRoute?.getAttribute('is-from-code') === input.from
@@ -153,9 +160,39 @@ function pageRead({ airline, input, submit = false }) {
     && Number(kePax?.getAttribute('has-adult-number')) === input.adults
     && kePax?.getAttribute('has-child-number') === '0' && kePax?.getAttribute('has-infant-number') === '0'
     && keOneway
-    && keDates.length === 1 && keDates[0].id === digitDate(input.date)
+    && keSelectedDate === digitDate(input.date)
     && new RegExp(`0?${+month}\\s*월\\s*0?${+day}\\s*일`).test(keDateText)
     && (!keActiveDay || Number(keActiveDay.match(/\d+/)?.[0]) === +day);
+  // 복구에는 조회 위젯의 조건만 보낸다. 문서 본문·계정·쿠키·숨은 페이지 상태는 포함하지 않는다.
+  // 태그 이름이 바뀌어도 의미가 명시된 속성과 실제 선택된 날짜를 수집할 수 있다.
+  const repairSnapshot = () => {
+    if (!keWidget || contradicted || !['/booking/search', '/booking/select-flight/departure'].includes(location.pathname)) return null;
+    const selected = [...keWidget.querySelectorAll('.ui-datepicker__td.-start, [role="gridcell"][aria-selected="true"], [data-selected="true"][data-date]')];
+    const checkedTrips = [...keWidget.querySelectorAll('input[name="bookingType"]')].filter((el) => el.checked).map((el) => el.value);
+    const conditions = {
+      routes: [...keWidget.querySelectorAll('[is-from-code][is-to-code]')].map((el) => ({ from: el.getAttribute('is-from-code'), to: el.getAttribute('is-to-code') })),
+      passengers: [...keWidget.querySelectorAll('[has-adult-number]')].map((el) => ({ adults: el.getAttribute('has-adult-number'), children: el.getAttribute('has-child-number'), infants: el.getAttribute('has-infant-number') })),
+      trips: checkedTrips.length ? checkedTrips : keWidget.querySelector('.ang-flight-widget__aligner.-oneway') ? ['OW'] : [],
+      dates: selected.map((el) => ({ id: el.id || '', date: el.getAttribute('data-date') || '', datetime: el.getAttribute('datetime') || '', label: el.getAttribute('aria-label') || '', text: String(el.textContent || '').replace(/\s+/g, ' ').trim() })),
+      dateLabels: [...keWidget.querySelectorAll('[slot="from-date"]')].map((el) => String(el.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean),
+      activeDay: String(keActiveDay || '').trim(),
+    };
+    if (Object.values(conditions).some((value) => Array.isArray(value) && value.length > 4)) return null;
+    const snapshot = { version: 1, airline: 'KE', url: `${location.origin}${location.pathname}`, at: performance.timeOrigin,
+      blocked: !!keWidget.closest('[inert]') || [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].some(shown),
+      hidden: !shown(keWidget), busy: [...document.querySelectorAll('[aria-busy="true"], [role="progressbar"]')].some(shown), conditions };
+    return JSON.stringify(snapshot).length <= 12000 ? snapshot : null;
+  };
+  const snapshot = inspect || repairProof ? repairSnapshot() : null;
+  // Chrome/native 메시지 직렬화는 객체 키 순서를 바꿀 수 있다. 조건 목록의 순서는 유지한다.
+  const ordered = (value) => Array.isArray(value) ? value.map(ordered) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, ordered(value[key])])) : value;
+  const condition = repairProof?.condition;
+  repaired = !!snapshot && !snapshot.blocked && !snapshot.hidden && !snapshot.busy
+    && repairProof?.version === 1 && repairProof.airline === airline && repairProof.at === snapshot.at && repairProof.url === snapshot.url
+    && repairProof.snapshotKey === JSON.stringify(ordered(snapshot))
+    && condition?.from === input.from && condition.to === input.to && condition.date === input.date
+    && condition.adults === input.adults && condition.trip === 'OW' && condition.children === 0 && condition.infants === 0;
   // 에어부산(2026-11-05 실측): 주소의 OW/출발/도착/날짜/…/성인 조건을 페이지가 도시 목록을 받은 뒤 숨은 formSearchParam 에 옮기고 스스로 조회한다 —
   // 누를 단추가 없다. 그 폼의 값과(있으면) 결과 머리(.nativeAvail 의 data-depcity·arrcity·depdate)가 조건과 같아야 결과로 본다.
   const bxForm = airline === 'BX' ? document.querySelector('form[name="formSearchParam"]') : null;
@@ -165,8 +202,11 @@ function pageRead({ airline, input, submit = false }) {
     && digitDate(bxValue('depDate1')) === digitDate(input.date) && Number(bxValue('paxCountAd')) === input.adults
     && !Number(bxValue('paxCountCh')) && !Number(bxValue('paxCountIn'))
     && (!bxAvail || (bxAvail.dataset.depcity === input.from && bxAvail.dataset.arrcity === input.to && digitDate(bxAvail.dataset.depdate || '') === digitDate(input.date)));
-  const matched = !contradicted && (keWidget ? keMatches : bxForm ? bxMatches : formMatches || summaryMatches);
-  if (!matched) return result({ matched: false, rows: [], ready: document.readyState === 'complete' });
+  const matched = !contradicted && (keWidget ? keMatches || repaired : bxForm ? bxMatches : formMatches || summaryMatches);
+  if (inspect) return result({ matched, rows: [], repairSnapshot: snapshot, ready: document.readyState === 'complete' });
+  if (!matched) return result({ matched: false, rows: [], ready: document.readyState === 'complete',
+    ...(keWidget && !shown(keWidget) ? { hidden: true, loading: true } : {}),
+    ...([...document.querySelectorAll('[aria-busy="true"], [role="progressbar"]')].some(shown) ? { loading: true } : {}) });
   if ([...document.querySelectorAll('[aria-busy="true"], [role="progressbar"]')].some(shown)) return result({ matched: true, rows: [], loading: true });
   // 대한항공 검색 화면은 처음 방문에서 쿠키 안내가 뜨기까지(30초쯤) 본문을 보이지 않게 둔다(2026-11-05 새 프로필 실측) — 위젯은 있어도 아직 누를 수 없다.
   if (keWidget?.matches('.booking-gate') && !shown(keWidget)) return result({ matched: true, rows: [], loading: true, hidden: true });
@@ -299,7 +339,7 @@ function pageRead({ airline, input, submit = false }) {
   // URL이 조건만 채우는 화면이라면 검증한 같은 폼의 조회 버튼 한 개만 누른다.
   // 경로·공항·날짜·인원·편도가 확정되지 않거나 예약/결제 버튼뿐이면 아무 동작도 하지 않는다.
   // 대한항공 검색 화면: 조건이 위젯에 다 실린 뒤 '항공편 검색' kds-button 하나 — 실제 단추는 열린 shadow root 안에 있다.
-  if (submit && keWidget && keMatches && !rows.length && !empty) {
+  if (submit && keWidget && (keMatches || repaired) && !rows.length && !empty) {
     const hosts = [...document.querySelectorAll('.booking-gate__button kds-button_1')].filter((host) =>
       host.getAttribute('is-disabled') !== 'true' && host.getAttribute('is-aria-disabled') !== 'true' && /^항공편\s*검색$/.test(host.textContent.replace(/\s+/g, ' ').trim()));
     // 쿠키 안내(kc-global-cookie-banner) 같은 안내창이 떠 있으면 본문이 inert 라 단추가 듣지 않는다. 쿠키 안내는 pageCookie 가 먼저 닫으므로 여기까지 온 것은 닫지 못한 안내창이다 — 알린다.
@@ -433,6 +473,9 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
     let presses = 0;
     let reloaded = false;
     let cookiePresses = 0;
+    let repairProof = null, repairAttempts = 0, repairDisabled = false, repairError = '', recovered = false;
+    let unmatchedAt = null, unmatchedReads = 0;
+    const repairedDocuments = new Set();
     while (now() < end) {
       await pause(PAUSE_MS);
       tab = await api.tabs.get(tabId).catch(() => null);
@@ -450,7 +493,7 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
           continue;
         }
       }
-      last = await run(api, tabId, pageRead, [{ airline, input }]).catch(() => null);
+      last = await run(api, tabId, pageRead, [{ airline, input, ...(repairProof ? { repairProof } : {}) }]).catch(() => null);
       if (!last) continue;
       if (previousEpoch != null && (!Number.isFinite(last.at) || last.at === previousEpoch)) continue;
       if (last.error) throw new Error(last.error);
@@ -466,6 +509,36 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
           continue;
         }
       }
+      // 같은 문서에서 조건 읽기가 두 번 실패하면 한 번만 제한된 증거 해석을 맡긴다.
+      // 화면 구조만 복구한다. 원문 페이지나 실행 코드는 보내지 않으며 조회 버튼은 기존 검증을 통과해야 누른다.
+      if (airline === 'KE' && last.matched === false && last.ready && !last.loading && !last.challenge) {
+        unmatchedReads = unmatchedAt === last.at ? unmatchedReads + 1 : 1;
+        unmatchedAt = last.at;
+        const documentKey = `${last.at}/${new URL(tab.url).pathname}`;
+        if (unmatchedReads >= 2 && !repairDisabled && repairAttempts < MAX_READ_REPAIRS && !repairedDocuments.has(documentKey)) {
+          const inspected = await run(api, tabId, pageRead, [{ airline, input, inspect: true }]).catch(() => null);
+          const snapshot = inspected?.repairSnapshot;
+          if (snapshot && snapshot.at === last.at && !snapshot.blocked && !snapshot.hidden && !snapshot.busy) {
+            repairedDocuments.add(documentKey);
+            repairAttempts++;
+            onStage('대한항공 화면 표시를 브릿지로 다시 확인하는 중');
+            const fixed = await requestFlightReadRepair(snapshot, { ...input, airline }, { api });
+            if (fixed.ok && fixed.proof) {
+              repairProof = fixed.proof;
+              // 브릿지가 답하는 동안 선택·문서가 바뀌었으면 이 증거는 사용할 수 없다.
+              last = await run(api, tabId, pageRead, [{ airline, input, repairProof }]).catch(() => null);
+              if (!last) continue;
+              if (previousEpoch != null && (!Number.isFinite(last.at) || last.at === previousEpoch)) continue;
+              if (last.error) throw new Error(last.error);
+              if (last.repaired && last.matched) { recovered = true; onStage('대한항공 조회 조건을 다시 확인했습니다'); }
+              else if (!last.matched) repairError = '브릿지 확인 중 화면이 바뀌어 복구 결과를 사용하지 않았습니다.';
+            } else {
+              repairDisabled = true;
+              repairError = fixed.error || '브릿지가 화면의 조회 조건을 확인하지 못했습니다.';
+            }
+          }
+        }
+      } else { unmatchedAt = null; unmatchedReads = 0; }
       // 화면이 다 열리고도(ready) 8초 동안 아무 일이 없으면 — 조건이 안 실렸거나, 실렸는데 조회가 시작되지 않았으면 — 한 번 새로고침한다.
       // 에어부산은 도시 목록을 받은 뒤 스스로 조회하는데 첫 방문에서 그 요청이 403 으로 막힌 적이 있고(2026-11-05 실측),
       // 대기열 스크립트(agent-lib.stclab.com)가 안 실리면 조건만 실린 채 영영 조회하지 않는다(같은 날 막아서 재현).
@@ -479,7 +552,7 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
       if (!last.rows?.length && !last.empty && !submitted && presses < MAX_PRESSES) {
         // 조건이 실린 바퀴에 바로 누른다. 단추가 아직 안 그려졌거나 진행 표시에 가려 있으면(대한항공은 위젯보다 단추가 늦다) 누른 셈 치지 않고 다음 바퀴에 다시.
         presses++;
-        const pressed = await run(api, tabId, pageRead, [{ airline, input, submit: true }]).catch(() => null);
+        const pressed = await run(api, tabId, pageRead, [{ airline, input, submit: true, ...(repairProof ? { repairProof } : {}) }]).catch(() => null);
         if (pressed?.blocked) throw new Error(`${AIRLINES[airline].name} 화면의 안내창(쿠키 안내 등)을 닫아야 조회할 수 있습니다. 예약 페이지에서 한 번 닫은 뒤 다시 조회해 주세요.`);
         submitted = !!pressed?.submitted;
         continue;
@@ -487,7 +560,7 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
       if (!last.empty) emptyCount = 0;
       if (!last.rows?.length && !(last.empty && ++emptyCount >= 3)) continue;
       const rows = (last.rows || []).filter((row) => Number(row.dep.slice(0, 2)) >= input.hour).sort((a, b) => a.dep.localeCompare(b.dep) || a.no.localeCompare(b.no));
-      return { ...base, ok: true, tabId, rows, checkedAt: new Date(now()).toISOString() };
+      return { ...base, ok: true, tabId, rows, checkedAt: new Date(now()).toISOString(), ...(recovered ? { recovered: true } : {}) };
     }
     // 에어부산이 조건만 실린 채 끝났으면 닫기 전에 까닭을 잰다(페이지 세계) — 대기열 스크립트가 실렸는지.
     const idle = airline === 'BX' && last && last.matched && !last.loading && !last.challenge;
@@ -495,7 +568,7 @@ async function searchOne(airline, input, { api, onStage, waitMs, pause, now }) {
     throw new Error(last?.challenge ? '항공사 보안 확인 화면이 끝나지 않았습니다. 예약 페이지에서 확인해 주세요.'
       : last?.queued ? `${AIRLINES[airline].name} 접속 대기열이 끝나지 않았습니다. 예약 페이지에서 확인해 주세요.`
       : last?.hidden ? '대한항공 화면이 아직 보이지 않습니다 — 처음 방문이면 쿠키 안내가 뜨기까지 기다려야 합니다. 예약 페이지에서 안내를 한 번 닫은 뒤 다시 조회해 주세요.'
-      : last?.matched === false ? '항공사 화면에 출발지·도착지·날짜·인원이 반영됐는지 확인하지 못했습니다. 예약 페이지에서 조건을 확인해 주세요.'
+      : last?.matched === false ? `항공사 화면에 출발지·도착지·날짜·인원이 반영됐는지 확인하지 못했습니다.${repairError ? ` ${repairError}` : ''} 예약 페이지에서 조건을 확인해 주세요.`
       : idle ? `에어부산 화면이 조회를 시작하지 않았습니다.${probeReason(probe) || ' 대기열 스크립트(agent-lib.stclab.com)가 막혔거나 응답이 없으면 그렇습니다.'} 예약 페이지에서 확인해 주세요.`
       : '항공편 시간표와 좌석을 읽지 못했습니다. 예약 페이지에서 확인해 주세요.');
   } catch (error) {

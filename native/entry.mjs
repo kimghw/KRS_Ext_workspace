@@ -4,9 +4,14 @@ import { fileURLToPath } from 'node:url';
 
 export const MAX_INPUT = 64 * 1024 * 1024; // 기존 첨부 요청도 유지한다.
 
-export function createRouter({ loadKtx = () => import('./ktx.mjs'), loadPress = () => import('./ktxpress.mjs'), loadLegacy = () => import('./host.mjs') } = {}) {
-  let ktx, press, legacy;
+export function createRouter({ loadKtx = () => import('./ktx.mjs'), loadPress = () => import('./ktxpress.mjs'),
+  loadFlightRead = () => import('./flightread.mjs'), loadLegacy = () => import('./host.mjs') } = {}) {
+  let ktx, press, flightRead, legacy;
   return async message => {
+    if (message?.task === 'flightReadRepair') {
+      const reader = await (flightRead ||= loadFlightRead());
+      return reader.repair(message.snapshot, message.input);
+    }
     if (message?.task === 'ktxReservePress') {
       const action = await (press ||= loadPress());
       return action.press(message.input);

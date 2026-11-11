@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { validateFlightInput, flightBookingUrl, flightSearch, flightOpen, injected } from '../src/flights.js';
+import { repairFlightRead } from '../src/flightrepair.js';
 import { createDispatcher } from '../actions/dispatch.js';
 import { registerFlight } from '../actions/runners/flight.js';
 
@@ -194,6 +195,7 @@ test('query submission never clicks reservation, payment, disabled or ambiguous 
 
 function fakeChrome(answers, probe = null) {
   const calls = [];
+  const reads = [];
   const session = {};
   const tabs = new Map();
   const cookie = [];
@@ -228,16 +230,264 @@ function fakeChrome(answers, probe = null) {
       if (func.name === 'pageEpoch') return [{ result: 1 }];
       if (func.name === 'pageProbe') { if (!probe) throw new Error('no probe'); return [{ result: probe }]; }
       if (func.name === 'pageCookie') return [{ result: { pressed: cookie.length ? cookie.shift() : false } }];
+      reads.push({ tabId: target.tabId, ...args[0] });
       const sequence = answers[args[0].airline];
-      const answer = sequence.length > 1 ? sequence.shift() : sequence[0];
+      const answer = typeof sequence === 'function' ? await sequence(args[0], target.tabId)
+        : sequence.length > 1 ? sequence.shift() : sequence[0];
       if (answer instanceof Error) throw answer;
       return [{ result: answer }];
     } },
   };
-  return { api, calls, session, tabs, cookie, options: { api, today: '2026-11-05', waitMs: 6000, pause: async () => { time += 600; }, now: () => time } };
+  return { api, calls, reads, session, tabs, cookie, options: { api, today: '2026-11-05', waitMs: 6000, pause: async () => { time += 600; }, now: () => time } };
 }
 const result = (rows = [], over = {}) => ({ at: 2, matched: true, rows, empty: false, ready: true, ...over });
 const FLIGHT = { no: 'KE1402', dep: '09:10', arr: '10:10', availability: 'available', seats: 4, price: '79,000원' };
+const repairSnapshot = (over = {}) => ({
+  version: 1, airline: 'KE', url: 'https://www.koreanair.com/booking/search', at: 2,
+  blocked: false, hidden: false, busy: false,
+  conditions: {
+    routes: [{ from: 'PUS', to: 'GMP' }],
+    passengers: [{ adults: '2', children: '0', infants: '0' }],
+    trips: ['OW'],
+    dates: [{ id: '', date: '2026-11-12', datetime: '', label: '', text: '12' }],
+    dateLabels: ['11월 12일'], activeDay: '12',
+  }, ...over,
+});
+const nativeRepairs = (f) => f.calls.filter(([kind]) => kind === 'native');
+const installRepair = (f, answer = ({ snapshot, input }) => repairFlightRead(snapshot, input)) => {
+  f.api.runtime = { sendNativeMessage: async (host, message) => {
+    f.calls.push(['native', host, message]);
+    return answer(message);
+  } };
+};
+
+test('조건 읽기 복구 — 정상 조회에는 native 요청이나 복구 표시를 추가하지 않는다', async () => {
+  const f = fakeChrome({ KE: [result([FLIGHT])] });
+  installRepair(f, () => { throw new Error('normal lookup must not use native'); });
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, true);
+  assert.deepEqual(found.results[0].rows, [FLIGHT]);
+  assert.equal(found.results[0].recovered, undefined);
+  assert.equal(nativeRepairs(f).length, 0);
+  assert.equal(f.reads.some((read) => read.inspect || read.repairProof), false);
+});
+
+test('조건 읽기 복구 — 두 번 실패한 뒤 증거를 해석하고 새 pageRead가 확인한 결과만 사용한다', async () => {
+  const snapshot = repairSnapshot(), stages = [];
+  const f = fakeChrome({ KE: (args) => args.inspect ? result([], { matched: false, repairSnapshot: snapshot })
+    : args.repairProof ? result([FLIGHT], { repaired: true }) : result([], { matched: false }) });
+  installRepair(f);
+  const found = await flightSearch(INPUT, { ...f.options, onStage: (stage) => stages.push(stage) });
+  assert.equal(found.ok, true);
+  assert.equal(found.results[0].recovered, true);
+  assert.deepEqual(found.results[0].rows, [FLIGHT]);
+  assert.deepEqual(nativeRepairs(f).map(([, host, message]) => ({ host, message })), [{
+    host: 'com.krs.meetingroom', message: { task: 'flightReadRepair', snapshot, input: INPUT },
+  }]);
+  assert.deepEqual(f.reads.map((args) => args.inspect ? 'inspect' : args.repairProof ? 'proof' : 'read'), ['read', 'read', 'inspect', 'proof']);
+  assert.deepEqual(f.reads.at(-1).repairProof, repairFlightRead(snapshot, INPUT).proof);
+  assert.equal(f.reads.some((args) => args.submit), false);
+  assert.ok(stages.some((stage) => /브릿지/.test(stage)));
+  assert.ok(stages.some((stage) => /다시 확인했습니다/.test(stage)));
+});
+
+test('조건 읽기 복구 — all 조회도 native 입력은 KE로 한정하고 다른 항공사 결과를 유지한다', async () => {
+  const snapshot = repairSnapshot();
+  const f = fakeChrome({
+    KE: (args) => args.inspect ? result([], { matched: false, repairSnapshot: snapshot })
+      : args.repairProof ? result([FLIGHT], { repaired: true }) : result([], { matched: false }),
+    BX: [result([{ ...FLIGHT, no: 'BX8801' }])],
+  });
+  installRepair(f);
+  const found = await flightSearch({ ...INPUT, airline: 'all' }, f.options);
+  assert.deepEqual(found.results.map(({ airline, ok }) => ({ airline, ok })), [{ airline: 'KE', ok: true }, { airline: 'BX', ok: true }]);
+  assert.equal(nativeRepairs(f).length, 1);
+  assert.equal(nativeRepairs(f)[0][2].input.airline, 'KE');
+});
+
+test('조건 읽기 복구 — 검증된 proof를 조회 버튼 검사와 뒤따르는 읽기에도 전달한다', async () => {
+  const snapshot = repairSnapshot();
+  let submitted = false;
+  const f = fakeChrome({ KE: (args) => {
+    if (args.inspect) return result([], { matched: false, repairSnapshot: snapshot });
+    if (!args.repairProof) return result([], { matched: false });
+    if (args.submit) { submitted = true; return result([], { submitted: true, repaired: true }); }
+    return result(submitted ? [FLIGHT] : [], { repaired: true });
+  } });
+  installRepair(f);
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, true);
+  assert.equal(found.results[0].recovered, true);
+  assert.equal(nativeRepairs(f).length, 1);
+  const submissions = f.reads.filter((args) => args.submit);
+  assert.equal(submissions.length, 1);
+  assert.deepEqual(submissions[0].repairProof, repairFlightRead(snapshot, INPUT).proof);
+  assert.deepEqual(f.reads.at(-1).repairProof, submissions[0].repairProof);
+});
+
+test('조건 읽기 복구 — 같은 문서의 바뀐 snapshot으로 proof가 거절돼도 native를 반복 호출하지 않는다', async () => {
+  const snapshot = repairSnapshot();
+  const f = fakeChrome({ KE: (args) => result([], { matched: false, ...(args.inspect ? { repairSnapshot: snapshot } : {}) }) });
+  installRepair(f);
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.deepEqual(found.results[0].rows, []);
+  assert.equal(found.results[0].recovered, undefined);
+  assert.equal(nativeRepairs(f).length, 1);
+  assert.equal(f.reads.filter((args) => args.inspect).length, 1);
+  assert.equal(f.reads.some((args) => args.submit), false);
+  assert.match(found.results[0].error, /화면이 바뀌어 복구 결과를 사용하지 않았습니다/);
+});
+
+test('조건 읽기 복구 — 문서 phase마다 한 번, 여러 phase를 합쳐 최대 두 번만 요청한다', async () => {
+  const phases = [
+    repairSnapshot(),
+    repairSnapshot({ url: 'https://www.koreanair.com/booking/select-flight/departure' }),
+    repairSnapshot({ at: 3, url: 'https://www.koreanair.com/booking/select-flight/departure' }),
+  ];
+  let phase = 0;
+  const f = fakeChrome({ KE: (args) => result([], {
+    matched: false, at: phases[phase].at, ...(args.inspect ? { repairSnapshot: phases[phase] } : {}),
+  }) });
+  installRepair(f, ({ snapshot, input }) => {
+    const answer = repairFlightRead(snapshot, input);
+    phase++;
+    for (const tab of f.tabs.values()) tab.url = phases[phase].url;
+    return answer;
+  });
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.equal(nativeRepairs(f).length, 2);
+  assert.deepEqual(nativeRepairs(f).map(([, , message]) => message.snapshot), phases.slice(0, 2));
+  assert.equal(f.reads.filter((args) => args.inspect).length, 2);
+  assert.equal(f.reads.some((args) => args.submit), false);
+});
+
+test('조건 읽기 복구 — native 실패 뒤 문서가 바뀌어도 추가 복구하지 않고 구체적 원인을 돌려준다', async () => {
+  const snapshot = repairSnapshot();
+  let failed = false;
+  const f = fakeChrome({ KE: (args) => result([], {
+    matched: false, at: failed ? 3 : 2,
+    ...(args.inspect ? { repairSnapshot: { ...snapshot, at: failed ? 3 : 2 } } : {}),
+  }) });
+  installRepair(f, () => {
+    failed = true;
+    return { ok: false, code: 'FLIGHT_REPAIR_DATE_UNVERIFIED', error: '선택 날짜의 연도 증거가 없습니다.' };
+  });
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.deepEqual(found.results[0].rows, []);
+  assert.equal(nativeRepairs(f).length, 1);
+  assert.equal(f.reads.filter((args) => args.inspect).length, 1);
+  assert.equal(f.reads.some((args) => args.repairProof || args.submit), false);
+  assert.match(found.results[0].error, /선택 날짜의 연도 증거가 없습니다/);
+});
+
+test('조건 읽기 복구 — 연월일 증거가 부족하면 native도 결과도 만들지 않는다', async () => {
+  const snapshot = repairSnapshot();
+  snapshot.conditions.dates[0].date = '';
+  const f = fakeChrome({ KE: (args) => result([], { matched: false, ...(args.inspect ? { repairSnapshot: snapshot } : {}) }) });
+  installRepair(f);
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.deepEqual(found.results[0].rows, []);
+  assert.equal(nativeRepairs(f).length, 0);
+  assert.equal(f.reads.filter((args) => args.inspect).length, 1);
+  assert.equal(f.reads.some((args) => args.repairProof || args.submit), false);
+  assert.match(found.results[0].error, /전체 연월일을 확인하지 못했습니다/);
+});
+
+test('조건 읽기 복구 — 잘못된 native proof를 페이지로 넘기지 않고 원인을 표시한다', async () => {
+  const snapshot = repairSnapshot();
+  const f = fakeChrome({ KE: (args) => result([], { matched: false, ...(args.inspect ? { repairSnapshot: snapshot } : {}) }) });
+  installRepair(f, ({ snapshot, input }) => {
+    const answer = repairFlightRead(snapshot, input);
+    answer.proof.condition.date = '2026-11-13';
+    return answer;
+  });
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.deepEqual(found.results[0].rows, []);
+  assert.equal(nativeRepairs(f).length, 1);
+  assert.equal(f.reads.some((args) => args.repairProof || args.submit), false);
+  assert.match(found.results[0].error, /브릿지가 돌려준 조건을 현재 화면 증거로 확인하지 못했습니다/);
+});
+
+test('조건 읽기 복구 — guard·로그인·진행 중이거나 inspect 증거가 없으면 native를 요청하지 않는다', async () => {
+  const cases = [
+    { normal: result([], { matched: false, challenge: true }) },
+    { normal: { error: '로그인이 필요합니다.' } },
+    { normal: result([], { matched: false, loading: true }) },
+    { normal: result([], { matched: false, ready: false }) },
+    { snapshot: null },
+    { snapshot: repairSnapshot({ at: 99 }) },
+    ...['blocked', 'hidden', 'busy'].map((flag) => ({ snapshot: repairSnapshot({ [flag]: true }) })),
+  ];
+  for (const entry of cases) {
+    const f = fakeChrome({ KE: (args) => args.inspect ? result([], { matched: false, repairSnapshot: entry.snapshot })
+      : entry.normal || result([], { matched: false }) });
+    installRepair(f);
+    const found = await flightSearch(INPUT, f.options);
+    assert.equal(found.ok, false);
+    assert.deepEqual(found.results[0].rows, []);
+    assert.equal(nativeRepairs(f).length, 0, JSON.stringify(entry));
+    assert.equal(f.reads.some((args) => args.repairProof || args.submit), false);
+    if (entry.normal) assert.equal(f.reads.some((args) => args.inspect), false);
+  }
+});
+
+test('조건 읽기 복구 — 같은 문서의 실패가 두 번 확인되기 전에는 복구하지 않는다', async () => {
+  let at = 2;
+  const f = fakeChrome({ KE: () => result([], { matched: false, at: at++ }) });
+  installRepair(f);
+  assert.equal((await flightSearch(INPUT, f.options)).ok, false);
+  assert.equal(nativeRepairs(f).length, 0);
+  assert.equal(f.reads.some((args) => args.inspect), false);
+});
+
+test('조건 읽기 복구 — 재사용 탭의 이전 문서 응답은 복구 증거로 쓰지 않는다', async () => {
+  const answers = { KE: [result([FLIGHT])] }, f = fakeChrome(answers);
+  installRepair(f);
+  assert.equal((await flightSearch(INPUT, f.options)).ok, true);
+  answers.KE = [result([], { at: 1, matched: false })];
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.equal(nativeRepairs(f).length, 0);
+  assert.equal(f.reads.some((args) => args.inspect || args.repairProof), false);
+});
+
+test('조건 읽기 복구 — native 응답 뒤 재읽기도 이전 문서의 결과를 거절한다', async () => {
+  const answers = { KE: [result([FLIGHT], { at: 1 })] }, f = fakeChrome(answers);
+  const snapshot = repairSnapshot();
+  let answered = false;
+  installRepair(f, ({ snapshot, input }) => { answered = true; return repairFlightRead(snapshot, input); });
+  assert.equal((await flightSearch(INPUT, f.options)).ok, true);
+  answers.KE = (args) => {
+    if (args.inspect) return result([], { matched: false, repairSnapshot: snapshot });
+    // 이전 문서는 기본 parser만으로 조건이 맞아도 navigation 완료의 증거가 아니다.
+    if (answered) return result([FLIGHT], { at: 1, repaired: false });
+    return result([], { matched: false });
+  };
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.deepEqual(found.results[0].rows, []);
+  assert.equal(nativeRepairs(f).length, 1);
+  assert.equal(f.reads.some((args) => args.submit), false);
+});
+
+test('조건 읽기 복구 — native 답변 후 guard가 나타나면 결과나 조회 클릭을 만들지 않는다', async () => {
+  const snapshot = repairSnapshot();
+  const f = fakeChrome({ KE: (args) => args.inspect ? result([], { matched: false, repairSnapshot: snapshot })
+    : args.repairProof ? { error: '항공사 보안 확인이 필요합니다.' } : result([], { matched: false }) });
+  installRepair(f);
+  const found = await flightSearch(INPUT, f.options);
+  assert.equal(found.ok, false);
+  assert.equal(nativeRepairs(f).length, 1);
+  assert.deepEqual(found.results[0].rows, []);
+  assert.equal(found.results[0].recovered, undefined);
+  assert.equal(f.reads.some((args) => args.submit), false);
+  assert.match(found.results[0].error, /보안 확인이 필요합니다/);
+});
 
 console.log('대한항공 쿠키 안내(2026-11-09 사용자 지정: "자동으로 눌러 줄 수 있으면 눌러줘") — 필수 쿠키만 허용');
 
