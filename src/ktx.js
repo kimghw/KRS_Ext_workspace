@@ -9,6 +9,8 @@ import { currentSiteTab, openCurrentTab } from './currenttab.js';
 import { korailFillPage } from './korailfill.js';
 import { korailSeatsPage, shapeSeatRows } from './korailseats.js';
 import { korailReservePage, korailPopupPage } from './korailreserve.js';
+import { pressKorailReserve } from './korailpress.js';
+import { clickKorailInput } from './korailinput.js';
 export const KORAIL_MAIN = 'https://www.korail.com/ticket/main';
 export const KORAIL_SEARCH = 'https://www.korail.com/ticket/search/general';
 export const KORAIL_LIST = 'https://www.korail.com/ticket/search/list';
@@ -289,8 +291,19 @@ async function watchLoop(w, { api, wait, now, gapMs }) {
         // 자리가 나면 예약까지(2026-11-10) — 예약이 끝날 때까지 이 탭을 다시 읽지 않는다. 예약하면 탭이 결제 직전 화면으로 넘어가 다른 대기는 멈춘다.
         let reserve;
         try { reserve = await target.onFound({ row, tabId: w.tabId }); } catch (error) { reserve = failure(errorText(error), 'RESERVE_FAILED'); }
-        target.done({ ok: true, found: true, row, rows: seen, tabId: w.tabId, count: w.count, reserve });
-        if (reserve?.ok && reserve.reserved) return endAll({ ok: true, found: false, stopped: true, note: '다른 열차를 예약해 빈자리 대기를 멈췄습니다.' });
+        const found = { ok: true, found: true, row, rows: seen, tabId: w.tabId, count: w.count, reserve };
+        if ((reserve?.ok && reserve.reserved) || reserve?.manual) {
+          const note = reserve.ok && reserve.reserved
+            ? '다른 열차를 예약해 빈자리 대기를 멈췄습니다.'
+            : '코레일에서 직접 예매 중인 열차가 있어 다른 빈자리 대기를 멈췄습니다.';
+          // 실제 예약 결과를 마지막에 알린다. 다른 대기의 중단 안내가 이를 덮어쓰지 않도록 한다.
+          for (const other of [...w.targets.values()]) {
+            if (other !== target) other.done({ ok: true, found: false, stopped: true, note });
+          }
+          target.done(found);
+          return;
+        }
+        target.done(found);
       }
     }
   } catch (error) {
@@ -344,6 +357,15 @@ export function ktxWatch(input, { api = globalThis.chrome, tabId = null, signal 
 
 // ── 좌석 예약(2026-11-10 사용자 지정: "좌석이 생기면 결재는 아니고 좌석 예약까지 할 수 있도록" · "이미 로그인이 되었다고 가정하고") ──
 export const RESERVE_TRIES = 25;
+// 자동 예매가 제한되면 사용자가 같은 탭에서 직접 예매하는 동안 화면만 확인한다(최대 120회, 약 2분).
+export const RESERVE_MANUAL_TRIES = 120;
+// 예매 전 화면 준비를 500ms 간격으로 읽고 같은 상태가 두 번 연속 확인되어야 진행한다.
+export const RESERVE_READY_TRIES = 16;
+const activeReservations = new WeakMap();
+// 예약하는 중의 차단 안내(-8002 등)는 확인으로 닫고 이어 간다(2026-11-11 사용자 지정: "이거 그냥 확인 누르면 되는데") — 이만큼을 넘게 거듭 뜨면 멈춘다.
+export const RESERVE_GUARD_PASSES = 3;
+// 가격 누르기와 예매 누르기는 따로 호출하고 그 사이를 이만큼 둔다(2026-11-11 사용자 지정: "연속 호출하지 말고 따로 따로 호출해봐").
+export const RESERVE_PACE_MS = 1500;
 const RESERVE_WHY = {
   'not-list': '코레일 탭이 결과 화면이 아닙니다.',
   'bad-target': '예약할 열차 번호·출발 시각을 확인해 주세요.',
@@ -352,65 +374,325 @@ const RESERVE_WHY = {
   'no-seat': '그 사이 자리가 없어졌습니다.',
   'no-book-button': '좌석은 골랐지만 코레일의 예매 단추를 찾지 못했습니다.',
   'book-disabled': '좌석은 골랐지만 코레일의 예매 단추가 눌리지 않는 상태입니다.',
+  'selection-mismatch': '코레일에서 선택된 열차·객실이 요청과 다르거나 여러 좌석이 선택되어 예약하지 않았습니다. 선택 상태를 확인해 주세요.',
+  'condition-mismatch': '코레일의 출발일이나 인원이 바뀌어 예약하지 않았습니다. 다시 조회해 주세요.',
+  'page-busy': '코레일이 이전 동작을 처리 중이라 예매하지 않았습니다.',
+  'modal-open': '코레일 안내창이 남아 있어 예매하지 않았습니다. 그 탭의 안내를 확인해 주세요.',
+  'modal-pending': '코레일 안내창이 닫히지 않아 다음 동작을 멈췄습니다. 그 탭의 안내를 확인해 주세요.',
+  'arm-busy': '코레일에서 이전 예매 입력을 확인 중입니다. 현재 예약 결과를 먼저 확인해 주세요.',
+  'arm-label-exists': '예매 단추를 하나로 확인하지 못해 입력하지 않았습니다.',
+  'bad-expiry': '예매 준비 시간이 지나 입력하지 않았습니다. 현재 코레일 화면을 확인해 주세요.',
+  'bad-token': '예매 입력을 준비하지 못했습니다. 패널을 다시 열어 주세요.',
 };
 
 /**
  * 빈자리가 난 열차를 그 코레일 결과 탭에서 예약한다 — 일반실(없으면 특실)의 가격을 고르고 예매를 눌러 결제 직전 화면(좌석이 잡힌 화면)까지. 결제는 하지 않는다.
- * 코레일 로그인은 되어 있다고 본다(로그인 화면이 나오면 멈춘다). 다른 열차로 대신하지 않고, 재시도하지 않는다. 예약하면 그 탭을 앞으로 가져온다.
+ * 코레일 로그인은 되어 있다고 본다(로그인 화면이 나오면 멈춘다). 다른 열차로 대신하지 않는다. 예약하면 그 탭을 앞으로 가져온다.
+ * 가격을 누르기 전·누른 뒤의 차단 안내는 확인으로 닫고 이어 간다(RESERVE_GUARD_PASSES 번을 넘게 뜨거나 닫히지 않으면 멈춘다).
+ * 예매 뒤 -8002 안내는 확인으로 닫고 코레일 탭을 앞으로 가져온다. 사용자가 직접 예매하는 동안 상태만 읽으며 추가 예매·확인 클릭은 하지 않는다.
+ * 같은 열차의 예약 상세를 확인하면 완료를 알린다. 조건 변경·취소 신호로 관찰을 끝내며, 기다림이 끝나도 예약 실패라고 단정하지 않는다.
  * input — 조회 조건 + train(열차 번호) · dep(출발 HH:MM) · seat('any'|'gen'|'spec'). tabId 는 좌석을 읽은 결과 탭(ctx).
  * @returns {Promise<{ok: true, reserved: true, seat: string, price: string, deadline: string, tabId: number, note: string}|{ok: false, error: string, code: string}>}
  */
-export async function ktxReserve(input = {}, { api = globalThis.chrome, tabId = null, onStage = () => {}, wait = pause, tries = RESERVE_TRIES } = {}) {
+export async function ktxReserve(input = {}, { api = globalThis.chrome, tabId = null, onStage = () => {}, wait = pause, tries = RESERVE_TRIES, manualTries = RESERVE_MANUAL_TRIES, readyTries = RESERVE_READY_TRIES, signal } = {}) {
   let query;
   try { query = checkedInput(input); } catch (error) { return failure(error.message, 'INPUT_INVALID'); }
   if (typeof input.train !== 'string' || !/^\d{1,4}$/.test(input.train) || typeof input.dep !== 'string' || !/^\d{2}:\d{2}$/.test(input.dep)) {
     return failure('예약할 열차 번호·출발 시각을 확인해 주세요.', 'INPUT_INVALID');
   }
   const seat = ['gen', 'spec'].includes(input.seat) ? input.seat : 'any';
+  if (signal?.aborted) return failure('예약 진행을 중지했습니다.', 'RESERVE_CANCELLED');
   if (!api?.tabs?.get || !api.scripting?.executeScript) return failure('코레일 탭을 다룰 수 없어 예약하지 못했습니다.', 'TAB_UNAVAILABLE');
-  const tab = Number.isInteger(tabId) ? await Promise.resolve().then(() => api.tabs.get(tabId)).catch(() => null) : null;
-  if (!onKorail(tab, [KORAIL_LIST])) return failure('예약할 코레일 결과 탭이 없습니다. 다시 조회한 뒤 빈자리 대기를 걸어 주세요.', 'RESERVE_NO_TAB');
+  if (!Number.isInteger(tabId)) return failure('예약할 코레일 결과 탭이 없습니다. 다시 조회한 뒤 빈자리 대기를 걸어 주세요.', 'RESERVE_NO_TAB');
+  let active = activeReservations.get(api);
+  if (!active) { active = new Set(); activeReservations.set(api, active); }
+  if (active.has(tabId)) return failure('같은 코레일 탭에서 예약을 진행 중입니다. 현재 예약 확인이 끝난 뒤 다시 진행해 주세요.', 'RESERVE_BUSY');
+  active.add(tabId);
+  let manual = false;
   try {
-    const page = await inTab(api, tabId, korailSeatsPage, ['read', { waitMs: 3000, have: [trainNo(input.train)] }]);
-    if (page?.guard) return blocked(page.guard);
+    const tab = await Promise.resolve().then(() => api.tabs.get(tabId)).catch(() => null);
+    if (!onKorail(tab, [KORAIL_LIST])) return failure('예약할 코레일 결과 탭이 없습니다. 다시 조회한 뒤 빈자리 대기를 걸어 주세요.', 'RESERVE_NO_TAB');
+    const browserInput = typeof api.debugger?.attach === 'function' && typeof api.debugger?.sendCommand === 'function';
+    if (browserInput) {
+      await api.tabs.update(tabId, { active: true });
+      if (Number.isInteger(tab.windowId)) await api.windows?.update?.(tab.windowId, { focused: true });
+    }
+    let passes = 0, lastGuard = null, manualReads = 0;
+    const cancelled = () => ({ ...failure('예약 확인을 중지했습니다. 이미 진행한 예매 결과는 코레일에서 확인해 주세요.', 'RESERVE_CANCELLED'), ...(manual ? { manual: true } : {}) });
+    // 어디까지 갔는지 — 차단 안내로 멈출 때 까닭에 붙인다(가격을 눌렀는지, 예매를 몇 번 눌렀는지, 안내가 어느 단계에서 떴는지).
+    const trail = [], said = [], popupClicks = new Map();
+    const stop = (guard) => {
+      const said = blocked(guard);
+      return { ...said, error: `${said.error} [경과: ${trail.join(' → ') || '결과 화면을 읽기 전'}]`.slice(0, 1800) };
+    };
+    // 닫은 차단 안내를 센다 — 한도를 넘으면 그 안내로 멈춘다.
+    const over = (list) => {
+      for (const guard of list || []) { passes++; lastGuard = guard; }
+      return passes > RESERVE_GUARD_PASSES;
+    };
+    const checkedInputResult = (result) => {
+      if (result?.code) throw Object.assign(new Error(result.error || '코레일 입력 결과를 확인하지 못했습니다.'), { code: result.code });
+      return result;
+    };
+    const pageInput = async (step, options) => checkedInputResult(await clickKorailInput({
+      api, tabId, signal, wait,
+      prepare: (expectedKey) => inTab(api, tabId, korailReservePage,
+        [step, { ...options, ...(expectedKey === undefined ? {} : { expectedKey }) }], 8000),
+    }));
+    let clickedNoticeKey = null;
+    // 입력 계획은 화면만 읽는다. 안내를 발견한 뒤 1초 쉬고 같은 안내만 한 번 누른다.
+    const settleBrowserPage = async (target) => {
+      const readStatus = () => inTab(api, tabId, korailReservePage, ['status', target], 8000);
+      const state = await readStatus();
+      if (state?.done || state?.login || state?.why === 'reservation-mismatch' || state?.why === 'condition-mismatch') return state;
+      const notice = await inTab(api, tabId, korailReservePage, ['notice-input', target], 8000);
+      const noticeKey = notice?.noticeKey || notice?.plan?.key;
+      if (clickedNoticeKey && noticeKey === clickedNoticeKey) return { ...state, why: 'modal-pending' };
+      if (notice) clickedNoticeKey = null;
+      if (!notice?.plan) return state;
+      await wait(1000);
+      if (signal?.aborted) return { ...state, why: 'cancelled' };
+      const pressed = await pageInput('notice-input', { ...target, expectedKey: notice.plan.key });
+      if (!pressed?.clicked) return readStatus();
+      clickedNoticeKey = noticeKey;
+      let pending = true;
+      for (let i = 0; i < 10 && pending; i++) {
+        await wait(200);
+        if (signal?.aborted) return { why: 'cancelled' };
+        const current = await inTab(api, tabId, korailReservePage, ['notice-input', target], 8000).catch(() => null);
+        if (current) {
+          pending = notice.noticeKey ? current.noticeKey === notice.noticeKey : current.plan?.key === notice.plan.key;
+          if (!pending) clickedNoticeKey = null;
+        }
+      }
+      const after = await readStatus();
+      return { ...after,
+        passed: notice.guard && !after?.guard ? [notice.guard] : [],
+        ...(pending ? { why: 'modal-pending' } : {}),
+      };
+    };
+    // 가격 선택 때도 별도 안내 창이 열릴 수 있다. 같은 안내는 한 번만 누르고,
+    // 문구가 바뀌거나 창이 닫혔는지는 다음 읽기에서 확인한다.
+    const settlePopups = async () => {
+      if (signal?.aborted || manual) return false;
+      const tabs = (await Promise.resolve().then(() => api.tabs.query({})).catch(() => [])) || [];
+      const popups = tabs.filter((popup) => {
+        if (popup.openerTabId !== tabId) return false;
+        try {
+          const url = new URL(popup.url);
+          return url.protocol === 'https:' && (url.hostname === 'korail.com' || url.hostname.endsWith('.korail.com'));
+        } catch { return false; }
+      });
+      const live = new Set(popups.map((popup) => popup.id));
+      for (const id of popupClicks.keys()) if (!live.has(id)) popupClicks.delete(id);
+      let pending = false;
+      for (const popup of popups) {
+        if (signal?.aborted || manual) break;
+        const seen = await inTab(api, popup.id, korailPopupPage, [{ observeOnly: true }], 5000).catch(() => null);
+        if (!seen) { if (popupClicks.has(popup.id)) pending = true; continue; }
+        const key = JSON.stringify([popup.url, seen.words]);
+        // 확인 뒤 버튼이 잠깐 비활성화되거나 사라져도 같은 안내가 남아 있으면 처리 중이다.
+        if (popupClicks.get(popup.id) === key) { pending = true; continue; }
+        popupClicks.delete(popup.id);
+        if (!seen.actionable) continue;
+        pending = true;
+        await wait(1000);
+        if (signal?.aborted || manual) continue;
+        const result = browserInput ? await clickKorailInput({
+          api, tabId: popup.id, signal, wait,
+          prepare: (expectedKey) => inTab(api, popup.id, korailPopupPage,
+            [{ prepareInput: true, expectedWords: seen.words, expectedUrl: popup.url, expectedKey }], 5000),
+        }) : await inTab(api, popup.id, korailPopupPage, [{ expectedWords: seen.words, expectedUrl: popup.url }], 5000).catch(() => null);
+        if (browserInput && result?.code) {
+          // window.close()도 debugger 연결을 끝낸다. 실제로 닫힌 안내창은 다시 누를 대상이 없다.
+          const remains = await Promise.resolve().then(() => api.tabs.get(popup.id)).catch(() => null);
+          if (!remains) { popupClicks.delete(popup.id); continue; }
+          checkedInputResult(result);
+        }
+        if (result?.words) said.push(result.words.slice(0, 200));
+        if (result?.clicked) popupClicks.set(popup.id, JSON.stringify([popup.url, result.words]));
+      }
+      return pending;
+    };
+    const read = () => inTab(api, tabId, korailSeatsPage, ['read', { waitMs: 3000, have: [trainNo(input.train)], ...(browserInput ? { observeOnly: true } : {}) }]);
+    let page = await read();
+    // 읽는 함수는 차단 안내를 확인으로 닫고 돌려준다 — 닫혔으니 한 번 더 읽는다.
+    if (page?.guard) {
+      if (browserInput) {
+        const settled = await settleBrowserPage({ no: input.train, dep: input.dep, from: query.from, to: query.to, date: query.date, adults: query.adults, seat });
+        if (settled?.guard) return stop(settled.guard);
+        over(settled?.passed);
+      } else over([page.guard]);
+      trail.push('결과 화면을 읽을 때 안내 — 닫음');
+      page = await read();
+    }
+    if (signal?.aborted) return cancelled();
+    if (page?.login) return failure('코레일 로그인이 필요합니다. 로그인 후 다시 예약해 주세요.', 'RESERVE_LOGIN');
+    if (page?.guard) return stop(page.guard);
     if (!sameCond(page?.cond, query)) return failure('코레일 탭의 조회 조건이 요청과 달라 예약하지 않았습니다.', 'CONDITION_MISMATCH');
     onStage('코레일에서 좌석을 고르는 중');
-    const picked = await inTab(api, tabId, korailReservePage, ['pick', { no: input.train, dep: input.dep, from: query.from, to: query.to, seat }]);
-    if (picked?.guard) return blocked(picked.guard);
-    if (!picked?.booked) return failure(RESERVE_WHY[picked?.why] || '코레일에서 좌석을 고르지 못했습니다.', 'RESERVE_NOT_PICKED');
+    const reservationTarget = (chosen) => ({
+      no: input.train, dep: input.dep, from: query.from, to: query.to,
+      seat: chosen.seat === '일반실' ? 'gen' : 'spec', date: query.date, adults: query.adults,
+    });
+    const pickBrowserSeat = async () => {
+      const target = { no: input.train, dep: input.dep, from: query.from, to: query.to, seat, date: query.date, adults: query.adults };
+      const passed = [], heard = [];
+      let clicked = false, last = null;
+      for (let i = 0; i < 40; i++) {
+        if (signal?.aborted) return { why: 'cancelled' };
+        if (await settlePopups()) { await wait(300); continue; }
+        last = await inTab(api, tabId, korailReservePage, ['pick-input', target], 8000);
+        if (last?.login) return { ...last, error: '코레일 로그인이 필요합니다. 로그인 후 다시 예약해 주세요.', code: 'RESERVE_LOGIN' };
+        if (last?.guard || last?.why === 'modal-open') {
+          const settled = await settleBrowserPage(target);
+          passed.push(...(settled?.passed || []));
+          heard.push(...(settled?.said || []));
+          if (settled?.guard || settled?.why === 'modal-pending') return { ...settled, passed, said: heard };
+          if (passes + passed.length > RESERVE_GUARD_PASSES) return { guard: passed.at(-1), passed, said: heard };
+          continue;
+        }
+        if (last?.picked && last?.ready) return { ...last, passed, said: heard };
+        if (last?.plan && !clicked) {
+          const pressed = await pageInput('pick-input', { ...target, expectedKey: last.plan.key });
+          if (pressed?.clicked) { clicked = true; await wait(1500); continue; }
+          if (pressed?.why && pressed.why !== 'input-changed') return { ...pressed, passed, said: heard };
+        } else if (last?.why && !['page-busy', 'input-changed'].includes(last.why)) return { ...last, passed, said: heard };
+        await wait(300);
+      }
+      return { ...last, ready: false, why: clicked ? 'selection-mismatch' : last?.why || 'page-busy', passed, said: heard };
+    };
+    // 가격만 누르고(hold) 예매는 사이를 두고 따로 누른다 — 한 번의 호출에서 잇달아 누르지 않는다.
+    const pick = async () => {
+      let selection;
+      // 거절 처리도 즉시 연결한다. 팝업을 기다리는 동안 pick이 실패해도 미처리 rejection을 만들지 않는다.
+      const selecting = (browserInput ? pickBrowserSeat() : inTab(api, tabId, korailReservePage, ['pick', { no: input.train, dep: input.dep, from: query.from, to: query.to, seat, hold: true }]))
+        .then((value) => { selection = { value }; }, (error) => { selection = { error }; });
+      while (!selection && !signal?.aborted) {
+        await Promise.race([selecting, wait(300)]);
+        if (!browserInput && !selection && !signal?.aborted) await settlePopups();
+      }
+      // 취소 후에는 새 팝업을 누르지 않는다. 이미 진행 중인 pick이 끝날 때까지 탭 잠금은 유지한다.
+      await selecting;
+      if (signal?.aborted) return { why: 'cancelled' };
+      if ('error' in selection) throw selection.error;
+      const chosen = selection.value;
+      const shut = (list) => (list?.length ? `(안내 ${list.length}번 닫음)` : '');
+      trail.push(chosen?.ready ? `가격 누름${shut(chosen.passed)}` : `가격을 눌렀지만 예매 단추 없음${shut(chosen?.passed)}`);
+      if (!chosen?.ready || chosen.guard) return chosen;
+      if (passes + (chosen.passed?.length || 0) > RESERVE_GUARD_PASSES) return { ...chosen, guard: chosen.passed.at(-1) };
+      await wait(RESERVE_PACE_MS);
+      if (signal?.aborted) return { ...chosen, booked: false, why: 'cancelled' };
+      onStage('좌석 선택 완료와 코레일 안내·로딩 종료를 확인하는 중');
+      let lastKey = null, ready = null, stable = false;
+      for (let i = 0; i < readyTries; i++) {
+        if (signal?.aborted) return { ...chosen, booked: false, why: 'cancelled' };
+        const popupPending = await settlePopups();
+        if (signal?.aborted) return { ...chosen, booked: false, why: 'cancelled' };
+        const current = await Promise.resolve().then(() => api.tabs.get(tabId)).catch(() => null);
+        if (!onKorail(current, [KORAIL_LIST])) return { ...chosen, booked: false, why: 'not-list' };
+        ready = popupPending ? { ready: false, why: 'modal-open' } : current.status === 'complete' && !current.pendingUrl
+          ? await inTab(api, tabId, korailReservePage, ['ready', reservationTarget(chosen)], 8000)
+          : { ready: false, why: 'page-busy' };
+        if (signal?.aborted) return { ...chosen, booked: false, why: 'cancelled' };
+        if (browserInput && !popupPending && (ready?.guard || ready?.why === 'modal-open')) {
+          const settled = await settleBrowserPage(reservationTarget(chosen));
+          chosen.passed = [...(chosen.passed || []), ...(settled?.passed || [])];
+          if (settled?.guard || passes + chosen.passed.length > RESERVE_GUARD_PASSES) {
+            return { ...chosen, booked: false, guard: settled?.guard || chosen.passed.at(-1) };
+          }
+          if (settled?.why === 'modal-pending') return { ...chosen, booked: false, why: 'modal-pending', notReady: true };
+          lastKey = null;
+          if (i + 1 < readyTries) await wait(500);
+          continue;
+        }
+        if (ready?.guard || ['bad-target', 'condition-mismatch', 'selection-mismatch', 'many-rows', 'not-list'].includes(ready?.why)) {
+          return { ...chosen, ...ready, booked: false };
+        }
+        if (ready?.ready && typeof ready.key === 'string' && ready.key.length) {
+          if (lastKey === ready.key) { stable = true; break; }
+          lastKey = ready.key;
+        } else lastKey = null;
+        if (i + 1 < readyTries) await wait(500);
+      }
+      if (!stable) return { ...chosen, booked: false, why: ready?.why || 'page-busy', notReady: true };
+      if (signal?.aborted) return { ...chosen, booked: false, why: 'cancelled' };
+      onStage('좌석 선택과 안내 종료를 확인했습니다 — 예매를 한 번 누르는 중');
+      const pressed = browserInput ? await pageInput('book-input', reservationTarget(chosen)).then((result) => ({ ...result, booked: result?.clicked === true })) : await pressKorailReserve(reservationTarget(chosen), {
+        api, tabId, signal, runPage: (step, options) => inTab(api, tabId, korailReservePage, [step, options], 8000),
+      });
+      trail.push(pressed?.booked ? `예매 누름${shut(pressed.passed)}` : `예매를 누르지 못함${shut(pressed?.passed)}`);
+      return { ...chosen, ...pressed, picked: true, seat: chosen.seat, price: chosen.price, passed: [...(chosen.passed || []), ...(pressed?.passed || [])], said: [...(chosen.said || []), ...(pressed?.said || [])] };
+    };
+    const picked = await pick();
+    if (signal?.aborted) return cancelled();
+    if (picked?.guard) return stop(picked.guard);
+    if (over(picked?.passed)) return stop(lastGuard);
+    if (!picked?.booked) return failure(`${picked?.error || RESERVE_WHY[picked?.why] || '코레일에서 좌석을 고르지 못했습니다.'}${picked?.hint ? ` (${String(picked.hint).slice(0, 300)})` : ''}`, picked?.code || (picked?.notReady ? 'RESERVE_NOT_READY' : 'RESERVE_NOT_PICKED'));
     onStage(`${picked.seat} ${picked.price} — 예매를 눌러 결제 직전 화면을 기다리는 중`);
-    const said = [];
-    for (let i = 0; i < tries; i++) {
+    const frontTab = async (windowId) => {
+      await Promise.resolve().then(() => api.tabs.update(tabId, { active: true })).catch(() => {});
+      if (Number.isInteger(windowId)) await Promise.resolve().then(() => api.windows?.update?.(windowId, { focused: true })).catch(() => {});
+    };
+    for (let i = 0; i < tries || manual; i++) {
+      if (signal?.aborted) return cancelled();
+      if (manual && manualReads++ >= manualTries) break;
       await wait(1000);
+      if (signal?.aborted) return cancelled();
       // 예매 뒤 따로 뜬 안내 창(window.open)은 확인을 누른다.
-      const popups = ((await Promise.resolve().then(() => api.tabs.query({})).catch(() => [])) || [])
-        .filter((t) => t.openerTabId === tabId && /^https:\/\/[^/]*korail\.com\//.test(String(t.url || '')));
-      for (const popup of popups) {
-        const r = await inTab(api, popup.id, korailPopupPage, [], 5000).catch(() => null);
-        if (r?.words) said.push(r.words.slice(0, 200));
-      }
+      // 사용자가 직접 예매하는 동안에는 별도 안내 창도 읽거나 누르지 않는다.
+      await settlePopups();
+      if (signal?.aborted) return cancelled();
       const now = await Promise.resolve().then(() => api.tabs.get(tabId)).catch(() => null);
-      if (!now) return failure('예약하던 코레일 탭이 닫혔습니다.', 'RESERVE_TAB_GONE');
+      if (!now) return { ...failure('예약하던 코레일 탭이 닫혔습니다.', 'RESERVE_TAB_GONE'), ...(manual ? { manual: true } : {}) };
       if (now.status !== 'complete' || now.pendingUrl) continue;
-      const seen = await inTab(api, tabId, korailReservePage, ['settle'], 8000).catch(() => null);
+      const seen = manual ? await inTab(api, tabId, korailReservePage, ['status', reservationTarget(picked)], 8000).catch(() => null)
+        : browserInput ? await settleBrowserPage(reservationTarget(picked)).catch((error) => {
+          // 예매 후 정상 문서 전환으로 주입이 끊길 수 있다. 입력 결과 오류는 숨기지 않는다.
+          if (/^RESERVE_/.test(error?.code || '')) throw error;
+          return null;
+        })
+        : await inTab(api, tabId, korailReservePage, ['settle', reservationTarget(picked)], 8000).catch(() => null);
+      if (signal?.aborted) return cancelled();
       if (!seen) continue;   // 화면이 넘어가는 중이라 주입이 끊겼다
-      if (seen.guard) return blocked(seen.guard);
-      if (seen.login) return failure('코레일 로그인 화면이 나와 예약하지 못했습니다. 그 탭에서 로그인한 뒤 다시 대기를 걸어 주세요.', 'RESERVE_LOGIN');
-      said.push(...(seen.said || []));
-      if (seen.done) {
-        await Promise.resolve().then(() => api.tabs.update(tabId, { active: true })).catch(() => {});
-        if (Number.isInteger(now.windowId)) await Promise.resolve().then(() => api.windows?.update?.(now.windowId, { focused: true })).catch(() => {});
-        const until = seen.deadline ? ` 결제 기한 ${seen.deadline}.` : '';
-        return { ok: true, reserved: true, seat: picked.seat, price: picked.price, deadline: seen.deadline || '', tabId,
-          note: `${picked.seat} ${picked.price} 좌석을 잡았습니다.${until} 결제는 코레일 탭에서 직접 해 주세요(기한이 지나면 자동 취소).` };
+      if (seen.guard) { if (manual) continue; return stop(seen.guard); }
+      if (seen.login) return { ...failure('코레일 로그인 화면이 나와 예약하지 못했습니다. 그 탭에서 로그인한 뒤 다시 대기를 걸어 주세요.', 'RESERVE_LOGIN'), ...(manual ? { manual: true } : {}) };
+      if (['reservation-mismatch', 'condition-mismatch'].includes(seen.why)) {
+        return { ...failure('코레일 화면의 열차나 조회 조건이 바뀌어 예약 확인을 멈췄습니다. 현재 예약내역을 확인해 주세요.', 'RESERVE_MISMATCH'), ...(manual ? { manual: true } : {}) };
       }
+      if (seen.done) {
+        await frontTab(now.windowId);
+        const until = seen.deadline ? ` 결제 기한 ${seen.deadline}.` : '';
+        return { ok: true, reserved: true, seat: seen.seat || picked.seat, price: manual ? seen.price || '' : picked.price, deadline: seen.deadline || '', tabId, ...(manual ? { manual: true } : {}),
+          note: `${manual ? '코레일 예약 화면에서 예약을 확인했습니다.' : `${picked.seat} ${picked.price} 좌석을 잡았습니다.`}${until} 결제는 코레일 탭에서 직접 해 주세요(기한이 지나면 자동 취소).` };
+      }
+      if (seen.why === 'modal-pending') return failure(RESERVE_WHY['modal-pending'], 'RESERVE_UNCONFIRMED');
+      if (seen.passed?.length) {
+        const guard = seen.passed.at(-1);
+        trail.push('예매 뒤 안내 — 닫음');
+        if (over(seen.passed)) return stop(lastGuard);
+        await frontTab(now.windowId);
+        // 실제 확장의 재클릭도 같은 제한을 반복했다. 사용자 클릭으로 이어지는 동안 순수 조회만 한다.
+        if (seen.passed.every((g) => g.code === '-8002')) {
+          manual = true;
+          onStage('자동 예매가 제한되었습니다(-8002). 코레일 화면 아래의 ‘예매’를 직접 눌러 주세요. 예약 완료를 확인하는 중');
+          continue;
+        }
+        return failure(`예매 후 코레일 이용 제한 안내가 표시되어 예약 완료를 확인하지 못했습니다(${guard.code || '차단 안내'}). 코레일 탭을 앞으로 가져왔습니다. 예약내역과 현재 화면을 먼저 확인해 주세요.`, 'RESERVE_REFUSED');
+      }
+      said.push(...(seen.said || []));
     }
+    if (manual) return { ...failure('코레일에서 직접 예매를 진행한 뒤 예약내역을 확인해 주세요. 기다리는 동안 예약 완료 화면을 확인하지 못했습니다.', 'RESERVE_MANUAL_REQUIRED'), manual: true };
     const heard = [...new Set(said)].join(' / ').slice(0, 400);
     return failure(`예매를 눌렀지만 결제 직전 화면을 확인하지 못했습니다${heard ? ` — 코레일: ${heard}` : ''}. 코레일 탭을 확인해 주세요.`, 'RESERVE_UNCONFIRMED');
   } catch (error) {
     const why = errorText(error);
-    if (/Cannot access|permission/i.test(why)) return failure('코레일 사이트 권한이 없어 예약하지 못했습니다. 확장을 다시 불러와 주세요.', 'NO_PERMISSION');
-    return failure(`코레일에서 예약하지 못했습니다. ${why}`, 'RESERVE_FAILED');
+    if (/^RESERVE_(?:INPUT|CANCELLED|NO_TAB|TAB_CHANGED)/.test(error?.code || '')) return { ...failure(why, error.code), ...(manual ? { manual: true } : {}) };
+    if (/Cannot access|permission/i.test(why)) return { ...failure('코레일 사이트 권한이 없어 예약을 확인하지 못했습니다. 확장을 다시 불러와 주세요.', 'NO_PERMISSION'), ...(manual ? { manual: true } : {}) };
+    return { ...failure(`코레일에서 예약을 확인하지 못했습니다. ${why}`, 'RESERVE_FAILED'), ...(manual ? { manual: true } : {}) };
+  } finally {
+    active.delete(tabId);
+    if (!active.size) activeReservations.delete(api);
   }
 }
 

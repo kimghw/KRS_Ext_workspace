@@ -59,6 +59,13 @@ test('legacy ping works without KTX module and retains existing response', async
   assert.match(result.stderr, /prune/);
 });
 
+test('reservation press routes without loading search or legacy modules', async t => {
+  const entry = fixture(t, { 'ktxpress.mjs': 'export async function press(input){return {ok:true,pressed:false,input};}' });
+  const input = { token: 'fixture', expiresAt: 123, probe: true };
+  const result = await call(entry, frame({ task: 'ktxReservePress', input }));
+  assert.deepEqual(result.messages, [{ ok: true, pressed: false, input }]);
+});
+
 test('router loads each branch lazily and prunes legacy once', async () => {
   let trains = 0, hosts = 0, prunes = 0;
   const route = createRouter({ loadKtx: async () => { trains++; return { search: x => x, open: x => x }; },

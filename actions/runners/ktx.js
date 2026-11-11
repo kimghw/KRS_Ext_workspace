@@ -22,6 +22,6 @@ export function registerKtx(d, { ktxSearch = realKtxSearch, ktxSeats = realKtxSe
   { ok: (r) => r?.ok === true });
   // 좌석 예약(confirm, 2026-11-10) — 빈자리 대기가 자리를 찾았을 때 그 결과 탭(ctx.tabId)에서 결제 직전 화면까지. 결제는 하지 않는다.
   d.register('ktx.reserve', async (rec, ctx = {}) =>
-    ktxReserve(rec.input, { tabId: ctx.tabId, onStage: ctx.onStage }),
+    ktxReserve(rec.input, { tabId: ctx.tabId, signal: ctx.signal, onStage: ctx.onStage }),
   { ok: (r) => r?.ok === true && r.reserved === true });
 }

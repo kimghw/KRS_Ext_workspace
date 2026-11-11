@@ -7,6 +7,7 @@
     "sidePanel",
     "storage",
     "scripting",
+    "debugger",
     "tabs",
     "downloads",
     "notifications",

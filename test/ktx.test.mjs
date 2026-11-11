@@ -710,6 +710,7 @@ test('자리가 나면 예약까지 — 켠 채 누르면 대기가 자리를 �
   assert.equal(f.reserveCalls.length, 1);
   assert.deepEqual(f.reserveCalls[0].input, { ...INPUT, train: '101', dep: '05:13', seat: 'any' });
   assert.equal(f.reserveCalls[0].options.tabId, 9);
+  assert.equal(f.reserveCalls[0].options.signal, f.watchCalls[0].options.signal, '예약도 빈자리 대기의 멈춤 신호를 받는다');
   const logged = f.logs.find((line) => line.data?.record?.action === 'ktx.reserve');
   assert.ok(logged?.ok, '예약은 활동 로그에 따로 한 줄');
   assert.doesNotMatch(JSON.stringify(logged.data.record), /tabId/);
@@ -748,6 +749,7 @@ test('예약 단추 — "예약까지"를 켜면 자리가 있는 줄에만 서�
   assert.match(books[0].closest('li').textContent, /KTX 111/);
   books[0].click(); await tick(); await tick(); await tick();
   assert.deepEqual(f.reserveCalls.map((c) => [c.input, c.options.tabId]), [[{ ...INPUT, train: '111', dep: '06:10', seat: 'any' }, 9]]);
+  assert.equal(f.reserveCalls[0].options.signal.aborted, false, '직접 예약에도 멈춤 신호를 전달한다');
   assert.match(f.$('ktxSeatNote').textContent, /KTX 111 06:10 — .*좌석을 잡았습니다/);
   assert.match(f.notices.at(-1)[0], /KTX 좌석 예약/);
   assert.ok(f.logs.some((line) => line.data?.record?.action === 'ktx.reserve' && line.ok));
@@ -769,4 +771,77 @@ test('예약 단추 — 빈자리 대기가 같은 탭을 읽는 동안은 예�
   assert.equal(f.reserveCalls.length, 1);
   assert.match(f.$('ktxSeatNote').textContent, /예약하지 못했습니다 — 코레일 로그인/);
   assert.equal(f.$('ktxSeatNote').classList.contains('bad'), true);
+});
+
+test('직접 예매 확인 필요는 예약 실패로 단정하지 않고 패널과 알림에 남긴다', async () => {
+  const manual = { ok: false, code: 'RESERVE_MANUAL_REQUIRED', manual: true, error: '코레일 탭의 예매 버튼을 직접 누르고 예약내역을 확인해 주세요.' };
+  for (const viaWatch of [false, true]) {
+    const f = sold({
+      reserve: async () => manual,
+      watch: async (input, options) => ({ ok: true, found: true, row: { ...FIVE[0], gen: FREE },
+        reserve: await options.onFound({ row: FIVE[0], tabId: 9 }) }),
+    });
+    f.$('ktxReserve').click(); await tick();
+    f.$('ktxGo').click(); await tick(); await tick();
+    if (viaWatch) pills(f)[0].click();
+    else f.$('ktxList').querySelector('.ktx-book').click();
+    await tick(); await tick(); await tick();
+    assert.match(f.$('ktxSeatNote').textContent, /코레일에서 직접 예매 확인이 필요합니다.*예매 버튼을 직접 누르고 예약내역/);
+    assert.doesNotMatch(f.$('ktxSeatNote').textContent, /예약하지 못했습니다|예약 실패|줄을 눌러/);
+    assert.equal(f.$('ktxSeatNote').classList.contains('bad'), false);
+    assert.match(f.notices.at(-1)[0], /KTX 예매 확인 필요/);
+    assert.match(f.notices.at(-1)[1], /코레일에서 직접 예매 확인 필요/);
+    assert.doesNotMatch(f.notices.at(-1).join(' '), /예약 실패/);
+  }
+});
+
+test('예약 확인 중 조건을 바꾸면 멈춤 신호를 보내고 이전 단계·결과를 표시하지 않는다', async () => {
+  let finish;
+  const f = sold({ reserve: () => new Promise((resolve) => { finish = resolve; }) });
+  f.$('ktxReserve').click(); await tick();
+  f.$('ktxGo').click(); await tick(); await tick();
+  f.$('ktxList').querySelector('.ktx-book').click(); await tick();
+  const options = f.reserveCalls[0].options;
+  options.onStage('코레일에서 예매를 직접 눌러 주세요. 예약 화면을 확인하고 있습니다.');
+  assert.match(f.$('ktxSeatNote').textContent, /예매를 직접 눌러/);
+  assert.equal(f.$('ktxSeatNote').classList.contains('bad'), false);
+  pills(f)[0].click(); await tick();
+  assert.equal(f.watchCalls.length, 0, '예약 확인 중에는 같은 탭에서 빈자리 대기를 새로 시작하지 않는다');
+  f.change('ktxPax', '2');
+  assert.equal(options.signal.aborted, true);
+  assert.equal(f.$('ktxList').children.length, 0);
+  options.onStage('이전 조건의 예약 결과');
+  finish({ ok: true, reserved: true, note: '이전 조건의 예약을 확인했습니다.' });
+  await tick(); await tick();
+  assert.equal(f.$('ktxSeatNote').textContent, '');
+  assert.equal(f.notices.length, 0);
+});
+
+test('새 조회는 예약 확인을 취소하고 이전 실행이 끝나도 새 예약의 단추를 풀지 않는다', async () => {
+  const pending = [];
+  const f = sold({ reserve: () => new Promise((resolve) => pending.push(resolve)) });
+  f.$('ktxReserve').click(); await tick();
+  f.$('ktxGo').click(); await tick(); await tick();
+  f.$('ktxList').querySelector('.ktx-book').click(); await tick();
+  const old = f.reserveCalls[0].options;
+  f.$('ktxGo').click(); await tick(); await tick();
+  assert.equal(old.signal.aborted, true, '같은 조건을 다시 조회해도 이전 예약 확인을 취소한다');
+  f.$('ktxList').querySelector('.ktx-book').click(); await tick();
+  assert.equal(f.reserveCalls.length, 2);
+  const current = f.reserveCalls[1].options;
+  current.onStage('새 예약 화면을 확인하고 있습니다.');
+  old.onStage('이전 예약 화면');
+  pending[0]({ ok: false, code: 'RESERVE_MANUAL_REQUIRED', manual: true, error: '이전 예약 결과' });
+  await tick(); await tick();
+  assert.match(f.$('ktxSeatNote').textContent, /새 예약 화면/);
+  assert.doesNotMatch(f.$('ktxSeatNote').textContent, /이전 예약/);
+  assert.equal(f.$('ktxList').querySelector('.ktx-book').disabled, true);
+  f.$('ktxList').querySelector('.ktx-book').click(); await tick();
+  assert.equal(f.reserveCalls.length, 2, '이전 실행의 finally가 새 예약의 잠금을 풀지 않는다');
+  pending[1]({ ok: true, reserved: true, manual: true, seat: '일반실', price: '59,800원', note: '코레일 예약 화면에서 예약을 확인했습니다. 결제는 코레일 탭에서 직접 해 주세요.' });
+  await tick(); await tick();
+  assert.match(f.$('ktxSeatNote').textContent, /코레일 예약 화면에서 예약을 확인했습니다/);
+  assert.equal(f.$('ktxList').querySelector('.ktx-book').disabled, false);
+  assert.equal(f.notices.length, 1);
+  assert.match(f.notices[0][0], /KTX 좌석 예약/);
 });

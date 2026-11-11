@@ -40,11 +40,20 @@ export async function korailSeatsPage(step, opts = {}) {
     const found = guardOf();
     if (!found) return false;
     seen = { code: found.code, message: found.message };
-    [...found.node.querySelectorAll('button, a')].find((b) => text(b).includes('확인'))?.click();
+    if (opts.observeOnly) return true;
+    const button = [...found.node.querySelectorAll('button, a')].find((b) => visible(b) && text(b) === '확인');
+    if (!button) return true;
+    const before = text(found.node), url = location.href;
+    await sleep(1000);
+    const current = guardOf();
+    if (!current || location.href !== url || current.node !== found.node || text(current.node) !== before
+      || !found.node.contains(button) || !visible(button) || button.disabled || button.getAttribute('aria-disabled') === 'true') return true;
+    button.click();
     await until(() => !guardOf(), 2000);
     return true;
   };
   const closeNotices = () => {
+    if (opts.observeOnly) return;
     for (const b of document.querySelectorAll('.ReactModalPortal button, .ReactModalPortal a')) if (text(b) === '창닫기') b.click();
   };
   const value = (selector) => document.querySelector(selector)?.value ?? null;
@@ -55,9 +64,13 @@ export async function korailSeatsPage(step, opts = {}) {
       date: value('input#startDate'), people: value('input#labelple') ?? text(document.querySelector('a.data.btn_pop, .selectAreaWrap a.btn_recom')),
     },
     ...extra,
+    ...(opts.observeOnly && (location.pathname.startsWith('/ticket/login')
+      || [...document.querySelectorAll('a')].some((el) => visible(el) && text(el) === '로그인')
+        && ![...document.querySelectorAll('a')].some((el) => visible(el) && text(el) === '로그아웃')) ? { login: true } : {}),
   });
 
   if (step === 'submit') {
+    if (opts.observeOnly) return answer();
     if (await settleGuard()) return answer({ state: 'guard' });
     closeNotices();
     const button = [...document.querySelectorAll('button.btn_lookup')].find(visible);
@@ -67,6 +80,7 @@ export async function korailSeatsPage(step, opts = {}) {
   }
 
   if (step === 'requery') {
+    if (opts.observeOnly) return answer();
     await settleGuard();
     closeNotices();
     const button = [...document.querySelectorAll('.selectAreaWrap button.btn_bn-blue')].find(visible);
@@ -95,7 +109,7 @@ export async function korailSeatsPage(step, opts = {}) {
   const named = (no) => new RegExp(`(?:KTX(?:-[가-힣A-Za-z]+)?|청룡)\\s*0*${no}(?!\\d)`);
   const haveAll = Array.isArray(opts.have) && opts.have.length > 0 && opts.have.every((no) => /^\d{1,4}$/.test(no)
     && [...document.querySelectorAll(ROWS)].some((li) => named(no).test(text(li))));
-  if (state === 'rows' && opts.ktx && !haveAll) {
+  if (state === 'rows' && opts.ktx && !haveAll && !opts.observeOnly) {
     const tab = document.querySelector('ul.tab_bar button:has(div.korail_logo_tab)');
     const active = tab && (/active|current/i.test(tab.className) || tab.getAttribute('aria-selected') === 'true' || tab.getAttribute('aria-pressed') === 'true');
     if (tab && !active) {

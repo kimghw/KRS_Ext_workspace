@@ -65,7 +65,7 @@ export function createKtxBox({
   // seats — idle: 아직 · checking: 코레일에서 읽는 중 · done: 읽음 · failed: 못 읽음. tab·session 은 좌석을 읽은 코레일 결과 탭·전용 창의 손잡이(화면을 연 동안만 든다).
   const st = { rows: [], input: null, revision: 0, busy: false, opening: false, touched: false, on: false, view: 'car', seats: 'idle', session: null, tab: null,
     // 빈자리 대기(2026-11-10) — watch: 열차 번호 → 멈춤 손잡이(AbortController), found: 자리가 난 열차 번호.
-    watch: new Map(), found: new Set(), booking: false };
+    watch: new Map(), found: new Set(), booking: false, reserveCtrl: null };
   const viewWrap = $('carViewControl');
   for (const [view, icon] of [['car', 'car'], ['ktx', 'train'], ['flight', 'plane']]) {
     const b = viewWrap?.querySelector(`[data-view="${view}"]`);
@@ -148,11 +148,17 @@ export function createKtxBox({
     st.watch.clear();
     st.found.clear();
   }
+  function stopReservation() {
+    st.reserveCtrl?.abort();
+    st.reserveCtrl = null;
+    st.booking = false;
+  }
   const seatNote = (text = '', bad = false) => { el.seats.textContent = text; el.seats.classList.toggle('bad', bad); };
   function invalidate() {
     if (!st.input || same(st.input, inputNow())) return;
     st.revision++;
     stopWatches();
+    stopReservation();
     st.rows = [];
     st.input = null;
     st.session = null;
@@ -216,6 +222,7 @@ export function createKtxBox({
   async function watch(row) {
     const no = trainNo(row.no), input = st.input, revision = st.revision;
     if (!input || st.watch.has(no)) return;
+    if (st.booking) { seatNote('코레일에서 예약을 확인하고 있습니다. 예약 확인이 끝난 뒤 빈자리 대기를 시작해 주세요.'); return; }
     if (st.watch.size >= WATCH_MAX) { seatNote(`빈자리 대기는 한 번에 ${WATCH_MAX}편까지입니다. 하나를 멈춘 뒤에 눌러 주세요.`, true); return; }
     const ctrl = new (doc.defaultView?.AbortController || globalThis.AbortController)();
     const name = `${row.train} ${row.no} ${row.dep}`;
@@ -232,7 +239,7 @@ export function createKtxBox({
     paint();
     const onFound = booking ? ({ tabId }) => {
       if (live()) { seatNote(`${name} 빈자리가 났습니다 — 코레일에서 예약하는 중`); paint(); }
-      return actions.run(booking, { confirmed: booking.hash, tabId, onStage: (stage) => { if (live()) seatNote(`${name} 예약 — ${stage}`); } });
+      return actions.run(booking, { confirmed: booking.hash, tabId, signal: ctrl.signal, onStage: (stage) => { if (live()) seatNote(`${name} 예약 — ${stage}`); } });
     } : null;
     let result;
     try {
@@ -263,10 +270,15 @@ export function createKtxBox({
     } else if (result?.found) {
       st.found.add(no);
       const seats = [['일반실', result.row?.gen], ['특실', result.row?.spec]].filter(([, seat]) => openSeat(seat)).map(([label, seat]) => `${label} ${seat.price}`).join(' · ');
-      const missed = result.reserve ? ` 예약하지 못했습니다 — ${result.reserve.error || '까닭을 알 수 없습니다.'}` : '';
-      const said = `${name} 빈자리가 났습니다${seats ? ` — ${seats}` : ''}.${missed} 줄을 눌러 코레일에서 예매해 주세요`;
-      seatNote(said, !!result.reserve);
-      try { notify(`KTX 빈자리 — ${name}`, `${headOf(input)} ${seats}${result.reserve ? ' · 예약 실패' : ''}`.trim()); } catch { /* 알림 실패는 줄의 표시를 막지 않는다 */ }
+      if (result.reserve?.manual) {
+        seatNote(`${name} — 코레일에서 직접 예매 확인이 필요합니다. ${result.reserve.error || '코레일 탭의 현재 화면과 예약내역을 확인해 주세요.'}`);
+        try { notify(`KTX 예매 확인 필요 — ${name}`, `${headOf(input)} ${seats} · 코레일에서 직접 예매 확인 필요`.trim()); } catch { /* 알림 실패는 줄의 표시를 막지 않는다 */ }
+      } else {
+        const missed = result.reserve ? ` 예약하지 못했습니다 — ${result.reserve.error || '까닭을 알 수 없습니다.'}` : '';
+        const said = `${name} 빈자리가 났습니다${seats ? ` — ${seats}` : ''}.${missed} 줄을 눌러 코레일에서 예매해 주세요`;
+        seatNote(said, !!result.reserve);
+        try { notify(`KTX 빈자리 — ${name}`, `${headOf(input)} ${seats}${result.reserve ? ' · 예약 실패' : ''}`.trim()); } catch { /* 알림 실패는 줄의 표시를 막지 않는다 */ }
+      }
     } else if (result?.ok) {
       seatNote(`${name} — ${result.note || '빈자리 대기를 멈췄습니다.'}`);
     } else {
@@ -283,23 +295,32 @@ export function createKtxBox({
     if (!row || st.booking || !st.input) return;
     if (st.watch.size) { seatNote('빈자리 대기가 같은 코레일 탭을 읽고 있습니다. 대기를 멈춘 뒤 예약해 주세요.', true); return; }
     const input = st.input, revision = st.revision, name = `${row.train} ${row.no} ${row.dep}`;
+    const ctrl = new (doc.defaultView?.AbortController || globalThis.AbortController)();
     let result;
     st.booking = true;
+    st.reserveCtrl = ctrl;
     seatNote(`${name} 예약 — 코레일 탭에서 좌석을 잡는 중`);
     paint();
     try {
       const { record } = actions.build('ktx.reserve', { input: { ...input, train: String(row.no), dep: row.dep, seat: 'any' }, by: 'ui' });
-      result = await actions.run(record, { confirmed: record.hash, tabId: st.tab, onStage: (stage) => { if (revision === st.revision) seatNote(`${name} 예약 — ${stage}`); } });
+      result = await actions.run(record, { confirmed: record.hash, tabId: st.tab, signal: ctrl.signal,
+        onStage: (stage) => { if (revision === st.revision && st.reserveCtrl === ctrl && !ctrl.signal.aborted) seatNote(`${name} 예약 — ${stage}`); } });
     } catch (error) {
       result = { ok: false, error: messageOf(error) };
     } finally {
-      st.booking = false;
+      if (st.reserveCtrl === ctrl) {
+        st.reserveCtrl = null;
+        st.booking = false;
+      }
     }
-    if (revision !== st.revision) return;
+    if (revision !== st.revision || ctrl.signal.aborted) return;
     if (result?.ok) {
       st.found.add(trainNo(row.no));
       seatNote(`${name} — ${result.note}`);
       try { notify(`KTX 좌석 예약 — ${name}`, `${headOf(input)} ${result.seat} ${result.price} · 결제는 코레일에서 직접`.trim()); } catch { /* 알림 실패는 줄의 표시를 막지 않는다 */ }
+    } else if (result?.manual) {
+      seatNote(`${name} — 코레일에서 직접 예매 확인이 필요합니다. ${result.error || '코레일 탭의 현재 화면과 예약내역을 확인해 주세요.'}`);
+      try { notify(`KTX 예매 확인 필요 — ${name}`, `${headOf(input)} · 코레일에서 직접 예매 확인 필요`); } catch { /* 알림 실패는 줄의 표시를 막지 않는다 */ }
     } else {
       seatNote(`${name} 예약하지 못했습니다 — ${result?.error || '까닭을 알 수 없습니다.'}`, true);
     }
@@ -320,6 +341,7 @@ export function createKtxBox({
     savePref();
     const revision = ++st.revision;
     stopWatches();
+    stopReservation();
     st.busy = true;
     st.input = input;
     st.rows = [];
