@@ -2376,9 +2376,9 @@ export function createAttendPanel({
    * `시각 없음`). 사전정산을 다시 작성하는 칸(edit)에서는 그 값이 든 일자·출발·도착 칸이 서서 고칠 수 있고(pickPreEdit), 펴 둔 `다름`의
    * 일자·시각 줄에는 견준 값으로 고치는 `이 값으로`가 붙는다. 고친 것은 `사전정산 다시 저장`을 눌렀을 때 사이트에 간다.
    */
-  function legsHtml(route, enabled, none = '고르지 않음', { act = 'leg', graded = LEG_GRADED, check = null, edit = false, from = '' } = {}) {
+  function legsHtml(route, enabled, none = '고르지 않음', { act = 'leg', graded = LEG_GRADED, check = null, edit = false, from = '', box = 'at-legs' } = {}) {
     if (!route) return '';
-    return `<div class="at-legs">${route.legs.map((l) => {
+    return `<div class="${box}">${route.legs.map((l) => {
       // 여비계산서에 선(다시 작성하는 칸에서는 설) 일자·출발 시·도착 시 — 저장된 줄 그대로인 편은 그 줄의 값이다.
       const w = l.when || (l.source === 'site' ? legWhen(l.site) : null);
       const day = [w?.date, l.row?.date, l.date].find((d) => DAY_RE.test(d || ''));
@@ -2414,6 +2414,18 @@ export function createAttendPanel({
         + `<span class="at-leg-what${l.problem ? ' error' : l.row && l.source !== 'site' ? ' new' : ''}">${tag}${escapeHtml(what)}</span>${time}${mark}${fields}${detail}</div>`;
     }).join('')}</div>`;
   }
+
+  /** 정산 칸의 한 묶음(사전정산 내용·사후정산 내용 — 2026-11-20 사용자 지정) — 이름표와 그 내용. */
+  const partHtml = (title, body) => `<div class="at-part"><p class="at-part-title">${title}</p>${body}</div>`;
+  /** 사전정산에 저장된 가는 편·오는 편 — 보기만 한다(카드에서 고른 것은 얹지 않는다). 누름의 이름이 달라(leg-pre) 사후정산 쪽 아이콘과 섞이지 않는다. */
+  const preLegsHtml = (trip, a, check = null) => legsHtml(legPlan({ trip, rows: a.detail.rows, workplace: st.workplace }), false, '사전정산에 없음',
+    { act: 'leg-pre', box: 'at-prelegs', check });
+  /** 종류마다 따로 넣는 증빙 칸(2026-11-20 사용자 지정) — id 는 runAfter 의 kind, doc 은 읽은 종류가 그 갈래가 아닐 때 칠 문서 종류다. */
+  const DROP_KINDS = [
+    { id: 'flight', label: '항공권', is: /^flight_/, doc: 'flight_receipt', title: '항공권·항공 영수증을 넣는 곳 — 읽은 종류가 달라도 항공권으로 칩니다' },
+    { id: 'lodging', label: '숙소', is: /^lodging_/, doc: 'lodging_receipt', title: '숙박 영수증·예약서를 넣는 곳 — 읽은 종류가 달라도 숙박 증빙으로 칩니다' },
+    { id: 'other', label: '기타', is: /^other_receipt$/, doc: 'other_receipt', title: '그 밖의 영수증(출장지에서 결제한 영수증 등)을 넣는 곳' },
+  ];
 
   /** 편의 출발 시→도착 시를 글로 — "7시→11시", 한쪽만 적혀 있으면 "7시→?", 둘 다 없으면(0) "시각 없음". */
   const whenText = (w) => (w.shr || w.ehr ? `${w.shr ? `${w.shr}시` : '?'}→${w.ehr ? `${w.ehr}시` : '?'}` : '시각 없음');
@@ -2488,10 +2500,18 @@ export function createAttendPanel({
       ? `${need.hint}을 넣으면 읽어서 ${then}사후정산을 올립니다`
       : `당일 출장이고 비행기를 타지 않아 사후정산 대상이 아닙니다 — 출장지에서 결제한 영수증(당일출장 증명)을 넣으면 ${then}보관하고, 비행기를 탔으면 항공권을 넣으세요`;
     return `<div class="at-after" data-seq="${escapeHtml(trip.seq)}"><div class="at-after-head">${head}</div>`
-      + legsHtml(route, !pre && !locked, undefined, { check: diffCheck(trip, a), from: '사전정산' }) + go
-      + stayHtml(trip, locked)
-      + (pre ? '' : lodgeBox.html(lodgeCtx(trip, { locked, lodging: need.lodging })))
+      // 사전정산을 완료한 뒤에는 사전정산 내용(저장된 교통편·일비·식비 — 보기)과 사후정산 내용(올릴 교통편·숙박비 내역)을 나눠 보인다
+      // (2026-11-20 사용자 지정: "사전정산 내용, 사후정산 내용 나눠서 보여줘"). 완료하기 전에는 사전정산뿐이라 한 묶음이다.
+      + (pre ? legsHtml(route, false, undefined, { check: diffCheck(trip, a) }) + stayHtml(trip, locked)
+        : partHtml('사전정산 내용', preLegsHtml(trip, a) + stayHtml(trip, locked))
+          + partHtml('사후정산 내용', legsHtml(route, !locked, undefined, { check: diffCheck(trip, a), from: '사전정산' }) + go
+            + lodgeBox.html(lodgeCtx(trip, { locked, lodging: need.lodging }))))
       + (pre ? '<p class="at-after-note">사후정산을 올리거나 증빙을 보내려면 사전정산이 완료(확정)돼 있어야 합니다 — 버튼을 누르거나 증빙을 넣으면 확정합니다.</p>' : '')
+      // 종류마다 따로 넣는 칸 셋(2026-11-20 사용자 지정: "항공권, 숙소, 기타로 해서 따로 따로 넣을 수 있게") — 여기 넣은 문서는 읽은 종류가
+      // 달라도 그 종류로 친다(runAfter 의 kind). 그 아래가 알아서 가리는 공통 칸이다(붙여넣기도 공통 칸으로 간다).
+      + `<div class="at-drop-kinds">${DROP_KINDS.map((k) => `<label class="at-after-drop at-drop-kind${a.busy ? ' busy' : ''}" data-kind="${k.id}" title="${k.title}">`
+        + `<input type="file" multiple accept="${EVIDENCE_ACCEPT}"${a.busy ? ' disabled' : ''} aria-label="${k.label} 증빙" />`
+        + `<span class="at-drop"><span class="at-drop-lead">${DROP_ICON}${k.label}</span></span></label>`).join('')}</div>`
       + `<label class="at-after-drop${a.busy ? ' busy' : ''}" title="${DROP_TITLE}"><input type="file" multiple accept="${EVIDENCE_ACCEPT}"${a.busy ? ' disabled' : ''} aria-label="사후정산 증빙" />`
       // 넣는 곳이 안내문처럼 보이지 않게 아이콘과 이름을 세운다(2026-10-03 사용자 지정 — 어디에 놓고 붙여 넣는지 보이지 않았다).
       // 높이는 절반으로 줄였다(같은 날 사용자 지정) — 이름 옆에 넣는 길을 한 줄로 적고, 자세한 말은 풍선말(DROP_TITLE)로 옮겼다.
@@ -2502,6 +2522,7 @@ export function createAttendPanel({
       + askHtml(a)
       + (a.busy ? `<p class="at-after-note">${escapeHtml(a.stage || '증빙을 읽는 중...')}</p>` : '')
       + (a.error ? noteHtml('error', a.error, ' error') : '')
+      + fixHtml(a)
       // 방금 넣은 증빙 가운데 출장 기간과 안 맞는 것이 있었다는 알림 — 그 증빙이 보관함에 알림 표시로 남아 있는 동안 보인다.
       + (a.warn && a.kept?.some((k) => k.warn) ? noteHtml('warn', a.warn, ' error at-after-warn') : '')
       + (a.info ? noteHtml('info', a.info) : '')
@@ -2528,9 +2549,11 @@ export function createAttendPanel({
     const rows = post.length ? post : a.detail.rows;
     const need = afterNeed(trip, { transports: rows.map((r) => r.transport) });
     return `<div class="at-after" data-seq="${escapeHtml(trip.seq)}"><div class="at-after-head"><strong>정산 내역</strong><span class="at-after-why">${escapeHtml(`${need.why} · 완료`)}</span></div>`
-      + legsHtml(legPlan({ trip, rows }), false, post.length ? '사후정산에 없음' : '사전정산에 없음', { check: diffCheck(trip, a), from: post.length ? '' : '사전정산' })
-      + stayHtml(trip, !!a.busy || st.busy)
-      + lodgeBox.html(lodgeCtx(trip, { lodging: need.lodging, readonly: true }))
+      // 사전정산 내용과 사후정산 내용을 나눠 보인다(2026-11-20 사용자 지정) — 사후정산에 따로 올린 교통 줄이 없으면 그렇다고 적는다.
+      + partHtml('사전정산 내용', preLegsHtml(trip, a, post.length ? null : diffCheck(trip, a)) + stayHtml(trip, !!a.busy || st.busy))
+      + partHtml('사후정산 내용', (post.length ? legsHtml(legPlan({ trip, rows: post }), false, '사후정산에 없음', { check: diffCheck(trip, a) })
+        : '<p class="at-after-note at-part-same">교통편은 사전정산 그대로입니다 — 사후정산에 따로 올린 교통 줄이 없습니다</p>')
+        + lodgeBox.html(lodgeCtx(trip, { lodging: need.lodging, readonly: true })))
       + (a.busy ? `<p class="at-after-note">${escapeHtml(a.stage || '증빙을 읽는 중...')}</p>` : '')
       + (a.error ? noteHtml('error', a.error, ' error') : '')
       + (a.warn && a.kept?.some((k) => k.warn) ? noteHtml('warn', a.warn, ' error at-after-warn') : '')
@@ -2935,6 +2958,50 @@ export function createAttendPanel({
       + `<button type="button" class="small ghost at-ask-drop" data-act="ask-drop"${dis}>올리지 않기</button></div>`;
   }
 
+  /**
+   * 증빙에서 못 읽은 값을 적는 칸(2026-11-20 사용자 지정: "못 읽을 수는 있는데 그렇면 수정할 수 있게 해주면 되잖아") — 문서마다 못 읽은
+   * 칸(src/after.js afterPlan 의 fixes)이 서고, `이 값으로 올리기`를 누르면 읽어 둔 기록에 그 값을 얹어 다시 읽지 않고 올린다(fixGo).
+   * 적던 글은 a.fix.values 에 남아 카드를 다시 그려도 그대로다.
+   */
+  function fixHtml(a) {
+    const fix = a.fix;
+    if (!fix?.items?.length) return '';
+    const dis = a.busy || st.busy ? ' disabled' : '';
+    const kind = { date: 'type="date"', int: 'type="text" inputmode="numeric" placeholder="1"', money: 'type="text" inputmode="numeric" placeholder="금액"', text: 'type="text"' };
+    const items = fix.items.map((f, i) => `<li><p>${escapeHtml(`${f.what} — ${f.file}`)}</p><div class="at-ask-row">${f.fields.map((c) =>
+      `<label class="at-fix-field">${escapeHtml(c.label)}<input ${kind[c.type] || kind.text} class="at-fix-input" data-i="${i}" data-key="${c.key}" `
+      + `value="${escapeHtml(fix.values[`${i}:${c.key}`] || '')}"${dis} /></label>`).join('')}</div></li>`).join('');
+    return `<div class="at-after-ask at-after-fix"><p class="at-after-note"><strong>못 읽은 값을 적어 주세요</strong> — 적으면 그 값으로 올립니다</p><ul>${items}</ul>`
+      + `<button type="button" class="small at-request" data-act="fix-go"${dis}>이 값으로 올리기</button></div>`;
+  }
+
+  /** 못 읽은 값을 적은 뒤의 `이 값으로 올리기` — 빈 칸·잘못 적은 칸이 있으면 알리고, 아니면 기록에 얹어 runAfter 로 다시 묶어 올린다(다시 읽지 않는다). */
+  function fixGo(it) {
+    const trip = tripOf(it);
+    const a = trip ? st.after[trip.seq] : null;
+    const fix = a?.fix;
+    if (!fix || a.busy) return undefined;
+    const patch = new Map();
+    for (const [i, f] of fix.items.entries()) {
+      for (const c of f.fields) {
+        const typed = String(fix.values[`${i}:${c.key}`] || '').trim();
+        const n = Number(typed.replace(/[,\s원박]/g, ''));
+        const value = c.type === 'date' ? (DAY_RE.test(typed) ? typed : null)
+          : c.type === 'int' ? (Number.isInteger(n) && n >= 1 ? n : null)
+            : c.type === 'money' ? (typed && Number.isFinite(n) && n > 0 ? Math.round(n) : null)
+              : typed || null;
+        if (value == null) return setStatus(`${f.what}의 ${c.label}을(를) 적어 주세요.`, 'error');
+        patch.set(f.file, { ...patch.get(f.file), [c.key]: value });
+      }
+    }
+    // 금액을 손으로 적은 문서는 화폐가 비어 있으면 원화다(칸의 이름이 "원"이다).
+    const given = fix.records.map(({ file, ...record }) => {
+      const add = patch.get(file.name) || {};
+      return { name: file.name, type: file.type, dataUrl: file.dataUrl, record: { ...record, ...add, ...(add.total != null && !record.currency ? { currency: 'KRW' } : {}) } };
+    });
+    return runAfter(trip.seq, [], { given });
+  }
+
   /** 열어 둔 출장 카드의 사전정산 교통편(가는 편·오는 편의 처음 값, 사후정산 조건)을 한 번 읽어 둔다. 읽히면 카드를 다시 그린다. */
   function ensureAfterDetail() {
     const it = st.items.find((x) => x.docNo === st.openDoc);
@@ -2996,7 +3063,7 @@ export function createAttendPanel({
     if (!t || !hasFiles(e)) return;
     e.preventDefault();
     t.node.classList.remove('over');
-    runAfter(t.seq, [...e.dataTransfer.files]);
+    runAfter(t.seq, [...e.dataTransfer.files], { kind: t.node.dataset.kind || '' });
   }
 
   /** 증빙 넣는 곳 아래의 웹페이지 캡처 단추를 눌렀을 때(webpick.js) — 보고 있는 탭이든 부분 고르기든 그 칸의 증빙으로 넣는다(captureFor). */
@@ -3182,7 +3249,7 @@ export function createAttendPanel({
    * 사후정산을 이미 완료한 출장에 넣은 증빙도 읽는다(amend, 2026-10-05 사용자 지정) — 숙박 증빙·항공권이면 완료한 사후정산을 다시
    * 작성하는 것으로 보고 올리고(카드에 사후정산 칸이 다시 선다), 아니면 보낼 증빙으로 담기만 한다.
    */
-  async function runAfter(seq, fileList, { given = [], texts = null } = {}) {
+  async function runAfter(seq, fileList, { given = [], texts = null, kind = '' } = {}) {
     const it = st.items.find((x) => isTrip(x) && tripOf(x)?.seq === seq);
     const trip = it ? tripOf(it) : null;
     if (!trip) return;
@@ -3250,7 +3317,7 @@ export function createAttendPanel({
       }
     }
     if (!files.length && fileList?.length) return;
-    Object.assign(a, { busy: true, error: '', info: '', warn: '', result: null,
+    Object.assign(a, { busy: true, error: '', info: '', warn: '', result: null, fix: null,
       stage: files.length ? `증빙 ${files.length}장을 읽는 중...` : given.length ? `보관해 둔 증빙 ${given.length}장을 묶는 중...` : '가는 편·오는 편을 묶는 중...' });
     paintList();
     const onStage = (s) => { a.stage = s; paintList(); };
@@ -3280,7 +3347,10 @@ export function createAttendPanel({
       });
       // 읽은 내용으로 파일 이름을 다시 짓는다(2026-11-20 사용자 지정 — 항공권_2026-11-05.pdf, src/after.js 의 evidenceName). 보관함·보내는 묶음·
       // 알림이 모두 이 이름을 쓴다. 다 읽은 뒤 차례로 짓는다 — 같은 날의 다른 문서가 같은 이름이 되면 번호가 붙는다(nameFor).
+      // 종류 칸(항공권·숙소·기타)에 넣은 문서는 사람이 종류를 말해 준 것이다 — 읽은 종류가 그 갈래가 아니면 그 종류로 친다(2026-11-20 사용자 지정).
+      const said = DROP_KINDS.find((k) => k.id === kind);
       for (const r of readNow) {
+        if (said && !said.is.test(r.docType || '')) r.docType = said.doc;
         const want = evidenceName(r, r.file.name);
         if (want !== r.file.name) r.file.name = nameFor(want, r.file.dataUrl);
       }
@@ -3364,7 +3434,13 @@ export function createAttendPanel({
         // 누른 것과 같다). 올린 뒤에는 여비증빙 송부 칸의 `다시 보내기`가 저장 → 확정 → 송부를 잇는다.
         a.reopen = true;
       }
-      if (plan.problems.length) { a.error = `올리지 않았습니다 — ${plan.problems.join(' · ')}`; return; }
+      if (plan.problems.length) {
+        // 못 읽은 값은 사람이 적어 줄 수 있다(2026-11-20 사용자 지정) — 읽은 기록을 쥐고 있다가 적은 값을 얹어 다시 읽지 않고 올린다(fixHtml·fixGo).
+        const fixes = (plan.fixes || []).filter((f) => f.fields.length && all.some((r) => r.file?.name === f.file));
+        if (fixes.length) a.fix = { items: fixes, records: all, values: {} };
+        a.error = `올리지 않았습니다 — ${plan.problems.join(' · ')}${fixes.length ? ' · 아래에 그 값을 적어 주시면 올립니다' : ''}`;
+        return;
+      }
       // 당일 출장이고 비행기를 타지 않았으면 사후정산은 없다. 증빙을 보관했으면 그것으로 할 일은 끝났다(잘못이 아니다).
       if (!plan.need.needed) {
         if (keep.length) a.info += ' · 당일 출장이고 비행기를 타지 않아 사후정산은 올리지 않습니다';
@@ -4096,9 +4172,11 @@ export function createAttendPanel({
       const k = btn.dataset.k;
       if (k === 'result') box.result = null;
       else if (['error', 'warn', 'info'].includes(k)) box[k] = '';
+      if (k === 'error') box.fix = null;   // 못 읽은 값을 적는 칸은 그 알림에 딸린 것이다
       paintList();
       return undefined;
     }
+    if (a === 'fix-go') { disarm(); return fixGo(it); }
     if (a === 'kept-drop') {
       // 보관함에서 증빙 하나를 뺀다. 사이트에는 아무것도 가지 않는다.
       const row = tripOf(it);
@@ -4259,7 +4337,7 @@ export function createAttendPanel({
       if (!box) return;
       const files = [...(input.files || [])];
       input.value = '';
-      runAfter(box.dataset.seq, files);
+      runAfter(box.dataset.seq, files, { kind: input.closest('.at-after-drop')?.dataset.kind || '' });
     });
     // 사전정산을 다시 작성하는 칸의 편마다의 일자·출발 시·도착 시 — 고치면 그 편의 값으로 적어 둔다(사이트에는 다시 저장을 눌렀을 때 간다).
     el.list.addEventListener('change', (e) => {
@@ -4276,6 +4354,19 @@ export function createAttendPanel({
       const input = askInput(e);
       const ask = input ? st.after[input.closest('.at-after[data-seq]')?.dataset.seq]?.ask : null;
       if (ask) ask.krw[input.dataset.i] = input.value;
+    });
+    // 못 읽은 값을 적는 칸(fixHtml) — 적던 글을 적어 둔다. Enter 는 `이 값으로 올리기`를 누른 것과 같다.
+    const fixInput = (e) => (e.target instanceof HTMLInputElement && e.target.classList.contains('at-fix-input') ? e.target : null);
+    el.list.addEventListener('input', (e) => {
+      const input = fixInput(e);
+      const fix = input ? st.after[input.closest('.at-after[data-seq]')?.dataset.seq]?.fix : null;
+      if (fix) fix.values[`${input.dataset.i}:${input.dataset.key}`] = input.value;
+    });
+    el.list.addEventListener('keydown', (e) => {
+      const input = fixInput(e);
+      if (!input || e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      input.closest('.at-after-fix')?.querySelector('button[data-act="fix-go"]')?.click();
     });
     // 비고의 상한 초과 사유 칸(2026-10-08 사용자 지정) — 묻는 칸의 것은 ask.reason 에, 숙박비 내역의 것은 lodgebox 가 들고 있어 다시 그려도 남는다.
     // 숙박비 내역의 칸에서 Enter 는 옆의 `비고에 저장` 을 누른 것과 같다.

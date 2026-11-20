@@ -442,6 +442,9 @@ export function periodMiss(record, trip) {
 export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = '' }) {
   const notes = [];
   const problems = [];
+  // 꼭 있어야 하는 값을 못 읽은 문서마다 사람이 적어 줄 칸(2026-11-20 사용자 지정: "못 읽을 수는 있는데 그렇면 수정할 수 있게") —
+  // { file: 그 문서의 파일 이름, what: 무슨 문서인지, fields: [{ key: 기록의 칸 이름, label, type: text·date·int·money }] }. problems 와 짝이다.
+  const fixes = [];
   const skipped = [];
   const lodge = [];
   const trans = [];
@@ -485,8 +488,14 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
     const bookings = rs.filter((r) => r.docType === 'lodging_booking');
     // 정산금액은 원화로만 적고(외화 문서에 원화 금액이 없으면 actual 이 비어 사람에게 묻는다 — lodgeAsk), 상한액은 올리기 전에
     // 패널이 사이트에서 읽어 붙인다(maxconv). 여기서는 실제 금액 그대로 셈해 둔다.
+    // 숙박 일수·결제일을 문서에서 못 읽었으면 그 출장의 것이다(2026-11-20 사용자 지정: "숙박일은 사이드 패널에 이미 있잖아. 그럼 그게
+    // 맞겠지") — 일수는 출장의 박 수, 결제일은 출발일(묵은 날)이다. 그렇게 넣었다고 그 줄의 알림에 적는다.
+    const read = lodgeOf(receipts, bookings);
+    const filled = [];
+    if (!read.sday && need.nights) { read.sday = need.nights; filled.push(`숙박 일수를 출장 기간의 ${need.nights}박으로`); }
+    if (!read.paydate && DATE_RE.test(trip?.from || '')) { read.paydate = trip.from; filled.push(`결제일을 출발일(${shortDay(trip.from)})로`); }
     const row = lodgeSettle({
-      nation: DOMESTIC.nation, currency: LODGE_CURRENCY, etcname: '', settle: '', ...lodgeOf(receipts, bookings),
+      nation: DOMESTIC.nation, currency: LODGE_CURRENCY, etcname: '', settle: '', ...read,
       // 첨부는 영수증이 먼저, 없으면 예약서다.
       file: (receipts.find((r) => r.file) || bookings.find((r) => r.file))?.file || null,
       sources: rs.map(fileName),
@@ -495,7 +504,16 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
     });
     const missing = [[!row.company, '업체명'], [!row.paydate, '결제일'], [!row.sday, '숙박 일수'], [row.actual == null && row.doc.total == null, '정산금액']]
       .filter(([bad]) => bad).map(([, name]) => name);
-    if (missing.length) problems.push(`숙박(${row.sources.join('·')})에서 ${missing.join('·')}을(를) 읽지 못했습니다`);
+    if (missing.length) {
+      problems.push(`숙박(${row.sources.join('·')})에서 ${missing.join('·')}을(를) 읽지 못했습니다`);
+      // 사람이 적어 줄 칸(fixes) — 그 묶음의 첫 문서(영수증이 먼저)의 기록에 적으면 lodgeOf 가 그 값을 쓴다.
+      const target = receipts[0] || bookings[0];
+      fixes.push({ file: fileName(target), what: `숙박${row.stay ? ` · ${row.stay}` : ''}`, fields: [
+        [!row.company, 'vendor', '업체명', 'text'], [!row.paydate, 'payDate', '결제일', 'date'], [!row.sday, 'nights', '숙박 일수(박)', 'int'],
+        [row.actual == null && row.doc.total == null, 'total', '정산금액(원)', 'money'],
+      ].filter(([bad]) => bad).map(([, key, label, type]) => ({ key, label, type })) });
+    }
+    if (filled.length) row.notes.push(`${row.stay || '숙박'}: 문서에서 읽지 못해 ${filled.join(', ')} 넣었습니다 — 다르면 사후정산 화면에서 고쳐 주세요`);
     if (!receipts.length) row.notes.push(`${row.stay || '숙박'}은 예약서만 있고 결제 영수증이 없습니다 — 금액은 예약 금액입니다`);
     if (need.nights && row.sday && row.sday !== need.nights) row.notes.push(`${row.stay || '숙박'}의 숙박 일수(${row.sday}박)가 출장 기간(${need.nights}박)과 다릅니다`);
     notes.push(...row.notes);
@@ -505,9 +523,20 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
   // ---- 교통: 가는 편·오는 편. 표를 넣었거나 편이 사전정산과 달라졌을 때만 넣는다 — 그대로면 사전정산의 값이 선다.
   const flights = fit.filter((r) => FLIGHT.has(r.docType));
   for (const r of flights) {
-    const missing = [[!r.flightDate, '탑승일'], [!text(r.depPlace), '출발지'], [!text(r.arrPlace), '도착지'], [num(r.total) == null, '합계 금액']]
+    // 탑승일을 못 읽었어도 그 항공권이 가는 편·오는 편에 앉았으면 그 편의 날짜다(2026-11-20 사용자 지정: "사이드 패널에 이미 있잖아.
+    // 그럼 그게 맞겠지") — 교통 줄의 일자는 이미 그 편의 날짜로 들어간다(legPlan). 그렇게 넣었다고 알린다.
+    const seated = r.flightDate ? [] : route.legs.filter((l) => l.ticket && l.ticket.source === fileName(r));
+    if (seated.length) notes.push(`${fileName(r)}: 탑승일을 읽지 못해 ${seated.map((l) => `${l.label}의 날짜(${shortDay(l.row?.date || l.date)})`).join('·')}로 넣었습니다 — 다르면 사후정산 화면에서 고쳐 주세요`);
+    const noDate = !r.flightDate && !seated.length;
+    const missing = [[noDate, '탑승일'], [!text(r.depPlace), '출발지'], [!text(r.arrPlace), '도착지'], [num(r.total) == null, '합계 금액']]
       .filter(([bad]) => bad).map(([, name]) => name);
-    if (missing.length) problems.push(`항공권(${fileName(r)})에서 ${missing.join('·')}을(를) 읽지 못했습니다`);
+    if (missing.length) {
+      problems.push(`항공권(${fileName(r)})에서 ${missing.join('·')}을(를) 읽지 못했습니다`);
+      fixes.push({ file: fileName(r), what: `항공권${text(r.airline) ? ` · ${text(r.airline)}` : ''}`, fields: [
+        [noDate, 'flightDate', '탑승일', 'date'], [!text(r.depPlace), 'depPlace', '출발지', 'text'], [!text(r.arrPlace), 'arrPlace', '도착지', 'text'],
+        [num(r.total) == null, 'total', '합계 금액(원)', 'money'],
+      ].filter(([bad]) => bad).map(([, key, label, type]) => ({ key, label, type })) });
+    }
   }
   const touched = route.changed || route.legs.some((l) => l.ticket);
   if (touched) {
@@ -572,7 +601,7 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
       if (LODGING.has(r.docType)) lodge.find((l) => l.sources.includes(fileName(r)))?.notes.push(note);
     }
   }
-  return { lodge, trans, air, notes, problems, skipped, need, picks: chosen, seats, legs: route.legs, touched };
+  return { lodge, trans, air, notes, problems, fixes, skipped, need, picks: chosen, seats, legs: route.legs, touched };
 }
 
 const won = (n, cur) => (n == null ? '?' : `${Number(n).toLocaleString('ko-KR')}${cur && cur !== 'KRW' ? ` ${cur}` : '원'}`);

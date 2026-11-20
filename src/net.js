@@ -274,7 +274,8 @@ export async function directSend(url, init) {
  * 네트워크 오류·HTTP 오류는 로그인 문제가 아니다 — 그 실패를 그대로 말한다. 예전에는 직접 요청이
  * 실패하고 탭도 없으면 "열려 있는 eclass 탭이 없습니다" 라고 했는데, 그것은 로그인과 무관한 안내였다.
  *
- * @returns {Promise<{html: string, finalUrl: string, via: 'direct'|'tab'|'retry'}>}
+ * @returns {Promise<{html: string, finalUrl: string, via: 'direct'|'current'|'tab'|'retry'}>}
+ *   'current' 는 패널 옆 eclass 탭으로 먼저 읽은 것(직접 요청은 해 보지 않았다), 'tab' 은 직접 요청이 안 돼 탭으로 돌아간 것이다
  */
 export async function siteFetch(url, init) {
   let directError = null;
@@ -290,7 +291,10 @@ export async function siteFetch(url, init) {
       usedCurrent = true;
       try {
         const r = await tabFetch(url, init, current);
-        if (!looksUnauthenticated(r.html)) return { ...r, via: 'tab' };
+        // via 'tab' 은 "직접 요청이 막혀 탭으로 돌아갔다"는 뜻이라 부르는 쪽이 쓰기(multipart)를 막는다(src/trip.js·memo.js·stdboard.js).
+        // 여기는 막힌 것이 아니라 옆 탭을 먼저 쓴 것뿐이다 — 'current' 로 가른다(2026-11-20: eclass 탭이 옆에 있으면 숙박 줄 지우기·
+        // `상한`·사후정산 올리기가 "확장의 직접 요청이 막혀"로 거절되던 것).
+        if (!looksUnauthenticated(r.html)) return { ...r, via: 'current' };
         unauthenticated = true;
       } catch { /* direct request remains available */ }
     }
