@@ -15,7 +15,7 @@ import {
   TRANSPORTS, DEFAULT_TRANSPORT, TRAIN_GRADES, DEFAULT_GRADE, stationOf, stationsOf, pathOf, pathKnown, legParts, legTimesAll,
   isWeekend, fareOf, hoursOf, legTimes, mealsOf, dailyOf, settlePlan, describePlan, tripLocation,
   parseTripList, tripListPages, tripUser, tripStage, tripDocFor, formFields, saveBody, parseFeeRows, pickFeeRow,
-  tripIconState, settleLabel, formLegs, nextFormLegs, fareIn, busFareOf, busEnds, nextLegPick, parseTransRows, pickOfRow, legsOfRows, ticketsOf, seatTickets,
+  tripIconState, settleLabel, formLegs, nextFormLegs, fareIn, busFareOf, busEnds, nextLegPick, nextCardPick, parseTransRows, pickOfRow, legsOfRows, ticketsOf, seatTickets,
   picksWithTickets, legPlan, describeTrans, sameTrans,
 } from '../src/travel.js';
 import { blankForm, settle } from '../src/attend.js';
@@ -517,6 +517,21 @@ console.log('가는 편·오는 편 — 신청 내역의 출장 카드에서 고
     assert.deepEqual(nextLegPick({ t: 'plane', g: 'first' }, 'plane'), { t: 'plane', g: 'standard' });
     assert.deepEqual(nextLegPick({ t: 'train', g: 'first' }, 'plane'), { t: 'plane', g: 'standard' }, '다른 교통편으로 바꾸면 일반석부터다');
     assert.deepEqual(nextLegPick({ t: 'bus', g: 'standard' }, 'bus'), { t: 'bus', g: 'standard' });
+  });
+  t('출장 카드에서 고른 편은 일반석 → 특실 → 선택 안 함으로 돈다 — 버스는 한 번 더 누르면 선택 안 함 (2026-11-20 사용자 지정)', () => {
+    const std = { t: 'train', g: 'standard' };
+    const first = { t: 'train', g: 'first' };
+    assert.deepEqual(nextCardPick(null, null, 'train'), std, '고르지 않은 편 — 한 번');
+    assert.deepEqual(nextCardPick(std, std, 'train'), first, '두 번');
+    assert.equal(nextCardPick(first, first, 'train'), null, '세 번 — 선택 안 함');
+    assert.equal(nextCardPick({ t: 'bus', g: 'standard' }, null, 'bus'), null);
+    assert.deepEqual(nextCardPick(first, first, 'plane'), { t: 'plane', g: 'standard' }, '다른 교통편으로 바꾸면 일반석부터다');
+    // 카드에서 아직 고르지 않은 편은 사전정산의 줄에서 간다 — 일반석 줄이면 특실, 특실 줄이면 일반석, 다음에 선택 안 함(사전정산 그대로).
+    assert.deepEqual(nextCardPick(undefined, std, 'train'), first);
+    assert.deepEqual(nextCardPick(undefined, first, 'train'), std);
+    // 사전정산 다시하기 칸은 기차만 등급이 있다 — 비행기는 한 번 더 누르면 선택 안 함.
+    assert.deepEqual(nextCardPick(undefined, std, 'plane', ['train']), { t: 'plane', g: 'standard' });
+    assert.equal(nextCardPick({ t: 'plane', g: 'standard' }, null, 'plane', ['train']), null);
   });
   t('처음에는 사전정산대로 골라져 있고 달라진 것이 없다 — 사전정산에 줄이 없으면 아무것도 골라져 있지 않다', () => {
     const same = legPlan({ trip: TRIP2, rows: ROWS, workplace: '부산' });

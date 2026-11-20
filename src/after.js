@@ -365,6 +365,24 @@ export function evidenceOf(record, trip) {
   return warn ? off(label) : { label, ok: true, note: '', warn: '' };
 }
 
+/** 증빙 파일의 이름에 적는 문서 종류(evidenceName) — 항공권과 그 결제 영수증, 숙박 영수증과 예약서가 같은 날이어도 이름이 갈리게 따로 부른다. */
+const DOC_NAMES = { flight_ticket: '항공권', flight_receipt: '항공영수증', lodging_receipt: '숙박비', lodging_booking: '숙박예약',
+  train_ticket: '기차표', bus_ticket: '버스표', other_receipt: '영수증' };
+
+/**
+ * 읽은 증빙의 파일 이름을 내용으로 짓는다(2026-11-20 사용자 지정: "파일이름은 내용을 읽어서 항공권, 숙빅비 이런식으로 이용날짜 넣어서") —
+ * `종류_이용일.확장자`(항공권_2026-11-05.pdf). 이용일은 항공권·표는 탑승일, 숙박은 체크인, 그 밖의 영수증은 결제일이고, 못 읽었으면
+ * 다른 날짜(결제일·탑승일)이며 그것도 없으면 종류만 적는다. 무슨 문서인지 못 읽은 것은 원래 이름 그대로다. 확장자는 원래 이름의 것이다.
+ */
+export function evidenceName(record, name = '') {
+  const kind = DOC_NAMES[record?.docType];
+  if (!kind) return name;
+  const first = LODGING.has(record.docType) ? record.checkIn : record.docType === 'other_receipt' ? record.payDate : record.flightDate;
+  const day = [first, record.flightDate, record.checkIn, record.payDate].find((d) => DATE_RE.test(d || ''));
+  const ext = /\.[A-Za-z0-9]{1,5}$/.exec(String(name || ''))?.[0] || '';
+  return `${kind}${day ? `_${day}` : ''}${ext.toLowerCase()}`;
+}
+
 /** 사후정산에도 올라가야 하는 문서인가(숙박 영수증·예약서, 항공권·항공 영수증). */
 export const needsAfter = (record) => LODGING.has(record?.docType) || FLIGHT.has(record?.docType);
 

@@ -2,7 +2,7 @@
 // 교통비는 가는 편·오는 편에서 나온다: 처음에는 사전정산대로, 표를 넣거나 카드에서 고르면 그 편이 바뀐다.
 // DOM·네트워크 없이 돈다. 폼 칸 이름(lodge_*, tr_*, air_*)은 2026-10-03 실제 사후정산 입력 화면 소스와 같다.
 import assert from 'node:assert/strict';
-import { afterNeed, afterPlan, afterSummary, afterFields, nightsBetween, evidenceOf, periodMiss, needsAfter, AFTER_TRANSPORT, PRE_PLANE } from '../src/after.js';
+import { afterNeed, afterPlan, afterSummary, afterFields, nightsBetween, evidenceOf, evidenceName, periodMiss, needsAfter, AFTER_TRANSPORT, PRE_PLANE } from '../src/after.js';
 import { lodgeAsk, lodgeSettle, lodgeOver, lodgeChoices, lodgeApproval, lodgeDecide } from '../src/after.js';
 import { lodgeReason, lodgeComment, lodgeCommentWith, lodgeCommentWithout, LODGE_OVER_REASON } from '../src/after.js';
 import { TRAVEL_RULES } from '../src/travelspec.js';
@@ -502,5 +502,13 @@ console.log('숙박비 상한액 초과 — 실제 금액으로 정산하는 줄
     assert.deepEqual(comment(afterFields([], plan)), ['소노캄 고양']);
   });
 }
+
+t('증빙 파일의 이름은 읽은 내용으로 짓는다 — 종류_이용일.확장자. 모르는 문서는 원래 이름 그대로 (2026-11-20 사용자 지정)', () => {
+  assert.equal(evidenceName({ docType: 'flight_ticket', flightDate: '2026-11-05', payDate: '2026-10-30' }, 'eyJhbGci.abc.PDF'), '항공권_2026-11-05.pdf');
+  assert.equal(evidenceName({ docType: 'flight_receipt', flightDate: null, payDate: '2026-10-30' }, 'a.pdf'), '항공영수증_2026-10-30.pdf', '탑승일을 못 읽었으면 결제일');
+  assert.equal(evidenceName({ docType: 'lodging_receipt', checkIn: '2026-11-04', payDate: '2026-11-05' }, 'image.png'), '숙박비_2026-11-04.png');
+  assert.equal(evidenceName({ docType: 'other_receipt' }, '이름만'), '영수증', '날짜도 확장자도 없으면 종류만');
+  assert.equal(evidenceName({ docType: 'unknown' }, 'x.png'), 'x.png');
+});
 
 console.log(`\n통과 ${pass}건`);

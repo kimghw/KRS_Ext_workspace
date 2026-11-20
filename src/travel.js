@@ -576,6 +576,20 @@ export function nextLegPick(pick, value, graded = LEG_GRADED) {
 }
 
 /**
+ * 출장 카드(사후정산 칸·사전정산 다시하기 칸)에서 편의 아이콘을 눌렀을 때의 다음 선택 — **일반석 → 특실 → 선택 안 함**으로 돈다
+ * (2026-11-20 사용자 지정: "한번이면 일반, 2번이면 특실 3번 클릭하면 선택안함"). 등급이 없는 교통편(버스)은 한 번 더 누르면 선택 안 함이다.
+ * 선택 안 함(null)은 카드에서 고른 것을 지우는 것이다 — 사전정산에 줄이 있는 편은 그 줄로 돌아간다.
+ * 카드에서 아직 고르지 않은 편(own 없음)은 보이는 것(shown — 사전정산의 줄)에서 nextLegPick 대로 간다.
+ * @param {{t:string,g:string}|null|undefined} own 카드에서 고른 것
+ * @param {{t:string,g:string}|null|undefined} shown 지금 골라져 보이는 것(own 이 없으면 사전정산의 줄)
+ * @returns {{t:string,g:string}|null}
+ */
+export function nextCardPick(own, shown, value, graded = LEG_GRADED) {
+  if (own?.t === value) return graded.includes(value) && own.g !== 'first' ? { t: value, g: 'first' } : null;
+  return nextLegPick(own?.t ? null : shown, value, graded);
+}
+
+/**
  * 읽은 증빙(input.yaml 의 receipt) 가운데 항공권을 편으로 편다. 왕복표 한 장은 두 편이 되고,
  * 편마다 값이 따로 적혀 있지 않으므로 합계를 반씩 나눈다(split). 기차표·버스표는 편을 바꾸지 않는다 — 증빙으로 받지 않는다.
  * @returns {{mode:'plane', date:string, dep:string, arr:string, depTime:string, arrTime:string, total:number|null, currency:string,
