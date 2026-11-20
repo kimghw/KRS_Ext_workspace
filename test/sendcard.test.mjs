@@ -386,7 +386,7 @@ console.log('출장 기간과 안 맞아 알림 표시가 붙은 증빙은 확�
   await ta('`확정`하면 그때부터 같이 간다 — 사후정산이 완료된 출장이라 더 올릴 것은 없다(보낼 증빙으로만 확정한다)', async () => {
     const now = (await evidence.list('TR-2')).find((k) => k.name === '항공권.png');
     assert.deepEqual([now.warn, now.confirmed, now.todo], [undefined, true, undefined]);
-    assert.equal(q('.at-send-how').textContent, '쪽지 · 여비계산서 1부 · 증빙 1장 · 항공기 증명 1장 → PDF 1개');
+    assert.equal(q('.at-send-how').textContent, '쪽지 · 여비계산서 1부 · 항공기 증명 1장 · 증빙 1장 → PDF 1개');
     assert.equal(q('.at-send-files button[data-act="kept-ok"]'), null);
     assert.equal(doc.getElementById('atStatus').textContent, '이 출장의 증빙으로 확정했습니다 — 항공권.png · 담당자에게 보낼 때 같이 갑니다');
   });

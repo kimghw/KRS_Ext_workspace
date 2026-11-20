@@ -35,7 +35,7 @@ test('사이드패널 창의 활성 탭을 정확한 출처로 찾는다', async
 test('현재 eclass 탭에서 조회하고 확장 직접 요청을 중복 실행하지 않는다', async (t) => {
   const f = fakeCurrent(); globals(t, f.api);
   const result = await siteFetch(`${ORIGIN}/list`);
-  assert.equal(result.via, 'tab');
+  assert.equal(result.via, 'current');   // 'tab'(직접 요청이 막혀 돌아간 것)과 다르다 — 쓰기를 막지 않는다
   assert.equal(result.html, HTML);
   assert.equal(globalThis.fetch.mock.callCount(), 0);
   assert.deepEqual(f.calls.filter(([kind]) => kind === 'script'), [['script', 42]]);

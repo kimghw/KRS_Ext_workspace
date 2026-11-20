@@ -141,6 +141,9 @@ t('세 줄이 화면의 차례대로 선다 — 숙박·결제일, 업체명, �
   ]);
   assert.equal(lines()[0].tip, 'Toyoko INN Gangnam Seoul · 1박', '좁아서 잘린 업체명은 풍선말에 다 적혀 있다(박 수도)');
   assert.ok(doc.querySelector('#atList .at-legs').compareDocumentPosition(box()) & window.Node.DOCUMENT_POSITION_FOLLOWING, '가는 편·오는 편 아래에 선다');
+  // 사후정산 묶음 안이다(2026-11-20 에 사전정산 완료·사후정산 두 묶음으로 나뉘었다) — 고치는 편(.at-legs)과 같은 묶음에 선다.
+  assert.equal(box().closest('.at-part'), doc.querySelector('#atList .at-legs').closest('.at-part'));
+  assert.equal(box().closest('.at-part').querySelector('.at-part-title').textContent, '사후정산');
   assert.ok(box().compareDocumentPosition(doc.querySelector('#atList .at-after-drop')) & window.Node.DOCUMENT_POSITION_FOLLOWING, '증빙 넣는 곳보다 위다');
 });
 t('이 패널이 증빙으로 올린 줄과 손수 적은 줄을 가려 적는다 — 적어 둔 표시가 먼저, 없으면 보관함의 숙박 증빙 가운데 금액이 같은 것', () => {

@@ -294,7 +294,9 @@ const legs = (act) => [...card().querySelectorAll('.at-legs .at-leg')].map((row)
 }));
 const press = (leg, kind) => legs('pre-leg')[leg === 'go' ? 0 : 1].icons.find((b) => b.dataset.t === kind).click();
 const saveBtn = () => card().querySelector('button[data-act="pre-save"]');
-const notes = () => [...card().querySelectorAll('.at-after > .at-after-note')].map((n) => n.textContent);
+/** 알림 한 줄의 글 — 끝의 ×(알림 지우기, 2026-11-20)는 뺀다. */
+const noteText = (p) => (p.querySelector(':scope > span') || p).textContent;
+const notes = () => [...card().querySelectorAll('.at-after > .at-after-note')].map(noteText);
 const status = () => doc.getElementById('atStatus').textContent;
 const tripline = () => card().querySelector('.at-tripline').textContent;
 
@@ -323,6 +325,12 @@ t('기차를 한 번 더 누르면 특실(운임표의 정가), 비행기를 고
   assert.deepEqual(legs('pre-leg').map((l) => [l.on, l.what]),
     [[['train+'], 'KTX 부산→서울 특실 78,900원 · 바꿈'], [['plane'], '비행기 — 사전정산에는 교통편 줄을 넣지 않습니다']]);
   assert.deepEqual([notes(), site.posts.length, store.attendLegs], [[], 0, undefined], '사후정산용으로 골라 두는 편(attendLegs)은 건드리지 않는다');
+});
+press('go', 'train');
+t('특실에서 한 번 더 누르면(세 번째) 선택 안 함이다(2026-11-20 사용자 지정) — 다시 고른 것이 지워져 그 편은 저장된 줄 그대로다', () => {
+  assert.deepEqual(legs('pre-leg').map((l) => [l.on, l.what]),
+    [[['train'], 'KTX 부산→서울 일반석 53,700원'], [['plane'], '비행기 — 사전정산에는 교통편 줄을 넣지 않습니다']]);
+  assert.equal(site.posts.length, 0);
 });
 card().querySelector('.at-after-head button[data-act="pre-redo"]').click();
 t('`그만두기`를 누르면 정산 내역으로 돌아가고 고른 것은 버린다', () => {
@@ -364,7 +372,7 @@ saveBtn().click();
 await until(() => site.posts.length === 2 && !st.after['145580'].busy, '받지 않는 저장');
 t('보낸 뒤 화면을 다시 읽어 교통편이 그대로면 까닭을 적고 멈춘다 — 다시 작성하는 칸과 고른 것은 그대로 남는다', () => {
   assert.deepEqual(head(), ['사전정산', '다시 작성 중']);
-  assert.equal(card().querySelector('.at-after-note.error').textContent, '사전정산 다시 저장 실패: 저장을 보냈지만 사전정산의 교통편이 바뀌지 않았습니다. eclass 의 사전정산 입력 화면에서 확인해 주세요.');
+  assert.equal(noteText(card().querySelector('.at-after-note.error')), '사전정산 다시 저장 실패: 저장을 보냈지만 사전정산의 교통편이 바뀌지 않았습니다. eclass 의 사전정산 입력 화면에서 확인해 주세요.');
   assert.match(status(), /^사전정산 다시 저장 실패: /);
   assert.deepEqual(legs('pre-leg').map((l) => l.on), [['train+'], ['plane']]);
   assert.ok(logs.some((l) => l.kind === 'trip' && !l.ok && /^여비계산서\(사전정산\) 다시 저장 실패: 145580 — /.test(l.text)));
@@ -439,7 +447,10 @@ t('다시 누르면 접힌다', () => {
 console.log('정산 내역의 일비·식비 한 줄 — 식비는 − + 아이콘으로 줄이고 늘린다');
 t('정산 내역의 가는 편·오는 편 아래에 사전정산의 일비·식비가 한 줄로 선다 — 일비 2일 · 식비 6식, 식수 양옆에 − + 아이콘', () => {
   assert.deepEqual([head(), stayText(), stayNote()], [['정산 내역', '1박 · 완료'], ['일비2일', '식비6식'], null]);
-  assert.ok(card().querySelector('.at-legs').compareDocumentPosition(stayRow()) & window.Node.DOCUMENT_POSITION_FOLLOWING, '가는 편·오는 편 아래에 선다');
+  // 정산 내역은 사전정산 묶음과 사후정산 묶음으로 나뉜다(2026-11-20) — 일비·식비는 사전정산 묶음에서 저장된 편(.at-prelegs) 아래에 선다.
+  const prePart = card().querySelector('.at-after > .at-part');
+  assert.deepEqual([prePart.querySelector('.at-part-title').textContent, prePart.contains(stayRow()), prePart.querySelectorAll('.at-prelegs .at-leg').length], ['사전정산 완료', true, 2]);
+  assert.ok(prePart.querySelector('.at-prelegs').compareDocumentPosition(stayRow()) & window.Node.DOCUMENT_POSITION_FOLLOWING, '가는 편·오는 편 아래에 선다');
   assert.deepEqual([step(-1).getAttribute('aria-label'), step(-1).disabled, step(1).getAttribute('aria-label'), step(1).disabled],
     ['식비 한 끼 줄이기 — 사전정산을 다시 저장할 때 들어갑니다', false, '식비 한 끼 늘리기 — 사전정산을 다시 저장할 때 들어갑니다', true], '이틀이면 여섯 끼가 끝이라 + 는 잠겨 있다');
   assert.ok(step(-1).querySelector('svg') && step(1).querySelector('svg'), '글자가 아니라 아이콘이다');
@@ -471,7 +482,7 @@ saveBtn().click();
 await until(() => site.posts.length === posted + 1 && !st.after['145580'].busy, '받지 않는 식수 저장');
 t('사이트가 받지 않으면(다시 읽은 식수가 그대로면) 저장했다고 하지 않는다 — 고친 식수는 카드에 남는다', () => {
   assert.deepEqual(head(), ['사전정산', '다시 작성 중']);
-  assert.equal(card().querySelector('.at-after-note.error').textContent, '사전정산 다시 저장 실패: 저장을 보냈지만 사전정산의 식수가 바뀌지 않았습니다. eclass 의 사전정산 입력 화면에서 확인해 주세요.');
+  assert.equal(noteText(card().querySelector('.at-after-note.error')), '사전정산 다시 저장 실패: 저장을 보냈지만 사전정산의 식수가 바뀌지 않았습니다. eclass 의 사전정산 입력 화면에서 확인해 주세요.');
   assert.deepEqual([stayText(), stayNote()], [['일비2일', '식비4식'], '바꿈 · 사전정산 6식']);
 });
 site.ignore = false;
@@ -529,7 +540,8 @@ await panel.reload();
 await until(() => st.after['145580']?.detail, '사전정산을 다시 읽기');
 const sent = site.posts.length;
 
-const legRow = (leg) => card().querySelectorAll('.at-legs .at-leg')[leg === 'go' ? 0 : 1];
+// 다시 작성하는 칸의 편은 .at-legs, 정산 내역의 사전정산 묶음에 선 저장된 편은 .at-prelegs 다(2026-11-20 에 칸이 나뉘었다).
+const legRow = (leg) => (card().querySelector('.at-legs') || card().querySelector('.at-prelegs')).querySelectorAll('.at-leg')[leg === 'go' ? 0 : 1];
 const legName = (leg) => legRow(leg).querySelector('.at-leg-name').textContent;
 const legTime = (leg) => legRow(leg).querySelector('.at-leg-time')?.textContent ?? null;
 const editOf = (leg, f) => legRow(leg).querySelector(`[data-edit="${f}"]`);
@@ -586,7 +598,7 @@ saveBtn().click();
 saveBtn().click();
 await until(() => site.posts.length === sent + 2 && !st.after['145580'].busy, '받지 않는 시각 저장');
 t('사이트가 받지 않으면(다시 읽은 줄의 시각이 그대로면) 저장했다고 하지 않는다 — 고친 값은 칸에 남는다', () => {
-  assert.equal(card().querySelector('.at-after-note.error').textContent, '사전정산 다시 저장 실패: 저장을 보냈지만 사전정산의 교통편이 바뀌지 않았습니다. eclass 의 사전정산 입력 화면에서 확인해 주세요.');
+  assert.equal(noteText(card().querySelector('.at-after-note.error')), '사전정산 다시 저장 실패: 저장을 보냈지만 사전정산의 교통편이 바뀌지 않았습니다. eclass 의 사전정산 입력 화면에서 확인해 주세요.');
   assert.deepEqual([head(), editVals('back')], [['사전정산', '다시 작성 중'], ['2026-09-10', '16', '20']]);
 });
 
@@ -620,7 +632,8 @@ lineBtn('trip-refresh').click();
 await until(() => st.after['145580'].detail.rows[0].total === 54400 && !st.after['145580'].loading, '여비계산서 다시 읽기');
 t('↻ 를 누르면 여비계산서를 다시 읽어 사이트에서 고친 값이 카드에 선다 — 읽기만 한다', () => {
   assert.deepEqual([legName('go'), legTime('go'), legName('back'), legTime('back')], ['가는 편 9/9', '9시→12시', '오는 편 9/10', '17시→20시']);
-  assert.deepEqual(legs('leg').map((l) => l.what), ['KTX 부산→서울 일반 54,400원', 'KTX 서울→부산 일반 54,400원']);
+  assert.deepEqual(['go', 'back'].map((k) => legRow(k).querySelector('.at-leg-what').textContent), ['KTX 부산→서울 일반 54,400원', 'KTX 서울→부산 일반 54,400원']);
+  assert.ok(legRow('go').closest('.at-prelegs'), '사전정산의 줄은 정산 내역의 사전정산 묶음에 선다');
   assert.deepEqual([stayText(), site.posts.length, head()], [['일비2일', '식비5식'], unsent, ['정산 내역', '1박 · 완료']]);
   assert.equal(status(), '여비계산서 145580 을(를) 다시 읽었습니다 — 사후정산 완료');
 });

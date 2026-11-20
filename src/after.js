@@ -367,7 +367,40 @@ export function evidenceOf(record, trip) {
 
 /** 증빙 파일의 이름에 적는 문서 종류(evidenceName) — 항공권과 그 결제 영수증, 숙박 영수증과 예약서가 같은 날이어도 이름이 갈리게 따로 부른다. */
 const DOC_NAMES = { flight_ticket: '항공권', flight_receipt: '항공영수증', lodging_receipt: '숙박비', lodging_booking: '숙박예약',
-  train_ticket: '기차표', bus_ticket: '버스표', other_receipt: '영수증' };
+  train_ticket: '기차표', bus_ticket: '버스표', other_receipt: '증빙 영수증' };
+
+/**
+ * 증빙의 뱃지(2026-11-20 사용자 지정: "사람이 숙박비 인지 항공권인지 뱃지로 선택할 수 있게하고 클릭하면 뱃지가 바뀌면 … 현지 라는 뱃지는
+ * 현지 방문한 기타 영수증") — 처음에는 읽은 내용에서 가장 가까운 것이 붙고 사람이 눌러 바꾼다. doc 은 그 뱃지로 바꿀 때 칠 문서 종류,
+ * mark 는 읽은 기록이 없는 증빙(완료한 뒤 담은 것)에 적는 이름표, file 은 같은 뱃지의 파일을 합쳤을 때의 이름이다.
+ */
+export const EVIDENCE_KINDS = [
+  { id: 'lodging', label: '숙박비', is: LODGING, doc: 'lodging_receipt', mark: '숙박 증빙', file: '숙박비.pdf' },
+  { id: 'flight', label: '항공권', is: FLIGHT, doc: 'flight_receipt', mark: '항공기 증명', file: '항공권.pdf' },
+  { id: 'local', label: '현지', is: null, doc: 'other_receipt', mark: '증빙', file: '증빙 영수증.pdf' },
+];
+
+/** 보관한 증빙(또는 읽은 기록)의 뱃지 — 사람이 고른 것(kind)이 먼저, 다음은 읽은 문서 종류, 그것도 없으면 이름표다. 숙박·항공이 아니면 현지다. */
+export function evidenceKind(item) {
+  if (EVIDENCE_KINDS.some((k) => k.id === item?.kind)) return item.kind;
+  const type = item?.record?.docType ?? item?.docType;
+  const hit = EVIDENCE_KINDS.find((k) => (type ? k.is?.has(type) : k.is && k.mark === item?.label));
+  return hit ? hit.id : 'local';
+}
+
+/** 뱃지의 다음 차례 — 숙박비 → 항공권 → 현지 → 숙박비. */
+export const nextEvidenceKind = (id) => EVIDENCE_KINDS[(EVIDENCE_KINDS.findIndex((k) => k.id === id) + 1) % EVIDENCE_KINDS.length].id;
+
+/**
+ * 읽은 기록을 사람이 고른 뱃지의 종류로 친다 — 이미 그 갈래의 문서면 그대로다(영수증·예약서, 항공권·항공 영수증을 뭉개지 않는다).
+ * `현지` 로 고른 것은 출장지에서 결제한 영수증이라고 사람이 말해 준 것이다(atDestination). 결제일을 못 읽었으면 탑승일·체크인으로 채운다.
+ */
+export function withEvidenceKind(record, id) {
+  const k = EVIDENCE_KINDS.find((x) => x.id === id);
+  if (!k || !record) return record;
+  if (k.is) return k.is.has(record.docType) ? record : { ...record, docType: k.doc };
+  return { ...record, docType: k.doc, atDestination: true, payDate: record.payDate || record.flightDate || record.checkIn || null };
+}
 
 /**
  * 읽은 증빙의 파일 이름을 내용으로 짓는다(2026-11-20 사용자 지정: "파일이름은 내용을 읽어서 항공권, 숙빅비 이런식으로 이용날짜 넣어서") —
@@ -451,7 +484,16 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
   let air = null;
 
   // 출장 기간의 것이 아닌 문서는 묶지 않는다 — 맞는 것만 골라 올린다(2026-10-05 사용자 지정, periodMiss). 무엇을 왜 뺐는지는 skipped 에 적는다.
-  const fit = (records || []).filter((r) => !periodMiss(r, trip));
+  const inPeriod = (records || []).filter((r) => !periodMiss(r, trip));
+  // 탑승일을 못 읽은 항공권 — 카드에서 비행기로 골라 둔 편이 하나뿐이면 그 편의 날짜다(2026-11-20 사용자 지정: "이미 위에 날짜가 있잖아
+  // 2개중 하나고 이미 항공권 클릭해 둔게 1개 있잖아"). 그 날짜로 그 편에 앉고(seatTickets), 탑승일은 묻지 않는다. 그렇게 넣었다고 알린다.
+  const flown = ['go', 'back'].filter((key) => picks?.[key]?.t === 'plane');
+  const flownDay = flown.length === 1 ? (flown[0] === 'go' ? trip?.from : trip?.to || trip?.from) : '';
+  const fit = inPeriod.map((r) => {
+    if (!FLIGHT.has(r.docType) || r.flightDate || !DATE_RE.test(flownDay || '')) return r;
+    notes.push(`${fileName(r)}: 탑승일을 읽지 못해 비행기로 고른 ${flown[0] === 'go' ? '가는 편' : '오는 편'}의 날짜(${shortDay(flownDay)})로 넣었습니다 — 다르면 사후정산 화면에서 고쳐 주세요`);
+    return { ...r, flightDate: flownDay };
+  });
 
   // ---- 가는 편·오는 편: 표를 앉히고, 그에 따라 선택을 바꾼다
   const rows = detail.rows || [];
@@ -531,7 +573,9 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
     const missing = [[noDate, '탑승일'], [!text(r.depPlace), '출발지'], [!text(r.arrPlace), '도착지'], [num(r.total) == null, '합계 금액']]
       .filter(([bad]) => bad).map(([, name]) => name);
     if (missing.length) {
-      problems.push(`항공권(${fileName(r)})에서 ${missing.join('·')}을(를) 읽지 못했습니다`);
+      // 값을 못 읽은 항공 문서는 막지 않는다(2026-11-20 사용자 지정: "파악이 안되면 그냥 항공영수증으로 올려") — 증빙(항공기 증명)으로는 그대로
+      // 쓰고, 교통비 줄만 못 넣는다고 알린다. 적어 줄 칸(fixes)은 그대로 준다 — 적으면 그 값으로 교통비 줄을 넣는다.
+      notes.push(`${fileName(r)}: ${missing.join('·')}을(를) 읽지 못해 항공 영수증(증빙)으로만 두었습니다 — 교통비 줄에 넣으려면 그 값을 적어 주세요`);
       fixes.push({ file: fileName(r), what: `항공권${text(r.airline) ? ` · ${text(r.airline)}` : ''}`, fields: [
         [noDate, 'flightDate', '탑승일', 'date'], [!text(r.depPlace), 'depPlace', '출발지', 'text'], [!text(r.arrPlace), 'arrPlace', '도착지', 'text'],
         [num(r.total) == null, 'total', '합계 금액(원)', 'money'],

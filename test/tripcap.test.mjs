@@ -223,7 +223,7 @@ await wait(20);
 t('아이콘을 누르면 사이트 접근 권한을 묻고 보고 있는 탭을 찍는다 — 찍는 동안 증빙 넣는 곳과 단추가 잠긴다', () => {
   assert.equal(cap.perms, 1);
   assert.ok(q('.at-after button[data-pick="tab"]').disabled && q('.at-after button[data-pick="part"]').disabled);
-  assert.ok(q('.at-after-drop input[type="file"]').disabled);
+  assert.ok([...doc.querySelectorAll('#atList .at-after-drop input[type="file"]')].every((i) => i.disabled));
   assert.match(doc.getElementById('atStatus').textContent, /보고 있는 탭을 캡처하는 중입니다/);
 });
 await until(() => site.posts.length === 1 && !st.after['145580'].busy, '캡처한 항공권을 읽고 올리기');
@@ -247,7 +247,7 @@ await ta('읽은 항공권은 파일을 넣은 것과 똑같이 오는 편에 �
   assert.deepEqual([body.getAll('tr_transport'), body.getAll('tr_total')], [['기차(KTX등)', '비행기'], ['53700', '98000']]);
   const kept = await evidence.list('TR-1');
   assert.deepEqual(kept.map((k) => [k.label, k.type]), [['항공기 증명', 'application/pdf']]);
-  assert.match(kept[0].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}\\.pdf$`));
+  assert.match(kept[0].name, /^항공(권|영수증)_\d{4}-\d{2}-\d{2}\.pdf$/);   // 읽은 내용으로 지은 이름(2026-11-20 사용자 지정)
   assert.ok(logs.some((l) => l.kind === 'trip' && l.ok && /웹페이지 캡처\(증빙\): 145580 · koreanair\.com 화면 2개 → 2장/.test(l.text)));
   assert.match(doc.getElementById('atStatus').textContent, /^사후정산을 올렸습니다 — /);
 });
@@ -281,11 +281,13 @@ await panel.reload();
 t('다시 그린 뒤에도 고르는 중', () => assert.equal(q('.at-send button[data-pick="part"]').textContent, '고르기 취소'));
 cap.pending([{ n: 1, tag: 'div', title: '영수증', frame: null }]);   // 사용자가 영수증 상자를 눌러 고르고 페이지의 캡처를 눌렀다
 await until(() => cap.shots === 3 && !st.after['145580'].busy && shelf.size === 2, '고른 영수증 상자를 보관함에 담기');
-await ta('고른 상자만 한 번 찍어 PDF 하나로 읽지 않고 보관함에 담긴다 — 같은 날 같은 사이트라 이름이 _2 로 비켜 앞의 증빙을 덮지 않는다', async () => {
+await ta('고른 상자만 한 번 찍어 PDF 하나로 읽지 않고 보관함에 담긴다 — 앞의 증빙을 덮지 않는다(둘 다 남는다)', async () => {
   assert.deepEqual(cap.ran, ['pdfType', 'pagePick', 'partInfo', 'partStep', 'partDone']);
   const kept = await evidence.list('TR-1');
   assert.deepEqual(kept.map((k) => k.label), ['항공기 증명', '증빙']);
-  assert.match(kept[1].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}_2\\.pdf$`));
+  // 앞의 증빙(항공권)은 읽은 내용으로 이름을 다시 지어 두었다(2026-11-20) — 캡처 이름이 겹치지 않아 번호(_2)가 붙지 않는다.
+  assert.match(kept[1].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}\\.pdf$`));
+  assert.notEqual(kept[0].name, kept[1].name, '앞의 증빙과 이름이 겹치지 않는다');
   assert.equal(site.asks.length, 1, '읽지 않았다');
   assert.equal(site.posts.length, 1, '사후정산은 그대로다');
   assert.equal(q('.at-send button[data-pick="part"]').textContent, '부분');

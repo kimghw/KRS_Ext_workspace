@@ -120,10 +120,13 @@ console.log('숙박비 내역 — 영수증과 예약서를 한 줄로');
     assert.deepEqual(plan.legs.map((l) => [l.key, l.pick.t, l.source]), [['go', 'train', 'site'], ['back', 'train', 'site']], '가는 편·오는 편은 사전정산대로 골라져 있다');
   });
   t('예약서의 추가 정보는 알려 준다', () => assert.ok(plan.notes.some((n) => /추가 정보 — 예약서\.pdf: 조식 포함, 예약번호 AB12/.test(n)), plan.notes.join(' | ')));
-  t('필수 값(결제일·숙박 일수·업체명·정산금액)을 못 읽으면 올리지 않을 문제로 적는다', () => {
+  t('결제일·숙박 일수를 못 읽으면 그 출장의 것으로 넣고 알린다(2026-11-20 사용자 지정). 업체명·정산금액을 못 읽으면 올리지 않고 적을 칸을 준다', () => {
     const p = afterPlan([rec({ docType: 'lodging_receipt', vendor: '호텔', total: 100000, file: PNG })], ctx);
-    assert.deepEqual(p.problems, ['숙박(영수증.png)에서 결제일·숙박 일수을(를) 읽지 못했습니다']);
-    assert.equal(p.lodge[0].sday, null);
+    assert.deepEqual([p.problems, p.fixes, p.lodge[0].sday, p.lodge[0].paydate], [[], [], ctx.trip.to === ctx.trip.from ? null : p.need.nights, ctx.trip.from]);
+    assert.ok(p.notes.some((n) => /문서에서 읽지 못해 .*넣었습니다/.test(n)), p.notes.join(' | '));
+    const q = afterPlan([rec({ docType: 'lodging_receipt', file: PNG })], ctx);
+    assert.deepEqual(q.problems, ['숙박(영수증.png)에서 업체명·정산금액을(를) 읽지 못했습니다']);
+    assert.deepEqual(q.fixes, [{ file: '영수증.png', what: '숙박', fields: [{ key: 'vendor', label: '업체명', type: 'text' }, { key: 'total', label: '정산금액(원)', type: 'money' }] }]);
   });
   t('예약서만 있으면 올릴 수는 있지만 결제 영수증이 없다고 알린다 — 결제일은 체크아웃으로 둔다', () => {
     const p = afterPlan([booking], ctx);
@@ -259,9 +262,17 @@ console.log('교통비 내역 — 가는 편·오는 편. 항공권을 넣으면
     assert.equal(mixed.air.mileage, 215, '찾은 편만 더한다');
     assert.ok(mixed.notes.some((n) => /찾지 못한 편이 있습니다\(오는 편 에어부산 김포→김해\)/.test(n)));
   });
-  t('항공권의 필수 값(탑승일·출발지·도착지·합계)을 못 읽으면 문제로 적는다', () => {
-    const p = afterPlan([rec({ docType: 'flight_ticket', airline: '아시아나항공', total: 90000, file: { ...PNG, name: 'oz.png' } })], { trip: TRIP, detail: TRAIN });
-    assert.deepEqual(p.problems, ['항공권(oz.png)에서 탑승일·출발지·도착지을(를) 읽지 못했습니다']);
+  t('항공권의 필수 값(탑승일·출발지·도착지·합계)을 못 읽어도 막지 않는다(2026-11-20 사용자 지정) — 증빙으로만 둔다고 알리고, 적어 줄 칸(fixes)을 준다', () => {
+    const oz = rec({ docType: 'flight_ticket', airline: '아시아나항공', total: 90000, file: { ...PNG, name: 'oz.png' } });
+    const p = afterPlan([oz], { trip: TRIP, detail: TRAIN });
+    assert.deepEqual(p.problems, []);
+    assert.ok(p.notes.includes('oz.png: 탑승일·출발지·도착지을(를) 읽지 못해 항공 영수증(증빙)으로만 두었습니다 — 교통비 줄에 넣으려면 그 값을 적어 주세요'), p.notes.join(' | '));
+    assert.deepEqual(p.fixes, [{ file: 'oz.png', what: '항공권 · 아시아나항공', fields: [
+      { key: 'flightDate', label: '탑승일', type: 'date' }, { key: 'depPlace', label: '출발지', type: 'text' }, { key: 'arrPlace', label: '도착지', type: 'text' }] }]);
+    // 카드에서 비행기로 골라 둔 편이 하나뿐이면 탑승일은 그 편의 날짜다 — 탑승일은 묻지 않는다.
+    const q = afterPlan([oz], { trip: TRIP, detail: TRAIN, picks: { back: { t: 'plane', g: 'standard' } } });
+    assert.ok(q.notes.some((n) => n.startsWith('oz.png: 탑승일을 읽지 못해 비행기로 고른 오는 편의 날짜(')), q.notes.join(' | '));
+    assert.deepEqual([q.problems, q.fixes[0].fields.map((f) => f.key)], [[], ['depPlace', 'arrPlace']]);
   });
   t('기차표는 증빙으로 받지 않는다 — 넣어도 편이 바뀌지 않고 교통비 내역도 생기지 않는다(KTX 는 운임표의 정가)', () => {
     const ktx = rec({ docType: 'train_ticket', flightDate: '2026-09-10', depPlace: '서울역', arrPlace: '부산역', depTime: '18:00', seatClass: '특실', total: 78400, file: { ...PNG, name: 'ktx.png' } });
@@ -507,7 +518,7 @@ t('증빙 파일의 이름은 읽은 내용으로 짓는다 — 종류_이용일
   assert.equal(evidenceName({ docType: 'flight_ticket', flightDate: '2026-11-05', payDate: '2026-10-30' }, 'eyJhbGci.abc.PDF'), '항공권_2026-11-05.pdf');
   assert.equal(evidenceName({ docType: 'flight_receipt', flightDate: null, payDate: '2026-10-30' }, 'a.pdf'), '항공영수증_2026-10-30.pdf', '탑승일을 못 읽었으면 결제일');
   assert.equal(evidenceName({ docType: 'lodging_receipt', checkIn: '2026-11-04', payDate: '2026-11-05' }, 'image.png'), '숙박비_2026-11-04.png');
-  assert.equal(evidenceName({ docType: 'other_receipt' }, '이름만'), '영수증', '날짜도 확장자도 없으면 종류만');
+  assert.equal(evidenceName({ docType: 'other_receipt' }, '이름만'), '증빙 영수증', '날짜도 확장자도 없으면 종류만');
   assert.equal(evidenceName({ docType: 'unknown' }, 'x.png'), 'x.png');
 });
 

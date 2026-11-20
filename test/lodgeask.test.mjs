@@ -316,10 +316,10 @@ t('아고다 달러 예약서를 넣으면 올리지 않고 원화로 결제된 
 });
 t('읽은 증빙과 올릴 줄은 이름표로 갈라 적는다 — 올릴 숙박 줄의 업체명은 아고다이고 정산금액은 아직 정하지 않았다', () => {
   assert.deepEqual([...card().querySelectorAll('.at-after-result > .at-after-label')].map((p) => p.textContent), ['읽은 증빙 1장']);
-  assert.deepEqual([...card().querySelectorAll('.at-after-docs li')].map((li) => li.textContent), ['숙박 증빙 · image.png — Toyoko INN Gangnam Seoul 1박 예약 확인서 USD 88.46']);
+  assert.deepEqual([...card().querySelectorAll('.at-after-docs li')].map((li) => li.textContent), ['숙박 증빙 · 숙박예약_2026-09-09.png — Toyoko INN Gangnam Seoul 1박 예약 확인서 USD 88.46']);
   const [l] = lodgeCells();
   assert.deepEqual([l.head, l['업체명'], l['사업자등록번호'], l['결제일'], l['숙박 일수'], l['정산금액'], l['비고'], l['증빙']],
-    ['올릴 숙박 줄 — 아직 올리지 않았습니다', '아고다', '문서에 없음', '2026-09-08', '1박', '정하지 않음 — 문서의 금액 88.46 USD', 'Toyoko INN Gangnam Seoul', 'image.png']);
+    ['올릴 숙박 줄 — 아직 올리지 않았습니다', '아고다', '문서에 없음', '2026-09-08', '1박', '정하지 않음 — 문서의 금액 88.46 USD', 'Toyoko INN Gangnam Seoul', '숙박예약_2026-09-09.png']);
 });
 await ta('숫자가 아닌 것을 적으면 받지 않는다', async () => {
   ask().querySelector('input.at-ask-krw').value = '약 12만원';
@@ -358,13 +358,13 @@ t('올린 뒤 카드에는 올렸다는 말만 남는다 — 올린 내용은 �
   assert.equal(card().querySelector('.at-lodged-hint').textContent, '숙박 줄 1개를 올렸습니다 — 위 숙박비 내역에서 그 줄의 ‘증빙’을 누르면 올린 내용이 보입니다');
   assert.deepEqual([lodgeCells(), card().querySelector('.at-after-result .at-after-docs'), card().querySelector('.at-after-result .at-after-notes'), info()], [[], null, null, null]);
   assert.deepEqual([chip('81561').textContent, chip('81561').getAttribute('aria-expanded'), chip('81561').title],
-    ['증빙', 'false', '이 패널에서 증빙(image.png)으로 올린 줄입니다 · 누르면 내용이 보입니다']);
+    ['증빙', 'false', '이 패널에서 증빙(숙박예약_2026-09-09.png)으로 올린 줄입니다 · 누르면 내용이 보입니다']);
 });
 t('숙박비 내역에서 그 줄의 증빙을 누르면 그 줄 아래에 올린 내용이 펴진다 — 읽은 증빙, 사이트의 칸 이름대로의 값(상한액으로 정산·역산), 그 줄의 알림. 다시 누르면 접힌다', () => {
   chip('81561').click();
   assert.equal(chip('81561').getAttribute('aria-expanded'), 'true');
   assert.equal(info().previousElementSibling.dataset.lodge, '81561', '그 줄 바로 아래다');
-  assert.deepEqual([...info().querySelectorAll('.at-after-docs li')].map((li) => li.textContent), ['숙박 증빙 · image.png — Toyoko INN Gangnam Seoul 1박 예약 확인서 USD 88.46']);
+  assert.deepEqual([...info().querySelectorAll('.at-after-docs li')].map((li) => li.textContent), ['숙박 증빙 · 숙박예약_2026-09-09.png — Toyoko INN Gangnam Seoul 1박 예약 확인서 USD 88.46']);
   assert.deepEqual([...info().querySelectorAll('.at-after-notes li')].map((li) => li.textContent), ['Toyoko INN Gangnam Seoul은 예약서만 있고 결제 영수증이 없습니다 — 금액은 예약 금액입니다']);
   assert.equal(site.calls.length, 1, '펴는 것은 사이트에 아무것도 보내지 않는다');
   const [l] = cellsOf(info());
@@ -373,12 +373,12 @@ t('숙박비 내역에서 그 줄의 증빙을 누르면 그 줄 아래에 올�
   assert.deepEqual(l, {
     head: '올린 숙박 줄 (줄 번호 81561)', 업체명: '아고다', 사업자등록번호: '문서에 없음', 결제일: '2026-09-08', '숙박 일수': '1박',
     정산금액: '120,000원 · 상한액으로 정산(실제 125,052원) · 문서의 금액 88.46 USD', 공급가액: '109,091원 (정산금액에서 역산)', 부가세: '10,909원 (정산금액에서 역산)',
-    상한액: '120,000원 (1일 120,000원 × 1박)', 비고: 'Toyoko INN Gangnam Seoul', 증빙: 'image.png',
+    상한액: '120,000원 (1일 120,000원 × 1박)', 비고: 'Toyoko INN Gangnam Seoul', 증빙: '숙박예약_2026-09-09.png',
   });
 });
 t('이 패널이 올린 줄의 번호를 적어 둔다 — 저장소에도 남는다(손수 적은 줄과 가린다)', () => {
-  assert.deepEqual(st.lodgeMine, { 145580: { 81561: 'image.png' } });
-  assert.deepEqual(store.attendLodgeMine, { 145580: { 81561: 'image.png' } });
+  assert.deepEqual(st.lodgeMine, { 145580: { 81561: '숙박예약_2026-09-09.png' } });
+  assert.deepEqual(store.attendLodgeMine, { 145580: { 81561: '숙박예약_2026-09-09.png' } });
   // 올린 내용도 글로 적어 둔다 — 패널을 다시 열어도 증빙을 누르면 그대로 보인다.
   const kept = store.attendLodgeInfo[145580][81561];
   assert.deepEqual([kept.row, kept.cells.find(([k]) => k === '정산금액')[1], kept.docs.length, kept.notes.length],
@@ -473,18 +473,20 @@ await open();
 await drop('image.png', HOTEL);
 await until(() => site.calls.length === 1, '사후정산 저장');
 await drop('image.png', { docType: 'unknown', summary: '출장 카드를 찍은 화면 — 원본 증빙이 아님' }, '다른 그림');
-await ta('증빙이 아닌 화면(읽기가 unknown 으로 가린 것)은 올리지도 보관하지도 않는다 — 같은 이름이어도 내용이 다르면 번호가 붙어, 보관해 둔 증빙을 덮어쓰지 않는다', async () => {
+await ta('증빙이 아닌 화면(읽기가 unknown 으로 가린 것)은 올리지 않는다 — ⚠ 표시로만 보관하고(2026-11-20 사용자 지정), 보관해 둔 증빙은 읽은 내용으로 이름을 다시 지어 두었으니 넣은 이름이 같아도 덮어쓰지 않는다', async () => {
   assert.equal(site.calls.length, 1, '줄이 더 올라가지 않았다');
   assert.deepEqual([...card().querySelectorAll('.at-after-docs li')].map((li) => li.textContent),
-    ['모르는 문서 ✗ · image (2).png — 무슨 문서인지 읽지 못했습니다(출장 카드를 찍은 화면 — 원본 증빙이 아님)']);
+    ['모르는 문서 ✗ · image.png — 무슨 문서인지 읽지 못했습니다(출장 카드를 찍은 화면 — 원본 증빙이 아님)']);
   const kept = await evidence.list('TR-1');
-  assert.deepEqual(kept.map((k) => [k.label, k.name, k.summary]), [['숙박 증빙', 'image.png', '킨텍스호텔 1박 110,000원']]);
+  assert.deepEqual(kept.map((k) => [k.label, k.name, k.summary, !!k.warn]),
+    [['숙박 증빙', '숙박비_2026-09-09.png', '킨텍스호텔 1박 110,000원', false], ['모르는 문서', 'image.png', '출장 카드를 찍은 화면 — 원본 증빙이 아님', true]]);
+  assert.equal(card().querySelector('.at-kept li.warn button[data-act="kept-kind"]').textContent, '현지', '무슨 증빙인지는 사람이 뱃지로 정한다');
 });
 await drop('image.png', { ...HOTEL, vendor: '다른호텔', total: 99000, supply: 90000, vat: 9000, summary: '다른호텔 1박 99,000원' }, '또 다른 그림');
 await until(() => site.calls.length === 2, '두 번째 저장');
-await ta('같은 이름의 다른 증빙은 둘 다 보관된다', async () => {
-  assert.deepEqual((await evidence.list('TR-1')).map((k) => k.name).sort(), ['image (2).png', 'image.png']);
-  assert.deepEqual(st.lodgeMine[145580], { 81561: 'image.png', 81562: 'image (2).png' });
+await ta('읽은 내용으로 지은 이름이 같은 다른 증빙은 번호가 붙어 둘 다 보관된다', async () => {
+  assert.deepEqual((await evidence.list('TR-1')).map((k) => k.name).sort(), ['image.png', '숙박비_2026-09-09 (2).png', '숙박비_2026-09-09.png']);
+  assert.deepEqual(st.lodgeMine[145580], { 81561: '숙박비_2026-09-09.png', 81562: '숙박비_2026-09-09 (2).png' });
 });
 
 console.log('숙박비 내역의 표시를 누르면 — 손수 작성한 줄·올린 뒤 고쳐진 줄은 화면에 지금 있는 값을 보인다');
@@ -507,7 +509,7 @@ await ta('올린 줄이 사후정산 화면에서 고쳐졌으면 적어 둔 내
   site.lodges = site.lodges.map((r) => (r.seq === '81561' ? { ...r, total: '99000' } : r));   // 화면에서 손으로 고쳤다
   card().querySelector('button[data-act="lodge-refresh"]').click();
   await until(() => cellsOf(info())[0]?.['정산금액'] === '99,000원', '숙박비 내역 다시 읽기');
-  assert.deepEqual([cellsOf(info())[0].head, cellsOf(info())[0]['증빙']], ['올린 뒤 사후정산 화면에서 고쳐진 줄 — 화면에 지금 있는 값 (줄 번호 81561)', '호텔.png']);
+  assert.deepEqual([cellsOf(info())[0].head, cellsOf(info())[0]['증빙']], ['올린 뒤 사후정산 화면에서 고쳐진 줄 — 화면에 지금 있는 값 (줄 번호 81561)', '숙박비_2026-09-09.png']);
 });
 await ta('줄을 지우면 적어 둔 내용도 버린다', async () => {
   const del = () => card().querySelector('.at-lodge[data-lodge="81561"] button[data-act="lodge-del"]');

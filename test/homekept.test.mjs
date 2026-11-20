@@ -172,7 +172,7 @@ await ta('올린 뒤에는 "아직 안 올림" 표시가 없어진다 — 버튼
   await until(() => !goBtn(), '버튼 걷기');
   assert.deepEqual(kept(), ['출장지 영수증 · lunch.png', '숙박 증빙 · hotel.png']);
   const hotel = [...shelf.values()].find((k) => k.name === 'hotel.png');
-  assert.deepEqual([hotel.label, hotel.todo, 'record' in hotel], ['숙박 증빙', undefined, false]);
+  assert.deepEqual([hotel.label, hotel.todo, hotel.record?.vendor, 'file' in (hotel.record || {})], ['숙박 증빙', undefined, '킨텍스호텔', false]);   // 읽은 기록은 남는다 — 뱃지를 바꾸면 다시 읽지 않고 그 기록으로 다시 묶는다(2026-11-20)
   assert.deepEqual(store[MARKS_KEY]['TR-1'].find((k) => k.name === 'hotel.png'), { name: 'hotel.png', label: '숙박 증빙' });
   assert.equal(sendNote(), '', '막는 까닭이 걷힌다 — 저장·확정부터 한다는 안내는 카드에 적지 않는다');
   assert.equal(doc.querySelector('#atList button[data-act="send-go"]').disabled, true, '과제·계정과 받는 사람을 아직 고르지 않아 보내기는 잠겨 있다 — 막는 까닭은 없다');
@@ -250,7 +250,7 @@ await ta('홈 카드에 넣은 기간 밖의 숙박 영수증은 알림 표시�
 t('확정하기 전에는 보낼 때도 빠진다 — 송부 칸에 무엇이 빠지는지 적히고, 묶이는 증빙 수에 들지 않는다', () => {
   assert.equal(heldNote(), '출장 기간과 안 맞아 확정하지 않은 증빙 1장은 보내지 않습니다 — jeju.png');
   // 맞는 증빙 셋(출장지 영수증 1 · 숙박 증빙 2)만 센다. 과제·계정과 받는 사람을 아직 고르지 않아 보내기는 잠겨 있다.
-  assert.match(doc.querySelector('#atList .at-send .at-send-how').textContent, /여비계산서 1부 · 출장지 영수증 1장 · 숙박 증빙 2장 → PDF 1개$/);
+  assert.match(doc.querySelector('#atList .at-send .at-send-how').textContent, /여비계산서 1부 · 숙박 증빙 2장 · 출장지 영수증 1장 → PDF 1개$/);
 });
 await ta('`확정`하면 알림이 걷히고 "사후정산에 안 올림"이 된다 — 올리기 전에는 송부 칸이 잠기고, 올리는 버튼으로 그때 읽은 기록대로 올라간다', async () => {
   keptLi('jeju.png').querySelector('button[data-act="kept-ok"]').click();

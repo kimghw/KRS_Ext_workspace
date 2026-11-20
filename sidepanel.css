@@ -1035,11 +1035,11 @@ button.danger:hover { filter: brightness(1.08); }
 /* 파일을 끄는 동안 — 놓을 칸이 어디인지 패널에 들어오자마자 보인다. */
 .attend.dragging .at-after-drop .at-drop, .attend.dragging .at-field.at-file .at-drop { border-color: var(--pick); outline: 2px solid var(--pick); outline-offset: 2px; }
 .attend .at-after-drop.busy { opacity: .6; pointer-events: none; }
-/* 종류마다 따로 넣는 칸 셋(항공권·숙소·기타 — 2026-11-20 사용자 지정) — 한 줄에 같은 폭으로 서고, 그 아래가 공통 칸이다. */
-.attend .at-drop-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-.attend .at-drop-kinds .at-after-drop { margin-top: 0; }
-.attend .at-drop-kinds .at-drop { padding: 6px 4px; align-items: center; }
-.attend .at-drop-kinds .at-drop-lead { font-size: 12px; white-space: nowrap; }
+/* 증빙의 뱃지(숙박비·항공권·현지 — 2026-11-20 사용자 지정) — 보관 중인 증빙의 줄 앞에 서고, 누르면 다음 종류로 바뀐다. 종류마다 색이 다르다. */
+.attend .at-kept button.at-ebadge { flex: none; min-height: 20px; padding: 1px 8px; border: 0; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; cursor: pointer; color: var(--pick); background: var(--pick-soft); }
+.attend .at-kept button.at-ebadge-flight { color: #0a7d5a; background: color-mix(in srgb, #0a7d5a 14%, var(--surface)); }
+.attend .at-kept button.at-ebadge-local { color: var(--muted); background: color-mix(in srgb, var(--muted) 16%, var(--surface)); }
+.attend .at-kept button.at-ebadge:hover:not(:disabled) { filter: brightness(.95); }
 /* 정산 칸의 묶음(사전정산 내용 · 사후정산 내용 — 2026-11-20 사용자 지정) — 이름표와 가는 줄로 가른다. */
 .attend .at-part { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 .attend .at-part-title { margin: 0; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
@@ -1084,6 +1084,8 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .at-fix-field { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .attend .at-fix-field input.at-fix-input { width: 120px; min-height: 28px !important; padding: 3px 8px; font-size: 12px; }
 .attend .at-fix-field input.at-fix-input[type="date"] { width: auto; }
+.attend .at-after-fix > .at-after-note { display: flex; align-items: flex-start; gap: 6px; }
+.attend .at-after-fix > .at-after-note > button { margin-left: auto; }
 .attend .at-after-fix > button { margin-top: 8px; min-height: 28px; padding: 4px 10px; font-size: 12px; }
 /* 보관 중인 증빙 — 여비계산서에 붙일 칸이 없어 가지고 있다가 담당자에게 보낼 때 같이 갈 파일들. × 로 뺀다. */
 .attend .at-kept { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }

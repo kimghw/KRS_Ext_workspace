@@ -17,6 +17,8 @@
 //     보내는 길이 한 줄이고, 줄을 고르면 그 셋으로 보낸다(2026-10-04 사용자 지정: "3개 정도 리스트해서 이전 보낸 정보로").
 //   - 보내는 글의 형식은 만든 뒤에 사용자가 검토한다 → 글은 sendTitle·sendLines 두 함수에만 있다.
 
+import { EVIDENCE_KINDS, evidenceKind } from './after.js';
+
 /** 이전에 보낸 곳을 몇 줄까지 기억하고 보이는가(과제·계정 + 받는 사람 + 보내는 길). */
 export const RECENT_MAX = 3;
 
@@ -101,7 +103,16 @@ export function sendGate({ trip, stage, need, kept, reopen = false }) {
  * 보관함의 증빙 가운데 담당자에게 보내는 것 — 출장 기간과 안 맞아 알림 표시(warn)가 붙은 것은 사람이 확정하기 전에는 보내지 않는다
  * (2026-10-05 사용자 지정: "확정 해주기 전까지는 보내기 해도 같이 보내지 말고").
  */
-export const sendable = (kept) => (kept || []).filter((k) => !k.warn);
+export const sendable = (kept) => byKind((kept || []).filter((k) => !k.warn));
+
+/**
+ * 같은 뱃지(숙박비·항공권·현지)의 증빙을 한데 모은다(2026-11-20 사용자 지정: "같은 뱃지면 파일을 합쳐지고") — 보내는 PDF 는 증빙을 이 차례로
+ * 이어 붙이므로, 같은 뱃지의 파일이 한 덩어리로 이어진다. 뱃지 안에서는 담은 차례 그대로다.
+ */
+function byKind(kept) {
+  const at = (k) => EVIDENCE_KINDS.findIndex((x) => x.id === evidenceKind(k));
+  return kept.map((k, i) => [k, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([k]) => k);
+}
 
 /** 알림 표시가 붙어 보내지 않는 증빙이 있으면 그 말 한 줄(송부 칸과 보낼 내용 팝업에 적는다). 없으면 빈 글. */
 export function heldNote(kept) {

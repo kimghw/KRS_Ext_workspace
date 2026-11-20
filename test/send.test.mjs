@@ -23,7 +23,7 @@ t('숙박도 비행기도 없으면(당일) 사전정산을 마친 뒤 당일증
 // 2026-10-05 사용자 지정: "출장 기간동안의 내용이 아니면 … 문서보관에 알림표지 하고 확정 해주기 전까지는 보내기 해도 같이 보내지 말고"
 t('출장 기간과 안 맞아 알림 표시(warn)가 붙은 증빙은 확정하기 전에는 보내는 것에 들지 않는다 — 무엇이 빠지는지 한 줄로 말하고, 당일증빙으로도 치지 않는다', () => {
   const held = { label: '당일출장 증명', name: '늦은점심.png', warn: '결제일(9/15)이 출장 기간(9/9) 밖입니다' };
-  assert.deepEqual(sendable([KEPT[0], held, KEPT[1]]), [KEPT[0], KEPT[1]]);
+  assert.deepEqual(sendable([KEPT[0], held, KEPT[1]]), [KEPT[1], KEPT[0]], '알림 표시가 붙은 것은 빠지고, 남은 것은 뱃지 차례(숙박비 → 항공권 → 현지)로 모인다(2026-11-20 사용자 지정)');
   assert.deepEqual([sendable(null), heldNote(KEPT), heldNote(null)], [[], '', '']);
   assert.equal(heldNote([KEPT[0], held, { ...held, name: '제주.png' }]), '출장 기간과 안 맞아 확정하지 않은 증빙 2장은 보내지 않습니다 — 늦은점심.png · 제주.png');
   assert.deepEqual(gate({ trip: DAY, stage: pre(true), need: { needed: false }, kept: [held] }), [false, true, 'day', '당일증빙(출장지에서 결제한 영수증)을 넣어 주세요']);
