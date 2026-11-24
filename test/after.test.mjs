@@ -2,8 +2,8 @@
 // 교통비는 가는 편·오는 편에서 나온다: 처음에는 사전정산대로, 표를 넣거나 카드에서 고르면 그 편이 바뀐다.
 // DOM·네트워크 없이 돈다. 폼 칸 이름(lodge_*, tr_*, air_*)은 2026-10-03 실제 사후정산 입력 화면 소스와 같다.
 import assert from 'node:assert/strict';
-import { afterNeed, afterPlan, afterSummary, afterFields, nightsBetween, evidenceOf, evidenceName, periodMiss, needsAfter, AFTER_TRANSPORT, PRE_PLANE } from '../src/after.js';
-import { lodgeAsk, lodgeSettle, lodgeOver, lodgeChoices, lodgeApproval, lodgeDecide } from '../src/after.js';
+import { afterNeed, afterPlan, afterSummary, afterFields, nightsBetween, evidenceOf, evidenceName, shortFileName, FILE_NAME_MAX, periodMiss, needsAfter, AFTER_TRANSPORT, PRE_PLANE } from '../src/after.js';
+import { lodgeAsk, lodgeSettle, lodgeOver, lodgeChoices, lodgeApproval, lodgeDecide, lodgePickAmount, lodgeAmountChoices } from '../src/after.js';
 import { lodgeReason, lodgeComment, lodgeCommentWith, lodgeCommentWithout, LODGE_OVER_REASON } from '../src/after.js';
 import { TRAVEL_RULES } from '../src/travelspec.js';
 
@@ -167,9 +167,21 @@ console.log('숙박비 내역 — 영수증과 예약서를 한 줄로');
     const other = rec({ docType: 'lodging_receipt', vendor: '라마다 고양', payDate: '2026-09-10', total: 143000, currency: 'KRW', ...stay, file: PNG });
     assert.equal(afterPlan([agoda, other, confirm], ctx).lodge.length, 3);
   });
-  t('금액이 적힌 예약서는 날짜가 같아도 남의 영수증에 합치지 않는다 — 그것만으로 한 줄이다(다른 숙박일 수 있다)', () => {
+  // 2026-11-20 사용자 지정: "가격이 2개면 선택하라고 해줘 … 결제 한거랑 예약할때 보이는 거랑 가격차이가 좀 나는 경우가 있어 할인 때문에"
+  t('금액이 적힌 예약서도 날짜가 같은 영수증 묶음이 하나뿐이면 같은 숙박이다 — 금액이 다르면 어느 금액인지 묻고(낮은 것이 먼저), 고르면 그 금액이 실제 금액이다', () => {
     const p = afterPlan([agoda, rec({ ...confirm, total: 143000, currency: 'KRW' })], ctx);
-    assert.deepEqual([p.lodge.length, p.problems], [2, []]);
+    assert.deepEqual([p.lodge.length, p.problems], [1, []]);
+    const l = p.lodge[0];
+    assert.equal(lodgeAsk(l), 'amount');
+    assert.deepEqual(l.amounts.map((c) => [c.won, c.from]), [[143000, 'Confirmation.pdf'], [177101, 'Receipt.pdf']]);
+    const { choices } = lodgeAmountChoices(l);
+    assert.deepEqual(choices.map((c) => c.label), ['143,000원으로', '177,101원으로']);
+    lodgePickAmount(l, 143000);
+    assert.deepEqual([lodgeAsk(l), l.actual, l.total, l.doc.total], ['', 143000, 143000, 143000]);
+  });
+  t('같은 숙박의 문서끼리 금액이 같으면 묻지 않는다', () => {
+    const p = afterPlan([agoda, rec({ ...confirm, total: 177101, currency: 'KRW' })], ctx);
+    assert.deepEqual([p.lodge.length, lodgeAsk(p.lodge[0]), p.lodge[0].amounts], [1, '', undefined]);
   });
 }
 
@@ -180,8 +192,8 @@ console.log('교통비 내역 — 가는 편·오는 편. 항공권을 넣으면
   const plan = afterPlan([back, ticket], { trip: TRIP, detail: TRAIN });
   t('항공권 두 장이면 두 편 모두 비행기다 — 수단은 "비행기", 시간은 시(時)만, 비고에 항공사·편명. 넣은 차례가 아니라 날짜로 앉는다', () => {
     assert.deepEqual(plan.trans.map((x) => [x.date, x.shr, x.ehr, x.dep, x.arr, x.transport, x.grade, x.total, x.currency, x.cocard, x.comment]), [
-      ['2026-09-09', '7', '8', '김해', '김포', AFTER_TRANSPORT.plane, '일반석', 98000, 'KRW', '0', '대한항공 KE1402'],
-      ['2026-09-10', '19', '20', '김포', '김해', AFTER_TRANSPORT.plane, '', 98000, 'KRW', '0', '대한항공 KE1415'],
+      ['2026-09-09', '5', '9', '김해', '김포', AFTER_TRANSPORT.plane, '일반석', 98000, 'KRW', '0', '대한항공 KE1402'],
+      ['2026-09-10', '17', '21', '김포', '김해', AFTER_TRANSPORT.plane, '', 98000, 'KRW', '0', '대한항공 KE1415'],
     ]);
     assert.deepEqual(plan.problems, []);
     assert.deepEqual(plan.picks, { go: { t: 'plane', g: 'standard' }, back: { t: 'plane', g: 'standard' } }, '카드의 가는 편·오는 편도 비행기로 바뀐다');
@@ -221,8 +233,8 @@ console.log('교통비 내역 — 가는 편·오는 편. 항공권을 넣으면
     const round = rec({ ...ticket, total: 196000, retDate: '2026-09-10', retDepPlace: '김포', retArrPlace: '김해', retDepTime: '19:00', retFlightNo: 'KE1415', file: { ...PNG, name: '왕복.pdf' } });
     const p = afterPlan([round], { trip: TRIP, detail: TRAIN });
     assert.deepEqual(p.trans.map((x) => [x.date, x.shr, x.dep, x.arr, x.transport, x.total, x.comment]), [
-      ['2026-09-09', '7', '김해', '김포', AFTER_TRANSPORT.plane, 98000, '대한항공 KE1402'],
-      ['2026-09-10', '19', '김포', '김해', AFTER_TRANSPORT.plane, 98000, '대한항공 KE1415'],
+      ['2026-09-09', '5', '김해', '김포', AFTER_TRANSPORT.plane, 98000, '대한항공 KE1402'],
+      ['2026-09-10', '17', '김포', '김해', AFTER_TRANSPORT.plane, 98000, '대한항공 KE1415'],
     ]);
     assert.ok(p.notes.some((n) => /왕복 항공권의 합계를 두 편에 반씩 나눠 적었습니다 — 왕복\.pdf/.test(n)));
     assert.equal(p.air.mileage, 210);
@@ -231,7 +243,7 @@ console.log('교통비 내역 — 가는 편·오는 편. 항공권을 넣으면
     const am = rec({ ...ticket, file: { ...PNG, name: '아침.pdf' } });
     const pm = rec({ ...back, flightDate: '2026-09-09', file: { ...PNG, name: '저녁.pdf' } });
     const p = afterPlan([pm, am], { trip: DAY, detail: { rows: [KTX('2026-09-09', '부산', '서울'), KTX('2026-09-09', '서울', '부산')], transports: ['Train', 'Train'] } });
-    assert.deepEqual(p.trans.map((x) => [x.shr, x.dep, x.arr, x.comment]), [['7', '김해', '김포', '대한항공 KE1402'], ['19', '김포', '김해', '대한항공 KE1415']]);
+    assert.deepEqual(p.trans.map((x) => [x.shr, x.dep, x.arr, x.comment]), [['5', '김해', '김포', '대한항공 KE1402'], ['17', '김포', '김해', '대한항공 KE1415']]);
     assert.deepEqual([p.need.needed, p.need.why], [true, '당일 · 비행기']);
     const one = afterPlan([pm], { trip: DAY, detail: NONE, workplace: '부산' });
     assert.deepEqual(one.picks, { back: { t: 'plane', g: 'standard' }, go: { t: 'train', g: 'standard' } }, '한 장뿐이면 떠나는 곳(김포 = 출장지 쪽)을 보고 오는 편에 앉힌다');
@@ -262,17 +274,23 @@ console.log('교통비 내역 — 가는 편·오는 편. 항공권을 넣으면
     assert.equal(mixed.air.mileage, 215, '찾은 편만 더한다');
     assert.ok(mixed.notes.some((n) => /찾지 못한 편이 있습니다\(오는 편 에어부산 김포→김해\)/.test(n)));
   });
-  t('항공권의 필수 값(탑승일·출발지·도착지·합계)을 못 읽어도 막지 않는다(2026-11-20 사용자 지정) — 증빙으로만 둔다고 알리고, 적어 줄 칸(fixes)을 준다', () => {
+  t('항공권의 필수 값(탑승일·출발지·도착지·합계)을 못 읽어도 막지도 묻지도 않는다(2026-11-20 사용자 지정) — 증빙으로만 두고, 편에 앉히지 않으며, 적는 칸(fixes)도 주지 않는다', () => {
     const oz = rec({ docType: 'flight_ticket', airline: '아시아나항공', total: 90000, file: { ...PNG, name: 'oz.png' } });
     const p = afterPlan([oz], { trip: TRIP, detail: TRAIN });
     assert.deepEqual(p.problems, []);
-    assert.ok(p.notes.includes('oz.png: 탑승일·출발지·도착지을(를) 읽지 못해 항공 영수증(증빙)으로만 두었습니다 — 교통비 줄에 넣으려면 그 값을 적어 주세요'), p.notes.join(' | '));
-    assert.deepEqual(p.fixes, [{ file: 'oz.png', what: '항공권 · 아시아나항공', fields: [
-      { key: 'flightDate', label: '탑승일', type: 'date' }, { key: 'depPlace', label: '출발지', type: 'text' }, { key: 'arrPlace', label: '도착지', type: 'text' }] }]);
+    assert.ok(p.notes.includes('oz.png: 탑승일·출발지·도착지을(를) 읽지 못해 항공 영수증(증빙)으로만 두었습니다 — 교통비 줄은 넣지 않았습니다'), p.notes.join(' | '));
+    assert.deepEqual([p.fixes, p.touched, p.trans, p.picks], [[], false, [], {}], '편에 앉지 않아 사전정산의 교통 줄이 그대로다');
     // 카드에서 비행기로 골라 둔 편이 하나뿐이면 탑승일은 그 편의 날짜다 — 탑승일은 묻지 않는다.
     const q = afterPlan([oz], { trip: TRIP, detail: TRAIN, picks: { back: { t: 'plane', g: 'standard' } } });
     assert.ok(q.notes.some((n) => n.startsWith('oz.png: 탑승일을 읽지 못해 비행기로 고른 오는 편의 날짜(')), q.notes.join(' | '));
-    assert.deepEqual([q.problems, q.fixes[0].fields.map((f) => f.key)], [[], ['depPlace', 'arrPlace']]);
+    assert.deepEqual([q.problems, q.fixes], [[], []]);
+  });
+  // 2026-11-20 사용자 지정: "특에서 다시 클릭 하면 선택 안한걸로" — 줄이 있는 편을 안 탐(NO_LEG)으로 고르면 그 편의 교통 줄은 넣지 않는다.
+  t('안 탄 편(picks 의 t: none) — 그 편은 줄 없이 "안 탐"이고, 교통비 내역에는 나머지 편만 들어간다(올라가 있던 그 편의 줄은 지워진다)', () => {
+    const p = afterPlan([], { trip: TRIP, detail: TRAIN, picks: { go: { t: 'none', g: 'standard' } }, workplace: '부산' });
+    assert.deepEqual(p.legs.map((l) => [l.key, l.source, l.pick, l.row, l.blank ?? null]),
+      [['go', 'none', null, null, '안 탐 — 이 편의 교통편 줄을 지웁니다'], ['back', 'site', { t: 'train', g: 'standard' }, p.legs[1].row, null]]);
+    assert.deepEqual([trans(p).map((r) => r.slice(0, 3)), p.touched, p.problems], [[['2026-09-10', '서울', '부산']], true, []]);
   });
   t('기차표는 증빙으로 받지 않는다 — 넣어도 편이 바뀌지 않고 교통비 내역도 생기지 않는다(KTX 는 운임표의 정가)', () => {
     const ktx = rec({ docType: 'train_ticket', flightDate: '2026-09-10', depPlace: '서울역', arrPlace: '부산역', depTime: '18:00', seatClass: '특실', total: 78400, file: { ...PNG, name: 'ktx.png' } });
@@ -328,11 +346,11 @@ console.log('교통비 줄의 출발·도착 시 — KTX 편은 출장 출발·�
   const when = { sHour: 7, eHour: 20 };
   t('가는 편 KTX 는 출장 출발 시각에 떠나 소요 시간 뒤에 닿는다(부산 07시 → 서울 11시) — 항공권이 앉은 편은 항공권의 시각이다', () => {
     const p = afterPlan([back], { trip: TRIP, detail: { ...TRAIN, ...when } });
-    assert.deepEqual(times(p), [[AFTER_TRANSPORT.train, '부산', '서울', '7', '11'], [AFTER_TRANSPORT.plane, '김포', '김해', '19', '20']]);
+    assert.deepEqual(times(p), [[AFTER_TRANSPORT.train, '부산', '서울', '7', '11'], [AFTER_TRANSPORT.plane, '김포', '김해', '17', '21']]);
   });
   t('오는 편 KTX 는 출장 도착 시각에 닿게 그만큼 앞서 떠난다(서울 16시 → 부산 20시) — 사전정산에 줄이 없어 운임표로 지은 편도 같다', () => {
     const p = afterPlan([flight({})], { trip: TRIP, detail: { ...NONE, ...when }, workplace: '부산 본사' });
-    assert.deepEqual(times(p), [[AFTER_TRANSPORT.plane, '김해', '김포', '7', '8'], [AFTER_TRANSPORT.train, '서울', '부산', '16', '20']]);
+    assert.deepEqual(times(p), [[AFTER_TRANSPORT.plane, '김해', '김포', '5', '9'], [AFTER_TRANSPORT.train, '서울', '부산', '16', '20']]);
   });
   t('사전정산의 줄에 적힌 시각은 그대로 두고 빈 쪽만 채운다 — 출장 시각을 못 읽었으면 비워 둔다', () => {
     const rows = [{ ...KTX('2026-09-09', '부산', '서울'), shr: 8, ehr: 0 }, { ...KTX('2026-09-10', '서울', '부산'), shr: 15, ehr: 19 }];
@@ -357,12 +375,12 @@ console.log('교통비 줄의 출발·도착 시 — KTX 편은 출장 출발·�
     assert.equal(afterFields([], p).filter(([n]) => n === 'tr_dep').length, 4);
     // 항공권이 가는 편에만 앉으면 오는 편은 KTX — 사전정산에 줄이 없어도 갈아타는 길을 찾는다.
     const fly = afterPlan([flight({ arrPlace: '무안' })], { trip: MOKPO, detail: { ...NONE, ...when }, workplace: '부산 본사' });
-    assert.deepEqual(times(fly), [[AFTER_TRANSPORT.plane, '김해', '무안', '7', '8'], [AFTER_TRANSPORT.train, '목포', '오송', '15', '17'], [AFTER_TRANSPORT.train, '오송', '부산', '17', '20']]);
+    assert.deepEqual(times(fly), [[AFTER_TRANSPORT.plane, '김해', '무안', '5', '9'], [AFTER_TRANSPORT.train, '목포', '오송', '15', '17'], [AFTER_TRANSPORT.train, '오송', '부산', '17', '20']]);
   });
   t('폼에는 tr_shr·tr_ehr 로 나간다', () => {
     const fields = afterFields([['tr_seq', '77'], ['tr_del', '0']], afterPlan([back], { trip: TRIP, detail: { ...TRAIN, ...when } }));
     const get = (k) => fields.filter(([n]) => n === k).map(([, v]) => v);
-    assert.deepEqual([get('tr_shr'), get('tr_ehr'), get('tr_smn'), get('tr_emn')], [['7', '19'], ['11', '20'], ['0', '0'], ['0', '0']]);
+    assert.deepEqual([get('tr_shr'), get('tr_ehr'), get('tr_smn'), get('tr_emn')], [['7', '17'], ['11', '21'], ['0', '0'], ['0', '0']]);
   });
 }
 
@@ -395,7 +413,7 @@ console.log('폼 칸 — 화면의 칸에 얹고 줄은 화면의 addLodge()/add
   t('교통 줄은 addTr() 의 칸 차례 그대로다 — 첨부 칸은 없다', () => {
     const i = fields.findIndex(([n]) => n === 'tr_seq');
     assert.deepEqual(fields.slice(i, i + 15).map(([n]) => n), ['tr_seq', 'tr_del', 'tr_smn', 'tr_emn', 'tr_date', 'tr_shr', 'tr_ehr', 'tr_dep', 'tr_arr', 'tr_transport', 'tr_grade', 'tr_total', 'tr_currency', 'tr_cocard', 'tr_comment']);
-    assert.deepEqual([get('tr_date'), get('tr_shr'), get('tr_ehr'), get('tr_transport'), get('tr_total'), get('tr_comment')], [['2026-09-09'], ['7'], ['8'], ['비행기'], ['98000'], ['대한항공 KE1402']]);
+    assert.deepEqual([get('tr_date'), get('tr_shr'), get('tr_ehr'), get('tr_transport'), get('tr_total'), get('tr_comment')], [['2026-09-09'], ['5'], ['9'], ['비행기'], ['98000'], ['대한항공 KE1402']]);
     assert.equal(fields.some(([n]) => n === 'tr_file'), false);
   });
   t('교통 줄을 다시 올릴 때는 화면에 있던 교통 줄을 지움 표시한다(가는 편·오는 편이 두 번 들어가지 않게) — 숙박 줄과 교통 줄을 안 올릴 때는 건드리지 않는다', () => {
@@ -427,23 +445,46 @@ console.log('숙박비 상한액 초과 — 상한액의 1.5배까지는 부서�
   t('상한액 안이거나 상한액을 모르면 물을 것도 승인도 없다', () => {
     assert.deepEqual([lodgeOver(row(120000)), lodgeChoices(row(110000)), lodgeOver(row(177101, { maxconv: '' })), lodgeApproval(row(110000, { settle: 'real' }))], [null, null, null, '']);
   });
-  t('상한액을 넘고 1.5배 안이면(177,101원 ≤ 180,000원) 실제 금액 버튼에 부서장 승인이라고 적고 까닭을 단다', () => {
+// 2026-11-20 사용자 지정: "12만원이 기본금액이고 18만원이 상한액 이야 … 옵션을 3개 주면됨" — 사이트의 1일 한도 × 박이 기본금액, 그 1.5배가 상한액이다.
+  t('기본금액을 넘고 상한액(1.5배) 안이면(177,101원 ≤ 180,000원) 기본금액·실제 금액 둘을 묻는다 — 풀이 글(note)은 달지 않는다', () => {
     const l = row(177101);
     assert.deepEqual(lodgeOver(l), { cap: 120000, limit: 180000, rate: 1.5, approver: '부서장', within: true });
     assert.deepEqual(lodgeChoices(l), {
-      question: '실제 금액 177,101원이 상한액 120,000원(1일 120,000원 × 1박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?',
+      question: '실제 금액 177,101원이 기본금액 120,000원(1일 120,000원 × 1박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?',
       choices: [
-        { settle: 'cap', label: '상한액 120,000원으로' },
-        { settle: 'real', label: '실제 금액 177,101원으로 · 부서장 승인', note: '상한액의 1.5배(180,000원) 이내라 부서장 승인을 받아 실제 금액으로 정산할 수 있습니다', reason: LODGE_OVER_REASON },
+        { settle: 'cap', label: '기본금액 120,000원으로' },
+        { settle: 'real', label: '실제 금액 177,101원으로', reason: LODGE_OVER_REASON },
       ],
     });
     assert.equal(lodgeOver(row(180000)).within, true, '꼭 1.5배인 금액은 범위 안이다');
+    assert.equal(lodgeChoices(row(180000)).choices.length, 2, '상한액과 같으면 상한액 단추는 없다');
   });
-  t('1.5배를 넘으면 승인 범위를 벗어난다고 적는다 — 고르는 것은 막지 않는다', () => {
-    const l = row(180001);
+  t('상한액을 넘으면(188,000원 > 180,000원) 상한액으로 올리는 것이 하나 더 선다 — 셋 중에 고른다', () => {
+    const l = row(188000);
     assert.equal(lodgeOver(l).within, false);
-    assert.deepEqual(lodgeChoices(l).choices[1], { settle: 'real', label: '실제 금액 180,001원으로', note: '상한액의 1.5배(180,000원)를 넘어 부서장 승인으로 정산할 수 있는 범위를 벗어납니다', reason: LODGE_OVER_REASON });
-    assert.equal(lodgeApproval({ ...l, settle: 'real' }), '상한액의 1.5배(180,000원) 초과 — 부서장 승인 범위를 벗어남');
+    assert.deepEqual(lodgeChoices(l), {
+      question: '실제 금액 188,000원이 기본금액 120,000원(1일 120,000원 × 1박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?',
+      choices: [
+        { settle: 'cap', label: '기본금액 120,000원으로' },
+        { settle: 'real', label: '실제 금액 188,000원으로', reason: LODGE_OVER_REASON },
+        { settle: 'max', label: '상한액 180,000원으로', reason: LODGE_OVER_REASON },
+      ],
+    });
+    assert.equal(lodgeApproval({ ...l, settle: 'real' }), '상한액 180,000원 초과 — 부서장 승인 범위를 벗어남', '실제 금액으로 고르는 것은 막지 않는다');
+    assert.equal(lodgeApproval({ ...l, settle: 'max' }), '부서장 승인 필요', '상한액으로 고르면 승인 범위 안이다');
+  });
+  t('상한액으로 고르면 정산금액이 상한액(180,000원)이고 비고에 사유가 붙는다 — 승인 알림은 범위 안의 것이다', () => {
+    const l = row(188000, { comment: '소노캄 고양', doc: { currency: 'KRW', total: 188000, supply: null, vat: null } });
+    const plan = { lodge: [l], notes: [] };
+    lodgeDecide(plan, l, 'max');
+    assert.deepEqual([l.settle, l.total, l.maxed, l.samount + l.vat], ['max', 180000, true, 180000]);
+    assert.deepEqual([lodgeReason(l), lodgeComment(l), plan.notes], [LODGE_OVER_REASON, `소노캄 고양 · ${LODGE_OVER_REASON}`, ['소노캄 고양: 부서장 승인 필요']]);
+    lodgeDecide(plan, l, 'max', '행사 기간이라 인근 숙소가 다 찼음');
+    assert.equal(lodgeComment(l), '소노캄 고양 · 행사 기간이라 인근 숙소가 다 찼음');
+    lodgeDecide(plan, l, 'real');
+    assert.deepEqual([l.total, plan.notes], [188000, ['소노캄 고양: 상한액 180,000원 초과 — 부서장 승인 범위를 벗어남']]);
+    lodgeDecide(plan, l, 'cap');
+    assert.deepEqual([l.total, lodgeReason(l), plan.notes], [120000, '', []]);
   });
   t('상한액은 박 수만큼이다 — 2박이면 240,000원, 승인 범위는 360,000원', () => {
     assert.deepEqual([lodgeOver(row(300000, { sday: 2 })).cap, lodgeOver(row(300000, { sday: 2 })).limit], [240000, 360000]);
@@ -453,7 +494,7 @@ console.log('숙박비 상한액 초과 — 상한액의 1.5배까지는 부서�
     const plan = { lodge: [l], notes: ['추가 정보 — Receipt.pdf: 예약 번호 2048075129'] };
     assert.equal(lodgeAsk(l), 'cap');
     lodgeDecide(plan, l, 'real');
-    const note = '소노캄 고양: 부서장 승인 필요 — 상한액의 1.5배(180,000원) 이내';
+    const note = '소노캄 고양: 부서장 승인 필요';
     assert.deepEqual([lodgeAsk(l), l.total, l.capped, l.notes, plan.notes], ['', 177101, false, [note], ['추가 정보 — Receipt.pdf: 예약 번호 2048075129', note]]);
     lodgeDecide(plan, l, 'real');
     assert.deepEqual(plan.notes.filter((n) => n === note).length, 1, '두 번 골라도 알림은 한 번이다');
@@ -520,6 +561,25 @@ t('증빙 파일의 이름은 읽은 내용으로 짓는다 — 종류_이용일
   assert.equal(evidenceName({ docType: 'lodging_receipt', checkIn: '2026-11-04', payDate: '2026-11-05' }, 'image.png'), '숙박비_2026-11-04.png');
   assert.equal(evidenceName({ docType: 'other_receipt' }, '이름만'), '증빙 영수증', '날짜도 확장자도 없으면 종류만');
   assert.equal(evidenceName({ docType: 'unknown' }, 'x.png'), 'x.png');
+});
+t('너무 긴 파일 이름은 받을 때 자른다 — 확장자 앞이 30자를 넘으면 30자 + … + 확장자, 빈 이름은 "증빙" (2026-11-20 사용자 지정)', () => {
+  const k30 = '가'.repeat(30);
+  assert.equal(FILE_NAME_MAX, 30);
+  assert.equal(shortFileName(`${k30}.pdf`), `${k30}.pdf`, '30자까지는 그대로다(한글도 한 자로 센다)');
+  assert.equal(shortFileName(`${k30}나다.PNG`), `${k30}….PNG`);
+  assert.equal(shortFileName(`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIx.pdf`), 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ik….pdf', '확장자는 마지막 점 뒤의 것이다');
+  assert.equal(shortFileName('화면캡처_koreanair.com_2026-11-20.pdf'), '화면캡처_koreanair.com_2026-11-20.pdf', '캡처 이름(29자)은 그대로다');
+  assert.equal(shortFileName('화면캡처_koreanair.com_2026-11-20_2.pdf'), '화면캡처_koreanair.com_2026-11-20_….pdf', '번호가 붙어 31자가 되면 잘린다');
+  assert.deepEqual([shortFileName(''), shortFileName('  '), shortFileName(null), shortFileName('점심.png')], ['증빙', '증빙', '증빙', '점심.png']);
+  assert.equal(shortFileName('abcdef.pdf', 3), 'abc….pdf', '최대 글자 수를 줄 수 있다');
+});
+
+t('구간 없는 항공 영수증이어도 그 편에 비행기 줄이 서 있으면 그 줄의 구간으로 항공 마일리지 표에서 신규 마일리지를 찾는다 (2026-11-20 사용자 지정)', () => {
+  const rows = [{ seq: '1', date: '2026-11-05', dep: '부산(PUS)', arr: '김포(GMP)', transport: 'Airplane', grade: '', total: 100900, currency: 'KRW', shr: 0, ehr: 0, comment: '대한항공' },
+    { seq: '2', date: '2026-11-06', dep: '서울', arr: '부산', transport: 'Train', grade: '일반석', total: 54400, currency: 'KRW', shr: 16, ehr: 20 }];
+  const p = afterPlan([{ docType: 'flight_receipt', airline: '대한항공', total: 100900, payDate: '2026-10-29', file: { name: 'a.pdf' } }],
+    { trip: { from: '2026-11-05', to: '2026-11-06', location: '일산' }, detail: { rows }, picks: {}, workplace: '부산' });
+  assert.deepEqual([p.air?.airline, p.air?.mileage], ['대한항공', 215]);
 });
 
 console.log(`\n통과 ${pass}건`);

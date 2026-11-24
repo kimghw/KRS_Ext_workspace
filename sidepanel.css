@@ -1042,10 +1042,15 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .at-kept button.at-ebadge:hover:not(:disabled) { filter: brightness(.95); }
 /* 정산 칸의 묶음(사전정산 내용 · 사후정산 내용 — 2026-11-20 사용자 지정) — 이름표와 가는 줄로 가른다. */
 .attend .at-part { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+/* 묶음의 머리 — 이름표와 그 옆의 작은 단추(`사전정산 완료` 옆의 `수정하기`, 2026-11-20 사용자 지정). */
+.attend .at-part-head { display: flex; align-items: center; gap: 8px; }
+.attend .at-part-head button.at-part-edit { min-height: 20px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; white-space: nowrap; }
 .attend .at-part-title { margin: 0; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
 .attend .at-part .at-legs, .attend .at-part .at-prelegs { margin-top: 4px; }
 .attend .at-after-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .attend .at-after-note.error { color: var(--danger); }
+/* 보이지 않게 둔 설명 글(2026-11-20 사용자 지정) — 줄에 준 display 가 hidden 을 이기지 않게. */
+.attend .at-after [hidden] { display: none !important; }
 .attend .at-after-note.ok { color: var(--fg); font-weight: 600; }
 /* 지울 수 있는 알림(2026-11-20 사용자 지정) — 글 끝에 × 가 서고, 읽은 내역 묶음은 오른쪽 위에 선다. */
 .attend .at-after-note.at-note-x { display: flex; align-items: flex-start; gap: 6px; }
@@ -1092,7 +1097,14 @@ button.danger:hover { filter: brightness(1.08); }
 .attend .at-kept .at-after-note { margin: 0; }
 .attend .at-kept ul { list-style: none; margin: 4px 0 0; padding: 0; }
 .attend .at-kept li { display: flex; align-items: center; gap: 6px; }
+/* 보관 중인 증빙 줄을 끌어 다른 줄에 놓으면 PDF 하나로 합친다(2026-11-20 사용자 지정) — 끄는 줄은 흐리게, 놓을 줄은 파란 테두리. */
+.attend .at-kept li[draggable="true"] { cursor: grab; border-radius: 6px; }
+.attend .at-kept li.dragging { opacity: .45; }
+.attend .at-kept li.over { outline: 2px solid var(--pick); outline-offset: 1px; background: var(--pick-soft); }
 .attend .at-kept li span { flex: 1; min-width: 0; color: var(--fg); overflow-wrap: anywhere; }
+/* 이름을 누르면 그 파일을 내려받는다(2026-11-20 사용자 지정) — 누를 수 있다는 것이 보이게 손 모양과 밑줄. */
+.attend .at-kept li span.at-kept-name { cursor: pointer; }
+.attend .at-kept li span.at-kept-name:hover { text-decoration: underline; }
 .attend .at-kept button.at-kept-drop { flex: none; width: 22px; min-height: 22px; padding: 0; color: var(--muted); }
 /* 출장 기간과 안 맞아 알림 표시로 둔 증빙 — 확정하기 전에는 올리지도 보내지도 않는다. */
 .attend .at-kept li.warn span, .attend .at-send-files li.warn span { color: var(--danger); }
@@ -2459,3 +2471,7 @@ body.compare-tab .gongmun .gm-cut img { max-height: 520px; }
 .flight-fallback { margin-top: 8px; font-size: 12px; }
 .flight-links { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
 .flight-schedule { color: var(--muted); font-size: 12px; text-underline-offset: 3px; }
+
+/* 여비증빙 송부 칸의 R&D 과제 칩(2026-11-20 사용자 지정: "여기 과제 선택하는게 없네") — 과제·계정·받는 사람 줄 아래에 약자가 칩으로 선다. 누르면 그 과제로 고른다. */
+.attend .at-send-projs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.attend .at-send-hint { margin: 2px 0 6px; color: var(--muted); font-size: 12px; }

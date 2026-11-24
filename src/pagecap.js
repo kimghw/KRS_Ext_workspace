@@ -1446,6 +1446,63 @@ export async function frontPdf({ onFound = () => {} } = {}) {
   return { tab, file: await readPdf(tab) };
 }
 
+/** 잘라 내는 창(crop.html)과 주고받는 열쇠의 머리 — chrome.storage.session 에 찍은 화면(`<머리>shot_<id>`)과 고른 결과(`<머리>done_<id>`)를 둔다. */
+export const CROP_KEY = 'krsCrop_';
+
+/**
+ * 보고 있는 탭이 PDF 면 그 PDF 의 **보이는 화면에서 한 부분을 끌어서 골라** 찍는다(2026-11-20 사용자 지정: "웹에서 pdf 를 볼때 … 부분캡쳐할 수
+ * 있게 해줘") — 크롬 PDF 뷰어 안에는 스크립트가 닿지 않아 페이지 위의 고르기를 쓸 수 없다. 그래서 보이는 화면을 그대로 찍고(captureVisibleTab),
+ * 잘라 내는 창(crop.html)에 띄워 사람이 사각형으로 고르게 한다. 고른 부분은 PNG(dataUrl)로 돌려준다.
+ * PDF 가 아니거나 찍을 탭이 아니면 null(여느 때처럼 페이지 위에서 고른다). 창에서 그만두거나 창을 닫으면 { cancel: true }.
+ * @param {{onFound?: (tab: object) => void}} [opts] onFound 는 찍기 전에 그 탭으로 부른다(부른 곳이 잠그고 안내한다)
+ * @returns {Promise<{tab: object, dataUrl?: string, cancel?: boolean}|null>}
+ */
+export async function cropFrontPdf({ onFound = () => {} } = {}) {
+  needApi();
+  await ensureSites();
+  const tab = await frontTab().catch(() => null);
+  if (!tab) return null;
+  const run = (func) => chrome.scripting.executeScript({ target: { tabId: tab.id }, func }).then((r) => r?.[0]?.result);
+  if (!(await tabIsPdf(tab, run))) return null;
+  onFound(tab);
+  const shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+    .catch((err) => { throw new Error(`PDF 화면을 찍지 못했습니다 — ${err?.message || err}`); });
+  const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const shotKey = `${CROP_KEY}shot_${id}`;
+  const doneKey = `${CROP_KEY}done_${id}`;
+  await chrome.storage.session.set({ [shotKey]: { dataUrl: shot, title: tab.title || '' } });
+  let win = null;
+  try {
+    return await new Promise((resolve, reject) => {
+      const finish = (out) => {
+        chrome.storage.onChanged.removeListener(onChange);
+        chrome.windows.onRemoved?.removeListener(onClosed);
+        resolve({ tab, ...out });
+      };
+      const onChange = (changes, area) => {
+        if (area === 'session' && changes[doneKey]?.newValue) finish(changes[doneKey].newValue);
+      };
+      // 고르지 않고 창을 닫았으면 그만둔 것이다 — 결과가 막 적혔을 수 있어 한 번 더 본다.
+      const onClosed = (wid) => {
+        if (wid !== win?.id) return;
+        chrome.storage.session.get(doneKey).then((got) => finish(got?.[doneKey] || { cancel: true }), () => finish({ cancel: true }));
+      };
+      chrome.storage.onChanged.addListener(onChange);
+      chrome.windows.onRemoved?.addListener(onClosed);
+      chrome.windows.create({ url: chrome.runtime.getURL(`crop.html?id=${id}`), type: 'popup', state: 'maximized' })
+        .then((w) => { win = w; }, (err) => {
+          chrome.storage.onChanged.removeListener(onChange);
+          chrome.windows.onRemoved?.removeListener(onClosed);
+          reject(new Error(`잘라 낼 창을 열지 못했습니다 — ${err?.message || err}`));
+        });
+    });
+  } finally {
+    await chrome.storage.session.remove([shotKey, doneKey]).catch(() => {});
+    // 앞에 있던 PDF 탭으로 돌아간다.
+    await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  }
+}
+
 /** 탭에 큰 팝업(첨부 미리보기 창 같은 것)이 떠 있는가 — modalProbe 를 돌려 보고 단 표시는 바로 뗀다. 못 보면 false. */
 async function popupOpen(tab) {
   const run = (func, args = []) => chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }).then((r) => r?.[0]?.result);

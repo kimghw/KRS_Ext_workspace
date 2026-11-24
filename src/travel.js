@@ -584,6 +584,9 @@ export function nextLegPick(pick, value, graded = LEG_GRADED) {
  * @param {{t:string,g:string}|null|undefined} shown 지금 골라져 보이는 것(own 이 없으면 사전정산의 줄)
  * @returns {{t:string,g:string}|null}
  */
+/** 안 탄 편의 선택 값({ t: NO_LEG }) — 사전정산 다시 작성 칸에서 저장된 줄을 지울 때 쓴다(legPlan·prePlan). */
+export const NO_LEG = 'none';
+
 export function nextCardPick(own, shown, value, graded = LEG_GRADED) {
   if (own?.t === value) return graded.includes(value) && own.g !== 'first' ? { t: value, g: 'first' } : null;
   return nextLegPick(own?.t ? null : shown, value, graded);
@@ -706,6 +709,8 @@ export function legPlan({ trip, picks = {}, rows = [], seats = {}, workplace = '
     const leg = { key, label, date, pick: picks[key] || pickOfRow(cur), site: cur, row: cur, ticket: null, source: cur ? 'site' : '', problem: '' };
     const pick = picks[key];
     if (!pick?.t) return leg;                       // 손대지 않은 편 — 사전정산의 줄 그대로
+    // 안 탄 편(NO_LEG — 사전정산 다시 작성 칸에서 특실 다음에 한 번 더 누른 것, 2026-11-20 사용자 지정: "특에서 다시 클릭하면 … 안탄걸로") — 줄이 없다.
+    if (pick.t === NO_LEG) return { ...leg, pick: null, row: null, source: NO_LEG, blank: '안 탐 — 이 편의 교통편 줄을 지웁니다' };
     const code = SITE_OF[pick.t];
     const ticket = pick.t === 'plane' ? seats[key] : null;
     if (ticket && ticket.total != null && ticket.dep && ticket.arr) {
@@ -769,7 +774,7 @@ export function legPlan({ trip, picks = {}, rows = [], seats = {}, workplace = '
  */
 export function prePlan({ trip, picks = {}, rows = [], workplace = '', sHour = null, eHour = null, edits = {} }) {
   const route = legPlan({ trip, picks, rows, workplace });
-  const planned = route.legs.map((l) => (picks[l.key]?.t && picks[l.key].t !== GRADED && l.source !== 'site' && !l.row
+  const planned = route.legs.map((l) => (l.source === NO_LEG ? l : picks[l.key]?.t && picks[l.key].t !== GRADED && l.source !== 'site' && !l.row
     ? { ...l, problem: '', blank: `${labelOf(picks[l.key].t)} — 사전정산에는 교통편 줄을 넣지 않습니다` } : l));
   // 그 편의 줄이 달라지는가 — 손대지 않았거나 사전정산의 줄과 같으면 아니고, 줄이 없던 편에 줄을 넣지 않는 것도 달라지는 것이 아니다.
   const moved = (l) => !!picks[l.key]?.t && l.source !== 'site' && !l.problem && !!(l.site || l.row);

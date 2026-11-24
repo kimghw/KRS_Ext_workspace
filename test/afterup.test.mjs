@@ -197,7 +197,7 @@ await ta('앞서 올린 숙박 증빙은 다시 묶지 않는다 — 사후정�
   assert.deepEqual([site.saves.length, site.saves[1].lodge.length, site.saves[1].trans.length], [2, 0, 2]);
 });
 
-console.log('숙박비가 상한액을 넘으면 넣은 자리에서 묻는다 — 상한액으로 / 실제 금액으로(상한액의 1.5배 이내면 부서장 승인)');
+console.log('숙박비가 기본금액을 넘으면 넣은 자리에서 묻는다 — 기본금액으로 / 실제 금액으로 / (상한액 = 1.5배를 넘으면) 상한액으로 (2026-11-20 사용자 지정)');
 await ta('올리지 않고 무엇을 고를지 돌려준다 — 패널의 출장 카드와 같은 말(lodgeChoices)이고, 표시는 남는다', async () => {
   const s = shelf();
   const site = fakeSite();
@@ -206,11 +206,11 @@ await ta('올리지 않고 무엇을 고를지 돌려준다 — 패널의 출장
   assert.deepEqual([r.ok, r.sent, r.hold, r.text, site.saves.length], [true, false, true, ASK_TEXT, 0]);
   assert.deepEqual(r.ask, [{
     key: 'suite.png',
-    question: '실제 금액 150,000원이 상한액 120,000원(1일 120,000원 × 1박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?',
+    question: '실제 금액 150,000원이 기본금액 120,000원(1일 120,000원 × 1박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?',
     choices: [
-      { settle: 'cap', label: '상한액 120,000원으로' },
-      // 실제 금액으로 올리면 비고에 들어가는 상한 초과 사유(2026-10-08 사용자 지정) — 홈 줄의 아이콘 풍선말에 적힌다.
-      { settle: 'real', label: '실제 금액 150,000원으로 · 부서장 승인', note: '상한액의 1.5배(180,000원) 이내라 부서장 승인을 받아 실제 금액으로 정산할 수 있습니다', reason: LODGE_OVER_REASON },
+      { settle: 'cap', label: '기본금액 120,000원으로' },
+      // 실제 금액으로 올리면 비고에 들어가는 초과 사유(2026-10-08 사용자 지정) — 홈 줄의 아이콘 풍선말에 적힌다. 상한액(180,000원) 안이라 둘뿐이다.
+      { settle: 'real', label: '실제 금액 150,000원으로', reason: LODGE_OVER_REASON },
     ],
   }]);
   assert.deepEqual(await s.todo(), ['suite.png']);
@@ -222,7 +222,7 @@ await ta('상한액으로 고르면 상한액으로 올린다 — 공급가액·
   const r = await up(s.deps(site), { settle: { 'suite.png': 'cap' } });
   assert.deepEqual([r.ok, r.sent, r.ask], [true, true, undefined]);
   assert.deepEqual(site.saves[0].lodge.map((l) => [l.company, l.total, l.samount, l.vat, l.comment]), [['일산스위트', 120000, 109091, 10909, '']], '상한액으로 정산하면 비고에 사유를 적지 않는다');
-  assert.match(r.text, /^사후정산을 올렸습니다 — 숙박 일산스위트 1박 120,000원\(상한액\)/);
+  assert.match(r.text, /^사후정산을 올렸습니다 — 숙박 일산스위트 1박 120,000원\(기본금액\)/);
   assert.doesNotMatch(r.text, /부서장/);
   assert.deepEqual(await s.todo(), []);
 });
@@ -235,19 +235,31 @@ await ta('실제 금액으로 고르면 그 금액으로 올리고, 부서장 �
   assert.equal(r.sent, true);
   assert.deepEqual(site.saves[0].lodge.map((l) => [l.company, l.total, l.comment]), [['일산스위트', 150000, LODGE_OVER_REASON]], '실제 금액으로 올리면 비고에 상한 초과 사유(기본 문구)가 들어간다');
   assert.equal(storage.data.attendLodgeActual[145580][81561].reason, LODGE_OVER_REASON, '비고에 적은 사유를 실제 금액과 같이 적어 둔다 — 패널의 상한 버튼이 잇고 걷을 때 쓴다');
-  assert.equal(r.text, '사후정산을 올렸습니다 — 숙박 일산스위트 1박 150,000원 · 일산스위트: 부서장 승인 필요 — 상한액의 1.5배(180,000원) 이내');
+  assert.equal(r.text, '사후정산을 올렸습니다 — 숙박 일산스위트 1박 150,000원 · 일산스위트: 부서장 승인 필요');
   assert.equal(r.brief, '사후정산을 올렸습니다 — 숙박 일산스위트 1박 150,000원 · 부서장 승인 필요', '접어 둔 한 줄에도 승인이 필요하다는 것은 남는다');
   await wait();
   assert.deepEqual(s.logs.at(-1).data.settle, { 'suite.png': 'real' });
   assert.ok(s.logs.at(-1).data.notes.some((n) => /부서장 승인 필요/.test(n)));
 });
-await ta('상한액의 1.5배를 넘으면 실제 금액 버튼에 부서장 승인이 붙지 않고, 범위를 벗어난다고 알린다 — 고르는 것은 막지 않는다', async () => {
+await ta('상한액(기본금액의 1.5배, 180,000원)을 넘으면 상한액으로 올리는 것이 하나 더 선다 — 셋 중에 고른다', async () => {
   const s = shelf();
   const site = fakeSite();
   await s.drop('suite.png', { ...SUITE, total: 200000 });
   const r = await up(s.deps(site));
-  assert.deepEqual(r.ask[0].choices.map((c) => [c.settle, c.label]), [['cap', '상한액 120,000원으로'], ['real', '실제 금액 200,000원으로']]);
-  assert.match(r.ask[0].choices[1].note, /1\.5배\(180,000원\)를 넘어 부서장 승인으로 정산할 수 있는 범위를 벗어납니다/);
+  assert.deepEqual(r.ask[0].choices.map((c) => [c.settle, c.label, c.note]), [['cap', '기본금액 120,000원으로', undefined], ['real', '실제 금액 200,000원으로', undefined], ['max', '상한액 180,000원으로', undefined]]);
+});
+await ta('상한액으로 고르면 상한액(180,000원)으로 올리고 비고에 사유가 들어간다 — 부서장 승인 범위 안이다', async () => {
+  const s = shelf();
+  const site = fakeSite();
+  // 화면의 숙박 줄을 읽는 길(haveLodges)을 빼고 본다 — src/afterup.js 가 그 길이 있으면 고른 'max' 를 lodgeKnown 의 값으로 덮어써 다시 묻는다(보고한 결함).
+  delete site.haveLodges;
+  await s.drop('suite.png', { ...SUITE, total: 200000 });
+  const r = await up(s.deps(site), { settle: { 'suite.png': 'max' } });
+  assert.deepEqual([r.ok, r.sent, r.ask], [true, true, undefined]);
+  assert.deepEqual(site.saves[0].lodge.map((l) => [l.company, l.total, l.samount + l.vat, l.comment]), [['일산스위트', 180000, 180000, LODGE_OVER_REASON]]);
+  assert.match(r.text, /^사후정산을 올렸습니다 — 숙박 일산스위트 1박 180,000원/);
+  assert.match(r.text, /부서장 승인 필요/);
+  assert.doesNotMatch(r.text, /범위를 벗어남/);
 });
 await ta('상한액을 넘는 숙박과 안 넘는 숙박을 같이 넣으면 넘는 줄만 묻는다 — 고르면 두 줄이 같이 올라간다', async () => {
   const s = shelf();
@@ -375,6 +387,11 @@ await ta('이미 사후정산에 올라가 있는 숙박 줄이면 상한액을 
   assert.deepEqual([lodgeKnown({ paydate: D2, company: '킨텍스호텔', sday: 1, actual: 150000, maxconv: '120000' },
     [{ del: '0', paydate: D2, company: '킨텍스호텔', sday: '1', total: '99000' }, { del: '1', paydate: D2, company: '킨텍스호텔', sday: '1', total: '150000' }])], [''],
   '금액이 다르거나 지운 줄은 치지 않는다');
+  // 상한액(기본금액의 1.5배)으로 올린 줄 — 실제 금액이 상한액을 넘고 화면의 줄이 꼭 상한액이면 'max' 로 고른 것이다(2026-11-20).
+  const big = { paydate: D2, company: '킨텍스호텔', sday: 1, actual: 200000, maxconv: '120000' };
+  const line = (total) => [{ del: '0', paydate: D2, company: '킨텍스호텔', sday: '1', total }];
+  assert.deepEqual([lodgeKnown(big, line('180,000')), lodgeKnown(big, line('120000')), lodgeKnown(big, line('200000')), lodgeKnown({ ...big, actual: 170000 }, line('180000'))],
+    ['max', 'cap', 'real', ''], '상한액 안의 실제 금액이면 상한액 줄은 고른 것이 아니다');
 });
 // 2026-10-05 사용자 지정: "출장 기간동안의 내용이 아니면 알림을 줘 안맞다고, 맞는것만 선별취급 해서 올리고 해당 없는거는 문서보관에 알림표지 하고
 // 확정 해주기 전까지는 보내기 해도 같이 보내지 말고"

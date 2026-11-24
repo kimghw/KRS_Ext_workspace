@@ -171,6 +171,7 @@ await ta('부분 고르기 — 고르는 동안 그 곳만 고르는 중이고, 
   const page = (n, cut = false) => ({ files: [new window.File([PNG], `p${n}.png`, { type: 'image/png' })], text: `글 ${n}`, title: `칸 ${n}`, host: 'a.com', shots: 1, tiles: 1, cut, part: n });
   let gotParts = null;
   const pick = createWebPick({
+    crop: async () => null,   // PDF 탭이 아니다 — 잘라 내는 창(cropFrontPdf)은 test/pagecap.test.mjs 가 본다
     start: async () => handle(),
     parts: async (tab, chosen) => { gotParts = [tab, chosen]; return { pages: [page(1, true), page(2)], failed: [{ title: '칸 3', why: '고른 부분을 찾지 못했습니다' }] }; },
     front: async () => ({ pages: [{ ...page(0), part: undefined, title: '보던 탭' }], failed: [] }),
@@ -247,7 +248,7 @@ await ta('읽은 항공권은 파일을 넣은 것과 똑같이 오는 편에 �
   assert.deepEqual([body.getAll('tr_transport'), body.getAll('tr_total')], [['기차(KTX등)', '비행기'], ['53700', '98000']]);
   const kept = await evidence.list('TR-1');
   assert.deepEqual(kept.map((k) => [k.label, k.type]), [['항공기 증명', 'application/pdf']]);
-  assert.match(kept[0].name, /^항공(권|영수증)_\d{4}-\d{2}-\d{2}\.pdf$/);   // 읽은 내용으로 지은 이름(2026-11-20 사용자 지정)
+  assert.match(kept[0].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}\\.pdf$`));   // 보관함에는 캡처한 이름 그대로다(읽은 내용으로 지은 이름은 보낼 때만 — 2026-11-20)
   assert.ok(logs.some((l) => l.kind === 'trip' && l.ok && /웹페이지 캡처\(증빙\): 145580 · koreanair\.com 화면 2개 → 2장/.test(l.text)));
   assert.match(doc.getElementById('atStatus').textContent, /^사후정산을 올렸습니다 — /);
 });
@@ -271,7 +272,7 @@ q('.at-send button[data-pick="part"]').click();
 await until(() => cap.pending, '페이지에 고르기 막 씌우기');
 await wait(20);
 t('부분 골라 캡처를 누르면 보고 있는 탭에 고르기 막을 씌우고, 카드를 다시 그려도 그 칸의 단추가 "고르기 취소"로 남는다 — 카드는 잠그지 않는다', () => {
-  assert.deepEqual(cap.ran, ['pdfType', 'pagePick'], '찍기 전에 PDF 탭인지 본다(2026-11-03)');
+  assert.deepEqual(cap.ran, ['pdfType', 'pdfType', 'pagePick'], '찍기 전에 PDF 탭인지 본다(2026-11-03) — PDF 부분 잘라 내기(cropFrontPdf, 2026-11-20)가 한 번, 파일 그대로 받기(frontPdf)가 한 번');
   assert.equal(q('.at-send button[data-pick="part"]').textContent, '고르기 취소');
   assert.ok(q('.at-send button[data-pick="tab"]').disabled);
   assert.ok(!st.after['145580'].busy);
@@ -281,13 +282,11 @@ await panel.reload();
 t('다시 그린 뒤에도 고르는 중', () => assert.equal(q('.at-send button[data-pick="part"]').textContent, '고르기 취소'));
 cap.pending([{ n: 1, tag: 'div', title: '영수증', frame: null }]);   // 사용자가 영수증 상자를 눌러 고르고 페이지의 캡처를 눌렀다
 await until(() => cap.shots === 3 && !st.after['145580'].busy && shelf.size === 2, '고른 영수증 상자를 보관함에 담기');
-await ta('고른 상자만 한 번 찍어 PDF 하나로 읽지 않고 보관함에 담긴다 — 앞의 증빙을 덮지 않는다(둘 다 남는다)', async () => {
-  assert.deepEqual(cap.ran, ['pdfType', 'pagePick', 'partInfo', 'partStep', 'partDone']);
+await ta('고른 상자만 한 번 찍어 PDF 하나로 읽지 않고 보관함에 담긴다 — 같은 날 같은 사이트라 이름이 _2 로 비켜 앞의 증빙을 덮지 않는다', async () => {
+  assert.deepEqual(cap.ran, ['pdfType', 'pdfType', 'pagePick', 'partInfo', 'partStep', 'partDone']);
   const kept = await evidence.list('TR-1');
   assert.deepEqual(kept.map((k) => k.label), ['항공기 증명', '증빙']);
-  // 앞의 증빙(항공권)은 읽은 내용으로 이름을 다시 지어 두었다(2026-11-20) — 캡처 이름이 겹치지 않아 번호(_2)가 붙지 않는다.
-  assert.match(kept[1].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}\\.pdf$`));
-  assert.notEqual(kept[0].name, kept[1].name, '앞의 증빙과 이름이 겹치지 않는다');
+  assert.match(kept[1].name, new RegExp(`^화면캡처_koreanair\\.com_${DAY}_2\\.pdf$`));
   assert.equal(site.asks.length, 1, '읽지 않았다');
   assert.equal(site.posts.length, 1, '사후정산은 그대로다');
   assert.equal(q('.at-send button[data-pick="part"]').textContent, '부분');

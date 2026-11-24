@@ -34,8 +34,8 @@
 // `사후정산 다시하기`가 서고(ctx.redo — 무엇을 하는지는 attendpanel.js), 이전에 보낸 곳의 줄마다 × 가, 보낸 기록(`보냈습니다 — …`)
 // 옆에도 × 가 선다. 지우는 것은 패널이 기억해 둔 것뿐이다. 사후정산을 완료한 출장에 넣은 증빙은 읽어서 사후정산에 반영한다(ctx.read).
 
-import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, calName, sendTitle, sendLines, packCount, SETTLED_LABEL, RECENT_MAX,
-  projectChoices, choiceOf, adminHit } from './src/send.js';
+import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, calName, sendNames, sendTitle, sendLines, packCount, SETTLED_LABEL, RECENT_MAX,
+  projectChoices, choiceOf, adminHit, accountText } from './src/send.js';
 import { memoSuggest } from './src/memo.js';
 import { BOOK_KEY, normalizeBook } from './src/rnd.js';
 import { teamsState } from './src/teams.js';
@@ -181,7 +181,8 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
     // 출장 기간과 안 맞아 확정을 기다리는 증빙은 묶지 않는다 — 무엇이 빠지는지 팝업에 적는다.
     const kept = sendable(ctx.kept);
     const held = heldNote(ctx.kept);
-    const account = s.account.trim();
+    // 과제의 약자를 골랐으면 전체 이름을 같이 적는다(accountText — 2026-11-20 사용자 지정).
+    const account = accountText(box.projects, s.account);
     // 사후정산을 확정한 뒤에 나가는 글이다 — 단계는 그때의 것을 적는다.
     const stage = gate.settle ? { ...ctx.stage, label: SETTLED_LABEL } : ctx.stage;
     const lines = sendLines({ account, me, trip, stage, reason: it.reason, kept, file: pdfName({ trip, me }) });
@@ -354,12 +355,20 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
     // 목록은 칸의 datalist, 고르면 그 과제의 행정 담당이 받는 사람이 된다: linkAdmin).
     const listId = `atSendProj_${String(it.docNo).replace(/[^\w-]/g, '_')}`;
     const choices = box.projects.length ? `<datalist id="${listId}">${box.projects.map((c) => `<option value="${escapeHtml(c.value)}"${c.label ? ` label="${escapeHtml(c.label)}"` : ''}></option>`).join('')}</datalist>` : '';
+    // 과제를 칩으로 늘어놓는다(2026-11-20 사용자 지정: "여기 과제 선택하는게 없네") — 칸의 목록(datalist)은 칸을 눌러야 보여 고르는 것이 없는 줄
+    // 알았다. 누르면 그 과제가 과제·계정이 되고 행정 담당이 받는 사람이 된다(linkAdmin). R&D 탭에 과제가 없으면 그렇다고 적는다.
+    const projRow = !open ? '' : box.projects.length
+      ? `<div class="at-send-projs" role="group" aria-label="R&D 과제">${box.projects.map((c) => `<button type="button" class="at-chip${choiceOf([c], s.account) ? ' active' : ''}" `
+        + `data-act="send-proj" data-value="${escapeHtml(c.value)}" title="${escapeHtml(c.label || c.value)}"${off}>${escapeHtml(c.value)}</button>`).join('')}</div>`
+      : '<p class="at-send-hint">R&D 탭에 등록된 과제가 없습니다 — R&D 탭에서 과제(약자)를 등록하면 여기서 고를 수 있습니다. 지금은 과제·계정을 직접 적어 주세요.</p>';
     const accountTip = box.projects.length ? 'R&D 과제의 약자를 고르면 그 과제의 행정 담당이 받는 사람이 됩니다 — 계정은 직접 적습니다' : '과제 또는 계정을 직접 적기';
     const form = !open ? '' : `<div class="at-send-pair"><div class="at-send-row" role="group" aria-label="과제·계정"><span class="at-label">과제·계정</span>`
       + `<input type="text" data-send="account" value="${escapeHtml(s.account)}" placeholder="${box.projects.length ? '과제 고르기·직접 적기' : '직접 적기'}" `
       + `title="${escapeHtml(accountTip)}" aria-label="과제 또는 계정"${box.projects.length ? ` list="${listId}"` : ''} autocomplete="off"${off} />${choices}</div>`
       + `<div class="at-send-row" role="group" aria-label="받는 사람"><span class="at-label">받는 사람</span>${person}</div></div>`
+      + projRow
       + ways;
+
     // 차례(2026-10-05 사용자 지정: 보낸 기록과 증빙 목록을 가리키며 "이 부분이 보내기 아래에 위치 하도록") — 정산 내역 바로 아래에 보낼 곳과
     // `보내기`가 서고, 보낸 기록(보냈습니다 — …)과 묶이는 증빙의 목록은 `보내기` 아래다. 그 전에는 칸 머리 바로 아래였다(머리로 되돌리지 않는다).
     return `<div class="at-send" data-doc="${escapeHtml(it.docNo)}">${head(how)}${add}${sets}${form}`
@@ -483,7 +492,7 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
       // 행위 trip.send 의 기록 — 팝업에서 확인한 것 그대로(계산서·신청서·과제·계정·받는 사람·보내는 길·PDF 이름). 관문이 막으면 여기서 멈춘다 — 사이트에는 아무것도 가지 않는다.
       const picked = shown?.channel || way.channel;
       const record = actions.build('trip.send', {
-        input: { seq: trip.seq, docNo: it.docNo, account, to: { id: person.id, name: person.name || null }, channel: picked, reason: it.reason || null, file: name },
+        input: { seq: trip.seq, docNo: it.docNo, account: accountText(box.projects, account), to: { id: person.id, name: person.name || null }, channel: picked, reason: it.reason || null, file: name },
         preset: await presetFor('trip.send', { tripMe: me || null }),
       }).record;
       // 어느 길로 갈지는 보내는 그 순간에 다시 본다 — 패널을 연 뒤에 Teams MCP 를 켰거나 껐을 수 있다. 확인한 길(기록의 channel)과
@@ -518,7 +527,7 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
         text: `여비계산서 증빙 송부 실패(${way.label}): ${trip.seq}`, data: { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id },
         outcome: async (r) => ({
           text: `여비계산서 증빙 송부(${way.label}): ${trip.seq} → ${person.id} · ${account} · ${name} ${r.pages}쪽`,
-          data: { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id, account, files: [calName({ trip }), ...kept.map((k) => k.name)], pages: r.pages },
+          data: { seq: trip.seq, docNo: it.docNo, channel: way.channel, to: person.id, account, files: [calName({ trip }), ...sendNames(kept)], pages: r.pages },
         }),
       });
       // 보낸 곳이 맨 윗줄에 서고 켜진다 — 직접 고르던 칸은 접는다.
@@ -600,6 +609,17 @@ export function createSendBox({ escapeHtml, logEvent, evidence, setStatus, setEr
     if (a === 'send-way') return pickWay(btn.dataset.way, s);
     if (a === 'send-set-del') return s.busy ? undefined : dropSet(+btn.dataset.i);
     if (a === 'send-done-del') return s.busy ? undefined : dropDone(ctx.it.docNo);
+    if (a === 'send-proj') {
+      // R&D 과제 칩 — 그 과제가 과제·계정이 되고, 그 과제의 행정 담당을 받는 사람으로 잇는다(linkAdmin — 같은 과제로는 한 번만).
+      const choice = choiceOf(box.projects, btn.dataset.value);
+      if (!choice || s.busy) return undefined;
+      Object.assign(s, { account: choice.value, touched: true, open: true, error: '' });
+      const again = s.linked === choice.value;
+      repaint();
+      const node = btn.ownerDocument.querySelector(`.at-send[data-doc="${CSS.escape(String(ctx.it.docNo))}"]`);
+      if (node && !again) linkAdmin(node, ctx, s, choice);
+      return undefined;
+    }
     if (a === 'send-fold') {
       // 직접 고르는 칸을 펴고 접는다 — 고른 것은 그대로다.
       s.open = !s.open;

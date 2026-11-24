@@ -970,7 +970,7 @@ const { createWebPick, pickButton, PAGED_NOTE } = await import('../webpick.js');
     let partsAsked = null;
     const tab = { ...TAB };
     const pick = createWebPick({
-      watch: () => {}, mail, unmark: async (x) => { unmarked.push(x.id); },
+      watch: () => {}, mail, unmark: async (x) => { unmarked.push(x.id); }, crop: async () => null,   // PDF 탭이 아니다(잘라 내는 창은 아래에서 따로 본다)
       start: async ({ before } = {}) => { await before(tab); return { tab, done: new Promise((r) => { resolvePick = r; }), cancel: () => resolvePick(null) }; },
       parts: async (x, chosen) => { partsAsked = chosen; return { pages: [page({ part: 1 })], failed: [] }; },
     });
@@ -991,7 +991,7 @@ const { createWebPick, pickButton, PAGED_NOTE } = await import('../webpick.js');
       let resolvePick;
       let partsCalled = 0;
       const pick = createWebPick({
-        watch: () => {}, mail, unmark: async (x) => { unmarked.push(x.id); },
+        watch: () => {}, mail, unmark: async (x) => { unmarked.push(x.id); }, crop: async () => null,
         start: async ({ before } = {}) => { await before?.(tab); return { tab, done: new Promise((r) => { resolvePick = r; }), cancel: () => resolvePick(null) }; },
         parts: async () => { partsCalled++; return { pages: [], failed: [] }; },
       });
@@ -1115,7 +1115,7 @@ console.log('크롬 PDF 뷰어 — 찍지 않고 PDF 파일 그대로 (2026-11-0
   const fake = (over = {}) => {
     const used = { front: 0, start: 0 };
     const pick = createWebPick({
-      watch: () => {}, mail: null,
+      watch: () => {}, mail: null, crop: async () => null,   // PDF 를 잘라 내는 창(cropFrontPdf)은 고르지 않은 것으로 — 따로 넘겨 본다(아래)
       front: async () => { used.front++; return { pages: [page()], failed: [] }; },
       start: async () => { used.start++; return { tab: {}, done: Promise.resolve(null), cancel: async () => {} }; },
       ...over,
@@ -1134,6 +1134,29 @@ console.log('크롬 PDF 뷰어 — 찍지 않고 PDF 파일 그대로 (2026-11-0
     const { pick, used } = fake({ pdf: async ({ onFound }) => { const d = doc(); onFound(d.tab); return d; } });
     const got = await pick.shoot('part');
     assert.deepEqual([got.pdf, got.notes, used.start], [true, [PDF_PART_NOTE], 0]);
+  });
+  // 2026-11-20 사용자 지정: "웹에서 pdf 를 볼때 … 부분캡쳐할 수 있게 해줘" — 부분은 먼저 잘라 내는 창(cropFrontPdf)에 묻는다. null 이면 위와 같다.
+  await ta('부분 — PDF 탭이면 잘라 내는 창에서 끌어 고른 부분만 PDF 한 장으로 넣는다(파일 전체를 받지 않는다)', async () => {
+    const TINY = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const said = [];
+    let started = 0;
+    let pdfAsked = 0;
+    const { pick, used } = fake({
+      pdf: async () => { pdfAsked++; return doc(); },
+      crop: async ({ onFound }) => { const tab = { title: '영수증.pdf', url: 'https://x.org/영수증.pdf' }; onFound(tab); return { tab, dataUrl: TINY }; },
+    });
+    const got = await pick.shoot('part', { today: '2026-11-20', onStatus: (s) => said.push(s), onStart: () => started++ });
+    assert.deepEqual([got.pdf, got.files.length, got.pages, got.notes, used.start, used.front, pdfAsked], [true, 1, [], [], 0, 0, 0]);
+    assert.deepEqual([got.files[0].type, got.files[0].name.startsWith('화면캡처_영수증_'), got.what], ['application/pdf', true, `PDF 부분 캡처 ${got.files[0].name}`]);
+    assert.equal(got.files[0].name, '화면캡처_영수증_2026-11-20.pdf', '이름은 탭 제목(.pdf 뺀 것)과 날짜다');
+    assert.match(new TextDecoder().decode((await got.files[0].arrayBuffer()).slice(0, 5)), /^%PDF-/);
+    assert.deepEqual([started, said], [1, ['PDF「영수증.pdf」— 새 창에서 캡처할 부분을 끌어서 고르세요']]);
+  });
+  await ta('부분 — 잘라 내는 창에서 그만두면(창을 닫아도) 아무것도 넣지 않고 그만뒀다고 적는다', async () => {
+    const said = [];
+    const { pick, used } = fake({ pdf: async () => doc(), crop: async () => ({ cancel: true }) });
+    assert.equal(await pick.shoot('part', { onStatus: (s) => said.push(s) }), null);
+    assert.deepEqual([said.at(-1), used.start, used.front], ['부분 고르기를 그만뒀습니다.', 0, 0]);
   });
   await ta('PDF 가 아니거나 PDF 인지 보다가 막히면 여느 때처럼 찍고, PDF 인데 받지 못하면 그 까닭을 던진다', async () => {
     const plain = fake({ pdf: async () => null });

@@ -11,7 +11,7 @@
 //
 // 이 파일은 DOM·네트워크 없이 돈다 — 읽는 길(read)과 보관함(store)은 주입받는다.
 
-import { evidenceOf } from './after.js';
+import { evidenceOf, shortFileName } from './after.js';
 
 /** 받는 파일의 크기 한도 — 패널의 출장 카드와 같다. */
 export const INTAKE_LIMIT = 10 * 1024 * 1024;
@@ -64,7 +64,8 @@ export async function intakeEvidence({ docNo, trip, me = '', file, settled = fal
   if (typeof file?.dataUrl !== 'string' || !file.dataUrl.startsWith('data:')) return { ok: false, error: '받을 파일이 없습니다.' };
   if (sizeOf(file.dataUrl) > INTAKE_LIMIT) return { ok: false, error: `${file.name || '파일'} 이 너무 큽니다. 10MB 이하로 넣어 주세요.` };
   try {
-    const f = { name: String(file.name || 'image.png'), type: String(file.type || ''), dataUrl: file.dataUrl };
+    // 너무 긴 이름은 자른다(src/after.js shortFileName, 2026-11-20 사용자 지정).
+    const f = { name: shortFileName(String(file.name || 'image.png')), type: String(file.type || ''), dataUrl: file.dataUrl };
     const ref = { seq: trip.seq || '', from: trip.from, to: trip.to || trip.from, location: trip.location || '' };
     /**
      * 담는다 — 이름은 담는 그때 보관함에 있는 것을 보고 고른다(uniqueName). 한 번에 한 장씩이다(inLine).

@@ -156,7 +156,8 @@ const STAY2 = { ...DAY, docNo: 'TR-3', summary: '국내출장 9/15~9/16 07:00~20
 const row = (seq) => ({ seq, href: `/BusinessTrip/CalPrint?seq=${seq}`, pre: '완료', from: bt.docs[seq].from, to: bt.docs[seq].to, location: bt.docs[seq].location, writer: '김거화', written: '2026-09-01',
   travelers: [{ name: '김거화', post: bt.docs[seq].post, trseq: bt.docs[seq].trseq }] });
 const st = panel.state;
-await evidence.keep('TR-1', [{ name: '점심.png', type: 'image/png', dataUrl: PNG, label: '당일출장 증명', summary: '서울식당 12,000원', date: '2026-09-23', total: 12000 }]);
+await evidence.keep('TR-1', [{ name: '점심.png', type: 'image/png', dataUrl: PNG, label: '당일출장 증명', summary: '서울식당 12,000원', date: '2026-09-23', total: 12000,
+  record: { docType: 'other_receipt', vendor: '서울식당', payDate: '2026-09-23', atDestination: true, total: 12000 } }]);   // 읽은 기록 — 보낼 때의 이름(sendNames)은 이것으로 짓는다
 Object.assign(st, {
   view: 'all', items: [DAY, STAY, STAY2], all: [DAY, STAY, STAY2], loadedOnce: true, openDoc: 'TR-1', workplace: '부산',
   trips: { rows: [row('145600'), row('145580'), row('146100')], me: '김거화' },
@@ -226,7 +227,8 @@ t('보내기를 누르면 보낼 내용이 팝업으로 뜬다 — 받는 사람
   assert.deepEqual([pop().querySelector('[role="dialog"]').getAttribute('aria-modal'), pop().querySelector('h3').textContent], ['true', '보낼 내용']);
   assert.deepEqual(popTo(), ['홍길동 책임 · 회계팀', 'RND-2026-01', '쪽지 · 여비계산서 1부 · 당일출장 증명 1장 → PDF 1개']);
   assert.deepEqual(popLines(), ['[여비 증빙] RND-2026-01 · 김거화 9/23 서울 본사', '여비계산서와 증빙을 보냅니다.', '과제·계정: RND-2026-01', '출장자: 김거화',
-    '출장: 2026-09-23 · 서울 본사', '목적: 선급 기술 세미나', '여비계산서: 145600 (사전정산 완료)', '첨부: 여비증빙_145600_김거화.pdf — 여비계산서 1부 · 당일출장 증명 1장']);
+    '출장: 2026-09-23 · 서울 본사', '목적: 선급 기술 세미나', '여비계산서: 145600 (사전정산 완료)', '첨부: 여비증빙_145600_김거화.pdf — 여비계산서 1부 · 당일출장 증명 1장',
+    '  · 증빙 영수증_2026-09-23.png']);   // 보낼 때만 읽은 내용으로 지은 이름이다 — 보관함에는 점심.png 그대로(2026-11-20 사용자 지정)
   assert.deepEqual([...pop().querySelectorAll('.at-pop-btns button')].map((b) => b.textContent), ['취소', '보내기']);
   assert.equal(pop().querySelector('.at-pop-note'), null, '당일 출장은 사후정산을 저장·확정할 일이 없다');
   assert.equal(doc.activeElement, popBtn('go'), '초점은 팝업의 보내기에 간다');
@@ -342,7 +344,7 @@ t('이전에 보낸 줄 하나가 과제·계정과 받는 사람, 보내는 길
   assert.deepEqual([sets(), foldBtn().hidden], [[['RND-2026-01 · 홍길동 책임 · 쪽지', true]], false]);
   goBtn().click();
   assert.equal(popLines()[0], '[여비 증빙] RND-2026-01 · 김거화 9/9~9/10 경기도 고양시 킨텍스');
-  assert.equal(popLines().at(-2), '여비계산서: 145580 (사후정산 완료)');
+  assert.equal(popLines().find((l) => l.startsWith('여비계산서: ')), '여비계산서: 145580 (사후정산 완료)');   // 끝에는 첨부 줄과 증빙마다의 이름 줄(sendNames)이 붙는다
   popBtn('cancel').click();
 });
 
@@ -378,7 +380,8 @@ console.log('출장 기간과 안 맞아 알림 표시가 붙은 증빙은 확�
   goBtn().click();
   t('보낼 내용 팝업에도 빠지는 증빙이 적히고, 첨부에는 맞는 증빙만 센다', () => {
     assert.equal(pop().querySelector('.at-pop-held').textContent, '출장 기간과 안 맞아 확정하지 않은 증빙 1장은 보내지 않습니다 — 항공권.png');
-    assert.match(pop().querySelector('.at-pop-body').textContent, /첨부: 여비증빙_145580_김거화\.pdf — 여비계산서 1부 · 증빙 1장$/);
+    // 첨부 줄 뒤에 묶이는 증빙의 이름이 하나씩 붙는다(sendNames) — 빠지는 항공권.png 는 없다.
+    assert.match(pop().querySelector('.at-pop-body').textContent, /첨부: 여비증빙_145580_김거화\.pdf — 여비계산서 1부 · 증빙 1장 {2}· 호텔영수증\.png$/);
   });
   popBtn('cancel').click();
   q('.at-send-files button[data-act="kept-ok"]').click();
@@ -482,7 +485,20 @@ const sendToSave = async () => {
     assert.deepEqual([...box().querySelectorAll('.at-send-btns button')].map((b) => b.textContent), ['보내기'], '확정하지 못했으니 버튼은 그대로다');
   });
 }
-legBtn('go', 'plane').click();
+// 사후정산 묶음에는 사전정산에 줄이 없는 편만 그린다(2026-11-20 사용자 지정) — 이 출장은 두 편 다 사전정산에 있어 누를 아이콘이 없다. 고른 편은 저장해 둔 것(attendLegs)으로 앉힌다.
+t('사전정산에 줄이 있는 편은 사후정산 묶음에 그리지 않는다 — 아이콘도 없다', () => {
+  assert.deepEqual([legBtn('go', 'plane'), legBtn('back', 'train'), doc.querySelector('#atList li.open .at-legs')], [null, null, null]);
+});
+const pickLegs = async (picks) => {
+  st.legs['TR-3'] = picks;
+  await chrome.storage.local.set({ attendLegs: st.legs });
+  await panel.reload();
+  await until(() => !!goBtn(), '카드 다시 그리기');
+};
+await pickLegs({ go: { t: 'plane', g: 'standard' } });
+t('사전정산에 있는 편은 바꿔 골라 두어도 사후정산 묶음에 그리지 않는다 — 골라 둔 것은 올릴 때 들어간다(아래)', () => {
+  assert.deepEqual([legBtn('go', 'plane'), legBtn('back', 'train'), doc.querySelector('#atList li.open .at-legs')], [null, null, null]);
+});
 {
   const body = await sendToSave();
   t('값을 모르는 편이 있으면(비행기로 바꿨는데 항공권이 없다) 교통비 내역은 올리지 않는다 — 아는 편만 올리면 화면의 교통 줄이 지워진다', () => {
@@ -491,8 +507,7 @@ legBtn('go', 'plane').click();
       /^교통비 내역은 사후정산 화면에 있는 그대로 두었습니다 — 가는 편: 비행기 요금을 모릅니다 — 항공권을 넣어 주세요/);
   });
 }
-legBtn('go', 'train').click();
-legBtn('go', 'train').click();
+await pickLegs({ go: { t: 'train', g: 'first' } });
 {
   const body = await sendToSave();
   t('가는 편을 KTX 특실로 바꿨으면 두 편이 교통비 내역으로 올라간다(운임표의 정가)', () => {
@@ -506,7 +521,7 @@ goBtn().click();
 t('보내기 — 팝업이 저장·확정부터 한다고 적어 보여 준다(두 번 누르기를 대신한다). 보낼 내용의 단계는 확정한 뒤의 것(사후정산 완료)이다', () => {
   assert.deepEqual([goBtn().textContent, goBtn().classList.contains('armed'), writes()], ['보내기', false, []]);
   assert.deepEqual(popTo(), ['홍길동 책임 · 회계팀', '일반관리비', '쪽지 · 여비계산서 1부 · 숙박 증빙 1장 → PDF 1개']);
-  assert.equal(popLines().at(-2), '여비계산서: 146100 (사후정산 완료)');
+  assert.equal(popLines().find((l) => l.startsWith('여비계산서: ')), '여비계산서: 146100 (사후정산 완료)');   // 끝에는 첨부 줄과 증빙마다의 이름 줄(sendNames)이 붙는다
   assert.equal(pop().querySelector('.at-pop-note').textContent, '사후정산을 저장하고 확정(완료)한 뒤에 증빙을 보냅니다 — 여비계산서 146100');
   assert.equal(popBtn('go').textContent, '저장·확정 후 보내기');
 });
@@ -603,7 +618,7 @@ panel.seek({ docNo: 'TR-1', send: true });
 t('홈 카드에서 보내기를 누르고 오면 그 출장 카드가 펴지고 보낼 내용 팝업이 뜬다 — 카드의 보내기를 누른 것과 같고, 아직 아무것도 나가지 않는다', () => {
   assert.deepEqual([st.openDoc, doc.querySelector('#atList li.open .at-send').dataset.doc, st.seek], ['TR-1', 'TR-1', null]);
   assert.deepEqual(popTo(), ['홍길동 책임 · 회계팀', 'RND-2026-01', '쪽지 · 여비계산서 1부 · 당일출장 증명 1장 → PDF 1개']);
-  assert.equal(popLines().at(-2), '여비계산서: 145600 (사전정산 완료)');
+  assert.equal(popLines().find((l) => l.startsWith('여비계산서: ')), '여비계산서: 145600 (사전정산 완료)');   // 끝에는 첨부 줄과 증빙마다의 이름 줄(sendNames)이 붙는다
   assert.deepEqual([writes(), doc.activeElement], [[], popBtn('go')]);
 });
 popBtn('cancel').click();

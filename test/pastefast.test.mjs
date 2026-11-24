@@ -171,10 +171,10 @@ await ta('두 장을 한꺼번에 넣으면 둘을 같이 읽힌다 — 앞 장�
 await ta('먼저 끝난 장이 앞에 서지 않는다 — 넣은 차례대로 묶여 한 줄로 올라간다(영수증 · 예약서)', async () => {
   assert.deepEqual([site.saves, site.lodges.map((l) => [l.seq, l.company, l.total])], [1, [['81561', '킨텍스호텔', '110000']]]);
   assert.equal(status(), '사후정산을 올렸습니다 — 숙박 킨텍스호텔 1박 110,000원');
-  assert.deepEqual(logs.filter((l) => /사후정산\) 작성/.test(l.text)).map((l) => l.extra.files), [[`숙박비_${D1}.png`, `숙박예약_${D1}.png`]],
-    '읽은 내용으로 다시 지은 이름이다(종류_체크인, 2026-11-20 사용자 지정) — 넣은 이름(영수증.png · 예약서.png)이 아니다');
-  assert.deepEqual(st.lodgeMine[145580], { 81561: `숙박비_${D1}.png · 숙박예약_${D1}.png` });
-  assert.deepEqual([...shelf.values()].map((k) => k.name).sort(), [`숙박비_${D1}.png`, `숙박예약_${D1}.png`], '두 장 다 보관함에 있다');
+  assert.deepEqual(logs.filter((l) => /사후정산\) 작성/.test(l.text)).map((l) => l.extra.files), [['영수증.png', '예약서.png']],
+    '넣은 이름 그대로다 — 읽은 내용으로 지은 이름은 보낼 때만 쓴다(2026-11-20 사용자 지정)');
+  assert.deepEqual(st.lodgeMine[145580], { 81561: '영수증.png · 예약서.png' });
+  assert.deepEqual([...shelf.values()].map((k) => k.name).sort(), ['영수증.png', '예약서.png'], '두 장 다 보관함에 있다');
 });
 
 console.log('저장 뒤 목록은 한 번만 읽는다');

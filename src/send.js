@@ -17,7 +17,7 @@
 //     보내는 길이 한 줄이고, 줄을 고르면 그 셋으로 보낸다(2026-10-04 사용자 지정: "3개 정도 리스트해서 이전 보낸 정보로").
 //   - 보내는 글의 형식은 만든 뒤에 사용자가 검토한다 → 글은 sendTitle·sendLines 두 함수에만 있다.
 
-import { EVIDENCE_KINDS, evidenceKind } from './after.js';
+import { EVIDENCE_KINDS, evidenceKind, evidenceName, withEvidenceKind, shortFileName } from './after.js';
 
 /** 이전에 보낸 곳을 몇 줄까지 기억하고 보이는가(과제·계정 + 받는 사람 + 보내는 길). */
 export const RECENT_MAX = 3;
@@ -51,9 +51,19 @@ export function projectChoices(projects) {
     if (!value || out.some((c) => squash(c.value) === squash(value))) continue;
     const admin = adminOf(p);
     const name = String(p?.name || '').trim();
-    out.push({ value, label: [name !== value ? name : '', admin ? `행정 ${admin.name}` : ''].filter(Boolean).join(' · '), admin });
+    out.push({ value, name, label: [name !== value ? name : '', admin ? `행정 ${admin.name}` : ''].filter(Boolean).join(' · '), admin });
   }
   return out;
+}
+
+/**
+ * 보내는 글에 적는 과제·계정 — R&D 과제의 약자를 골랐으면 과제의 전체 이름을 같이 적는다(2026-11-20 사용자 지정: "과제 계정을 넣으면 full 이름을
+ * 넣어주도록 해줘") — `AMONI (과제 전체 이름)`. 약자가 아니거나(직접 적은 계정) 전체 이름이 약자와 같으면 적은 그대로다. 명세의 한도(100자)에서 자른다.
+ */
+export function accountText(choices, account) {
+  const text = String(account || '').trim();
+  const full = String(choiceOf(choices, text)?.name || '').trim();
+  return (full && squash(full) !== squash(text) ? `${text} (${full})` : text).slice(0, 100);
 }
 
 /** 적은 과제·계정이 고를 과제의 약자와 같으면(빈칸·대소문자는 보지 않는다) 그 과제. 아니면 null — 직접 적은 계정이다. */
@@ -157,6 +167,23 @@ const safe = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '').slice(0, 20)
 /** 묶은 PDF 의 이름 — "여비증빙_145580_김거화.pdf". */
 export const pdfName = ({ trip, me }) => `여비증빙_${trip.seq}${safe(me) ? `_${safe(me)}` : ''}.pdf`;
 
+/**
+ * 보낼 때의 증빙 이름 — 보관함에는 넣은 그대로의 이름으로 두고, 쪽지·Teams 로 보낼 때만 읽은 내용으로 지은 이름(종류_이용일, src/after.js evidenceName)을
+ * 쓴다(2026-11-20 사용자 지정: "올릴때 파일 이름은 그대로 두고 쪽지나 팀즈로 보낼때.. 이름을 변경해줘"). 같은 이름이 겹치면 ` (2)` 를 붙인다.
+ * 읽은 기록이 없는 증빙(완료한 뒤 읽지 않고 담은 것)은 넣은 이름 그대로다.
+ * @returns {string[]} kept 와 같은 차례
+ */
+export function sendNames(kept) {
+  const used = new Set();
+  return (kept || []).map((k) => {
+    const want = k.record ? evidenceName(withEvidenceKind(k.record, k.kind), k.name) : shortFileName(k.name);
+    let name = want;
+    for (let i = 2; used.has(name); i++) name = want.replace(/(\.[A-Za-z0-9]{1,5})?$/, (ext) => ` (${i})${ext || ''}`);
+    used.add(name);
+    return name;
+  });
+}
+
 /** 증빙을 무엇이 몇 장인지로 줄인다 — "항공기 증명 1장 · 숙박 증빙 2장". */
 export function evidenceCount(kept) {
   const count = new Map();
@@ -190,5 +217,7 @@ export function sendLines({ account, me, trip, stage, reason = '', kept, file })
     ...(String(reason).trim() ? [`목적: ${String(reason).trim()}`] : []),
     `여비계산서: ${trip.seq} (${stage.label})`,
     `첨부: ${file} — ${packCount(kept)}`,
+    // 묶은 PDF 에 든 증빙을 차례대로, 보낼 때의 이름으로 적는다(sendNames).
+    ...sendNames(kept).map((n) => `  · ${n}`),
   ];
 }

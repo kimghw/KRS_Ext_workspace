@@ -25,14 +25,14 @@
 // 사이트 특유의 차례(저장 뒤 다시 읽어 판정·같은 줄 거르기·확정 폼 찾기)는 src/trip.js 에 그대로 있다 — 여기는 기록을 인자로 바꾸기만 한다.
 
 import { settlePlan, prePlan, stayPlan, tripStage, formLegs, DEFAULT_GRADE } from '../../src/travel.js';
-import { afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgeKnown, lodgeCommentWith, lodgeCommentWithout, LODGE_CURRENCY, LODGE_OVER_REASON } from '../../src/after.js';
+import { afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgePickAmount, lodgeKnown, lodgeCommentWith, lodgeCommentWithout, LODGE_CURRENCY, LODGE_OVER_REASON } from '../../src/after.js';
 import { lodgeKey } from '../../src/afterup.js';
 import {
   tripCreate, tripPreSave, tripPreConfirm, tripPostConfirm, tripDelete, tripLodgeMax, tripAfterLodges, tripAfterSave, tripCalPdf,
   tripAfterLodgeAmount, tripAfterLodgeComment, tripAfterLodgeDelete,
 } from '../../src/trip.js';
 import { lodgeCapState, lodgeReasonOf } from '../../lodgebox.js';
-import { sendTitle, sendLines, calName, WAYS } from '../../src/send.js';
+import { sendTitle, sendLines, sendNames, calName, WAYS } from '../../src/send.js';
 import { buildPdf } from '../../src/pdf.js';
 import { teamsSendFile } from '../../src/teams.js';
 import { memoSend, memoHtml } from '../../src/memo.js';
@@ -41,10 +41,10 @@ import { ActionError } from '../gate.js';
 import { fileOf } from './attend.js';
 
 const defaults = {
-  settlePlan, prePlan, stayPlan, tripStage, afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgeKnown,
+  settlePlan, prePlan, stayPlan, tripStage, afterPlan, lodgeSettle, lodgeDecide, lodgeAsk, lodgePickAmount, lodgeKnown,
   tripCreate, tripPreSave, tripPreConfirm, tripPostConfirm, tripDelete, tripLodgeMax, tripAfterLodges, tripAfterSave, tripCalPdf,
   tripAfterLodgeAmount, tripAfterLodgeComment, tripAfterLodgeDelete,
-  sendTitle, sendLines, calName, buildPdf, teamsSendFile, memoSend, memoHtml,
+  sendTitle, sendLines, sendNames, calName, buildPdf, teamsSendFile, memoSend, memoHtml,
 };
 const always = () => true;
 
@@ -181,12 +181,16 @@ export function registerTrip(d, deps = defaults) {
     for (const dec of i.lodge || []) {
       const l = plan.lodge.find((x) => lodgeKey(x) === dec.key);
       if (!l) throw new ActionError(rec.action, [`숙박 줄 ${dec.key} 이(가) 이번 묶음에 없습니다`]);
-      if (dec.settle === 'krw') {
+      if (dec.settle === 'amount') {
+        // 문서마다 금액이 달라 그 가운데 하나를 골랐다(2026-11-20 사용자 지정: "가격이 2개면 선택하라고 해줘") — 그 금액이 실제 금액이다.
+        if (!(dec.amount > 0)) throw new ActionError(rec.action, [`숙박 줄 ${dec.key} 의 고른 금액(amount)이 없습니다`]);
+        f.lodgePickAmount(l, dec.amount);
+      } else if (dec.settle === 'krw') {
         if (!(dec.amount > 0)) throw new ActionError(rec.action, [`숙박 줄 ${dec.key} 의 원화 금액(amount)이 없습니다`]);
         l.actual = Math.round(dec.amount);
         f.lodgeSettle(l);
       } else {
-        f.lodgeDecide(plan, l, dec.settle === 'cap' ? 'cap' : 'real', typeof dec.reason === 'string' ? dec.reason : undefined);
+        f.lodgeDecide(plan, l, dec.settle === 'cap' ? 'cap' : dec.settle === 'max' ? 'max' : 'real', typeof dec.reason === 'string' ? dec.reason : undefined);
       }
     }
     // 아직 사람이 정할 것이 남았으면 올리지 않는다 — 패널이 묻고, 답을 lodge 에 담은 새 기록으로 다시 온다.
@@ -212,7 +216,9 @@ export function registerTrip(d, deps = defaults) {
       throw err;
     });
     onStage('여비계산서와 증빙을 PDF 로 묶는 중...');
-    const pdf = await f.buildPdf([{ name: f.calName({ trip: row }), bytes: cal.bytes }, ...kept], { title: `여비계산서 ${row.seq} 증빙` });
+    // 묶을 때의 증빙 이름은 보낼 때의 이름이다(sendNames — 2026-11-20 사용자 지정). 보관함의 이름은 그대로 둔다.
+    const names = f.sendNames(kept);
+    const pdf = await f.buildPdf([{ name: f.calName({ trip: row }), bytes: cal.bytes }, ...kept.map((k, i) => ({ ...k, name: names[i] }))], { title: `여비계산서 ${row.seq} 증빙` });
     const title = f.sendTitle({ account, me, trip: row });
     const lines = f.sendLines({ account, me, trip: row, stage: ctx.stage || { label: '' }, reason: reason || '', kept, file });
     onStage(`${label}로 보내는 중...`);

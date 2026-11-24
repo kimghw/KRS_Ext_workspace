@@ -459,8 +459,15 @@ export async function tripAfterSave(row, trseq, plan, { name = '', onStage = () 
   if (!always && !send.lodge.length && !send.trans.length && !send.air) {
     return { row, stage: tripStage(row, name), sent: false, same, lodgeRows: [], lodgeSeqs: [] };
   }
+  // 이미 작성된 숙박 줄과 **결제일·업체명이 같은** 새 줄을 올리면 있던 줄을 지우고 다시 넣는다(2026-11-20 사용자 지정: "이미 작성되었고 새로 올리면
+  // 삭제 후 다시, 날짜가 다르면 추가 입력") — 같은 숙박을 다시 넣었는데 값(일수·금액)이 달라 줄이 겹쳐 올라가지 않게. 값까지 같은 줄(same)은 위에서
+  // 이미 뺐다. 같은 날이어도 업체가 다르면 다른 숙박이다(숙박 증빙은 두 군데일 수 있다 — 같은 날 사용자 지정) — 지우지 않고 덧붙인다.
+  const name1 = (v) => String(v ?? '').trim();
+  const stale = had.filter((h) => h.seq && h.del !== '1' && h.paydate && name1(h.company)
+    && send.lodge.some((l) => (l.paydate || '') === h.paydate && name1(l.company) === name1(h.company)));
+  const base = stale.length ? dropLodges(fields, stale.map((h) => h.seq)) : fields;
   const body = new FormData();
-  for (const [key, value] of afterFields(fields, send)) {
+  for (const [key, value] of afterFields(base, send)) {
     if (value && typeof value === 'object' && value.file) body.append(key, blobOf(value.file), value.file.name || 'receipt');
     else body.append(key, value ?? '');
   }
@@ -476,7 +483,7 @@ export async function tripAfterSave(row, trseq, plan, { name = '', onStage = () 
   if (send.lodge.length) {
     let read = false;
     try {
-      const known = new Set(had.map((h) => h.seq));
+      const known = new Set(had.map((h) => h.seq));   // 지운 줄(stale)의 번호도 들어 있다 — 새로 생긴 줄만 남는다
       const again = formFields(toDoc((await siteFetch(tripAfterUrl(row.seq, trseq))).html));
       if (again) {
         lodgeRows = lodgeRowsOf(again).filter((h) => h.seq && h.del !== '1' && !known.has(h.seq));
@@ -487,7 +494,21 @@ export async function tripAfterSave(row, trseq, plan, { name = '', onStage = () 
     // 사이트가 저장을 받아 주는지는 실제로 보내 본 적이 없다(2026-10-04) — 받지 않으면 여기서 드러난다.
     if (read && !lodgeRows.length) throw new Error('저장을 보냈지만 사후정산 화면에 숙박 줄이 생기지 않았습니다. eclass 의 사후정산 입력 화면에서 확인해 주세요.');
   }
-  return { row: fresh, stage, sent: true, same, lodgeRows, lodgeSeqs: lodgeRows.map((h) => h.seq) };
+  return { row: fresh, stage, sent: true, same, lodgeRows, lodgeSeqs: lodgeRows.map((h) => h.seq), replaced: stale.map((h) => h.seq) };
+}
+
+/** 폼의 칸 목록에서 그 번호의 숙박 줄들에 지움 표시(lodge_del = 1)를 한 사본 — lodge_nation 이 줄의 시작이고 그 줄의 lodge_seq 가 번호다. */
+function dropLodges(fields, seqs) {
+  const want = new Set(seqs.map(String));
+  const out = fields.map(([name, value]) => [name, value]);
+  let row = null;
+  for (const [i, [name, value]] of out.entries()) {
+    if (name === 'lodge_nation') row = { seq: '', del: -1 };
+    else if (row && name === 'lodge_seq') row.seq = value;
+    else if (row && name === 'lodge_del') row.del = i;
+    if (row && row.del >= 0 && want.has(row.seq)) { out[row.del][1] = '1'; row = null; }
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------ 사후정산의 숙박 줄 (출장 카드의 숙박 줄 목록 — lodgebox.js) */

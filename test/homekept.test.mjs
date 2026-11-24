@@ -271,4 +271,27 @@ await ta('`확정`하면 알림이 걷히고 "사후정산에 안 올림"이 된
   assert.equal(sendNote(), '');
 });
 
+// 2026-11-20 사용자 지정(숙박비 뱃지 증빙이 보관만 되고 숙박비 내역이 "사후정산 화면에 아직 없습니다"인 것을 두고): "숙박비 뱃지가 있잖아 그걸 사용해야지"
+console.log('숙박비 뱃지 — 사후정산에 숙박 줄이 없으면 보관한 숙박비 증빙을 올릴 것으로 친다');
+await ta('사후정산의 숙박 줄이 모두 없어지면(사이트에서 지웠다) ⚠ 없는 숙박비 뱃지 증빙에 올리기 버튼이 선다 — "안 올림" 표시가 없어도', async () => {
+  site.lodges = [];
+  for (const name of ['lunch.png', 'inn.png', 'jeju.png']) await evidence.remove('TR-1', name);
+  st.after['145580'].kept = await evidence.list('TR-1');
+  doc.querySelector('#atList button[data-act="lodge-refresh"]').click();
+  await until(() => !!goBtn() && kept().length === 1, '버튼 서기');
+  assert.deepEqual(kept(), ['숙박 증빙 · hotel.png']);
+  assert.equal(goBtn().textContent, '보관한 증빙을 사후정산에 올리기');
+  assert.equal(sendNote(), '', '송부 칸은 이것으로 잠그지 않는다');
+});
+await ta('두 번 누르면 그때 읽은 기록으로 올라가고 버튼이 걷힌다 — 다시 읽지 않는다', async () => {
+  const before = site.saves.length;
+  goBtn().click();
+  await wait(20);
+  goBtn().click();
+  await until(() => site.saves.length === before + 1 && !st.after['145580'].busy, '숙박비 뱃지 증빙 올리기');
+  assert.deepEqual(site.saves.at(-1).rows.map((r) => [r.company, r.total]), [['킨텍스호텔', '110000']]);
+  assert.equal(site.asks.length, 0);
+  await until(() => !goBtn(), '버튼 걷기');
+});
+
 console.log(`\n통과 ${pass}건`);

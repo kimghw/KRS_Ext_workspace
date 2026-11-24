@@ -84,7 +84,8 @@ const panel = createAttendPanel({
 });
 panel.wire();
 
-// 2026-10-03 실제 145580 의 모양: 1박 2일 KTX 출장, 사전정산 완료(교통편 두 줄), 사후정산 대기.
+// 2026-10-03 실제 145580 의 모양: 1박 2일 KTX 출장, 사전정산 완료, 사후정산 대기. 사전정산에는 가는 편의 교통편 줄만 있다 — 오는 편은 정하지 않았다.
+// 사후정산 묶음에는 사전정산에 줄이 없는 편만 서므로(2026-11-20 사용자 지정) 오는 편이 그 묶음에서 고르는 편이다.
 const KTX = (seq, dep, arr) => ({ seq, trseq: '7380', revno: '', date: '2026-09-09', dep, arr, transport: 'Train', grade: '일반석', total: 53700, currency: 'KRW' });
 const IT = { docNo: 'TR-1', formId: 'TR', status: '5', statusName: '결재완료', kindName: '국내출장', summary: '국내출장 9/9~9/10 07:00~20:00',
   reason: 'K-Battery Show 참석', from: '2026-09-09', to: '2026-09-10', start: '07:00', end: '20:00', actions: [], web: false };
@@ -94,7 +95,7 @@ Object.assign(st, {
   trips: { rows: [{ seq: '145580', href: '/BusinessTrip/Write?seq=145580&mode=E', pre: '완료', from: '2026-09-09', to: '2026-09-10', location: '경기도 고양시 킨텍스',
     writer: '김거화', written: '2026-09-01', travelers: [{ name: '김거화', post: '대기', trseq: '157777' }] }], me: '김거화' },
 });
-st.after['145580'] = { detail: { rows: [KTX('153340', '부산', '서울'), KTX('153341', '서울', '부산')], transports: ['Train', 'Train'] } };
+st.after['145580'] = { detail: { rows: [KTX('153340', '부산', '서울')], transports: ['Train'] } };
 await panel.reload();   // HR 에는 닿지 못한다 — 앉혀 둔 신청 내역이 그대로 그려진다
 
 const legRows = (box, act) => [...doc.querySelectorAll(`#atList ${box} .at-leg`)].map((row) => ({
@@ -109,7 +110,7 @@ const legRows = (box, act) => [...doc.querySelectorAll(`#atList ${box} .at-leg`)
 // 사후정산 내용의 고치는 편(.at-legs)과 사전정산 내용의 보기만 하는 편(.at-prelegs, 누름의 이름은 leg-pre) — 2026-11-20 에 칸이 둘로 나뉘었다.
 const legs = () => legRows('.at-legs', 'leg');
 const preLegs = () => legRows('.at-prelegs', 'leg-pre');
-const parts = () => [...doc.querySelectorAll('#atList .at-after > .at-part > .at-part-title')].map((p) => p.textContent);
+const parts = () => [...doc.querySelectorAll('#atList .at-after > .at-part > .at-part-head > .at-part-title')].map((p) => p.textContent);
 /** 알림 한 줄의 글 — 끝의 ×(알림 지우기)는 뺀다(2026-11-20). */
 const noteText = (p) => (p ? (p.querySelector(':scope > span') || p).textContent : null);
 /** 증빙 넣는 곳 — 하나뿐이다(종류는 넣은 뒤 보관 중인 증빙의 뱃지로 정한다, 2026-11-20). */
@@ -117,24 +118,30 @@ const COMMON = '#atList .at-after-drop';
 /** 보관 중인 증빙의 뱃지 — [뱃지 글, 이름표 · 이름 …, ⚠ 인가]. */
 const keptRows = () => [...doc.querySelectorAll('#atList .at-kept li')].map((li) => [li.querySelector('button[data-act="kept-kind"]').textContent, li.querySelector('span').textContent, li.classList.contains('warn')]);
 const badge = (name) => [...doc.querySelectorAll('#atList .at-kept button[data-act="kept-kind"]')].find((b) => b.dataset.name === name);
-const press = (leg, kind) => legs()[leg === 'go' ? 0 : 1].icons.find((b) => b.dataset.t === kind).click();
+/** 사후정산 묶음에 선 그 편 — 사전정산과 다른 편만 서므로(2026-11-20) 차례가 아니라 이름으로 찾는다. */
+const legOf = (leg) => legs().find((l) => l.name.startsWith(leg === 'go' ? '가는 편' : '오는 편'));
+const press = (leg, kind) => legOf(leg).icons.find((b) => b.dataset.t === kind).click();
+/** 골라 둔 가는 편·오는 편(attendLegs)을 앉히고 카드를 다시 그린다 — 사전정산 그대로인 편에는 누를 아이콘이 없다. */
+const pickLegs = async (picks) => {
+  st.legs['TR-1'] = picks;
+  await chrome.storage.local.set({ attendLegs: st.legs });
+  await panel.reload();
+  await until(() => !!doc.querySelector('#atList .at-after-drop'), '카드 다시 그리기');
+};
 const goBtn = () => doc.querySelector('#atList button[data-act="legs-go"]');
 const fields = (body, name) => body.getAll(name);
 
-console.log('가는 편·오는 편 — 처음에는 사전정산대로');
-t('출장 카드를 펴면 사후정산 칸에 가는 편·오는 편이 날짜와 함께 서고, 사전정산의 교통편(KTX 일반석)이 골라져 있다', () => {
-  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what]), [
-    ['가는 편 9/9', ['train'], 'KTX 부산→서울 일반석 53,700원'], ['오는 편 9/9', ['train'], 'KTX 서울→부산 일반석 53,700원'],
-  ]);
+console.log('가는 편·오는 편 — 사전정산에 있는 편은 사전정산 완료 묶음에, 없는 편은 사후정산 묶음에');
+t('출장 카드를 펴면 사전정산 완료 묶음에 사전정산의 가는 편(KTX 일반석)이 서고, 사후정산 묶음에는 사전정산에 줄이 없는 오는 편만 선다(2026-11-20 사용자 지정)', () => {
+  assert.deepEqual(parts(), ['사전정산 완료', '사후정산']);
+  assert.deepEqual(preLegs().map((l) => [l.name, l.what, l.from]), [['가는 편 9/9', 'KTX 부산→서울 일반석 53,700원', '']], '사전정산에 줄이 없는 편은 사전정산 묶음에 그리지 않는다');
+  // 사전정산 묶음의 아이콘은 잠겨 있어 보기만 한다(누름의 이름도 leg-pre — 사후정산 쪽과 섞이지 않는다). `다름`은 없다.
+  assert.deepEqual(preLegs()[0].on, ['train']);
+  assert.deepEqual([...doc.querySelectorAll('#atList .at-prelegs button')].map((b) => [b.dataset.act, b.disabled]), [['leg-pre', true], ['leg-pre', true], ['leg-pre', true]]);
+  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what, l.from]), [['오는 편 9/10', [], '고르지 않음', '']], '사후정산 묶음에는 사전정산에 없는 편만 선다 — 비어 있어도 선다');
   assert.deepEqual(legs()[0].icons.map((b) => [b.dataset.t, b.getAttribute('aria-label'), b.disabled, !!b.querySelector('svg')]),
     [['train', '기차(KTX)', false, true], ['plane', '비행기', false, true], ['bus', '버스', false, true]]);
-  assert.deepEqual(legs().map((l) => l.from), ['사전정산', '사전정산'], '사전정산의 줄 그대로인 편에는 그렇다는 딱지가 선다(2026-11-20)');
-  // 사전정산 내용(저장된 편 — 보기만)과 사후정산 내용(고치는 편)이 나뉘어 선다(2026-11-20 사용자 지정).
-  assert.deepEqual(parts(), ['사전정산 완료', '사후정산']);
-  assert.deepEqual(preLegs().map((l) => [l.name, l.what, l.from]), [
-    ['가는 편 9/9', 'KTX 부산→서울 일반석 53,700원', ''], ['오는 편 9/9', 'KTX 서울→부산 일반석 53,700원', ''],
-  ]);
-  assert.equal(doc.querySelector('#atList .at-prelegs button:not([data-act="leg-diff"])'), null, '사전정산 묶음에는 고르는 아이콘이 없다 — 보기만 한다');
+  assert.equal(doc.querySelector('#atList .at-part-head button[data-act="pre-redo"]').textContent, '수정하기', '사전정산 완료 옆에서 사전정산을 고친다');
   assert.equal(goBtn(), null, '바꾼 것이 없으면 올리기 버튼도 없다');
   assert.equal(doc.querySelector('#atList .at-after-why').textContent, '1박');
   assert.match(doc.querySelector(`${COMMON} .at-file`).textContent, /^숙박 영수증·예약서·항공권을 넣으면 읽어서 사후정산을 올립니다$/);
@@ -165,44 +172,46 @@ await ta('파일을 패널로 끌고 들어오면 놓을 칸이 짙어지고(.dr
   assert.equal(box.classList.contains('over'), false);
 });
 
-console.log('아이콘으로 편을 바꾼다');
+console.log('아이콘으로 편을 바꾼다 — 일반석 → 특실 → 선택 안 함');
 press('back', 'plane');
-t('오는 편에 비행기를 누르면 그 아이콘만 켜지고(가는 편은 그대로), 항공권이 없어 요금을 모른다고 적히며, 고른 것은 저장된다', () => {
-  assert.deepEqual(legs().map((l) => l.on), [['train'], ['plane']]);
-  assert.deepEqual(legs().map((l) => l.from), ['사전정산', ''], '바꾼 편에는 사전정산 딱지가 없다');
-  assert.deepEqual(preLegs().map((l) => l.what), ['KTX 부산→서울 일반석 53,700원', 'KTX 서울→부산 일반석 53,700원'], '사전정산 묶음의 편은 카드에서 고른 것을 얹지 않는다');
-  assert.deepEqual([legs()[1].what, legs()[1].cls], ['비행기 요금을 모릅니다 — 항공권을 넣어 주세요', 'at-leg-what error']);
+t('오는 편에 비행기를 누르면 그 아이콘만 켜지고, 항공권이 없어 요금을 모른다고 적히며, 고른 것은 저장된다', () => {
+  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what, l.cls]), [['오는 편 9/10', ['plane'], '비행기 요금을 모릅니다 — 항공권을 넣어 주세요', 'at-leg-what error']]);
   assert.deepEqual(store.attendLegs, { 'TR-1': { back: { t: 'plane', g: 'standard' } } });
   assert.equal(doc.querySelector('#atList .at-after-why').textContent, '1박 · 비행기');
-  assert.equal(doc.activeElement, legs()[1].icons[1], '누른 아이콘에 초점이 남는다');
+  assert.equal(doc.activeElement, legs()[0].icons[1], '누른 아이콘에 초점이 남는다');
+});
+press('back', 'plane');
+t('비행기를 한 번 더 누르면 특실이다(주황색 +)', () => {
+  assert.deepEqual(legs().map((l) => [l.on, l.what]), [[['plane+'], '비행기 요금을 모릅니다 — 항공권을 넣어 주세요']]);
+  assert.deepEqual(store.attendLegs, { 'TR-1': { back: { t: 'plane', g: 'first' } } });
+});
+press('back', 'plane');
+t('세 번째 누름은 선택 안 함이다(2026-11-20 사용자 지정) — 올라가 있는 줄이 없는 편이라 고른 것만 지운다', () => {
+  assert.deepEqual([legs().map((l) => [l.on, l.what]), goBtn(), store.attendLegs], [[[[], '고르지 않음']], null, {}]);
+  assert.equal(doc.querySelector('#atList .at-after-why').textContent, '1박');
 });
 press('back', 'train');
-t('다시 기차를 누르면 사전정산의 줄 그대로다 — 바꾼 것이 없으니 올리기 버튼도 없다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what, goBtn()], [['train'], 'KTX 서울→부산 일반석 53,700원', null]);
-});
-press('back', 'train');
-t('기차를 한 번 더 누르면 특실이다(주황색 +) — 운임표의 특실 값이 "바꿈"과 함께 적히고 올리기 버튼이 나온다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what, legs()[1].cls], [['train+'], 'KTX 서울→부산 특실 78,900원 · 바꿈', 'at-leg-what new']);
-  assert.equal(legs()[1].icons[0].getAttribute('aria-label'), '기차(KTX) 특실');
+t('기차를 누르면 운임표의 일반석 값이 "바꿈"과 함께 적히고 올리기 버튼이 나온다', () => {
+  assert.deepEqual(legs().map((l) => [l.on, l.what, l.cls]), [[['train'], 'KTX 서울→부산 일반석 54,400원 · 바꿈', 'at-leg-what new']]);
   assert.equal(goBtn().textContent, '바꾼 교통편을 사후정산에 올리기');
+});
+press('back', 'train');
+t('기차를 한 번 더 누르면 특실이다(주황색 +) — 운임표의 특실 값이다', () => {
+  assert.deepEqual(legs().map((l) => [l.on, l.what, l.cls]), [[['train+'], 'KTX 서울→부산 특실 78,900원 · 바꿈', 'at-leg-what new']]);
+  assert.equal(legs()[0].icons[0].getAttribute('aria-label'), '기차(KTX) 특실');
   assert.deepEqual(store.attendLegs, { 'TR-1': { back: { t: 'train', g: 'first' } } });
 });
 press('back', 'train');
-t('세 번째 누름은 선택 안 함이다(2026-11-20 사용자 지정) — 카드에서 고른 것이 지워져 사전정산의 줄(딱지)로 돌아가고 올리기 버튼도 걷힌다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what, legs()[1].from, legs()[1].cls, goBtn()], [['train'], 'KTX 서울→부산 일반석 53,700원', '사전정산', 'at-leg-what', null]);
-  assert.deepEqual(store.attendLegs, {}, '고른 것이 없으면 저장해 둔 것도 지운다');
-  assert.equal(doc.activeElement, legs()[1].icons[0], '누른 아이콘에 초점이 남는다');
+t('특실에서 한 번 더 누르면 선택 안 함 — 올리기 버튼도 걷힌다', () => {
+  assert.deepEqual([legs().map((l) => l.on), goBtn(), store.attendLegs], [[[]], null, {}]);
 });
 press('back', 'bus');
 press('back', 'bus');
 t('등급이 없는 버스는 한 번 더 누르면 선택 안 함이다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].from, store.attendLegs], [['train'], '사전정산', {}]);
+  assert.deepEqual([legs().map((l) => l.on), store.attendLegs], [[[]], {}]);
 });
 press('back', 'train');
-t('사전정산 그대로인 편(일반석)의 기차를 누르면 그 다음인 특실이다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what], [['train+'], 'KTX 서울→부산 특실 78,900원 · 바꿈']);
-  assert.equal(goBtn().textContent, '바꾼 교통편을 사후정산에 올리기');
-});
+press('back', 'train');
 
 console.log('증빙 없이 바꾼 편만 사후정산에 올린다 — 두 번 눌러야 나간다');
 goBtn().click();
@@ -226,12 +235,13 @@ await ta('두 번째 누름에 사후정산 입력 화면의 폼으로 두 편�
   assert.ok(logs.some((l) => l.kind === 'trip' && l.ok && /사후정산\) 작성: 145580/.test(l.text)));
 });
 
-// 읽은 뒤의 이름(src/after.js evidenceName, 2026-11-20) — 넣은 이름(오는편.pdf·점심.png·저녁.png·ktx.png·제주.png·가는편.pdf)이 아니다.
-const FLIGHT_BACK = '항공영수증_2026-09-10.pdf';   // 항공 문서는 탑승일
-const FLIGHT_GO = '항공영수증_2026-09-09.pdf';
-const MEAL = '증빙 영수증_2026-09-09.png';   // 그 밖의 영수증은 결제일
-const TRAIN = '기차표.png';             // 날짜를 못 읽으면 종류만
-const JEJU = '숙박비_2026-09-20.png';   // 숙박은 체크인
+// 보관함·카드에는 넣은 이름 그대로다 — 읽은 내용으로 지은 이름은 보낼 때만 쓴다(2026-11-20 사용자 지정, src/send.js sendNames).
+const FLIGHT_BACK = '오는편.pdf';
+const FLIGHT_GO = '가는편.pdf';
+const LUNCH = '점심.png';
+const MEAL = '저녁.png';
+const TRAIN = 'ktx.png';
+const JEJU = '제주.png';
 console.log('항공권을 넣으면 그 날짜의 편이 비행기로 바뀌고, 나머지 편과 함께 올라간다');
 // 방금 올린 두 줄이 사후정산 화면에 있다 — 다시 올릴 때 지움 표시가 되어야 한다.
 site.oldRows = ['501', '502'].map((seq) => `<tr><td><input type="hidden" name="tr_seq" value="${seq}"/><input type="hidden" name="tr_del" value="0"/>
@@ -250,17 +260,19 @@ site.record = {
 }
 await ta('오는 편(9/10)의 항공권 한 장 → 오는 편은 비행기, 가는 편은 KTX 그대로. 읽은 문서는 "항공기 증명"이라고 적힌다', async () => {
   assert.equal(site.asks.length, 1, 'Claude 에게 한 장을 읽혔다');
-  assert.deepEqual(legs().map((l) => [l.on, l.what]), [[['train'], 'KTX 부산→서울 일반석 53,700원'], [['plane'], '비행기 김포→김해 일반석 98,000원 · 바꿈']]);
+  // 사후정산 묶음에는 사전정산에 없는 편(오는 편)만 선다 — 가는 편은 사전정산 묶음의 KTX 그대로다.
+  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what]), [['오는 편 9/10', ['plane'], '비행기 김포→김해 일반석 98,000원 · 바꿈']]);
+  assert.deepEqual(preLegs().map((l) => l.what), ['KTX 부산→서울 일반석 53,700원']);
   assert.deepEqual(store.attendLegs['TR-1'], { back: { t: 'plane', g: 'standard' } });
-  assert.deepEqual([...doc.querySelectorAll('#atList .at-after-docs li')].map((li) => li.textContent), ['항공기 증명 · 항공영수증_2026-09-10.pdf — 대한항공 KE1415 김포→김해 전자영수증 98,000원'],
-    '파일 이름은 읽은 내용으로 다시 짓는다 — 종류_이용일(탑승일).확장자(2026-11-20 사용자 지정)');
+  assert.deepEqual([...doc.querySelectorAll('#atList .at-after-docs li')].map((li) => li.textContent), ['항공기 증명 · 오는편.pdf — 대한항공 KE1415 김포→김해 전자영수증 98,000원'],
+    '파일 이름은 넣은 그대로다 — 읽은 내용으로 지은 이름은 보낼 때만 쓴다(2026-11-20 사용자 지정)');
   assert.equal(doc.querySelector('#atList .at-after-why').textContent, '1박 · 비행기');
 });
 await ta('항공권 파일은 여비계산서에 붙일 칸이 없어 보관함에 담긴다 — 담당자에게 보낼 때 같이 간다. 카드에 "보관 중"으로 보인다', async () => {
   const kept = await evidence.list('TR-1');
-  assert.deepEqual(kept.map((k) => [k.label, k.name, k.type, k.date, k.total, k.trip.seq]), [['항공기 증명', '항공영수증_2026-09-10.pdf', 'application/pdf', '2026-09-08', 98000, '145580']]);
+  assert.deepEqual(kept.map((k) => [k.label, k.name, k.type, k.date, k.total, k.trip.seq]), [['항공기 증명', FLIGHT_BACK, 'application/pdf', '2026-09-08', 98000, '145580']]);
   assert.match(kept[0].dataUrl, /^data:application\/pdf;base64,/);
-  assert.match(doc.querySelector('#atList .at-kept .at-after-note').textContent, /^보관 중인 증빙 1장 — 담당자에게 보낼 때 같이 갑니다$/);
+  assert.match(doc.querySelector('#atList .at-kept .at-after-note').textContent, /^보관 중인 증빙 1장$/);
   assert.deepEqual([...doc.querySelectorAll('#atList .at-kept li span')].map((s) => s.textContent), [`항공기 증명 · ${FLIGHT_BACK}`]);
 });
 await ta('사후정산에는 KTX(가는 편)와 비행기(오는 편)가 올라가고 항공 마일리지 칸이 켜진다 — 화면에 있던 교통 줄은 지움 표시된다', async () => {
@@ -268,7 +280,7 @@ await ta('사후정산에는 KTX(가는 편)와 비행기(오는 편)가 올라�
   const body = site.posts[1];
   assert.deepEqual([fields(body, 'tr_seq'), fields(body, 'tr_del')], [['501', '502', '', ''], ['1', '1', '0', '0']]);
   assert.deepEqual([fields(body, 'tr_transport'), fields(body, 'tr_dep'), fields(body, 'tr_arr'), fields(body, 'tr_total'), fields(body, 'tr_shr'), fields(body, 'tr_comment')],
-    [['기차(KTX등)', '비행기'], ['부산', '김포'], ['서울', '김해'], ['53700', '98000'], ['', '19'], ['', '대한항공 KE1415']]);
+    [['기차(KTX등)', '비행기'], ['부산', '김포'], ['서울', '김해'], ['53700', '98000'], ['', '17'], ['', '대한항공 KE1415']]);
   assert.deepEqual([fields(body, 'air_abroad'), fields(body, 'air_bizairline'), fields(body, 'air_mileage'), fields(body, 'air_miles')], [['Y'], ['대한항공'], ['210'], ['1050']]);
   assert.match(doc.getElementById('atStatus').textContent, /^사후정산을 올렸습니다 — KTX 2026-09-09 부산→서울 53,700원 · 비행기 2026-09-10 김포→김해 98,000원 · 항공 마일리지 대한항공 210마일$/);
 });
@@ -276,20 +288,20 @@ await ta('사후정산에는 KTX(가는 편)와 비행기(오는 편)가 올라�
 console.log('비행기도 한 번 더 누르면 특실이다 (2026-10-04 사용자 지정)');
 press('back', 'plane');
 t('항공권이 앉은 오는 편의 비행기를 한 번 더 누르면 특실이다(주황색 +) — 등급만 특실로 바뀌고 구간·요금은 항공권 그대로다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what], [['plane+'], '비행기 김포→김해 특실 98,000원 · 바꿈']);
-  assert.equal(legs()[1].icons[1].getAttribute('aria-label'), '비행기 특실');
+  assert.deepEqual([legOf('back').on, legOf('back').what], [['plane+'], '비행기 김포→김해 특실 98,000원 · 바꿈']);
+  assert.equal(legOf('back').icons[1].getAttribute('aria-label'), '비행기 특실');
   assert.deepEqual(store.attendLegs['TR-1'], { back: { t: 'plane', g: 'first' } });
   assert.equal(site.posts.length, 2, '누르기만 해서는 올라가지 않는다');
 });
 press('back', 'plane');
-t('또 누르면(세 번째) 선택 안 함이다(2026-11-20 사용자 지정) — 카드에서 고른 것이 지워져 오는 편은 사전정산의 줄로 돌아간다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what, legs()[1].from], [['train'], 'KTX 서울→부산 일반석 53,700원', '사전정산']);
+t('또 누르면(세 번째) 선택 안 함이다(2026-11-20 사용자 지정) — 올라가 있는 줄이 없는 편이라 고른 것만 지워지고, 편은 그대로 비어 선다', () => {
+  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what]), [['오는 편 9/10', [], '고르지 않음']]);
   assert.equal(store.attendLegs['TR-1'], undefined);
   assert.equal(site.posts.length, 2, '누르기만 해서는 올라가지 않는다');
 });
 press('back', 'plane');
 t('다시 비행기를 누르면 쥐고 있던 항공권이 그 편에 앉는다 — 항공권에 적힌 좌석 등급이다', () => {
-  assert.deepEqual([legs()[1].on, legs()[1].what, legs()[1].from], [['plane'], '비행기 김포→김해 일반석 98,000원 · 바꿈', '']);
+  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what]), [['오는 편 9/10', ['plane'], '비행기 김포→김해 일반석 98,000원 · 바꿈']]);
   assert.deepEqual(store.attendLegs['TR-1'], { back: { t: 'plane', g: 'standard' } });
 });
 
@@ -307,18 +319,18 @@ await drop('점심.png', 'image/png', { ...blank, docType: 'other_receipt', vend
 const NOT_THERE = '출장지에서 결제한 영수증이 아닙니다(부산 해운대구)';
 await ta('출장지가 아닌 곳에서 결제한 영수증은 증빙으로 쓸 수 없다고 적고 올리지 않는다 — 버리지는 않고 ⚠ 표시로 보관한다(무슨 증빙인지는 사람이 뱃지로 정한다, 2026-11-20 사용자 지정)', async () => {
   assert.equal(site.posts.length, 2, '앞서 올린 교통 줄을 되풀이해 보내지도 않는다');
-  assert.deepEqual([...doc.querySelectorAll('#atList .at-after-docs li')].map((li) => li.textContent), [`출장지 영수증 ✗ · ${MEAL} — ${NOT_THERE}`]);
+  assert.deepEqual([...doc.querySelectorAll('#atList .at-after-docs li')].map((li) => li.textContent), [`출장지 영수증 ✗ · ${LUNCH} — ${NOT_THERE}`]);
   assert.equal(doc.querySelector('#atList .at-after-note.error'), null, '"넣을 내역이 없어 올리지 않았습니다"라고 적지 않는다 — 보관했다');
-  assert.equal(noteText(doc.querySelector('#atList .at-after > .at-after-note')), `확인이 필요한 증빙 1장은 ⚠ 표시로 보관했습니다(${MEAL}: ${NOT_THERE}) — 아래에서 뱃지를 바꾸거나 확정해 주세요`);
-  assert.deepEqual(legs().map((l) => l.on), [['train'], ['plane']], '가는 편·오는 편은 그대로다');
+  assert.equal(noteText(doc.querySelector('#atList .at-after > .at-after-note')), `확인이 필요한 증빙 1장은 ⚠ 표시로 보관했습니다(${LUNCH}: ${NOT_THERE}) — 아래에서 뱃지를 바꾸거나 확정해 주세요`);
+  assert.deepEqual(legs().map((l) => l.on), [['plane']], '가는 편·오는 편은 그대로다(가는 편은 사전정산 그대로라 사후정산 묶음에 없다)');
   const kept = await evidence.list('TR-1');
-  assert.deepEqual(kept.map((k) => [k.name, k.warn, k.record?.docType]), [[FLIGHT_BACK, undefined, 'flight_receipt'], [MEAL, NOT_THERE, 'other_receipt']], '읽은 기록도 같이 둔다');
+  assert.deepEqual(kept.map((k) => [k.name, k.warn, k.record?.docType]), [[FLIGHT_BACK, undefined, 'flight_receipt'], [LUNCH, NOT_THERE, 'other_receipt']], '읽은 기록도 같이 둔다');
   // 증빙마다 뱃지가 선다 — 읽은 내용에서 가장 가까운 것(항공권 · 현지). ⚠ 가 붙은 것은 확정하거나 뱃지를 바꿔야 간다.
-  assert.deepEqual(keptRows(), [['항공권', `항공기 증명 · ${FLIGHT_BACK}`, false], ['현지', `${kept[1].label} · ${MEAL} · ⚠ ${NOT_THERE}`, true]]);
-  assert.equal(doc.querySelector('#atList .at-kept .at-after-note').textContent, '보관 중인 증빙 2장 — 담당자에게 보낼 때 같이 갑니다(⚠ 표시가 붙은 1장은 확정하거나 뱃지를 바꿔야 갑니다)');
+  assert.deepEqual(keptRows(), [['오는 항공권', `항공기 증명 · ${FLIGHT_BACK}`, false], ['현지', `${kept[1].label} · ${LUNCH} · ⚠ ${NOT_THERE}`, true]]);
+  assert.equal(doc.querySelector('#atList .at-kept .at-after-note').textContent, '보관 중인 증빙 2장');
 });
 // 아래의 장면은 그 영수증 없이 간다 — 보관함에서 뺀다.
-doc.querySelector(`#atList .at-kept button[data-act="kept-drop"][data-name="${MEAL}"]`).click();
+doc.querySelector(`#atList .at-kept button[data-act="kept-drop"][data-name="${LUNCH}"]`).click();
 await until(() => keptRows().length === 1 && !st.busy, '보관함에서 빼기');
 await drop('저녁.png', 'image/png', { ...blank, docType: 'other_receipt', vendor: '킨텍스식당', payDate: '2026-09-09', payPlace: '경기 고양시 일산서구', atDestination: true, total: 18000, summary: '킨텍스식당 카드 영수증 18,000원' });
 await ta('출장지에서 결제한 영수증은 확인하고 보관함에 담는다 — 사후정산으로 올리지는 않고, 잘못이라고 적지도 않는다', async () => {
@@ -359,9 +371,9 @@ await drop('ktx.png', 'image/png', { ...blank, docType: 'train_ticket', summary:
 await ta('기차표는 증빙으로 받지 않는다 — 편도 바뀌지 않고 올라가지도 않는다. ⚠ 표시로 보관만 한다(2026-11-20)', async () => {
   assert.equal(site.posts.length, 2);
   assert.deepEqual((await evidence.list('TR-1')).map((k) => [k.name, !!k.warn]), [[FLIGHT_BACK, false], [TRAIN, true]]);
-  assert.deepEqual(keptRows().map((r) => [r[0], r[2]]), [['항공권', false], ['현지', true]], '숙박·항공이 아닌 것의 뱃지는 현지다');
+  assert.deepEqual(keptRows().map((r) => [r[0], r[2]]), [['오는 항공권', false], ['현지', true]], '숙박·항공이 아닌 것의 뱃지는 현지다');
   assert.deepEqual([...doc.querySelectorAll('#atList .at-after-docs li')].map((li) => li.textContent), [`기차·버스표 ✗ · ${TRAIN} — 증빙으로 받지 않습니다(KTX 는 운임표의 정가로 넣습니다)`]);
-  assert.deepEqual(legs().map((l) => l.on), [['train'], ['plane']]);
+  assert.deepEqual(legs().map((l) => l.on), [['plane']]);
 });
 doc.querySelector(`#atList .at-kept button[data-act="kept-drop"][data-name="${TRAIN}"]`).click();   // 아래의 장면은 기차표 없이 간다
 await until(() => keptRows().length === 1 && !st.busy, '보관함에서 빼기');
@@ -382,13 +394,13 @@ await ta('출장 기간 밖에 묵은 숙박 영수증은 사후정산에 올리
   assert.equal(doc.getElementById('atStatus').textContent, `출장 기간과 맞지 않는 증빙이 있습니다 — ${JEJU}: ${WHY}`);
   const held = (await evidence.list('TR-1')).find((k) => k.name === JEJU);
   assert.deepEqual([held.label, held.warn, held.todo, held.record.vendor, 'file' in held.record], ['숙박 증빙', WHY, undefined, '제주호텔', false]);
-  assert.equal(doc.querySelector('#atList .at-kept .at-after-note').textContent, '보관 중인 증빙 2장 — 담당자에게 보낼 때 같이 갑니다(⚠ 표시가 붙은 1장은 확정하거나 뱃지를 바꿔야 갑니다)');
+  assert.equal(doc.querySelector('#atList .at-kept .at-after-note').textContent, '보관 중인 증빙 2장');
   const li = keptLi(JEJU);
   assert.deepEqual([li.classList.contains('warn'), li.querySelector('span').textContent, li.querySelector('button[data-act="kept-ok"]').textContent],
     [true, `숙박 증빙 · ${JEJU} · ⚠ ${WHY}`, '확정']);
   assert.equal(keptLi(FLIGHT_BACK).querySelector('button[data-act="kept-ok"]'), null, '맞는 증빙에는 확정 버튼이 없다');
   assert.equal(doc.querySelector('#atList button[data-act="kept-go"]'), null, '확정하기 전에는 올리는 버튼도 없다');
-  assert.deepEqual(legs().map((l) => l.on), [['train'], ['plane']]);
+  assert.deepEqual(legs().map((l) => l.on), [['plane']]);
 });
 keptLi(JEJU).querySelector('button[data-act="kept-ok"]').click();
 await until(() => /확정했습니다/.test(doc.getElementById('atStatus').textContent), '확정');
@@ -399,7 +411,7 @@ await ta('`확정`을 누르면 알림 표시가 걷힌다 — 사이트에는 �
   const li = keptLi(JEJU);
   assert.deepEqual([li.classList.contains('warn'), li.querySelector('span').textContent, li.querySelector('button[data-act="kept-ok"]')], [false, `숙박 증빙 · ${JEJU} · 사후정산에 안 올림`, null]);
   assert.equal(doc.querySelector('#atList .at-after-warn'), null, '알림도 걷힌다');
-  assert.equal(doc.querySelector('#atList .at-kept .at-after-note').textContent, '보관 중인 증빙 2장 — 담당자에게 보낼 때 같이 갑니다');
+  assert.equal(doc.querySelector('#atList .at-kept .at-after-note').textContent, '보관 중인 증빙 2장');
   const go = doc.querySelector('#atList button[data-act="kept-go"]');
   assert.deepEqual([go.textContent, go.closest('.at-leg-go').querySelector('.at-after-note').textContent],
     ['보관한 증빙을 사후정산에 올리기', '확정한 증빙을 포함해 1장은 사후정산에 아직 올리지 않았습니다']);
@@ -432,13 +444,12 @@ t('사후정산이 완료된 출장에는 정산 내역이 보여 주기만 하�
   assert.deepEqual([doneBox().querySelector('.at-after-head strong').textContent, doneBox().querySelector('.at-after-why').textContent], ['정산 내역', '1박 · 완료']);
   // 사후정산에 따로 올린 교통 줄이 없으면(수단이 안 적힌 줄은 치지 않는다) 사전정산의 줄이다 — 카드에서 골라 둔 편(오는 편 비행기)은 얹지 않는다.
   assert.deepEqual(store.attendLegs['TR-1'], { back: { t: 'plane', g: 'standard' } });
-  // 정산 내역도 두 묶음이다(2026-11-20 사용자 지정) — 사전정산의 줄은 사전정산 묶음(.at-prelegs)에 서고, 사후정산 묶음에는 편 대신 그대로라는 말이 선다.
+  // 정산 내역도 두 묶음이다(2026-11-20 사용자 지정) — 사전정산의 줄은 사전정산 묶음(.at-prelegs)에 서고, 사후정산 묶음에는 사전정산과 다른 편만 선다(여기는 없다).
   assert.deepEqual(parts(), ['사전정산 완료', '사후정산 완료']);
-  assert.deepEqual(preLegs().map((l) => [l.name, l.what, l.cls]), [
-    ['가는 편 9/9', 'KTX 부산→서울 일반석 53,700원', 'at-leg-what'], ['오는 편 9/9', 'KTX 서울→부산 일반석 53,700원', 'at-leg-what'],
-  ]);
-  assert.deepEqual([legs().length, doneBox().querySelector('.at-part:last-of-type .at-part-same')?.textContent],
-    [0, '교통편은 사전정산 그대로입니다 — 사후정산에 따로 올린 교통 줄이 없습니다']);
+  assert.deepEqual(preLegs().map((l) => [l.name, l.what, l.cls]), [['가는 편 9/9', 'KTX 부산→서울 일반석 53,700원', 'at-leg-what']]);
+  const postPart = doneBox().querySelectorAll('.at-part')[1];
+  assert.deepEqual([legs().length, postPart.querySelector('.at-legs'), doneBox().querySelector('.at-part-same'), !!postPart.querySelector('.at-lodge-count')], [0, null, null, true],
+    '사후정산 묶음에는 숙박비 내역만 선다 — 그대로라는 말도 적지 않는다');
   assert.equal(doneBox().querySelector('.at-prelegs button:not([data-act="leg-diff"]):not([disabled]), .at-legs button:not([data-act="leg-diff"]):not([disabled])'), null, '고르는 아이콘은 없거나 잠겨 있다');
   assert.deepEqual(['.at-after-drop', 'button[data-act="after"]', 'button[data-act="legs-go"]', '.at-kept'].map((q) => doneBox().querySelector(q)), [null, null, null, null]);
   assert.equal(doneBox().dataset.seq, '145580', '붙여넣기도 이 카드로 온다 — 완료된 출장에 넣은 증빙은 읽어서 사후정산에 반영한다(2026-10-05 사용자 지정, 아래)');
@@ -454,16 +465,15 @@ site.oldRows = [['501', '0', '2026-09-09', '부산', '서울', '기차(KTX등)',
 <input type="text" name="tr_grade" value="${grade}"/><input type="text" name="tr_total" value="${total}"/>
 <select name="tr_currency"><option value="KRW" selected="selected">원(KRW)</option></select></td></tr>`).join('');
 doneBox().querySelector('button[data-act="lodge-refresh"]').click();
-await until(() => legs()[1]?.what.startsWith('비행기'), '사후정산의 교통 줄 읽기');
-t('사후정산에 따로 올린 교통 줄이 있으면 그 줄이 선다 — 수단은 화면의 이름(기차(KTX등)·비행기)에서 읽고, 비행기를 탔으면 그렇게 적는다', () => {
-  assert.deepEqual(legs().map((l) => [l.on, l.what, l.cls]), [
-    [['train'], 'KTX 부산→서울 일반석 53,700원', 'at-leg-what'], [['plane'], '비행기 김포→김해 일반석 98,000원', 'at-leg-what'],
-  ]);
+await until(() => legs().some((l) => l.what.startsWith('비행기')), '사후정산의 교통 줄 읽기');
+t('사후정산에 따로 올린 교통 줄이 있으면 사전정산에 없는 편(오는 편 비행기)의 줄만 사후정산 묶음에 선다 — 수단은 화면의 이름(기차(KTX등)·비행기)에서 읽고, 비행기를 탔으면 그렇게 적는다', () => {
+  // 가는 편은 사전정산에 줄이 있어 사후정산 묶음에 그리지 않는다(2026-11-20 사용자 지정).
+  assert.deepEqual(legs().map((l) => [l.name, l.on, l.what, l.cls]), [['오는 편 9/10', ['plane'], '비행기 김포→김해 일반석 98,000원', 'at-leg-what']]);
   assert.equal(doneBox().querySelector('.at-after-why').textContent, '1박 · 비행기 · 완료');
   assert.ok(legs().every((l) => l.icons.length === 3 && l.icons.every((b) => b.disabled)));
-  // 그 줄은 사후정산 묶음에 서고, 사전정산 묶음에는 사전정산의 줄이 그대로 남는다 — "그대로"라는 말은 걷힌다.
+  // 그 줄은 사후정산 묶음에 서고, 사전정산 묶음에는 사전정산의 줄이 그대로 남는다.
   assert.ok(doneBox().querySelector('.at-part:last-of-type .at-legs'), '사후정산의 편은 사후정산 묶음 안이다');
-  assert.deepEqual(preLegs().map((l) => l.what), ['KTX 부산→서울 일반석 53,700원', 'KTX 서울→부산 일반석 53,700원']);
+  assert.deepEqual(preLegs().map((l) => l.what), ['KTX 부산→서울 일반석 53,700원']);
   assert.equal(doneBox().querySelector('.at-part-same'), null);
   assert.equal(site.posts.length, 2, '읽기만 했다 — 아무것도 보내지 않았다');
 });
@@ -550,53 +560,93 @@ st.after['145580'] = { detail: { rows: [KTX('153340', '부산', '서울'), KTX('
 delete st.legs['TR-1'];
 shelf.clear();
 await panel.reload();
-await until(() => legs().length === 2 && doc.querySelector(COMMON), '카드 다시 그리기');
+await until(() => preLegs().length === 2 && doc.querySelector(COMMON), '카드 다시 그리기');
 const posted = site.posts.length;
 // 항공사 카드 결제 영수증 — 그 밖의 영수증으로 읽혔고 결제한 곳도 출장지가 아니다(탑승일·구간은 읽혔다).
-await drop('카드.png', 'image/png', { ...blank, docType: 'other_receipt', payDate: '2026-09-10', payPlace: '서울 강서구', atDestination: false, total: 98000, currency: 'KRW',
+const CARD = '카드.png';
+await drop(CARD, 'image/png', { ...blank, docType: 'other_receipt', payDate: '2026-09-10', payPlace: '서울 강서구', atDestination: false, total: 98000, currency: 'KRW',
   airline: '대한항공', flightNo: 'KE1415', flightDate: '2026-09-10', depPlace: '김포', arrPlace: '김해', depTime: '19:00', seatClass: '일반석', summary: '대한항공 결제 98,000원' });
 const CARD_WHY = '출장지에서 결제한 영수증이 아닙니다(서울 강서구)';
 const keptNow = async () => (await evidence.list('TR-1')).map((k) => [k.label, k.name, k.warn, k.record?.docType, k.record?.confirmed]);
 await ta('출장지가 아닌 곳의 영수증으로 읽힌 문서 — 올리지 않고 ⚠ 와 `현지` 뱃지로 보관된다', async () => {
   assert.equal(site.posts.length, posted);
-  assert.deepEqual(keptRows(), [['현지', `출장지 영수증 · 증빙 영수증_2026-09-10.png · ⚠ ${CARD_WHY}`, true]]);
-  assert.deepEqual(await keptNow(), [['출장지 영수증', '증빙 영수증_2026-09-10.png', CARD_WHY, 'other_receipt', undefined]]);
-  const b = badge('증빙 영수증_2026-09-10.png');
-  assert.deepEqual([b.className, b.disabled, b.getAttribute('aria-label')], ['at-ebadge at-ebadge-local', false, '증빙 영수증_2026-09-10.png 종류 현지 — 누르면 바뀝니다']);
+  assert.deepEqual(keptRows(), [['현지', `출장지 영수증 · ${CARD} · ⚠ ${CARD_WHY}`, true]]);
+  assert.deepEqual(await keptNow(), [['출장지 영수증', CARD, CARD_WHY, 'other_receipt', undefined]]);
+  const b = badge(CARD);
+  assert.deepEqual([b.className, b.disabled, b.getAttribute('aria-label')], ['at-ebadge at-ebadge-local', false, `${CARD} 종류 현지 — 누르면 바뀝니다`]);
 });
 {
   const asked = site.asks.length;
-  badge('증빙 영수증_2026-09-10.png').click();
-  await until(() => badge('숙박비_2026-09-10.png') && doc.querySelector('#atList .at-after-fix') && !st.after['145580'].busy, '숙박비로 바꾸기');
-  await ta('뱃지를 누르면 다음 종류(숙박비)다 — 읽은 기록을 숙박 증빙으로 치고 이름도 다시 짓는다(⚠ 는 걷힌다). 다시 읽지 않는다', async () => {
-    assert.equal(site.asks.length, asked, 'Claude 를 다시 부르지 않는다');
-    assert.deepEqual(keptRows(), [['숙박비', '숙박 증빙 · 숙박비_2026-09-10.png', false]]);
-    assert.deepEqual(await keptNow(), [['숙박 증빙', '숙박비_2026-09-10.png', undefined, 'lodging_receipt', true]], '앞의 이름으로 담아 둔 것은 지운다');
-    assert.equal(badge('숙박비_2026-09-10.png').className, 'at-ebadge at-ebadge-lodging');
+  badge(CARD).click();
+  await until(() => keptRows()[0]?.[0] === '숙박비', '숙박비로 바꾸기');
+  await ta('뱃지를 누르면 다음 종류(숙박비)다 — 뱃지만 바뀐다(2026-11-20 사용자 지정): 이름은 그대로 두고 ⚠ 를 걷고 "사후정산에 안 올림"으로 적어 둘 뿐, 다시 읽지도 올리지도 않는다', async () => {
+    assert.deepEqual([site.asks.length, site.posts.length, !!st.after['145580'].busy], [asked, posted, false]);
+    assert.deepEqual(keptRows(), [['숙박비', `숙박 증빙 · ${CARD} · 사후정산에 안 올림`, false]]);
+    assert.deepEqual((await keptNow()).map((k) => k.slice(0, 4)), [['숙박 증빙', CARD, undefined, 'lodging_receipt']], '한 장 그대로다 — 이름도 넣은 그대로다');
+    assert.equal(badge(CARD).className, 'at-ebadge at-ebadge-lodging');
+    assert.equal(doc.querySelector('#atList .at-after-fix'), null);
   });
-  t('숙박 줄에 꼭 있어야 하는 업체명이 없어 올리지는 않는다 — 그 값을 적는 칸이 선다(일수·결제일은 출장의 값으로 넣는다)', () => {
-    assert.equal(site.posts.length, posted);
-    assert.equal(noteText(doc.querySelector('#atList .at-after-note.error')), '올리지 않았습니다 — 숙박(숙박비_2026-09-10.png)에서 업체명을(를) 읽지 못했습니다 · 아래에 그 값을 적어 주시면 올립니다');
-    const fix = doc.querySelector('#atList .at-after-fix');
-    assert.deepEqual([fix.querySelector('li > p').textContent, [...fix.querySelectorAll('input.at-fix-input')].map((i) => i.dataset.key), fix.querySelector('button[data-act="fix-go"]').textContent],
-      ['숙박 — 숙박비_2026-09-10.png', ['vendor'], '이 값으로 올리기']);
-    // 알림의 × 는 그 알림만 걷는다 — 적는 칸은 제 머리의 × 로 걷는다.
-    doc.querySelector('#atList .at-after-note.error button[data-act="note-drop"][data-k="error"]').click();
-    assert.deepEqual([doc.querySelector('#atList .at-after-note.error'), !!doc.querySelector('#atList .at-after-fix')], [null, true]);
-    doc.querySelector('#atList .at-after-fix button[data-act="note-drop"][data-k="fix"]').click();
-    assert.deepEqual([doc.querySelector('#atList .at-after-fix'), keptRows().length, site.posts.length], [null, 1, posted]);
+  badge(CARD).click();
+  await until(() => keptRows()[0]?.[0] === '가는 항공권', '가는 항공권으로 바꾸기');
+  await ta('한 번 더 누르면 가는 항공권이다 — 사람이 가는 편이라고 한 것이라 탑승일이 출발일이 되고, 카드의 가는 편이 비행기로 골라진다. 올리지는 않는다', async () => {
+    assert.deepEqual(keptRows(), [['가는 항공권', `항공기 증명 · ${CARD} · 사후정산에 안 올림`, false]]);
+    assert.deepEqual([site.posts.length, st.legs['TR-1']?.go?.t], [posted, 'plane']);
   });
-  badge('숙박비_2026-09-10.png').click();
-  await until(() => site.posts.length === posted + 1 && !st.after['145580'].busy, '항공권으로 바꿔 올리기');
-  await ta('한 번 더 누르면 항공권이다 — 그 기록의 탑승일·구간으로 오는 편이 비행기가 되어 사후정산에 올라간다(다시 읽지 않는다)', async () => {
+  badge(CARD).click();
+  await until(() => keptRows()[0]?.[0] === '오는 항공권', '오는 항공권으로 바꾸기');
+  await ta('또 누르면 오는 항공권이다 — 가는 편은 사전정산의 교통편(기차)으로 돌아가고 오는 편이 비행기로 골라진다. 여전히 올리지 않는다', async () => {
+    assert.deepEqual(keptRows(), [['오는 항공권', `항공기 증명 · ${CARD} · 사후정산에 안 올림`, false]]);
+    assert.deepEqual([site.asks.length, site.posts.length, st.legs['TR-1']?.go?.t, st.legs['TR-1']?.back?.t], [asked, posted, 'train', 'plane']);
+  });
+  const up = () => doc.querySelector('#atList .at-kept button[data-act="kept-go"]');
+  up().click();
+  await wait(20);
+  up().click();
+  await until(() => site.posts.length === posted + 1 && !st.after['145580'].busy, '올리기 버튼으로 올리기');
+  await ta('아래의 올리기 버튼을 눌러야 그 뱃지대로 사후정산에 올라간다 — 오는 편이 그 기록의 구간으로 비행기가 된다(다시 읽지 않는다)', async () => {
     assert.equal(site.asks.length, asked);
-    assert.deepEqual(keptRows(), [['항공권', '항공기 증명 · 항공영수증_2026-09-10.png', false]]);
-    assert.deepEqual(await keptNow(), [['항공기 증명', '항공영수증_2026-09-10.png', undefined, 'flight_receipt', true]]);
+    assert.deepEqual(keptRows(), [['오는 항공권', `항공기 증명 · ${CARD}`, false]]);
     const body = site.posts.at(-1);
     assert.deepEqual([fields(body, 'tr_transport'), fields(body, 'tr_dep'), fields(body, 'tr_arr'), fields(body, 'tr_total'), fields(body, 'air_abroad')],
       [['기차(KTX등)', '비행기'], ['부산', '김포'], ['서울', '김해'], ['53700', '98000'], ['Y']]);
-    assert.deepEqual(legs().map((l) => [l.on, l.what, l.from]), [[['train'], 'KTX 부산→서울 일반석 53,700원', '사전정산'], [['plane'], '비행기 김포→김해 일반석 98,000원 · 바꿈', '']]);
-    assert.match(doc.getElementById('atStatus').textContent, /^사후정산을 올렸습니다 — KTX 2026-09-09 부산→서울 53,700원 · 비행기 2026-09-10 김포→김해 98,000원/);
+  });
+}
+
+// 2026-11-20 사용자 지정 — 보관 중인 증빙 줄을 다른 줄 위에 끌어 놓으면 PDF 하나로 합친다(파일 끌어 놓기와는 제 표식으로 가린다).
+console.log('보관 중인 증빙 줄끼리 끌어 놓기 — PDF 하나로 합친다 (2026-11-20 사용자 지정)');
+{
+  const TINY = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const one = (name, total) => ({ name, type: 'image/png', dataUrl: TINY, label: '숙박 증빙', summary: '', date: '2026-09-09', total,
+    trip: { seq: '145580', from: '2026-09-09', to: '2026-09-10', location: '경기도 고양시 킨텍스' } });
+  shelf.clear();
+  await evidence.keep('TR-1', [one('영수증.png', 110000), one('예약서.png', 110000)]);
+  st.after['145580'].kept = await evidence.list('TR-1');   // 카드가 담아 둔 목록을 새로 읽은 것으로
+  await panel.reload();
+  await until(() => doc.querySelectorAll('#atList .at-kept li[data-kept]').length === 2, '보관 중인 두 줄');
+  const rowOf = (name) => doc.querySelector(`#atList .at-kept li[data-kept="${name}"]`);
+  t('보관 중인 줄은 끌 수 있다 — 줄마다 그 증빙의 이름과 풍선말이 붙는다', () => {
+    assert.deepEqual([...doc.querySelectorAll('#atList .at-kept li[data-kept]')].map((li) => [li.dataset.kept, li.getAttribute('draggable'), !!li.title]),
+      [['영수증.png', 'true', true], ['예약서.png', 'true', true]]);
+  });
+  // 끌기의 자료(dataTransfer)는 흉내 낸다 — 놓는 곳에서 끈 줄의 이름을 꺼낸다.
+  const bag = new Map();
+  const dt = { get types() { return [...bag.keys()]; }, setData: (k, v) => bag.set(k, v), getData: (k) => bag.get(k) ?? '', files: [], dropEffect: '', effectAllowed: '' };
+  const fire = (node, type) => { const e = new window.Event(type, { bubbles: true, cancelable: true }); e.dataTransfer = dt; node.dispatchEvent(e); return e; };
+  fire(rowOf('예약서.png'), 'dragstart');
+  const over = fire(rowOf('영수증.png'), 'dragover');
+  t('다른 줄 위로 끌고 오면 놓을 수 있다고 표시한다 — 파일 끌기가 아니라 보관함 줄의 표식이다', () => {
+    assert.deepEqual([bag.get('application/x-krs-kept'), over.defaultPrevented, rowOf('영수증.png').classList.contains('over')], ['예약서.png', true, true]);
+  });
+  const posts = site.posts.length;
+  fire(rowOf('영수증.png'), 'drop');
+  await until(() => /PDF 하나로 합쳤습니다/.test(doc.getElementById('atStatus').textContent), 'PDF 로 합치기');
+  await ta('놓으면 놓은 줄(영수증)에 끈 줄(예약서)을 이어 PDF 하나가 되고, 두 줄은 그 하나로 바뀐다 — 사이트에는 아무것도 가지 않는다', async () => {
+    const kept = await evidence.list('TR-1');
+    assert.deepEqual(kept.map((k) => [k.name, k.type, k.merged]), [['영수증.pdf', 'application/pdf', ['영수증.png', '예약서.png']]]);
+    assert.match(kept[0].dataUrl, /^data:application\/pdf;base64,/);
+    assert.deepEqual([...doc.querySelectorAll('#atList .at-kept li[data-kept]')].map((li) => li.dataset.kept), ['영수증.pdf']);
+    assert.match(doc.getElementById('atStatus').textContent, /^PDF 하나로 합쳤습니다 — 영수증\.pdf\(2쪽\)$/);
+    assert.equal(site.posts.length, posts);
   });
 }
 

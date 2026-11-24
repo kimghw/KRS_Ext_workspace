@@ -10163,17 +10163,19 @@ export const ACTIONS = {
             "settle": {
               "type": "enum",
               "required": true,
-              "desc": "상한액으로(cap) · 실제 금액으로(actual — 1.5배 이내면 부서장 승인, 비고에 사유) · 외화 문서의 원화 금액을 적음(krw — amount 가 실제 금액이 된다)",
-              "read": "상한액으로 하겠다면 cap, 실제 금액으로 하겠다면 actual, 원화로 낸 금액을 말했으면 krw",
+              "desc": "기본금액(1일 한도 × 박)으로(cap) · 실제 금액으로(actual — 비고에 사유) · 실제 금액이 기본금액의 1.5배(상한액)를 넘을 때 상한액으로(max — 비고에 사유, 2026-11-20) · 외화 문서의 원화 금액을 적음(krw — amount 가 실제 금액이 된다) · 같은 숙박의 문서끼리 금액이 달라 그 가운데 하나를 고름(amount — 고른 문서의 금액이 실제 금액이 된다, 2026-11-20)",
+              "read": "기본금액으로 하겠다면 cap, 실제 금액으로 하겠다면 actual, 상한액(1.5배)으로 하겠다면 max, 원화로 낸 금액을 말했으면 krw, 문서마다 다른 금액 가운데 하나를 골랐으면 amount",
               "values": [
                 "cap",
                 "actual",
-                "krw"
+                "max",
+                "krw",
+                "amount"
               ]
             },
             "amount": {
               "type": "number",
-              "desc": "krw 일 때 실제로 낸 원화 금액(환율로 어림하지 않는다). cap·actual 이면 null",
+              "desc": "krw 일 때 실제로 낸 원화 금액(환율로 어림하지 않는다) · amount 일 때 고른 문서의 원화 금액. cap·actual 이면 null",
               "read": "사용자가 말한 원화 결제 금액(숫자만). 말하지 않았으면 null",
               "example": 143000,
               "min": 1,
@@ -10250,6 +10252,10 @@ export const ACTIONS = {
         {
           "module": "src/after.js",
           "export": "lodgeAsk"
+        },
+        {
+          "module": "src/after.js",
+          "export": "lodgePickAmount"
         },
         {
           "module": "src/after.js",

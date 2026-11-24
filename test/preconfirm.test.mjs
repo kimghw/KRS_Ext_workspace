@@ -304,9 +304,9 @@ await open('TR-2');
 await drop(146000, '점심.png', { docType: 'other_receipt', vendor: '대전식당', payDate: '2026-09-20', payPlace: '대전 유성구', atDestination: true, total: 12000, summary: '대전식당 카드 영수증 12,000원' });
 await ta('영수증을 읽어 당일출장 증명으로 확인하고 → 사전정산을 확정하고 → 보관한다. 사후정산은 올리지 않는다', async () => {
   assert.deepEqual(site.calls, ['confirm:146000']);
-  assert.deepEqual((await evidence.list('TR-2')).map((k) => [k.label, k.name]), [['당일출장 증명', '증빙 영수증_2026-09-20.png']]);
+  assert.deepEqual((await evidence.list('TR-2')).map((k) => [k.label, k.name]), [['당일출장 증명', '점심.png']]);
   assert.equal(card().querySelector('.at-after > .at-after-note:not(.error) > span').textContent,   // 끝의 ×(알림 지우기)는 뺀다
-    '사전정산을 완료(확정)했습니다 · 증빙 1장을 보관했습니다(증빙 영수증_2026-09-20.png) — 담당자에게 보낼 때 같이 갑니다 · 당일 출장이고 비행기를 타지 않아 사후정산은 올리지 않습니다');
+    '사전정산을 완료(확정)했습니다 · 증빙 1장을 보관했습니다(점심.png) — 담당자에게 보낼 때 같이 갑니다 · 당일 출장이고 비행기를 타지 않아 사후정산은 올리지 않습니다');
   assert.equal(card().querySelector('.at-after-note.error'), null);
   assert.match(card().querySelector('.at-tripline').textContent, /사전정산 완료/);
 });
@@ -321,7 +321,7 @@ await drop(145580, 'ktx.png', { docType: 'train_ticket', summary: 'KTX 서울→
 await ta('기차표는 증빙으로 받지 않는다 — 사전정산도 그대로 작성 중이다. 버리지는 않고 ⚠ 표시로 보관해 둔다(2026-11-20 사용자 지정 — 무슨 증빙인지는 사람이 뱃지로 정한다)', async () => {
   assert.deepEqual([site.calls, st.trips.rows.find((r) => r.seq === '145580').pre], [[], '작성']);
   assert.deepEqual(head(), ['사전정산', '작성 중 · 1박']);
-  assert.deepEqual((await evidence.list('TR-1')).map((k) => [k.name, !!k.warn, k.record?.docType]), [['기차표.png', true, 'train_ticket']]);
+  assert.deepEqual((await evidence.list('TR-1')).map((k) => [k.name, !!k.warn, k.record?.docType]), [['ktx.png', true, 'train_ticket']]);
 });
 
 console.log('1박 출장 — 숙박 영수증을 넣으면 사전정산을 확정한 뒤 사후정산을 올린다');
@@ -333,7 +333,7 @@ await ta('확정이 먼저 나가고, 그 다음에 사후정산이 올라간다
   assert.ok(site.gets.includes('/BusinessTrip/AfterTrip?seq=145580&trseq=157777'));
   assert.match(card().querySelector('.at-tripline').textContent, /여비계산서 145580 · 사후정산 작성/);
   assert.match(doc.getElementById('atStatus').textContent, /^사후정산을 올렸습니다 — 숙박 킨텍스호텔 1박 110,000원$/);
-  assert.ok(card().querySelector('.at-after > .at-after-note:not(.error) > span').textContent.startsWith('사전정산을 완료(확정)했습니다 · 증빙 1장을 보관했습니다(숙박비_2026-09-09.png)'), '읽은 내용으로 지은 이름(종류_체크인)이다');
+  assert.ok(card().querySelector('.at-after > .at-after-note:not(.error) > span').textContent.startsWith('사전정산을 완료(확정)했습니다 · 증빙 1장을 보관했습니다(호텔.png)'), '넣은 이름 그대로다');
 });
 
 console.log('확정이 안 되면 사후정산을 올리지 않는다');
@@ -345,8 +345,7 @@ await ta('확정을 보냈지만 단계가 그대로면 거기서 멈춘다 — 
   assert.match(card().querySelector('.at-after-note.error > span').textContent, /^사전정산 완료 실패: 확정을 보냈지만 목록의 사전정산이 완료로 바뀌지 않았습니다/);
   assert.match(doc.getElementById('atStatus').textContent, /^사전정산 완료 실패: 확정을 보냈지만/);
   assert.deepEqual(head(), ['사전정산', '작성 중 · 1박']);
-  // 같은 이름(숙박비_2026-09-09.png)이 될 다른 문서라 번호가 붙는다 — 앞의 증빙을 덮지 않는다(2026-11-20, 읽은 내용으로 지은 이름).
-  assert.deepEqual((await evidence.list('TR-1')).map((k) => k.name), ['기차표.png', '숙박비_2026-09-09.png', '숙박비_2026-09-09 (2).png']);
+  assert.deepEqual((await evidence.list('TR-1')).map((k) => k.name), ['ktx.png', '호텔.png', '호텔2.png']);
   assert.ok(logs.some((l) => l.kind === 'trip' && !l.ok && /사전정산 완료\(확정\) 실패: 145580/.test(l.text)));
 });
 site.stuck = false;

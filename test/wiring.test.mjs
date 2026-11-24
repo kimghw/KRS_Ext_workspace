@@ -3428,7 +3428,8 @@ console.log('공문 탭 — 부분 골라 캡처(2026-10-08 "탭이 아니라 �
   await settle(30);
   t('"부분 골라 캡처"를 누르면 권한을 묻고 보고 있는 탭에 고르기 막을 씌운다 — 단추는 "고르기 취소"가 되고, 탭 단추만 잠긴다(파일 넣기는 그대로)', () => {
     assert.ok(perms.has);
-    assert.deepEqual(ran.map((r) => r.slice(0, 2)), [['top', 'pdfType'], ['top', 'pagePick']], '찍기 전에 PDF 탭인지 본다(2026-11-03)');
+    assert.deepEqual(ran.map((r) => r.slice(0, 2)), [['top', 'pdfType'], ['top', 'pdfType'], ['top', 'pagePick']],
+      '찍기 전에 PDF 탭인지 본다(2026-11-03) — PDF 부분 잘라 내기(cropFrontPdf, 2026-11-20)가 한 번, 파일 그대로 받기(frontPdf)가 한 번');
     assert.equal(partBtn().textContent, '고르기 취소');
     assert.equal(partBtn().getAttribute('aria-pressed'), 'true');
     assert.ok(!partBtn().disabled && tabBtn().disabled);
@@ -3438,7 +3439,7 @@ console.log('공문 탭 — 부분 골라 캡처(2026-10-08 "탭이 아니라 �
   partBtn().click();
   await settle(30);
   t('고르기 취소를 누르면 페이지의 막을 걷고(pickCancel) 단추가 돌아온다 — 아무것도 찍지 않는다', () => {
-    assert.deepEqual(ran.map((r) => r[1]), ['pdfType', 'pagePick', 'pickCancel']);
+    assert.deepEqual(ran.map((r) => r[1]), ['pdfType', 'pdfType', 'pagePick', 'pickCancel']);
     assert.equal(pending, null);
     assert.equal(partBtn().textContent, '부분');
     assert.ok(!tabBtn().disabled);

@@ -27,7 +27,7 @@
 // 가져온다. 전체·부분 둘 다(PDF 안은 고를 수 없어 부분도 파일 전체 — PDF_PART_NOTE). 결과는 files 하나와 pdf: true 다 — 공문 탭은 끌어 놓은
 // 파일처럼 읽고, 출장 카드·송부 칸은 그 PDF 를 증빙으로 넣는다(이때만 files 를 쓴다).
 
-import { captureFront, startPick, captureTabParts, watchWindows, clearMarks, frontPdf, MAX_SHOTS } from './src/pagecap.js';
+import { captureFront, startPick, captureTabParts, watchWindows, clearMarks, frontPdf, cropFrontPdf, MAX_SHOTS } from './src/pagecap.js';
 import { buildPdf } from './src/pdf.js';
 
 export const TAB_LABEL = '전체';
@@ -62,7 +62,7 @@ const JPEG_QUALITY = 0.85;
  *   pdf 는 보고 있는 탭이 PDF 면 그 파일을 받는 길({onFound} → {tab, file}|null — src/pagecap.js 의 frontPdf, null 이면 PDF 를 보지 않는다).
  *   테스트가 갈아 끼운다.
  */
-export function createWebPick({ front = captureFront, start = startPick, parts = captureTabParts, mail = loadMailgrab, unmark = clearMarks, watch = watchWindows, pdf = frontPdf } = {}) {
+export function createWebPick({ front = captureFront, start = startPick, parts = captureTabParts, mail = loadMailgrab, unmark = clearMarks, watch = watchWindows, pdf = frontPdf, crop = cropFrontPdf } = {}) {
   try {
     watch();
   } catch {
@@ -159,6 +159,34 @@ export function createWebPick({ front = captureFront, start = startPick, parts =
       const again = act === 'part' && st.key === key;
       stop(again ? 'stop' : 'switch');
       if (again) return null;
+    }
+    // 크롬 PDF 뷰어에서 `부분`(2026-11-20 사용자 지정: "웹에서 pdf 를 볼때 … 부분캡쳐할 수 있게 해줘") — 보이는 화면을 찍어 잘라 내는 창(crop.html)에서
+    // 끌어서 고른 부분만 PDF 한 장으로 넣는다(src/pagecap.js cropFrontPdf). PDF 가 아니면 null — 여느 때처럼 페이지 위에서 고른다.
+    if (act === 'part' && typeof crop === 'function') {
+      let found = false;
+      let cut = null;
+      try {
+        cut = await crop({
+          onFound: (tab) => {
+            found = true;
+            onStart();
+            onStatus(`PDF「${short(tab?.title || tab?.url)}」— 새 창에서 캡처할 부분을 끌어서 고르세요`);
+          },
+        });
+      } catch (err) {
+        if (found) throw err;
+        cut = null;
+      }
+      if (cut?.cancel) {
+        onStatus('부분 고르기를 그만뒀습니다.');
+        return null;
+      }
+      if (cut?.dataUrl) {
+        const name = pageName(short(String(cut.tab?.title || 'pdf').replace(/\.pdf$/i, '')).slice(0, 24) || 'pdf', today);
+        const pdfDoc = await buildPdf([{ name: 'part.png', dataUrl: cut.dataUrl }], { title: cut.tab?.title || 'PDF 부분' });
+        const file = new File([pdfDoc.bytes], name, { type: 'application/pdf' });
+        return { pages: [], failed: [], notes: [], what: `PDF 부분 캡처 ${name}`, files: [file], pdf: true };
+      }
     }
     // 크롬 PDF 뷰어(2026-11-03) — 찍지 않고 PDF 파일 그대로. PDF 인지 보다가 막히면(권한·찍을 수 없는 탭) 여느 때처럼 찍는 길이 까닭을 말한다.
     if ((act === 'tab' || act === 'part') && typeof pdf === 'function') {

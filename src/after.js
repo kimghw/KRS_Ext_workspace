@@ -62,6 +62,18 @@ const text = (v) => (typeof v === 'string' ? v.trim() : '');
 /** 업체 이름을 묶음 열쇠로 — 띄어쓰기·괄호 안·호텔/모텔 같은 꼬리를 떼고 비교한다. */
 export const vendorKey = (v) => text(v).toLowerCase().replace(/\(.*?\)/g, '').replace(/[\s·.,-]/g, '').replace(/(호텔|hotel|모텔|리조트|resort)$/i, '');
 const hourOf = (t) => (/^\d{2}:\d{2}$/.test(t || '') ? String(+t.slice(0, 2)) : '');
+/**
+ * 비행기 편의 출발 시·도착 시 — 공항에 가는 시간과 공항에서 나오는 시간을 더해 출발은 탑승 2시간 전, 도착은 착륙 1시간 뒤다(2026-11-20 사용자 지정:
+ * "비행기 시간도 출발 2시간 도착 1시간 추가해서 시간을 넣어줘"). 0~23시 안에서 자른다. 시각이 적혀 있지 않은 쪽은 빈 글이다. 둘 다 없으면 null.
+ */
+export const PLANE_BEFORE = 2;
+export const PLANE_AFTER = 1;
+function planeHours(ticket) {
+  const dep = hourOf(ticket?.depTime);
+  const arr = hourOf(ticket?.arrTime);
+  if (dep === '' && arr === '') return null;
+  return { shr: dep === '' ? '' : String(Math.max(0, +dep - PLANE_BEFORE)), ehr: arr === '' ? '' : String(Math.min(23, +arr + PLANE_AFTER)) };
+}
 const fileName = (r) => r.file?.name || r.summary || '문서';
 
 const shortDay = (s) => (DATE_RE.test(s || '') ? `${+s.slice(5, 7)}/${+s.slice(8)}` : '?');
@@ -99,7 +111,20 @@ export function lodgeOf(receipts, bookings = []) {
   const currency = paid.currency || LODGE_CURRENCY;
   const total = num(paid.total);
   const krw = currency === LODGE_CURRENCY ? total : num(paid.totalKRW);
+  // 문서마다 원화 금액이 다르면(결제 영수증과 예약 화면의 금액이 할인 때문에 다르다 — 2026-11-20 사용자 지정: "만약에 가격이 2개면 선택하라고 해줘")
+  // 그 금액들을 낮은 것부터 적어 둔다 — 올리기 전에 사람에게 고르게 한다(lodgeAsk 'amount' → lodgePickAmount). 하나뿐이면 비어 있다.
+  const choices = [];
+  for (const r of [...receipts, ...bookings]) {
+    const t = num(r.total);
+    if (t == null) continue;
+    const cur = r.currency || LODGE_CURRENCY;
+    const won = cur === LODGE_CURRENCY ? t : num(r.totalKRW);
+    if (won == null || choices.some((c) => c.won === Math.round(won))) continue;
+    choices.push({ won: Math.round(won), from: fileName(r), doc: { currency: cur, total: t, supply: num(r.supply), vat: num(r.vat) } });
+  }
+  choices.sort((x, y) => x.won - y.won);
   return {
+    ...(choices.length > 1 ? { amounts: choices } : {}),
     paydate: pick('payDate') || checkOut || checkIn || null,
     sday: num(pick('nights', stayFirst)) || nightsBetween(checkIn, checkOut) || null,
     stay, company, companycode: text(pick('bizNo')), cocard: pick('corporateCard') === true ? '1' : '0', comment,
@@ -120,12 +145,38 @@ export function lodgeCap(row) {
  *   'cap' — 실제 금액이 상한액을 넘는다. 상한액으로 정산할지 실제 금액으로 정산할지 고른다(2026-10-03 사용자 지정).
  */
 export function lodgeAsk(row) {
+  if (row.amounts?.length > 1 && !row.amountPicked) return 'amount';
   if (row.actual == null) return row.doc?.total == null ? '' : 'krw';
   const cap = lodgeCap(row);
   return cap && row.actual > cap.total && !row.settle ? 'cap' : '';
 }
 
 const wonText = (n) => `${Number(n).toLocaleString('ko-KR')}원`;
+
+/**
+ * 같은 숙박의 문서끼리 금액이 달라 묻던 것(lodgeAsk 'amount')에 답한다 — 고른 원화 금액이 실제 금액이 되고, 그 문서의 금액·공급가액·부가세가
+ * 그 줄의 문서 금액이 된다(lodgeSettle 이 그것으로 공급가액·부가세를 정한다). 적어 둔 금액 가운데 없는 것이면 그 금액을 그대로 쓴다.
+ * 기본금액을 넘으면 그다음에 기본금액·실제 금액을 묻는다(lodgeAsk 'cap').
+ * @returns {object} 그 줄(같은 객체)
+ */
+export function lodgePickAmount(row, won) {
+  const n = Math.round(Number(won));
+  if (!(n > 0)) throw new Error('고른 숙박 금액이 없습니다');
+  const hit = (row.amounts || []).find((c) => c.won === n);
+  if (hit) row.doc = { ...hit.doc };
+  row.actual = n;
+  row.amountPicked = true;
+  return lodgeSettle(row);
+}
+
+/** 금액을 고르게 물을 때의 말과 고를 것 — 낮은 것이 먼저이고, 버튼에 그 금액이 적힌 문서 이름을 단다. 물을 줄이 아니면 null. */
+export function lodgeAmountChoices(row) {
+  if (lodgeAsk(row) !== 'amount') return null;
+  return {
+    question: `문서마다 금액이 다릅니다(${row.amounts.map((c) => wonText(c.won)).join(' · ')}) — 할인 등으로 결제 금액과 예약 금액이 다를 수 있습니다. 어느 금액으로 정산할까요?`,
+    choices: row.amounts.map((c) => ({ won: c.won, label: `${wonText(c.won)}으로`, from: c.from })),
+  };
+}
 
 /**
  * 실제 금액이 상한액을 넘은 숙박 줄의 승인 규칙 — 상한액의 1.5배까지는 부서장 승인을 받아 실제 금액으로 정산한다
@@ -153,16 +204,17 @@ export function lodgeChoices(row) {
   const over = lodgeOver(row);
   if (!over) return null;
   const day = lodgeCap(row).day;
-  const range = `상한액의 ${over.rate}배(${wonText(over.limit)})`;
-  // 실제 금액으로 정산하면 비고에 상한 초과 사유가 필수다 — 고쳐 쓴 것이 있으면 그것, 없으면 기본 문구(2026-10-08 사용자 지정).
+  // 실제 금액·상한액으로 정산하면 비고에 사유가 필수다 — 고쳐 쓴 것이 있으면 그것, 없으면 기본 문구(2026-10-08 사용자 지정).
   const reason = text(row.reason) || LODGE_OVER_REASON;
+  // 2026-11-20 사용자 지정: "12만원이 기본금액이고 18만원이 상한액 이야 12만원을 초과한 경우 … 사유를 넣어 주면 됨 그리고, 옵션을 3개 주면됨
+  // 실제금액, 12만원 초과인 경우 사유입력, 18만원 초과(인경우 18만원)" — 사이트의 1일 숙박비 한도(× 박)가 기본금액, 그 1.5배가 상한액이다.
+  // 고르는 것은 기본금액·실제 금액이고, 실제 금액이 상한액을 넘으면 상한액이 하나 더 선다. 기본금액을 넘는 쪽은 비고에 사유가 들어간다. 풀이 글은 달지 않는다.
   return {
-    question: `실제 금액 ${wonText(row.actual)}이 상한액 ${wonText(over.cap)}(1일 ${wonText(day)} × ${row.sday}박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?`,
+    question: `실제 금액 ${wonText(row.actual)}이 기본금액 ${wonText(over.cap)}(1일 ${wonText(day)} × ${row.sday}박)을 넘습니다. 정산금액을 어느 쪽으로 올릴까요?`,
     choices: [
-      { settle: 'cap', label: `상한액 ${wonText(over.cap)}으로` },
-      over.within
-        ? { settle: 'real', label: `실제 금액 ${wonText(row.actual)}으로 · ${over.approver} 승인`, note: `${range} 이내라 ${over.approver} 승인을 받아 실제 금액으로 정산할 수 있습니다`, reason }
-        : { settle: 'real', label: `실제 금액 ${wonText(row.actual)}으로`, note: `${range}를 넘어 ${over.approver} 승인으로 정산할 수 있는 범위를 벗어납니다`, reason },
+      { settle: 'cap', label: `기본금액 ${wonText(over.cap)}으로` },
+      { settle: 'real', label: `실제 금액 ${wonText(row.actual)}으로`, reason },
+      ...(over.within ? [] : [{ settle: 'max', label: `상한액 ${wonText(over.limit)}으로`, reason }]),
     ],
   };
 }
@@ -171,10 +223,10 @@ export function lodgeChoices(row) {
  * 상한액을 넘겨 실제 금액으로 정산하기로 한 줄에 붙는 말 — 승인이 필요하다는 것(범위를 넘었으면 넘었다는 것). 그런 줄이 아니면 빈 글.
  */
 export function lodgeApproval(row) {
-  const over = row.settle === 'real' ? lodgeOver(row) : null;
+  const over = row.settle === 'real' || row.settle === 'max' ? lodgeOver(row) : null;
   if (!over) return '';
-  const range = `상한액의 ${over.rate}배(${wonText(over.limit)})`;
-  return over.within ? `${over.approver} 승인 필요 — ${range} 이내` : `${range} 초과 — ${over.approver} 승인 범위를 벗어남`;
+  // 상한액(기본금액의 1.5배)까지는 승인을 받아 정산한다 — 실제 금액이 그보다 크면 범위를 벗어난다(상한액으로 고르면 범위 안이다).
+  return row.settle === 'max' || over.within ? `${over.approver} 승인 필요` : `상한액 ${wonText(over.limit)} 초과 — ${over.approver} 승인 범위를 벗어남`;
 }
 
 /**
@@ -193,7 +245,7 @@ const COMMENT_SEP_RE = /\s*·\s*/;
  * 상한액으로 정산하거나(정산금액이 상한액 안이다) 상한액을 모르면 빈 글 — 사유를 적지 않는다.
  */
 export function lodgeReason(row) {
-  if (row?.settle !== 'real' || !lodgeOver(row)) return '';
+  if ((row?.settle !== 'real' && row?.settle !== 'max') || !lodgeOver(row)) return '';
   return text(row.reason) || LODGE_OVER_REASON;
 }
 
@@ -234,7 +286,7 @@ export function lodgeCommentWithout(comment, reasons) {
  */
 export function lodgeDecide(plan, row, settle, reason) {
   const before = lodgeApprovalNote(row);
-  row.settle = settle === 'cap' ? 'cap' : 'real';
+  row.settle = settle === 'cap' ? 'cap' : settle === 'max' ? 'max' : 'real';
   if (typeof reason === 'string') row.reason = text(reason);
   lodgeSettle(row);
   const note = lodgeApprovalNote(row);
@@ -257,7 +309,10 @@ const lodgeApprovalNote = (row) => { const a = lodgeApproval(row); return a ? `$
 export function lodgeSettle(row) {
   const cap = lodgeCap(row);
   row.capped = row.settle === 'cap' && !!cap && row.actual != null && row.actual > cap.total;
-  row.total = row.capped ? cap.total : row.actual;
+  // 상한액(기본금액의 1.5배)으로 — 실제 금액이 그보다 클 때만이다(2026-11-20 사용자 지정).
+  const over = row.settle === 'max' ? lodgeOver(row) : null;
+  row.maxed = !!over && !over.within;
+  row.total = row.capped ? cap.total : row.maxed ? over.limit : row.actual;
   const { currency, total, supply, vat } = row.doc || {};
   if (row.total == null) return Object.assign(row, { samount: null, vat: null, vatFrom: '' });
   if (currency === LODGE_CURRENCY && row.total === total && (supply != null || vat != null)) {
@@ -334,6 +389,8 @@ export function lodgeKnown(row, haveRows) {
     if (total === row.actual) return 'real';
     const day = Number(row.maxconv) || Number(have.maxconv);
     if (day > 0 && row.sday > 0 && row.actual > day * row.sday && total === day * row.sday) return 'cap';
+    const top = lodgeOver({ ...row, maxconv: day });
+    if (top && !top.within && total === top.limit) return 'max';
   }
   return '';
 }
@@ -376,7 +433,9 @@ const DOC_NAMES = { flight_ticket: '항공권', flight_receipt: '항공영수증
  */
 export const EVIDENCE_KINDS = [
   { id: 'lodging', label: '숙박비', is: LODGING, doc: 'lodging_receipt', mark: '숙박 증빙', file: '숙박비.pdf' },
-  { id: 'flight', label: '항공권', is: FLIGHT, doc: 'flight_receipt', mark: '항공기 증명', file: '항공권.pdf' },
+  // 항공권은 어느 편의 것인지까지 뱃지로 정한다(2026-11-20 사용자 지정: "항공권도 출발/도착 항공권으로 해서 라벨을 줄까?") — leg 가 그 편이다.
+  { id: 'flight_go', label: '가는 항공권', is: FLIGHT, leg: 'go', doc: 'flight_receipt', mark: '항공기 증명', file: '항공권.pdf' },
+  { id: 'flight_back', label: '오는 항공권', is: FLIGHT, leg: 'back', doc: 'flight_receipt', mark: '항공기 증명', file: '항공권.pdf' },
   { id: 'local', label: '현지', is: null, doc: 'other_receipt', mark: '증빙', file: '증빙 영수증.pdf' },
 ];
 
@@ -385,19 +444,29 @@ export function evidenceKind(item) {
   if (EVIDENCE_KINDS.some((k) => k.id === item?.kind)) return item.kind;
   const type = item?.record?.docType ?? item?.docType;
   const hit = EVIDENCE_KINDS.find((k) => (type ? k.is?.has(type) : k.is && k.mark === item?.label));
-  return hit ? hit.id : 'local';
+  if (!hit) return 'local';
+  if (!hit.leg) return hit.id;
+  // 항공권 — 탑승일이 (출발일과 다른) 도착일이면 오는 항공권, 아니면 가는 항공권이다. 담을 때 앉은 편을 적어 두면(kind) 그것이 먼저다.
+  const day = item?.record?.flightDate ?? item?.flightDate ?? item?.date;
+  const t = item?.trip;
+  return t?.to && t.to !== t.from && day === t.to ? 'flight_back' : 'flight_go';
 }
 
-/** 뱃지의 다음 차례 — 숙박비 → 항공권 → 현지 → 숙박비. */
+/** 뱃지의 다음 차례 — 숙박비 → 가는 항공권 → 오는 항공권 → 현지 → 숙박비. */
 export const nextEvidenceKind = (id) => EVIDENCE_KINDS[(EVIDENCE_KINDS.findIndex((k) => k.id === id) + 1) % EVIDENCE_KINDS.length].id;
 
 /**
  * 읽은 기록을 사람이 고른 뱃지의 종류로 친다 — 이미 그 갈래의 문서면 그대로다(영수증·예약서, 항공권·항공 영수증을 뭉개지 않는다).
  * `현지` 로 고른 것은 출장지에서 결제한 영수증이라고 사람이 말해 준 것이다(atDestination). 결제일을 못 읽었으면 탑승일·체크인으로 채운다.
+ * 가는·오는 항공권으로 고른 것은 탑승일이 그 편의 날짜다(trip 을 주면 — 사람이 어느 편인지 말해 준 것이라 읽은 날짜보다 먼저다).
  */
-export function withEvidenceKind(record, id) {
+export function withEvidenceKind(record, id, trip = null) {
   const k = EVIDENCE_KINDS.find((x) => x.id === id);
   if (!k || !record) return record;
+  if (k.leg) {
+    const day = k.leg === 'go' ? trip?.from : trip?.to || trip?.from;
+    return { ...record, docType: k.is.has(record.docType) ? record.docType : k.doc, ...(DATE_RE.test(day || '') ? { flightDate: day } : {}) };
+  }
   if (k.is) return k.is.has(record.docType) ? record : { ...record, docType: k.doc };
   return { ...record, docType: k.doc, atDestination: true, payDate: record.payDate || record.flightDate || record.checkIn || null };
 }
@@ -414,6 +483,20 @@ export function evidenceName(record, name = '') {
   const day = [first, record.flightDate, record.checkIn, record.payDate].find((d) => DATE_RE.test(d || ''));
   const ext = /\.[A-Za-z0-9]{1,5}$/.exec(String(name || ''))?.[0] || '';
   return `${kind}${day ? `_${day}` : ''}${ext.toLowerCase()}`;
+}
+
+/** 증빙 파일 이름의 길이 한도(확장자 빼고) — 넘으면 자른다(shortFileName). */
+export const FILE_NAME_MAX = 30;
+
+/**
+ * 너무 긴 파일 이름을 자른다(2026-11-20 사용자 지정: "파일 이름이 너무 길면 잘라버리고") — 확장자는 두고 앞부분만 남긴다(`eyJhbGciOiJ….pdf` 같은
+ * 토큰 이름이 카드를 덮었다). 자르면 끝에 `…` 를 붙인다. 이름이 비면 `증빙` 이다.
+ */
+export function shortFileName(name, max = FILE_NAME_MAX) {
+  const s = String(name || '').trim() || '증빙';
+  const ext = /\.[A-Za-z0-9]{1,5}$/.exec(s)?.[0] || '';
+  const stem = ext ? s.slice(0, -ext.length) : s;
+  return [...stem].length > max ? `${[...stem].slice(0, max).join('')}…${ext}` : s;
 }
 
 /** 사후정산에도 올라가야 하는 문서인가(숙박 영수증·예약서, 항공권·항공 영수증). */
@@ -489,16 +572,41 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
   // 2개중 하나고 이미 항공권 클릭해 둔게 1개 있잖아"). 그 날짜로 그 편에 앉고(seatTickets), 탑승일은 묻지 않는다. 그렇게 넣었다고 알린다.
   const flown = ['go', 'back'].filter((key) => picks?.[key]?.t === 'plane');
   const flownDay = flown.length === 1 ? (flown[0] === 'go' ? trip?.from : trip?.to || trip?.from) : '';
+  const rows = detail.rows || [];
+  const site = legsOfRows(rows, trip);
+  // 구간(출발지·도착지)을 못 읽은 항공 문서(결제 영수증·거래확인증처럼 금액만 적힌 것) — 어느 편인지 알면 그 편의 구간으로 넣는다(2026-11-20 사용자
+  // 지정: "숙박비랑 항공권 영수증 입력했잖아. 왜 입력을 못하냐고"). 그 편에 비행기 줄이 이미 있으면 그 줄의 구간이고, 없으면 근무지 ↔ 출장지에
+  // 적은 글이다. 어느 편인지는 비행기로 골라 둔 편이 하나뿐이면 그 편, 아니면 탑승일이 출발일·도착일 가운데 하나와 맞는 편이다. 금액은 문서의 것이다.
+  const multi = !!trip?.to && trip.to !== trip.from;
+  // 탑승일이 출발일·도착일 가운데 하나와 맞으면 그 편이 먼저다 — 비행기로 고른 편이 하나뿐이어도 다른 날의 표를 그 편으로 돌리지 않는다
+  // (2026-11-20: 11/5 표가 오는 편 구간 일산→부산으로 들어갔다).
+  const legOf = (r) => (multi && r.flightDate === trip.from ? 'go' : multi && r.flightDate === trip.to ? 'back' : flown.length === 1 ? flown[0] : '');
   const fit = inPeriod.map((r) => {
-    if (!FLIGHT.has(r.docType) || r.flightDate || !DATE_RE.test(flownDay || '')) return r;
-    notes.push(`${fileName(r)}: 탑승일을 읽지 못해 비행기로 고른 ${flown[0] === 'go' ? '가는 편' : '오는 편'}의 날짜(${shortDay(flownDay)})로 넣었습니다 — 다르면 사후정산 화면에서 고쳐 주세요`);
-    return { ...r, flightDate: flownDay };
+    if (!FLIGHT.has(r.docType)) return r;
+    let out = r;
+    if (!out.flightDate && DATE_RE.test(flownDay || '')) {
+      notes.push(`${fileName(r)}: 탑승일을 읽지 못해 비행기로 고른 ${flown[0] === 'go' ? '가는 편' : '오는 편'}의 날짜(${shortDay(flownDay)})로 넣었습니다 — 다르면 사후정산 화면에서 고쳐 주세요`);
+      out = { ...out, flightDate: flownDay };
+    }
+    const key = legOf(out);
+    if (key && num(out.total) != null && (!text(out.depPlace) || !text(out.arrPlace))) {
+      const had = site[key]?.transport === PRE_PLANE ? site[key] : null;
+      // 그 편에 올라가 있는 비행기 줄이 있을 때만 그 구간을 빌린다 — 근무지·출장지 글로 지어 넣지는 않는다(2026-11-20: 숙박 영수증을 항공권 뱃지로
+      // 바꾼 것이 "일산(킨텍스)→부산 비행기 188,000원"으로 올라갔다).
+      const [dep, arr] = had ? [text(had.dep), text(had.arr)] : ['', ''];
+      if (dep && arr) {
+        notes.push(`${fileName(r)}: 출발지·도착지를 읽지 못해 ${key === 'go' ? '가는 편' : '오는 편'}의 ${dep}→${arr}(올라가 있는 비행기 줄)로 넣었습니다 — 다르면 사후정산 화면에서 고쳐 주세요`);
+        out = { ...out, depPlace: text(out.depPlace) || dep, arrPlace: text(out.arrPlace) || arr };
+      }
+    }
+    return out;
   });
 
   // ---- 가는 편·오는 편: 표를 앉히고, 그에 따라 선택을 바꾼다
-  const rows = detail.rows || [];
-  const site = legsOfRows(rows, trip);
-  const seats = seatTickets(ticketsOf(fit), trip, { home: site.go?.dep || site.back?.arr || workplace, dest: site.go?.arr || site.back?.dep || trip?.location });
+  // 구간·금액을 못 읽은 항공 문서는 편에 앉히지 않는다 — 증빙으로만 둔다(2026-11-20). 앉히면 그 편이 비행기로 바뀌는데 요금을 몰라 줄을 못 짓고,
+  // 그 편의 사전정산 줄(KTX)만 교통비 내역에서 빠진 채 올라간다. 사람이 값을 적어 주면(fixes) 그때 앉는다.
+  const whole = (r) => !FLIGHT.has(r.docType) || (!!text(r.depPlace) && !!text(r.arrPlace) && num(r.total) != null);
+  const seats = seatTickets(ticketsOf(fit.filter(whole)), trip, { home: site.go?.dep || site.back?.arr || workplace, dest: site.go?.arr || site.back?.dep || trip?.location });
   const chosen = picksWithTickets(picks, seats, site);
   const route = legPlan({ trip, picks: chosen, rows, seats, workplace });
   const need = afterNeed(trip, detail, chosen);
@@ -518,9 +626,13 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
   // 영수증에 붙이지 않고, 날짜가 같은 영수증 묶음이 여럿이면 어느 것인지 몰라 그대로 둔다.
   const spanOf = (rs) => { const at = (k) => rs.map((r) => r[k]).find(Boolean) || ''; return at('checkIn') && at('checkOut') ? `${at('checkIn')}~${at('checkOut')}` : ''; };
   const paidGroup = (rs) => rs.some((r) => r.docType === 'lodging_receipt');
+  // 2026-11-20 사용자 지정("숙박비 뱃지가 있잖아 그걸 사용해야지" · "가격이 2개면 선택하라고 해줘") — 금액이 적힌 예약서도 묵은 기간이 같은
+  // 영수증 묶음이 하나뿐이면 같은 숙박으로 합친다. 금액이 서로 다르면 올리기 전에 어느 금액으로 할지 묻는다(lodgeOf 의 amounts).
+  // 원화 금액을 모르는 외화 예약서는 고를 금액이 될 수 없어 합치지 않는다 — 따로 한 줄로 서서 원화 금액을 묻는다(lodgeAsk 'krw').
+  const wonKnown = (r) => num(r.total) == null || (r.currency || LODGE_CURRENCY) === LODGE_CURRENCY || num(r.totalKRW) != null;
   for (const [key, rs] of [...groups]) {
-    if (paidGroup(rs) || !spanOf(rs) || rs.some((r) => num(r.total) != null)) continue;
-    const same = [...groups.values()].filter((other) => paidGroup(other) && spanOf(other) === spanOf(rs));
+    if (paidGroup(rs) || !spanOf(rs) || !rs.every(wonKnown)) continue;
+    const same = [...groups.values()].filter((other) => other !== rs && paidGroup(other) && spanOf(other) === spanOf(rs));
     if (same.length !== 1) continue;
     same[0].push(...rs);
     groups.delete(key);
@@ -573,13 +685,9 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
     const missing = [[noDate, '탑승일'], [!text(r.depPlace), '출발지'], [!text(r.arrPlace), '도착지'], [num(r.total) == null, '합계 금액']]
       .filter(([bad]) => bad).map(([, name]) => name);
     if (missing.length) {
-      // 값을 못 읽은 항공 문서는 막지 않는다(2026-11-20 사용자 지정: "파악이 안되면 그냥 항공영수증으로 올려") — 증빙(항공기 증명)으로는 그대로
-      // 쓰고, 교통비 줄만 못 넣는다고 알린다. 적어 줄 칸(fixes)은 그대로 준다 — 적으면 그 값으로 교통비 줄을 넣는다.
-      notes.push(`${fileName(r)}: ${missing.join('·')}을(를) 읽지 못해 항공 영수증(증빙)으로만 두었습니다 — 교통비 줄에 넣으려면 그 값을 적어 주세요`);
-      fixes.push({ file: fileName(r), what: `항공권${text(r.airline) ? ` · ${text(r.airline)}` : ''}`, fields: [
-        [noDate, 'flightDate', '탑승일', 'date'], [!text(r.depPlace), 'depPlace', '출발지', 'text'], [!text(r.arrPlace), 'arrPlace', '도착지', 'text'],
-        [num(r.total) == null, 'total', '합계 금액(원)', 'money'],
-      ].filter(([bad]) => bad).map(([, key, label, type]) => ({ key, label, type })) });
+      // 값을 못 읽은 항공 문서는 막지도 묻지도 않는다(2026-11-20 사용자 지정: "파악이 안되면 그냥 항공영수증으로 올려" · 적는 칸을 두고 "이거 하지
+      // 말라니깐") — 증빙(항공기 증명)으로만 두고 교통비 줄은 넣지 않는다. 적는 칸(fixes)은 올리기를 막는 숙박 증빙에만 준다.
+      notes.push(`${fileName(r)}: ${missing.join('·')}을(를) 읽지 못해 항공 영수증(증빙)으로만 두었습니다 — 교통비 줄은 넣지 않았습니다`);
     }
   }
   const touched = route.changed || route.legs.some((l) => l.ticket);
@@ -590,7 +698,8 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
       // 출발·도착 시: 항공권이 앉은 편은 항공권의 시각이다. 나머지 편은 사전정산의 줄에 적힌 시각이고, 비어 있으면 출장 출발·도착 시각과
       // 구간의 대략 소요 시간으로 채운다(src/travel.js 의 legTimes — 가는 편은 출발 시각에 떠나고, 오는 편은 도착 시각에 닿는다).
       // 갈아타는 KTX 편(부산→오송, 오송→목포)은 구간마다 한 줄이다(legParts) — 시각도 구간이 이어지게 채운다(legTimesAll).
-      const at = l.ticket ? [{ shr: hourOf(l.ticket.depTime), ehr: hourOf(l.ticket.arrTime) }] : legTimesAll(l.key, l.row, detail);
+      // 비행기 편은 탑승 2시간 전에 떠나 착륙 1시간 뒤에 닿는 것으로 적는다(planeHours). 표에 시각이 없으면 다른 편처럼 출장 시각으로 채운다.
+      const at = (l.ticket && planeHours(l.ticket) && [planeHours(l.ticket)]) || legTimesAll(l.key, l.row, detail);
       legParts(l.row).forEach((r, i) => trans.push({
         date: r.date || null, shr: String(at[i]?.shr ?? ''), ehr: String(at[i]?.ehr ?? ''), dep: text(r.dep), arr: text(r.arr),
         transport: AFTER_TRANSPORT[l.pick.t], grade: text(r.grade), total: num(r.total), currency: r.currency || DOMESTIC.currency,
@@ -600,18 +709,25 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
     notes.push(...route.notes);
     for (const t of seats.extra) notes.push(`${t.source}: 가는 편·오는 편에 이미 표가 있어 넣지 않았습니다`);
   }
-  if (flights.length) {
-    const airline = text(flights.map((r) => r.airline).find(Boolean));
+  // 비행기인 편 — 항공권이 앉은 편이거나, 표 없이 비행기 줄(사후정산에 올라가 있는 줄·사전정산의 줄)이 선 편이다.
+  const planeLegs = route.legs.filter((l) => l.ticket || (l.row && l.row.transport === PRE_PLANE));
+  // 표 없이 비행기 줄만 있는 편은 이번에 비행기 교통 줄을 올릴 때만 마일리지를 셈한다 — 숙박만 올릴 때 항공 칸까지 다시 저장하지 않게.
+  if (flights.length || (planeLegs.length && trans.some((t) => t.transport === AFTER_TRANSPORT.plane))) {
+    // 항공사는 항공권에서, 없으면 비행기 줄의 비고(올릴 때 항공사·편명을 적는다 — "대한항공 KE1415")에서 읽는다.
+    const airline = text(flights.map((r) => r.airline).find(Boolean)) || text(planeLegs.map((l) => l.row?.comment).find((c) => text(c)));
     // 신규 마일리지(2026-10-04 사용자 지정): 문서에 적혀 있으면 그 값이고, 적혀 있지 않은 항공권은 **앉은 편마다 항공 마일리지 표**
     // (air-mileage.yaml, src/mileage.js)에서 찾아 더한다 — 구간 마일 × 좌석 등급의 적립률. 카드에서 그 편을 특실로 골랐거나 항공권의
     // 좌석 등급이 프레스티지·비즈니스면 특실의 적립률이다. 표에 없는 항공사·구간은 채우지 않고 알린다.
     const miles = flights.map((r) => num(r.mileage)).filter((m) => m != null);
     const found = [];
     const unknown = [];
-    for (const l of route.legs) {
-      if (!l.ticket || l.ticket.mileage != null) continue;
-      const m = milesOf({ airline: l.ticket.airline, dep: l.ticket.dep, arr: l.ticket.arr, first: l.pick?.g === 'first' || isFirstSeat(l.ticket.grade) });
-      if (!m) { unknown.push(`${l.label} ${[l.ticket.airline, `${l.ticket.dep}→${l.ticket.arr}`].filter(Boolean).join(' ')}`); continue; }
+    for (const l of planeLegs) {
+      if (l.ticket?.mileage != null) continue;
+      // 표가 앉은 편은 표의 구간, 표 없이 비행기 줄만 있는 편은 그 줄의 구간으로 항공 마일리지 표에서 찾는다(2026-11-20 사용자 지정: "항공기
+      // 마일리지 표 있잖아 거기서 읽어서 넣어줘야지" — 항공 영수증에 구간이 없어 신규 마일리지가 0 으로 올라갔다).
+      const src = l.ticket || { airline, dep: l.row.dep, arr: l.row.arr, grade: l.row.grade };
+      const m = milesOf({ airline: src.airline || airline, dep: src.dep, arr: src.arr, first: l.pick?.g === 'first' || isFirstSeat(src.grade) });
+      if (!m) { unknown.push(`${l.label} ${[src.airline || airline, `${src.dep}→${src.arr}`].filter(Boolean).join(' ')}`); continue; }
       found.push(`${l.label} ${describeMiles(m)}`);
       miles.push(m.miles);
     }
@@ -626,7 +742,7 @@ export function afterPlan(records, { trip, detail = {}, picks = {}, workplace = 
 
   // 숙박 증빙도 항공권도 아닌 문서. 여비계산서에는 넣을 칸이 없다 — 무엇으로 읽었는지만 말한다.
   for (const r of records || []) {
-    if (needsAfter(r) && !fit.includes(r)) {
+    if (needsAfter(r) && !inPeriod.includes(r)) {   // fit 은 탑승일을 채운 사본이 섞여 있어 원본으로 견준다
       // 출장 기간의 것이 아닌 숙박 증빙·항공권 — 넣지 않았다고 알린다(패널·홈 카드가 알림 표시를 붙여 보관한다).
       const e = evidenceOf(r, trip);
       skipped.push(`${fileName(r)}: ${e.label} — ${e.warn} · 사후정산에 넣지 않았습니다`);
@@ -655,7 +771,7 @@ export const TRANS_NAME = { [AFTER_TRANSPORT.plane]: '비행기', [AFTER_TRANSPO
 /** 올린(또는 올릴) 사후정산을 한 줄로. 상태 줄과 기록에 쓴다. */
 export function afterSummary(plan) {
   const parts = [];
-  for (const l of plan.lodge) parts.push(`숙박 ${l.company || '?'} ${l.sday ?? '?'}박 ${won(l.total, l.currency)}${l.capped ? '(상한액)' : ''}`);
+  for (const l of plan.lodge) parts.push(`숙박 ${l.company || '?'} ${l.sday ?? '?'}박 ${won(l.total, l.currency)}${l.capped ? '(기본금액)' : l.maxed ? '(상한액)' : ''}`);
   for (const t of plan.trans) parts.push(`${TRANS_NAME[t.transport] || t.transport} ${t.date || '?'} ${t.dep || '?'}→${t.arr || '?'} ${won(t.total, t.currency)}`);
   if (plan.air) parts.push(`항공 마일리지 ${plan.air.airline || '항공사 ?'}${plan.air.mileage != null ? ` ${plan.air.mileage.toLocaleString('ko-KR')}마일` : ''}`);
   return parts.join(' · ');

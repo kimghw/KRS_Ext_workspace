@@ -140,10 +140,11 @@ t('세 줄이 화면의 차례대로 선다 — 숙박·결제일, 업체명, �
     ['81560', '숙박 8/19', '부산 <해운대> 호텔', '68.46 USD'],
   ]);
   assert.equal(lines()[0].tip, 'Toyoko INN Gangnam Seoul · 1박', '좁아서 잘린 업체명은 풍선말에 다 적혀 있다(박 수도)');
-  assert.ok(doc.querySelector('#atList .at-legs').compareDocumentPosition(box()) & window.Node.DOCUMENT_POSITION_FOLLOWING, '가는 편·오는 편 아래에 선다');
-  // 사후정산 묶음 안이다(2026-11-20 에 사전정산 완료·사후정산 두 묶음으로 나뉘었다) — 고치는 편(.at-legs)과 같은 묶음에 선다.
-  assert.equal(box().closest('.at-part'), doc.querySelector('#atList .at-legs').closest('.at-part'));
+  // 사후정산 묶음 안이다(2026-11-20 에 사전정산 완료·사후정산 두 묶음으로 나뉘었다) — 사전정산 묶음(저장된 편·일비·식비) 아래다.
+  // 사전정산 그대로인 편은 사후정산 묶음에 그리지 않는다(같은 날 사용자 지정) — 이 출장은 바꾼 편이 없어 그 묶음에는 숙박비 내역만 선다.
   assert.equal(box().closest('.at-part').querySelector('.at-part-title').textContent, '사후정산');
+  assert.equal(box().closest('.at-part').querySelector('.at-legs'), null);
+  assert.ok(doc.querySelector('#atList .at-prelegs').compareDocumentPosition(box()) & window.Node.DOCUMENT_POSITION_FOLLOWING, '가는 편·오는 편 아래에 선다');
   assert.ok(box().compareDocumentPosition(doc.querySelector('#atList .at-after-drop')) & window.Node.DOCUMENT_POSITION_FOLLOWING, '증빙 넣는 곳보다 위다');
 });
 t('이 패널이 증빙으로 올린 줄과 손수 적은 줄을 가려 적는다 — 적어 둔 표시가 먼저, 없으면 보관함의 숙박 증빙 가운데 금액이 같은 것', () => {
@@ -256,7 +257,7 @@ console.log('상한 버튼 — 실제 금액이 상한액을 넘는 원화 줄�
 t('125,052원 줄(상한액 120,000원 × 1박)에만 꺼진 상한 버튼이 선다 — 금액 없는 줄에는 자리만 있다. 상한은 화면의 숨은 칸에서 읽었다(사이트에 묻지 않았다)', () => {
   const [a, b] = lines();
   assert.deepEqual([a.seq, !!a.cap, a.cap.getAttribute('aria-pressed'), a.cap.disabled, a.cap.textContent], ['81558', true, 'false', false, '상한']);
-  assert.equal(a.cap.title, '실제 금액 125,052원으로 정산 중(부서장 승인 필요 — 상한액의 1.5배(180,000원) 이내) — 누르면 상한액 120,000원(1일 120,000원 × 1박)으로 바꿉니다');
+  assert.equal(a.cap.title, '실제 금액 125,052원으로 정산 중(부서장 승인 필요) — 누르면 상한액 120,000원(1일 120,000원 × 1박)으로 바꿉니다');
   assert.deepEqual([b.seq, b.cap, b.capNone], ['81570', null, true]);
   assert.equal(site.maxes, 0);
   assert.ok(a.cap.compareDocumentPosition(doc.querySelector('#atList .at-lodge[data-lodge="81558"] .at-lodge-src')) & window.Node.DOCUMENT_POSITION_FOLLOWING, '정산금액과 증빙 표시 사이에 선다');
@@ -273,7 +274,7 @@ await ta('누르면 그 줄의 정산금액·공급가액·부가세만 바꿔 �
 t('바꾼 뒤에는 화면을 다시 읽은 줄이 선다 — 버튼이 켜지고, 실제 금액을 적어 두며(되돌리려고), 금액으로 알아본 증빙 표시는 줄 번호에 적어 남긴다', () => {
   const a = lines()[0];
   assert.deepEqual([a.total, a.cap.getAttribute('aria-pressed'), a.cap.disabled, a.src], ['120,000원', 'true', false, '증빙']);
-  assert.equal(a.cap.title, '상한액 120,000원(1일 120,000원 × 1박)으로 정산 중 — 누르면 실제 금액 125,052원으로 되돌립니다 · 부서장 승인 필요 — 상한액의 1.5배(180,000원) 이내');
+  assert.equal(a.cap.title, '상한액 120,000원(1일 120,000원 × 1박)으로 정산 중 — 누르면 실제 금액 125,052원으로 되돌립니다 · 부서장 승인 필요');
   assert.deepEqual(store.attendLodgeActual, { 143884: { 81558: { actual: 125052, supply: null, vat: null, reason: null } } }, '공급가액·부가세(0·0)는 실제 금액에 맞지 않아 적지 않는다 · 비고에 사유가 없었으니 사유도 없다');
   assert.deepEqual(site.posts[3].getAll('lodge_comment'), ['', ''], '비고에 사유가 없었으니 비고는 그대로 나간다');
   assert.deepEqual(store.attendLodgeMine, { 999: { 1: '남의것.png' }, 143884: { 81558: 'image.png' } });
@@ -288,8 +289,8 @@ t('켜진 버튼을 누르면 적어 둔 실제 금액으로 되돌린다 — �
   assert.deepEqual([body.getAll('lodge_total'), body.getAll('lodge_samount'), body.getAll('lodge_vat')], [['125052', ''], ['113684', '0'], ['11368', '0']]);
   assert.deepEqual(body.getAll('lodge_comment'), [REASON, ''], '그 줄의 비고에만 사유가 들어간다');
   assert.deepEqual([lines()[0].cap.getAttribute('aria-pressed'), lines()[0].src, store.attendLodgeActual[143884][81558].actual], ['false', '증빙', 125052]);
-  assert.equal(status(), `정산금액을 실제 금액 125,052원으로 되돌렸습니다 — Toyoko INN Gangnam Seoul · 8/18 · 120,000원 · 여비계산서 143884 · 부서장 승인 필요 — 상한액의 1.5배(180,000원) 이내 · 비고에 사유를 적었습니다(${REASON})`);
-  assert.ok(logs.some((l) => l.kind === 'trip' && l.ok && /→ 125,052원\(실제 금액\) · 부서장 승인 필요 — 상한액의 1.5배\(180,000원\) 이내 · 비고에 사유를 적었습니다/.test(l.text)));
+  assert.equal(status(), `정산금액을 실제 금액 125,052원으로 되돌렸습니다 — Toyoko INN Gangnam Seoul · 8/18 · 120,000원 · 여비계산서 143884 · 부서장 승인 필요 · 비고에 사유를 적었습니다(${REASON})`);
+  assert.ok(logs.some((l) => l.kind === 'trip' && l.ok && /→ 125,052원\(실제 금액\) · 부서장 승인 필요 · 비고에 사유를 적었습니다/.test(l.text)));
   assert.equal(site.lodges.find((l) => l.seq === '81558').comment, REASON);
 });
 
@@ -345,9 +346,9 @@ t('버튼이 설 자리(lodgeCapState) — 원화 줄이고 상한액을 알고 
   assert.deepEqual([lodgeCapDay({ maxconv: '', maxtotal: '100', maxcur: 'USD', currency: 'KRW' }), lodgeCapDay({ maxconv: '', maxtotal: '100', maxcur: 'KRW', currency: 'KRW' }), lodgeCapDay({ maxconv: '90', maxtotal: '100', maxcur: 'KRW' })],
     [null, 100, 90], '1일 상한 — 줄의 화폐로 바꾼 값이 먼저, 없으면 상한의 화폐가 줄의 화폐일 때 그 값');
   assert.equal(lodgeCapTitle(lodgeCapState(row({ total: '250000' }), { actual: 300000 })),
-    '정산금액이 실제 금액 300,000원과 다릅니다(부서장 승인 필요 — 상한액의 1.5배(360,000원) 이내) — 누르면 상한액 240,000원(1일 120,000원 × 2박)으로 바꿉니다');
+    '정산금액이 실제 금액 300,000원과 다릅니다(부서장 승인 필요) — 누르면 상한액 240,000원(1일 120,000원 × 2박)으로 바꿉니다');
   assert.equal(lodgeCapTitle(lodgeCapState(row({ total: '240000' }), { actual: 400000 })),
-    '상한액 240,000원(1일 120,000원 × 2박)으로 정산 중 — 누르면 실제 금액 400,000원으로 되돌립니다 · 상한액의 1.5배(360,000원) 초과 — 부서장 승인 범위를 벗어남');
+    '상한액 240,000원(1일 120,000원 × 2박)으로 정산 중 — 누르면 실제 금액 400,000원으로 되돌립니다 · 상한액 360,000원 초과 — 부서장 승인 범위를 벗어남');
 });
 
 console.log('사후정산을 쓰는 단계가 아니면 숙박비 내역이 없다');

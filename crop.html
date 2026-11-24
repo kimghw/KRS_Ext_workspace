@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 부분 캡처</title>
+<!-- PDF 화면에서 한 부분을 끌어서 고르는 창(src/pagecap.js cropFrontPdf, 2026-11-20 사용자 지정). 크롬 PDF 뷰어 안에는 스크립트가 닿지 않아
+     보이는 화면을 찍어 여기 띄우고 사각형으로 고른다. -->
+<style>
+  :root { color-scheme: light dark; --bg: #1f2329; --bar: #2b3038; --fg: #f1f3f5; --muted: #aab1bb; --pick: #3b82f6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, "Malgun Gothic", sans-serif; }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--bar); }
+  .bar strong { font-size: 14px; }
+  .bar .how { flex: 1; color: var(--muted); }
+  .bar button { min-height: 30px; padding: 4px 14px; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+  .bar .go { background: var(--pick); color: #fff; font-weight: 600; }
+  .bar .go:disabled { opacity: .45; cursor: default; }
+  .bar .no { background: transparent; color: var(--fg); border: 1px solid #4a515c; }
+  .stage { position: relative; width: max-content; max-width: 100%; margin: 12px auto; user-select: none; cursor: crosshair; }
+  .stage img { display: block; max-width: 100%; height: auto; }
+  .shade { position: absolute; inset: 0; background: rgba(0, 0, 0, .35); pointer-events: none; }
+  .sel { position: absolute; border: 2px solid var(--pick); background: transparent; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45); pointer-events: none; display: none; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <strong>PDF 부분 캡처</strong>
+    <span class="how" id="how">캡처할 부분을 끌어서 고르세요 — Enter 로 넣고, Esc 로 그만둡니다</span>
+    <button type="button" class="no" id="no">그만두기</button>
+    <button type="button" class="go" id="go" disabled>이 부분으로</button>
+  </div>
+  <div class="stage" id="stage"><img id="shot" alt="찍은 PDF 화면"><div class="shade" id="shade"></div><div class="sel" id="sel"></div></div>
+  <script src="crop.js" type="module"></script>
+</body>
+</html>

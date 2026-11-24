@@ -142,14 +142,16 @@ export async function afterUp({ docNo, row, me = '', settle = {} } = {}, deps = 
     for (const l of plan.lodge) {
       lodgeSettle(Object.assign(l, await site.lodgeMax(trseq, l.nation, l.currency)));
       let how = settle?.[lodgeKey(l)];
-      if (lodgeAsk(l) === 'cap' && how !== 'cap' && how !== 'real' && site.haveLodges) {
+      if (lodgeAsk(l) === 'cap' && how !== 'cap' && how !== 'real' && how !== 'max' && site.haveLodges) {
         have ??= await Promise.resolve().then(() => site.haveLodges(cur.seq, trseq)).catch(() => []);
         how = lodgeKnown(l, have);
       }
-      if (lodgeAsk(l) === 'cap' && (how === 'cap' || how === 'real')) lodgeDecide(plan, l, how);
+      if (lodgeAsk(l) === 'cap' && (how === 'cap' || how === 'real' || how === 'max')) lodgeDecide(plan, l, how);
     }
     const open = plan.lodge.filter(lodgeAsk);
     if (open.some((l) => lodgeAsk(l) === 'krw')) return held('외화 문서라 원화로 결제한 금액을 적어야 합니다');
+    // 문서마다 금액이 다르면(결제 영수증과 예약 금액 — 할인) 어느 금액인지 골라야 한다(2026-11-20 사용자 지정) — 패널의 출장 카드가 묻는다.
+    if (open.some((l) => lodgeAsk(l) === 'amount')) return held('숙박 문서마다 금액이 달라 어느 금액으로 정산할지 골라야 합니다');
     if (open.length) {
       const ask = open.map((l) => ({ key: lodgeKey(l), ...lodgeChoices(l) }));
       if (ask.some((a) => !a.choices?.length)) return held('숙박비가 상한액을 넘어 어느 금액으로 정산할지 골라야 합니다');

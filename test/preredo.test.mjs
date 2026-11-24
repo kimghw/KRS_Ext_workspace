@@ -103,7 +103,7 @@ globalThis.fetch = async (url, init = {}) => {
 
 /* ------------------------------------------------------------ 셈 (src/travel.js) */
 
-const { prePlan, preEditBody, formFields, parseTransRows, parseTripList, parseStayRows, stayPlan, legDiffs } = await import('../src/travel.js');
+const { prePlan, preEditBody, formFields, parseTransRows, parseTripList, parseStayRows, stayPlan, legDiffs, NO_LEG } = await import('../src/travel.js');
 const TRIP = { seq: '145580', from: '2026-09-09', to: '2026-09-10', location: '경기도 고양시 킨텍스' };
 const writeDoc = () => new JSDOM(WRITE('145580')).window.document;
 const rowsNow = () => parseTransRows(writeDoc());
@@ -131,6 +131,16 @@ t('오는 편을 비행기로 — 사전정산에는 교통편 줄을 넣지 않
   assert.deepEqual([p.changed, p.drop, p.problems], [true, ['153340', '153341'], []]);
   assert.deepEqual(p.add.map((r) => [r.dep, r.arr, r.grade, r.total, r.trseq]), [['부산', '서울', '일반석', 53700, '7380']]);
   assert.deepEqual([p.legs[1].row, p.legs[1].blank], [null, '비행기 — 사전정산에는 교통편 줄을 넣지 않습니다']);
+});
+// 2026-11-20 사용자 지정: "특에서 다시 클릭하면 … 안탄걸로" — 저장된 줄이 있는 편을 안 탄 것으로(NO_LEG) 하면 그 편의 줄을 지운다.
+t('오는 편을 안 탐(NO_LEG)으로 — 그 편은 줄 없이 "안 탐"이라 적히고, 줄은 모두 지운 뒤 가는 편의 줄만 값 그대로 다시 들어간다', () => {
+  assert.equal(NO_LEG, 'none');
+  const p = plan({ back: { t: NO_LEG, g: 'standard' } });
+  assert.deepEqual([p.changed, p.drop, p.problems], [true, ['153340', '153341'], []]);
+  assert.deepEqual(p.add.map((r) => [r.dep, r.arr, r.grade, r.total, r.trseq]), [['부산', '서울', '일반석', 53700, '7380']]);
+  assert.deepEqual([p.legs[1].pick, p.legs[1].row, p.legs[1].source, p.legs[1].blank], [null, null, 'none', '안 탐 — 이 편의 교통편 줄을 지웁니다']);
+  const one = prePlan({ trip: TRIP, picks: { back: { t: NO_LEG, g: 'standard' } }, rows: [{ ...rowsNow()[1], date: '2026-09-10' }], workplace: '부산', sHour: 7, eHour: 20 });
+  assert.deepEqual([one.drop, one.add], [['153341'], []], '줄이 그 편 하나뿐이면(도착일의 줄 — 오는 편) 지우기만 한다');
 });
 t('가는 편·오는 편 뒤의 줄(셋째 줄부터)도 값 그대로 맨 뒤에 다시 들어간다 — 사라지지 않는다', () => {
   const extra = { seq: '153342', trseq: '', revno: '', date: '2026-09-10', dep: '부산', arr: '김해공항', transport: 'Bus', grade: '', total: 7000, currency: 'KRW', shr: 0, ehr: 0 };
@@ -327,10 +337,22 @@ t('기차를 한 번 더 누르면 특실(운임표의 정가), 비행기를 고
   assert.deepEqual([notes(), site.posts.length, store.attendLegs], [[], 0, undefined], '사후정산용으로 골라 두는 편(attendLegs)은 건드리지 않는다');
 });
 press('go', 'train');
-t('특실에서 한 번 더 누르면(세 번째) 선택 안 함이다(2026-11-20 사용자 지정) — 다시 고른 것이 지워져 그 편은 저장된 줄 그대로다', () => {
+t('저장된 줄이 있는 편은 특실에서 한 번 더 누르면(세 번째) "안 탐"이다(2026-11-20 사용자 지정) — 아이콘이 모두 꺼지고 그 편의 줄을 지운다고 적힌다', () => {
   assert.deepEqual(legs('pre-leg').map((l) => [l.on, l.what]),
-    [[['train'], 'KTX 부산→서울 일반석 53,700원'], [['plane'], '비행기 — 사전정산에는 교통편 줄을 넣지 않습니다']]);
-  assert.equal(site.posts.length, 0);
+    [[[], '안 탐 — 이 편의 교통편 줄을 지웁니다'], [['plane'], '비행기 — 사전정산에는 교통편 줄을 넣지 않습니다']]);
+  assert.equal(site.posts.length, 0, '누르기만 해서는 아무것도 가지 않는다');
+});
+press('go', 'train');
+t('"안 탐"에서 아이콘을 누르면 일반석부터 다시 시작한다 — 저장된 줄 그대로다', () => {
+  assert.deepEqual(legs('pre-leg').map((l) => [l.on, l.what])[0], [['train'], 'KTX 부산→서울 일반석 53,700원']);
+});
+press('back', 'plane');
+t('사전정산 칸의 비행기는 특실이 없다 — 저장된 줄이 있는 편(오는 편)의 비행기를 한 번 더 누르면 곧 "안 탐"이다', () => {
+  assert.deepEqual(legs('pre-leg').map((l) => [l.on, l.what])[1], [[], '안 탐 — 이 편의 교통편 줄을 지웁니다']);
+});
+press('back', 'plane');
+t('"안 탐"에서 비행기를 누르면 다시 비행기다', () => {
+  assert.deepEqual(legs('pre-leg').map((l) => [l.on, l.what])[1], [['plane'], '비행기 — 사전정산에는 교통편 줄을 넣지 않습니다']);
 });
 card().querySelector('.at-after-head button[data-act="pre-redo"]').click();
 t('`그만두기`를 누르면 정산 내역으로 돌아가고 고른 것은 버린다', () => {
@@ -396,7 +418,9 @@ t('목록을 다시 읽어 지금 단계(사전정산 작성)대로 카드를 �
   assert.match(tripline(), /여비계산서 145580 · 사전정산 작성/);
   assert.deepEqual(head(), ['사전정산', '작성 중 · 1박']);
   assert.equal(card().querySelector('button[data-act="pre-done"]').textContent, '사전정산 완료');
-  assert.deepEqual(legs('leg').map((l) => [l.on, l.what]), [[['train+'], 'KTX 부산→서울 특실 78,900원'], [[], '고르지 않음']]);
+  // 줄이 없는 편(오는 편 — 비행기라 사전정산에 줄이 없다)은 그리지 않는다(2026-11-20 사용자 지정: "없으면 표시를 하지 말아줘").
+  assert.deepEqual(legs('leg').map((l) => [l.on, l.what]), [[['train+'], 'KTX 부산→서울 특실 78,900원']]);
+  assert.equal(card().querySelector('.at-legs .at-leg-name').textContent, '가는 편 9/9');
   assert.match(notes().join('\n'), /사전정산을 다시 저장했습니다 — 가는 편 KTX 부산→서울 특실 78,900원 · 오는 편 비행기 — 사전정산에는 교통편 줄을 넣지 않습니다 · 지금 단계: 사전정산 작성 — `사전정산 완료`를 누르거나 증빙을 넣으면 다시 확정합니다/);
   assert.deepEqual(st.after['145580'].detail.rows.map((r) => [r.seq, r.grade, r.total]), [['153400', '특실', 78900]]);
   assert.ok(logs.some((l) => l.kind === 'trip' && l.ok && /^여비계산서\(사전정산\) 다시 저장: 145580 · 가는 편 KTX 부산→서울 특실 78,900원 · .* · 사전정산 작성$/.test(l.text)));
@@ -423,12 +447,20 @@ const stayNote = () => stayRow().querySelector('.at-leg-what')?.textContent ?? n
 const step = (d) => stayRow().querySelector(`button[data-act="pre-meal"][data-d="${d}"]`);
 
 const diffBtn = (leg) => card().querySelector(`button[data-act="leg-diff"][data-leg="${leg}"]`);
-const diffLines = () => [...card().querySelectorAll('.at-leg-diffs li')].map((li) => [...li.children].map((n) => n.textContent));
+// 칸의 글만 — 다시 작성하는 칸에서 붙는 `이 값으로` 단추·`고쳐 둠` 표시의 글은 뺀다.
+const diffLines = () => [...card().querySelectorAll('.at-leg-diffs li')].map((li) => [...li.children].map((n) => [...n.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join('')));
 
 console.log('저장된 값이 다른 편 — `다름` 표시를 누르면 어디가 다른지 펴진다');
-t('정산 내역의 편마다 저장된 줄이 출장 일정·운임표와 다른 곳의 수가 `다름`으로 선다 — 처음에는 접혀 있다', () => {
+const editBtn = () => card().querySelector('.at-part-head button[data-act="pre-redo"]');
+t('정산 내역에는 `다름` 표시가 없다 — 견주는 것은 `사전정산 완료` 옆의 `수정하기`로 펴는 칸에서만이다(2026-11-20 사용자 지정)', () => {
+  assert.deepEqual([diffBtn('go'), diffBtn('back'), head()], [null, null, ['정산 내역', '1박 · 완료']]);
+  assert.deepEqual([editBtn().textContent, editBtn().closest('.at-part').querySelector('.at-part-title').textContent, editBtn().disabled], ['수정하기', '사전정산 완료', false]);
+});
+editBtn().click();
+t('`수정하기`를 누르면 사전정산을 다시 작성하는 칸이 서고(송부 칸 아래의 `사전정산 다시하기`와 같다), 편마다 저장된 줄이 출장 일정·운임표와 다른 곳의 수가 `다름`으로 선다 — 처음에는 접혀 있다', () => {
+  assert.deepEqual([head(), redo()[0]], [['사전정산', '다시 작성 중'], ['사전정산 다시하기', 'true']]);
   assert.deepEqual([diffBtn('go').textContent, diffBtn('back').textContent, diffBtn('back').getAttribute('aria-expanded'), diffLines()], ['다름 2', '다름 3', 'false', []]);
-  assert.equal(diffBtn('back').disabled, false, '보여 주기만 하는 정산 내역에서도 누를 수 있다');
+  assert.equal(diffBtn('back').disabled, false);
 });
 diffBtn('back').click();
 t('누르면 그 편 아래에 항목마다 저장된 값과 견준 값이 펴진다 — 오는 편은 일자가 출발일이고, 시각이 비어 있고, 요금이 운임표와 다르다', () => {
@@ -443,6 +475,8 @@ diffBtn('go').click();
 t('다시 누르면 접힌다', () => {
   assert.deepEqual([diffLines(), diffBtn('go').getAttribute('aria-expanded')], [[], 'false']);
 });
+card().querySelector('.at-after-head button[data-act="pre-redo"]').click();   // 그만두기 — 정산 내역으로 돌아간다
+await until(() => head()[0] === '정산 내역', '정산 내역으로 돌아가기');
 
 console.log('정산 내역의 일비·식비 한 줄 — 식비는 − + 아이콘으로 줄이고 늘린다');
 t('정산 내역의 가는 편·오는 편 아래에 사전정산의 일비·식비가 한 줄로 선다 — 일비 2일 · 식비 6식, 식수 양옆에 − + 아이콘', () => {
@@ -522,8 +556,8 @@ t('사전정산을 쓰는 중인 카드에도 일비·식비 한 줄이 선다 �
   assert.deepEqual([head(), stayText(), stayNote(), step(-1).disabled, step(1).disabled], [['사전정산', '작성 중 · 1박'], ['일비2일', '식비5식'], null, false, false]);
   assert.equal(card().querySelector('button[data-act="pre-done"]').textContent, '사전정산 완료');
 });
-t('새로 선 가는 편의 줄(운임표의 정가·출발 7시 → 도착 11시)은 다른 곳이 없다 — 값 그대로 다시 들어간 오는 편은 여전히 `다름`이다', () => {
-  assert.deepEqual([diffBtn('go'), diffBtn('back').textContent], [null, '다름 3']);
+t('사전정산을 쓰는 중인 카드에는 `다름`이 없다(2026-11-20) — 견주는 것은 다시 작성하는 칸에서만이다', () => {
+  assert.deepEqual([diffBtn('go'), diffBtn('back')], [null, null]);
 });
 
 t('사전정산 단계의 출장 줄에는 ↻(다시 읽기)와 1(여비계산서) 둘이다 — 사전정산 아이콘을 따로 세우지 않는다', () => {
@@ -586,13 +620,16 @@ t('두 번째 누름에 그 줄의 일자·출발 시·도착 시만 바뀌어 �
     [['153340', '153341'], ['0', '0'], ['2026-09-09', '2026-09-10'], ['7', '0'], ['11', '20'], ['53700', '53700'], ['7380', '7380']]);
   assert.deepEqual(body.getAll('stay_meal'), ['6', '0'], '식수는 건드리지 않았다');
 });
-t('다시 읽은 값이 카드에 선다 — 고친 일자·시각이 적히고, "다름"은 남은 것(요금 · 오는 편의 출발 시)만 센다', () => {
+t('다시 읽은 값이 카드에 선다 — 고친 일자·시각이 적힌다(정산 내역에는 "다름"이 없다 — 2026-11-20)', () => {
   assert.deepEqual([head(), legName('go'), legTime('go'), legName('back'), legTime('back')], [['정산 내역', '1박 · 완료'], '가는 편 9/9', '7시→11시', '오는 편 9/10', '?→20시']);
-  assert.deepEqual([diffBtn('go').textContent, diffBtn('back').textContent], ['다름 1', '다름 2']);
+  assert.deepEqual([diffBtn('go'), diffBtn('back')], [null, null]);
   assert.deepEqual(notes(), ['사전정산을 다시 저장했습니다 — 가는 편 시각 7시→11시 · 오는 편 일자 9/10 시각 ?→20시 · 지금 단계: 사후정산 완료']);
 });
 site.ignore = true;
 preBtn().click();
+t('다시 작성하는 칸을 다시 펴면 "다름"은 남은 것(요금 · 오는 편의 출발 시)만 센다', () => {
+  assert.deepEqual([diffBtn('go').textContent, diffBtn('back').textContent], ['다름 1', '다름 2']);
+});
 setEdit('back', 'shr', '16');
 saveBtn().click();
 saveBtn().click();

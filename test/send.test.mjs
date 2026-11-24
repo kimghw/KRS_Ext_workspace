@@ -1,6 +1,6 @@
 // 여비계산서 증빙 송부의 규칙(src/send.js)과 Teams MCP 확인(src/teams.js) — 언제 보내는지, 어느 길로, 무슨 글로, 최근 과제·계정.
 import assert from 'node:assert/strict';
-import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, sendTitle, sendLines, evidenceCount, RECENT_MAX, projectChoices, adminOf, choiceOf, adminHit } from '../src/send.js';
+import { sendGate, sendable, heldNote, channelOf, teamsWhy, wantOf, wantOfLabel, WAYS, pushRecent, pdfName, sendTitle, sendLines, sendNames, evidenceCount, RECENT_MAX, projectChoices, adminOf, choiceOf, adminHit, accountText } from '../src/send.js';
 import { teamsState, teamsSendFile, rpcReply, FILE_TOOL, TEAMS_MCP_URL } from '../src/teams.js';
 
 let pass = 0;
@@ -108,10 +108,24 @@ t('제목과 본문 — 과제·계정, 출장자, 기간·출장지, 목적, �
   assert.deepEqual(sendLines({ account: 'RND-2026-01', me: '김거화', trip: TRIP, stage: post(true), reason: 'K-Battery Show 참석', kept: KEPT, file: '여비증빙_145580_김거화.pdf' }), [
     '여비계산서와 증빙을 보냅니다.', '과제·계정: RND-2026-01', '출장자: 김거화', '출장: 2026-09-09 ~ 2026-09-10 · 경기도 고양시 킨텍스', '목적: K-Battery Show 참석',
     '여비계산서: 145580 (사후정산 완료)', '첨부: 여비증빙_145580_김거화.pdf — 여비계산서 1부 · 항공기 증명 1장 · 숙박 증빙 2장',
+    // 묶은 PDF 에 든 증빙을 준 차례대로, 보낼 때의 이름(sendNames)으로 한 줄씩 — 읽은 기록이 없으면 넣은 이름 그대로다(2026-11-20).
+    '  · 오는편.pdf', '  · 호텔.jpg', '  · 예약.pdf',
   ]);
   assert.equal(sendLines({ account: 'A', me: '', trip: DAY, stage: pre(true), kept: [KEPT[0]], file: 'f.pdf' })[3], '출장: 2026-09-23 · 서울 본사');
   const bare = sendLines({ account: 'A', me: '김거화', trip: TRIP, stage: post(true), kept: [], file: 'f.pdf' });
   assert.deepEqual([bare[0], bare.at(-1)], ['여비계산서를 보냅니다.', '첨부: f.pdf — 여비계산서 1부'], '보관한 증빙이 없으면 여비계산서만 나간다고 적는다');
+});
+// 2026-11-20 사용자 지정: "올릴때 파일 이름은 그대로 두고 쪽지나 팀즈로 보낼때.. 이름을 변경해줘"
+t('보낼 때의 증빙 이름(sendNames) — 읽은 기록이 있으면 종류_이용일(뱃지대로), 겹치면 (2), 기록이 없으면 넣은 이름 그대로', () => {
+  const hotel = { name: 'image.png', label: '숙박 증빙', record: { docType: 'lodging_receipt', checkIn: '2026-09-09' } };
+  const hotel2 = { name: 'image (2).png', label: '숙박 증빙', record: { docType: 'lodging_receipt', checkIn: '2026-09-09' } };
+  const card = { name: '카드.png', label: '출장지 영수증', kind: 'lodging', record: { docType: 'other_receipt', payDate: '2026-09-10' } };
+  const ticket = { name: 'eticket.PDF', label: '항공기 증명', record: { docType: 'flight_ticket', flightDate: '2026-09-10' } };
+  assert.deepEqual(sendNames([hotel, hotel2, card, ticket, KEPT[1]]),
+    ['숙박비_2026-09-09.png', '숙박비_2026-09-09 (2).png', '숙박비_2026-09-10.png', '항공권_2026-09-10.pdf', '호텔.jpg'], '뱃지(kind)를 바꾼 것은 그 종류의 이름이다');
+  assert.deepEqual([sendNames(null), sendNames([KEPT[0], KEPT[0]])], [[], ['오는편.pdf', '오는편 (2).pdf']]);
+  // 보관함의 이름은 바뀌지 않는다 — 이름만 따로 돌려준다.
+  assert.equal(hotel.name, 'image.png');
 });
 
 console.log('Teams MCP 가 닿는가');
@@ -168,9 +182,13 @@ t('고를 것은 과제의 약자(없으면 과제명)이고, 설명은 과제�
     { alias: '', name: '', support: [] },
   ];
   assert.deepEqual(projectChoices(projects), [
-    { value: 'SSCB', label: '선박용 직류 차단기 · 행정 홍길동', admin: { name: '홍길동', role: '행정 담당' } },
-    { value: 'MVDC 실증', label: '행정 이지원', admin: { name: '이지원', role: '' } },
+    { value: 'SSCB', name: '선박용 직류 차단기', label: '선박용 직류 차단기 · 행정 홍길동', admin: { name: '홍길동', role: '행정 담당' } },
+    { value: 'MVDC 실증', name: 'MVDC 실증', label: '행정 이지원', admin: { name: '이지원', role: '' } },
   ]);
+  // 보내는 글의 과제·계정 — 약자를 골랐으면 전체 이름을 같이 적는다(2026-11-20 사용자 지정: "과제 계정을 넣으면 full 이름을 넣어주도록").
+  const all = projectChoices(projects);
+  assert.deepEqual([accountText(all, 'SSCB'), accountText(all, ' sscb '), accountText(all, 'MVDC 실증'), accountText(all, '일반관리비'), accountText(all, '')],
+    ['SSCB (선박용 직류 차단기)', 'sscb (선박용 직류 차단기)', 'MVDC 실증', '일반관리비', '']);
   assert.deepEqual([adminOf({ support: [] }), adminOf(null)], [null, null]);
   const choices = projectChoices(projects);
   assert.deepEqual([choiceOf(choices, ' sscb ')?.value, choiceOf(choices, 'MVDC실증')?.value, choiceOf(choices, '일반관리비'), choiceOf(choices, '')], ['SSCB', 'MVDC 실증', null, null]);
