@@ -1,5 +1,5 @@
 // 패널 머리의 git 아이콘 — 확장 폴더(git 저장소)가 GitHub 보다 뒤졌는지 몇 분마다 보고, 새 커밋이 있으면 그 수를 띄운다.
-// 누르면 받는다(git pull --ff-only). git 은 다리(native/gitsync.mjs)가 돌린다 — 다리가 없으면 아이콘은 숨는다.
+// 누르면 받는다(빨리 감기만 — 고치던 것은 줄이 부딪치지 않으면 받은 뒤 다시 얹는다). git 은 다리(native/gitsync.mjs)가 돌린다 — 다리가 없으면 아이콘은 숨는다.
 // 받은 것에 확장 파일이 있으면 브라우저에 다시 불러와야 반영된다 — 그때는 아이콘이 '다시 불러오기'(↻)가 되고,
 // 한 번 더 누르면 확장을 다시 불러온다(패널이 닫힌다 — 다시 열면 된다).
 // 2026-10-09 사용자 지정: "현재 프로젝트의 github 커밋된게 있는지 모니터링 할수 있는 아이콘 추가하고, 클릭하면 git pull".
@@ -55,7 +55,8 @@ export function gitView(s, { at = null } = {}) {
       const files = `${s.overlap.slice(0, 5).join(', ')}${s.overlap.length > 5 ? ` 외 ${s.overlap.length - 5}개` : ''}`;
       return { mode: 'blocked', count, title: `${head}\n${list}${more}\n\n고치고 있는 파일과 겹쳐 지금은 받을 수 없습니다(${files}) — 커밋하거나 치운 뒤 누르면 다시 확인합니다.${stale}` };
     }
-    return { mode: 'new', count, title: `${head} — 누르면 받습니다(git pull)\n${list}${more}${s.dirty ? `\n\n고치고 있는 파일 ${s.dirty}개는 그대로 둡니다.` : ''}${stale}` };
+    const carry = s.carry?.length ? ` 받을 커밋과 같은 파일(${s.carry.slice(0, 5).join(', ')}${s.carry.length > 5 ? ` 외 ${s.carry.length - 5}개` : ''})은 받은 뒤 고치던 것을 다시 얹습니다.` : '';
+    return { mode: 'new', count, title: `${head} — 누르면 받습니다(git pull)\n${list}${more}${s.dirty ? `\n\n고치고 있는 파일 ${s.dirty}개는 그대로 둡니다.${carry}` : ''}${stale}` };
   }
   if (s.ahead > 0) {
     return { mode: 'ahead', count: '', title: `GitHub(${s.upstream})에 새 커밋 없음${when}\n여기에만 있는 커밋 ${s.ahead}개는 아직 올리지 않았습니다(올리기는 하지 않습니다). 누르면 다시 확인합니다.${stale}` };

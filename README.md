@@ -2112,11 +2112,13 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 
 | 모양 | 뜻 | 누르면 |
 |---|---|---|
-| 파랑 + 숫자 | 새 커밋 그 수만큼 — 풍선 말에 제목 다섯 줄 | **받기**(`git pull --ff-only --no-rebase`) |
-| 숫자가 빨강 | 새 커밋이 있지만 받을 수 없음 — 고치고 있는 파일과 겹치거나, 여기에만 있는 커밋이 있어 갈라짐 | 다시 확인 |
+| 파랑 + 숫자 | 새 커밋 그 수만큼 — 풍선 말에 제목 다섯 줄 | **받기**(`git fetch` 뒤 `git merge --ff-only --autostash @{u}`) |
+| 숫자가 빨강 | 새 커밋이 있지만 받을 수 없음 — 고치고 있는 파일과 줄이 부딪치거나, 여기에만 있는 커밋이 있어 갈라짐 | 다시 확인 |
 | 파랑 + ↻ | 받았고, 확장 파일이 바뀌어 다시 불러와야 반영됨 | 확장 다시 불러오기(패널이 닫힙니다 — 다시 여세요) |
 
-- **빨리 감기로만 받습니다.** 고치고 있는 파일은 그대로 두고, 받을 커밋과 겹치면 git 이 거절합니다 — 고치던 것을 덮거나 병합 커밋을 만들지 않습니다.
+- **빨리 감기로만 받습니다.** 고치고 있는 파일은 그대로 둡니다. 받을 커밋이 같은 파일을 바꿔도 줄이 부딪치지 않으면 고치던 것을 잠시 치웠다가 받은 뒤 다시 얹습니다
+  (2026-11-25 사용자 지정: "git 버튼 누르면 원격에 맞추도록 해줄래?"). 부딪칠지는 받기 전에 `git stash create` + `git merge-tree` 로 봅니다 — 작업 폴더도 stash 목록도 건드리지 않습니다.
+  줄이 부딪치면 받지 않고 그 파일을 알립니다 — 고치던 것을 덮거나 병합 커밋을 만들지 않습니다.
   사용자가 `pull.rebase` 를 켜 두었어도 다시 쌓지 않습니다. 갈라졌으면 터미널에서 직접 pull 하세요.
 - 설명·검사·도구·다리(`README.md`·`test/`·`tools/`·`native/`·`gmail/`·`.claude/`)만 바뀌었으면 다시 불러오지 않아도 됩니다 — 다리는 부를 때마다 새로 뜹니다.
   `package.json` 이 바뀌었으면 저장소 폴더에서 `npm install` 을 돌리라고 알립니다.
@@ -2215,7 +2217,7 @@ node native\gitclient-setup.mjs remove E:\dev\ubob   # 해제 — 남은 확장�
 | `manifest.json` | MV3 매니페스트 (사이드 패널, `eclass.krs.co.kr`·`hr.krs.co.kr` 호스트 권한, 홈·인명 검색·Quality 연도 유지 콘텐츠 스크립트, 웹페이지 캡처용 선택 권한 `<all_urls>` — 처음 누를 때 묻는다) |
 | `background.js` | 아이콘 클릭 시 사이드 패널 열기, 홈 카드의 부탁 처리 — "패널 열어 달라", "근태를 읽어 달라"(HR 작업 탭을 열어 읽고, 자기가 연 탭은 닫는다) · 사후정산 입력 화면의 부탁 처리 — "증빙 한 장을 읽어 달라"(`receiptRead`, 로컬 CLI → API 키) · 홈 카드의 출장 줄에 넣은 증빙 받기(`evidenceKeep` — 읽어서 보관함에 담는다, `src/intake.js`)와 보관함 줄여 적기(`evidenceMarks`) · 홈 카드가 그 증빙을 사후정산에 올릴 때 보관함에서 꺼내 주기(`evidenceGiven`·`evidenceFile`), 올린 뒤 표시 걷기(`evidenceDone`), 활동 기록 남기기(`tripLog`) · 홈 카드의 출퇴근 기록 읽기(`hrCommuteWeek` — 근태 읽기와 HR 작업 탭을 같이 씀) |
 | `sidepanel.html/css/js` | 화면과 상호작용(격자 렌더, 드래그 선택, 예약 폼) |
-| `gitsync.js` | 패널 머리의 git 아이콘: 확인 결과 → 모양(`gitView` — 같음·새 커밋 수·겹침·갈라짐), 받은 결과의 말(`pullSaid`), 10분마다 확인·누르면 받기·다시 불러오기(`createGitSync`). git 은 다리의 `native/gitsync.mjs`(받아 오기·비교·`pull --ff-only`) |
+| `gitsync.js` | 패널 머리의 git 아이콘: 확인 결과 → 모양(`gitView` — 같음·새 커밋 수·겹침·갈라짐), 받은 결과의 말(`pullSaid`), 10분마다 확인·누르면 받기·다시 불러오기(`createGitSync`). git 은 다리의 `native/gitsync.mjs`(받아 오기·비교·줄 부딪침 검사·빨리 감기 받기 `merge --ff-only --autostash`) |
 | `native/gitclient.mjs` · `native/gitclient-setup.mjs` | 다른 확장(ubob 등)이 빌려 쓰는 받기 다리(2026-11-13): 호스트 `com.krs.gitsync`(`gitclient-bridge.bat`) — 부른 쪽 주소로 등록 표(`gitclients.json`)에서 폴더를 찾아 `gitStatus`·`gitPull` 만 한다. 등록은 `gitclient-setup.mjs add <확장 폴더>`(확장 ID 셈·표·매니페스트·레지스트리) |
 | `attendpanel.js` | 근태 탭 화면: 종류·갈래 고르기, 며칠간 칩과 달력, 빈 칸 표시, 말로 채우기, 올리기, 반차 알람(출근이 정시가 아닌 날 — 유연근무를 먼저 올리고 쓰기는 사람이 고름), 연차현황 한 줄(HR), 유연의 출퇴근 위반(어긴 시각 붉게 · 줄마다 `변경` — 출퇴근기록 변경신청)(4W·8W·3M·6M·12M), 연차 안의 기념일 지원 체크박스(결재요청 뒤 복지기금 신청 화면을 새 탭에 열어 채우기·신청 화면만 열기·신청 현황), 신청 내역(두 줄 카드·펼치기·기간 조회)과 수정·변경·회수·취소신청 |
 | `src/mailgrab.js` | 메일 읽기(2026-10-15): 주소로 메일 사이트를 가리고(`mailSiteOf` — Outlook 웹·eClass 쪽지), 열린 메일의 제목·보낸 사람·받는 사람·날짜·본문과 첨부 목록(`mailProbe` — Outlook 은 카드의 dragstart 가 싣는 `attachment` JSON 으로 이름·크기·ID), 첨부 카드·메일 칸 표시(`data-krs-attach`·`data-krs-cap="mail"`), 첨부 원본 받기(`mailFetch` — 페이지 세계에서 blob 내려받기를 가로채 파일째), 끌어 놓은 첨부 받기(`parseDrop`·`grabDropped`), 탭 단위 `probeTab`·`grabTab`·`fetchTab`·`unmarkTab` — `webpick.js` 의 전체·부분이 부른다 |

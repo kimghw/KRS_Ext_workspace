@@ -2,8 +2,9 @@
 //
 // 확장이 git 에 넘기는 값은 없다. 할 수 있는 일은 둘뿐이고 명령도 여기 고정돼 있다.
 //  - status: 받아 오기(fetch)를 한 뒤 올라간 곳(upstream)보다 몇 커밋 뒤졌는지·앞섰는지, 새 커밋의 줄, 고치고 있는 파일과 겹치는 것
-//  - pull: 빨리 감기로만 받는다(pull --ff-only). 갈라졌거나 고치고 있는 파일과 겹치면 git 이 거절하고, 그 까닭을 돌려준다
-//    — 고치던 것을 덮거나 병합 커밋을 만들지 않는다.
+//  - pull: 받아 오기 뒤 빨리 감기로만 받는다(merge --ff-only --autostash). 고치고 있는 파일을 받을 커밋이 건드려도 줄이 부딪치지 않으면
+//    고치던 것을 잠시 치웠다가 받은 뒤 다시 얹는다. 줄이 부딪치거나 갈라졌으면 아무것도 건드리지 않고 거절하고 그 까닭을 돌려준다
+//    — 고치던 것을 덮거나 병합 커밋을 만들지 않는다(2026-11-25 사용자 지정: "git 버튼 누르면 원격에 맞추도록 해줄래?").
 // 다리에는 창이 없어 git 이 비밀번호를 물으면 답할 사람이 없다 — 묻지 않고 실패하게 한다(GIT_TERMINAL_PROMPT·GCM_INTERACTIVE).
 
 import { spawn } from 'node:child_process';
@@ -57,6 +58,7 @@ export function gitError(err) {
     const files = s.split('\n').filter((l) => /^\s/.test(l)).map((l) => l.trim()).filter(Boolean);
     return `고치고 있는 파일과 겹쳐 받지 않았습니다${files.length ? `(${files.slice(0, 5).join(', ')}${files.length > 5 ? ` 외 ${files.length - 5}개` : ''})` : ''} — 커밋하거나 치운 뒤 다시 누르세요.`;
   }
+  if (/autostash resulted in conflicts/i.test(s)) return '받았지만 고치던 것을 다시 얹다가 부딪쳤습니다 — 고치던 것은 git stash 에 있습니다(터미널에서 git stash pop).';
   if (/not possible to fast-forward|diverg/i.test(s)) return '여기에만 있는 커밋이 있어 빨리 감기로 받을 수 없습니다 — 터미널에서 직접 pull 하세요.';
   if (/authentication failed|could not read username|terminal prompts disabled|permission denied/i.test(s)) {
     return 'GitHub 인증이 필요합니다 — 터미널에서 한 번 git pull 해 로그인해 두세요.';
@@ -87,18 +89,38 @@ export async function gitStatus({ git = runGit, fetch = true } = {}) {
       return { hash, author, date, subject };
     })
     : [];
-  // 고치고 있는 파일(커밋하지 않은 것)과, 받을 커밋이 바꾸는 파일이 겹치면 git 이 받기를 거절한다 — 누르기 전에 알린다.
-  const mine = lines(await git(['diff', '--name-only', 'HEAD']));
-  const incoming = behind ? lines(await git(['diff', '--name-only', 'HEAD...@{u}'])) : [];
-  const overlap = incoming.filter((f) => mine.includes(f)).slice(0, FILES_MAX);
+  // 고치고 있는 파일(커밋하지 않은 것) 가운데 받을 커밋과 줄이 부딪치는 것(overlap)은 받을 수 없다 — 누르기 전에 알린다.
+  // 같은 파일이어도 줄이 부딪치지 않으면(carry) 받은 뒤 다시 얹으므로 받을 수 있다.
+  const { mine, touched, clash } = behind ? await overlapOf(git) : { mine: lines(await git(['diff', '--name-only', 'HEAD'])), touched: [], clash: [] };
+  const overlap = clash.slice(0, FILES_MAX);
+  const carry = touched.filter((f) => !clash.includes(f)).slice(0, FILES_MAX);
   return {
-    ok: true, branch: branch.out, upstream: up.out, ahead, behind, commits, dirty: mine.length, overlap,
+    ok: true, branch: branch.out, upstream: up.out, ahead, behind, commits, dirty: mine.length, overlap, carry,
     ...(fetched && fetched.code !== 0 ? { fetchError: gitError(fetched.err) } : {}),
   };
 }
 
 /**
- * 빨리 감기로만 받는다. 받은 커밋 수와 바뀐 파일, 확장을 다시 불러와야 하는지(reload), package.json 이 바뀌었는지(deps)를 돌려준다.
+ * 고치고 있는 파일(mine)과 받을 커밋이 바꾸는 파일 가운데 겹치는 것(touched), 그중 줄이 실제로 부딪치는 것(clash).
+ * 고치던 것을 커밋 꼴로만 만들어(stash create — 작업 폴더·stash 목록은 그대로) 올라간 곳과 세 갈래로 합쳐 본다(merge-tree — 아무것도 쓰지 않는다).
+ * 셀 수 없으면 겹친 파일 전부를 부딪친다고 본다(받지 않는 쪽으로).
+ */
+async function overlapOf(git) {
+  const mine = lines(await git(['diff', '--name-only', 'HEAD']));
+  const incoming = lines(await git(['diff', '--name-only', 'HEAD...@{u}']));
+  const touched = incoming.filter((f) => mine.includes(f));
+  if (!touched.length) return { mine, touched, clash: [] };
+  const stash = await git(['stash', 'create']);
+  if (stash.code !== 0 || !stash.out) return { mine, touched, clash: touched };
+  const merged = await git(['merge-tree', '--write-tree', '--name-only', '--no-messages', stash.out, '@{u}']);
+  if (merged.code === 0) return { mine, touched, clash: [] };
+  // 부딪치면 1 — 첫 줄은 합친 트리, 그 뒤가 부딪친 파일이다.
+  const files = merged.code === 1 ? merged.out.split('\n').slice(1).map((l) => l.trim()).filter(Boolean) : [];
+  return { mine, touched, clash: files.length ? files : touched };
+}
+
+/**
+ * 받아 오기 뒤 빨리 감기로만 받는다. 고치고 있는 파일은 잠시 치웠다가 받은 뒤 다시 얹는다(--autostash) — 줄이 부딪칠 것이면 받기 전에 거절한다. 받은 커밋 수와 바뀐 파일, 확장을 다시 불러와야 하는지(reload), package.json 이 바뀌었는지(deps)를 돌려준다.
  * noReload 는 다시 불러오지 않아도 되는 파일의 꼴이다 — 다른 확장의 저장소를 받을 때(native/gitclient.mjs)는 그쪽 것을 준다.
  * @returns {Promise<{ok: true, from: string, to: string, pulled: number, files: string[], fileCount: number, reload: boolean, deps: boolean}
  *   | {ok: false, error: string}>}
@@ -106,9 +128,16 @@ export async function gitStatus({ git = runGit, fetch = true } = {}) {
 export async function gitPull({ git = runGit, noReload = NO_RELOAD } = {}) {
   const before = await git(['rev-parse', 'HEAD']);
   if (before.code !== 0) return { ok: false, error: `git 저장소가 아닙니다 — ${gitError(before.err)}` };
-  // --no-rebase: 사용자 설정(pull.rebase)이 무엇이든 빨리 감기만 한다.
-  const pulled = await git(['pull', '--ff-only', '--no-rebase', '--quiet'], { timeoutMs: 60_000 });
-  if (pulled.code !== 0) return { ok: false, error: gitError(pulled.err) };
+  const fetched = await git(['fetch', '--quiet'], { timeoutMs: 60_000 });
+  if (fetched.code !== 0) return { ok: false, error: gitError(fetched.err) };
+  // 받기 전에 본다 — 부딪칠 것이면 아무것도 건드리지 않는다(받은 뒤 고치던 파일에 충돌 표시가 남지 않게).
+  const { clash } = await overlapOf(git);
+  if (clash.length) {
+    return { ok: false, error: `고치고 있는 파일과 겹쳐 받지 않았습니다(${clash.slice(0, 5).join(', ')}${clash.length > 5 ? ` 외 ${clash.length - 5}개` : ''}) — 커밋하거나 치운 뒤 다시 누르세요.` };
+  }
+  // pull 대신 merge: 사용자 설정(pull.rebase)이 무엇이든 빨리 감기만 하고, 방금 본 올라간 곳까지만 받는다.
+  const pulled = await git(['merge', '--ff-only', '--autostash', '--quiet', '@{u}'], { timeoutMs: 60_000 });
+  if (pulled.code !== 0 || /autostash resulted in conflicts/i.test(pulled.err)) return { ok: false, error: gitError(pulled.err || pulled.out) };
   const after = await git(['rev-parse', 'HEAD']);
   const moved = after.code === 0 && after.out !== before.out;
   const changed = moved ? lines(await git(['diff', '--name-only', before.out, after.out])) : [];

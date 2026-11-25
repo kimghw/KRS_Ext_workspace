@@ -78,6 +78,7 @@ console.log('다리 쪽 — 진짜 저장소로');
     assert.equal(fs.readFileSync(path.join(here, 'sidepanel.js'), 'utf8'), 'v1 고치는 중\n');
   });
   sh(here, 'checkout', '--', 'sidepanel.js');
+  assert.equal(sh(here, 'stash', 'list'), '', '확인·거절이 stash 목록을 남겼다');
 
   write(here, 'other.txt', '');
   sh(here, 'add', 'other.txt');
@@ -112,6 +113,41 @@ console.log('다리 쪽 — 진짜 저장소로');
     assert.deepEqual([r.ok, r.pulled, r.reload, r.deps], [true, 1, false, false]);
   });
 
+  // 같은 파일이어도 줄이 부딪치지 않으면 받는다(2026-11-25 — README.md 를 고치던 중 단추가 받지 않던 일).
+  commit(there, 'notes.md', '하나\n둘\n셋\n넷\n다섯\n', '노트');
+  sh(there, 'push', '-q');
+  await gitPull({ git });
+  commit(there, 'notes.md', '하나 고침\n둘\n셋\n넷\n다섯\n', '노트 앞');
+  sh(there, 'push', '-q');
+  write(here, 'notes.md', '하나\n둘\n셋\n넷\n다섯 여기서\n');
+  await ta('같은 파일을 고치고 있어도 줄이 부딪치지 않으면 받을 수 있다고 본다', async () => {
+    const s = await gitStatus({ git });
+    assert.deepEqual([s.behind, s.overlap, s.carry], [1, [], ['notes.md']]);
+    assert.equal(gitView(s).mode, 'new');
+    assert.match(gitView(s).title, /같은 파일\(notes\.md\)은 받은 뒤 고치던 것을 다시 얹습니다/);
+  });
+  await ta('받은 뒤 고치던 줄을 다시 얹는다 — stash 는 남기지 않는다', async () => {
+    const r = await gitPull({ git });
+    assert.deepEqual([r.ok, r.pulled], [true, 1]);
+    assert.equal(fs.readFileSync(path.join(here, 'notes.md'), 'utf8'), '하나 고침\n둘\n셋\n넷\n다섯 여기서\n');
+    assert.equal(sh(here, 'stash', 'list'), '');
+  });
+  commit(there, 'notes.md', '하나 고침\n둘\n셋\n넷\n다섯 저기서\n', '노트 끝');
+  sh(there, 'push', '-q');
+  await ta('줄이 부딪치면 그 파일만 겹침으로 알리고, 받지 않고 아무것도 건드리지 않는다', async () => {
+    const s = await gitStatus({ git });
+    assert.deepEqual([s.overlap, s.carry], [['notes.md'], []]);
+    const head = sh(here, 'rev-parse', 'HEAD');
+    const r = await gitPull({ git });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /고치고 있는 파일과 겹쳐 받지 않았습니다\(notes\.md\)/);
+    assert.equal(sh(here, 'rev-parse', 'HEAD'), head);
+    assert.equal(fs.readFileSync(path.join(here, 'notes.md'), 'utf8'), '하나 고침\n둘\n셋\n넷\n다섯 여기서\n');
+    assert.equal(sh(here, 'stash', 'list'), '');
+  });
+  sh(here, 'checkout', '--', 'notes.md');
+  await gitPull({ git });
+
   // 갈라짐 — 여기에만 있는 커밋과 GitHub 에만 있는 커밋. 사용자가 pull.rebase 를 켜 두었어도 다시 쌓지 않는다.
   sh(here, 'config', 'pull.rebase', 'true');
   commit(here, 'mine.txt', 'mine\n', '여기서만');
@@ -122,11 +158,15 @@ console.log('다리 쪽 — 진짜 저장소로');
     const s = await gitStatus({ git });
     assert.deepEqual([s.ahead, s.behind, s.overlap], [1, 1, []]);
   });
-  await ta('갈라졌으면 받지 않는다(병합 커밋도, 다시 쌓기도 없다)', async () => {
+  await ta('갈라졌으면 받지 않는다(병합 커밋도, 다시 쌓기도 없다) — 고치던 것도 그대로', async () => {
+    write(here, 'sidepanel.js', '갈라진 채 고치는 중\n');
     const r = await gitPull({ git });
     assert.equal(r.ok, false);
     assert.match(r.error, /빨리 감기로 받을 수 없습니다/);
     assert.equal(sh(here, 'rev-parse', 'HEAD'), headBefore);
+    assert.equal(fs.readFileSync(path.join(here, 'sidepanel.js'), 'utf8'), '갈라진 채 고치는 중\n');
+    assert.equal(sh(here, 'stash', 'list'), '');
+    sh(here, 'checkout', '--', 'sidepanel.js');
   });
 
   sh(here, 'remote', 'set-url', 'origin', path.join(tmp, 'gone.git'));
