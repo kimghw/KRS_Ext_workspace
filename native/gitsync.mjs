@@ -99,10 +99,11 @@ export async function gitStatus({ git = runGit, fetch = true } = {}) {
 
 /**
  * 빨리 감기로만 받는다. 받은 커밋 수와 바뀐 파일, 확장을 다시 불러와야 하는지(reload), package.json 이 바뀌었는지(deps)를 돌려준다.
+ * noReload 는 다시 불러오지 않아도 되는 파일의 꼴이다 — 다른 확장의 저장소를 받을 때(native/gitclient.mjs)는 그쪽 것을 준다.
  * @returns {Promise<{ok: true, from: string, to: string, pulled: number, files: string[], fileCount: number, reload: boolean, deps: boolean}
  *   | {ok: false, error: string}>}
  */
-export async function gitPull({ git = runGit } = {}) {
+export async function gitPull({ git = runGit, noReload = NO_RELOAD } = {}) {
   const before = await git(['rev-parse', 'HEAD']);
   if (before.code !== 0) return { ok: false, error: `git 저장소가 아닙니다 — ${gitError(before.err)}` };
   // --no-rebase: 사용자 설정(pull.rebase)이 무엇이든 빨리 감기만 한다.
@@ -115,6 +116,6 @@ export async function gitPull({ git = runGit } = {}) {
   return {
     ok: true, from: before.out.slice(0, 7), to: (after.out || before.out).slice(0, 7), pulled: n,
     files: changed.slice(0, FILES_MAX), fileCount: changed.length,
-    reload: changed.some((f) => !NO_RELOAD.test(f)), deps: changed.some((f) => /^package(-lock)?\.json$/.test(f)),
+    reload: changed.some((f) => !noReload.test(f)), deps: changed.some((f) => /^package(-lock)?\.json$/.test(f)),
   };
 }

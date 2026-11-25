@@ -4,6 +4,9 @@ node_modules/
 native/com.krs.meetingroom.json
 # 이전 독립 KTX 등록이 남긴 로컬 파일 — 현재 설치기는 만들거나 사용하지 않는다.
 native/com.krs.ktx.json
+# 다른 확장의 받기 다리 등록(native/gitclient-setup.mjs) — 그 PC 의 확장 ID 와 폴더 경로가 박혀 있다.
+native/gitclients.json
+native/com.krs.gitsync.json
 
 # 개인 설정
 .claude/settings.local.json

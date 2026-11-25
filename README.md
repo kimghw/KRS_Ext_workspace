@@ -2125,6 +2125,24 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 - 확장이 git 에 넘기는 값은 없습니다. 다리의 작업은 `gitStatus`·`gitPull` 둘이고 명령은 `native/gitsync.mjs` 에 고정돼 있습니다.
   확인은 다리 기록에 남기지 않고(10분마다 돌아 기록이 그것으로 찹니다), 받기는 남깁니다(`native/logs` 의 `gitPull` — 받은 커밋 수·바뀐 파일). 패널의 활동 로그에도 `[GitHub]` 로 남습니다.
 
+#### 다른 확장이 이 받기를 빌려 쓰기 (ubob 등)
+
+2026-11-13 사용자 지정(ubob 에서): "workspace 브릿지에 파일 받기 사용할 수 있게 하고". 같은 PC 의 다른 압축해제 확장도 제 폴더를 이 다리로 확인하고 받을 수 있습니다.
+그 확장의 폴더를 한 번 등록합니다(그 폴더는 확장 폴더이고 git 저장소여야 합니다).
+
+```powershell
+node native\gitclient-setup.mjs add E:\dev\ubob      # 등록 — 확장 ID 는 폴더 경로에서 셈(다르면 --id <ID>)
+node native\gitclient-setup.mjs list                 # 등록된 확장
+node native\gitclient-setup.mjs remove E:\dev\ubob   # 해제 — 남은 확장이 없으면 다리 등록도 걷음
+```
+
+- 네이티브 호스트가 따로입니다(`com.krs.gitsync` — `native/gitclient-bridge.bat` → `native/gitclient.mjs`). 이 호스트가 아는 작업은 `ping`·`gitStatus`·`gitPull` 뿐이라,
+  등록된 확장은 본래 다리(`com.krs.meetingroom`)의 Claude·Help Chat·KTX 를 부를 수 없습니다. 본래 다리의 등록(`install.ps1`)은 건드리지 않습니다.
+- 어느 폴더를 받을지는 확장이 정하지 못합니다. 브라우저가 다리를 띄울 때 넘기는 부른 쪽 주소(`chrome-extension://<ID>/`)로 이 PC 의 등록 표(`native/gitclients.json`, 깃 제외)에서 찾습니다.
+  표에 없는 주소는 호스트 매니페스트(`native/com.krs.gitsync.json`, 깃 제외)의 `allowed_origins` 에도 없어 브라우저가 띄워 주지 않습니다.
+- 받는 방식은 위와 같습니다(빨리 감기만, 받기는 `native/logs` 에 `client` 와 함께 남김). 다시 불러와야 하는지는 설명·검사·문서(`README.md`·`test(s)/`·`docs/`·`.claude/`·`.github/`)만 바뀌었는지로 가립니다.
+- 폴더를 옮기면 압축해제 확장의 ID 가 바뀝니다 — 새 폴더로 `add` 를 다시 하세요(같은 폴더의 옛 줄은 지워집니다). 그 확장 쪽에는 `nativeMessaging` 권한과 `chrome.runtime.sendNativeMessage('com.krs.gitsync', { task })` 호출이 있어야 합니다.
+
 ### 패널 캡처 (Help Chat 줄의 캡처 단추)
 
 2026-10-17 사용자 지정: "사이드패널 캡쳐 기능을 추가해줘. 클릭클릭 하면 1개 이상을 캡쳐해서 해당 부분의 코드나 이미지를 복사할 수 있게. 그 기능은 상단에 두고
@@ -2198,6 +2216,7 @@ kr_ext_rerp 의 Help Chat 처럼 패널 맨 아래에 한 줄 입력이 있습�
 | `background.js` | 아이콘 클릭 시 사이드 패널 열기, 홈 카드의 부탁 처리 — "패널 열어 달라", "근태를 읽어 달라"(HR 작업 탭을 열어 읽고, 자기가 연 탭은 닫는다) · 사후정산 입력 화면의 부탁 처리 — "증빙 한 장을 읽어 달라"(`receiptRead`, 로컬 CLI → API 키) · 홈 카드의 출장 줄에 넣은 증빙 받기(`evidenceKeep` — 읽어서 보관함에 담는다, `src/intake.js`)와 보관함 줄여 적기(`evidenceMarks`) · 홈 카드가 그 증빙을 사후정산에 올릴 때 보관함에서 꺼내 주기(`evidenceGiven`·`evidenceFile`), 올린 뒤 표시 걷기(`evidenceDone`), 활동 기록 남기기(`tripLog`) · 홈 카드의 출퇴근 기록 읽기(`hrCommuteWeek` — 근태 읽기와 HR 작업 탭을 같이 씀) |
 | `sidepanel.html/css/js` | 화면과 상호작용(격자 렌더, 드래그 선택, 예약 폼) |
 | `gitsync.js` | 패널 머리의 git 아이콘: 확인 결과 → 모양(`gitView` — 같음·새 커밋 수·겹침·갈라짐), 받은 결과의 말(`pullSaid`), 10분마다 확인·누르면 받기·다시 불러오기(`createGitSync`). git 은 다리의 `native/gitsync.mjs`(받아 오기·비교·`pull --ff-only`) |
+| `native/gitclient.mjs` · `native/gitclient-setup.mjs` | 다른 확장(ubob 등)이 빌려 쓰는 받기 다리(2026-11-13): 호스트 `com.krs.gitsync`(`gitclient-bridge.bat`) — 부른 쪽 주소로 등록 표(`gitclients.json`)에서 폴더를 찾아 `gitStatus`·`gitPull` 만 한다. 등록은 `gitclient-setup.mjs add <확장 폴더>`(확장 ID 셈·표·매니페스트·레지스트리) |
 | `attendpanel.js` | 근태 탭 화면: 종류·갈래 고르기, 며칠간 칩과 달력, 빈 칸 표시, 말로 채우기, 올리기, 반차 알람(출근이 정시가 아닌 날 — 유연근무를 먼저 올리고 쓰기는 사람이 고름), 연차현황 한 줄(HR), 유연의 출퇴근 위반(어긴 시각 붉게 · 줄마다 `변경` — 출퇴근기록 변경신청)(4W·8W·3M·6M·12M), 연차 안의 기념일 지원 체크박스(결재요청 뒤 복지기금 신청 화면을 새 탭에 열어 채우기·신청 화면만 열기·신청 현황), 신청 내역(두 줄 카드·펼치기·기간 조회)과 수정·변경·회수·취소신청 |
 | `src/mailgrab.js` | 메일 읽기(2026-10-15): 주소로 메일 사이트를 가리고(`mailSiteOf` — Outlook 웹·eClass 쪽지), 열린 메일의 제목·보낸 사람·받는 사람·날짜·본문과 첨부 목록(`mailProbe` — Outlook 은 카드의 dragstart 가 싣는 `attachment` JSON 으로 이름·크기·ID), 첨부 카드·메일 칸 표시(`data-krs-attach`·`data-krs-cap="mail"`), 첨부 원본 받기(`mailFetch` — 페이지 세계에서 blob 내려받기를 가로채 파일째), 끌어 놓은 첨부 받기(`parseDrop`·`grabDropped`), 탭 단위 `probeTab`·`grabTab`·`fetchTab`·`unmarkTab` — `webpick.js` 의 전체·부분이 부른다 |
 | `src/officetext.js` | 문서 파일 글자 뽑기(2026-10-15): docx·pptx·xlsx·hwpx 를 ZIP(`DecompressionStream('deflate-raw')`)으로 풀어 본문·슬라이드(메모)·시트·구역의 글자, 표는 ` \| ` 로, 길면 자름 — 공문 탭의 원본 첨부를 읽기에 글로 준다. 옛 형식(hwp·doc·ppt·xls)·암호·DRM 은 까닭과 함께 넘긴다 |
@@ -2325,6 +2344,7 @@ node test/search.test.mjs       # 문장 해석 → 예약 가능 목록
 node test/llm.test.mjs          # 로컬 CLI → API 키 → 규칙 폴백, 명세와 다른 답은 다음 길로, 행위의 작업으로 말 읽기(fillAction)
 node --test "actions/test/*.test.mjs"   # 행위 층: 생성물 일치·명세 검사(1단계 호환 — 생성된 attend·search 작업이 옮기기 전 input.yaml 과 같은 칸)·관문(초안/실행 모드·when·새 형)·사전설정·기록(지문·자르기·YAML 왕복)·디스패처(확인·hash·outcome·로그 한 줄)·실행기 어댑터(가짜 실행기로 인자 변환·차례)
 node test/gitsync.test.mjs      # git 아이콘: 임시 저장소(맨 저장소 + 둘)로 받아 오기·새 커밋 세기·겹침·갈라짐 거절·빨리 감기 받기·다시 불러올지, 다리의 gitStatus·gitPull, 아이콘의 모양과 누름
+node --test test/gitclient.test.mjs   # 다른 확장의 받기 다리: 등록된 주소만 제 폴더를 확인·받기, 받기 아닌 작업 거절, 진짜로 띄운 다리, 확장 ID 셈(이 확장의 실제 ID)·표·매니페스트·레지스트리 명령
 node test/travel.test.mjs       # 여비계산서: 규칙·운임 생성물 일치, 식수·일비·교통편 셈, 목록·작성 화면 읽기, 저장 요청, 올리는 흐름
 node test/routes.test.mjs       # 출장지마다 기억하는 교통편: 무엇을 기억하는지(만든 사전정산·사이트의 줄), 담기·꺼내기, 다음 출장에서 되살리기
 node test/routecard.test.mjs    # 그 기억을 패널에서: 출장 카드를 펴면 저장되고, 같은 출장지를 다시 적으면 그 길이 먼저다(사이트는 흉내)
