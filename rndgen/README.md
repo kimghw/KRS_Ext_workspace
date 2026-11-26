@@ -2,7 +2,7 @@
 
 KRS WORKSPACE 사이드패널 **R&D** 탭의 카드 하나와 카드 하나의 위쪽 몫.
 
-- **과제 더하기**(머리 줄의 차년도 아이콘 · 과제 없음 카드의 `과제 더하기` · 빈 차년도 카드의 `사업계획서에서 이 차년도 뽑기` — 칩 줄의 ＋ 는 2026-10-19 사용자 지정 "sscb 옆에 더하기 취소하고, 과제 더하기 옆에 과제 뱃지를 선택할 수 있게" 로 없앴고, 대상 과제는 카드 제목 옆의 **배지**(장부의 과제들 · 새 과제)로 고른다) — 연구개발계획서 YAML 을 그대로 넣거나,
+- **과제 더하기**(칩 줄 끝의 ＋(새 과제) · 머리 줄의 차년도 아이콘 · 과제 없음 카드의 `과제 더하기` · 빈 차년도 카드의 `사업계획서에서 이 차년도 뽑기` — 칩 줄의 ＋ 는 2026-10-19 사용자 지정 "sscb 옆에 더하기 취소하고, 과제 더하기 옆에 과제 뱃지를 선택할 수 있게" 로 없앴다가 2026-11-26 사용자 지정 "과제 더하기 기능 추가해줘" · "근데 안보여 어디있는데?" 로 다시 둠, 대상 과제는 카드 제목 옆의 **배지**(장부의 과제들 · 새 과제)로 고른다) — 연구개발계획서 YAML 을 그대로 넣거나,
   **사업계획서·연구계획서**(PDF · HWPX · DOCX · XLSX · PPTX · TXT/MD)에서 **그 차년도의 KR 스냅샷 YAML**(`KR_<과제>.yaml`)을 Claude 로 뽑아 미리보기 뒤 장부에 넣는다. `직접 적기`는 지금까지의 새 과제 폼.
 - **변경 및 이력 관리의 YAML 고치기** — 과제를 보고 있고 그 차년도에 예산 정보가 있으면 늘 서는 **변경 및 이력 관리** 카드(`sidepanel.html` 의 `#rdChangeBox` — 진행 기록 아래, 다른 칸처럼 접힌 한 줄)의 위쪽 — 펴야 보인다.
   처음엔 머리 아래의 따로 선 `변경사항 반영` 카드였다가 2026-10-16 사용자 지정("이건 변경 및 이력 관리 로 해서 -- 변경이력 이걸 대체해줘")으로 변경이력 칸을 대체해 그 카드의 위쪽이 됐다 —
@@ -12,7 +12,7 @@ KRS WORKSPACE 사이드패널 **R&D** 탭의 카드 하나와 카드 하나의 �
 > 2026-10-16 사용자 지정(원문): "sscb 버튼 누르면 그리 안감, + 누르면 Yaml 파일을 넣던지 아니면 사업계획서를 넣으면 과제의 YAML을 추출하도록 해줘. 그 스킬은 '차년도 YAML 뽑는 스킬' 거기 있지.
 > 그리고 변경사항의 내용을 임의 형식으로 제공 하면 yaml 로 수정해서 업데이트 하도록 해줘."
 >
-> 앞 문장("sscb 버튼 누르면 그리 안감")은 rndpanel.js 의 버그였다 — 새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 아무 일도 없었다. 이제 폼·덮개 동안에는 과제 칩이 모두 꺼지며(＋ 칩은 2026-10-19 에 없앴다),
+> 앞 문장("sscb 버튼 누르면 그리 안감")은 rndpanel.js 의 버그였다 — 새 과제 폼을 연 채 보고 있던 과제의 칩을 누르면 아무 일도 없었다. 이제 폼·덮개 동안에는 과제 칩이 모두 꺼지고 ＋ 가 켜지며,
 > 어느 칩이든 누르면 폼·덮개를 닫고 그 과제로 간다(`pickProject`).
 
 처음(2026-10-08)에는 "이 확장은 YAML 을 뽑지 않는다" 였다 — 스킬 묶음(`rnd/skills/`)을 복사해 쓰라고 두었을 뿐이다. 이제 **그 차년도 스냅샷 뽑기와 고치기**는 여기서 하고,
@@ -22,8 +22,8 @@ Claude 가 지킬 규칙은 [CLAUDE.md](CLAUDE.md). 쓰는 법(사람 눈높이)
 ## 흐름
 
 ```
-머리 줄의 차년도 아이콘(2026-10-19) · 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 단추 ── rndpanel.js(onAdd 훅) ──▶ panel.js openAdd(대상 { projectId } · {} · { projectId, n } — 아이콘이면 아직 없는 첫 차년도를 골라 둠 firstMissing)
-   덮개: rnd.setOverlay('add', close) — 머리·몸통·빈 차년도 카드가 숨고 과제 칩은 모두 꺼진다(칩 줄의 ＋ 는 2026-10-19 에 없앰). 과제 칩을 누르면 close → 카드가 닫히고 그 과제로.
+칩 줄 끝의 ＋(2026-11-26 다시) · 머리 줄의 차년도 아이콘(2026-10-19) · 과제 없음 카드의 과제 더하기 · 빈 차년도 카드의 단추 ── rndpanel.js(onAdd 훅) ──▶ panel.js openAdd(대상 {} · { projectId } · {} · { projectId, n } — 아이콘이면 아직 없는 첫 차년도를 골라 둠 firstMissing)
+   덮개: rnd.setOverlay('add', close) — 머리·몸통·빈 차년도 카드가 숨고 과제 칩은 모두 꺼지고 칩 줄의 ＋ 가 켜진다. 과제 칩을 누르면 close → 카드가 닫히고 그 과제로.
    제목 옆 과제 배지(paintProjects — 장부의 과제들 · 새 과제, 열 개면 새 과제 잠김) ─▶ retarget: 대상만 바꾼다 — 차년도 단추 줄(골라 둔 숫자·모두·없는 것만은 그대로, 자동이었으면 firstMissing)·별칭(뽑은 것이 없을 때만)이 따라가고 재료·미리보기는 둔다(다시 뽑기는 바뀐 대상으로)
    │
    ├─ YAML 파일 ─────────────────────────────▶ rnd.intake(texts, { source: 'file' }) ─▶ (들어가면) 카드 닫고 rnd.pick(과제, 차년도)
@@ -79,7 +79,7 @@ rnd.intake 를 지나면(어느 길이든 — rndpanel 의 끌어 놓기·붙여
 |---|---|
 | `sidepanel.html` | `<link rel="stylesheet" href="rndgen/panel.css">` · `#rdStatus` 줄 앞의 `<div id="rdgAdd" class="rdg hidden">` · 변경 및 이력 관리 카드(`#rdChangeBox` — `#rdBody` 안 진행 기록 아래) 머리 줄 뒤의 `<div id="rdgRevise" class="rdg hidden">` (+ 과제 없음 카드·스킬 칸의 문구) |
 | `sidepanel.js` | `import { createRndGen } from './rndgen/index.js'` · `const rndgen = createRndGen({ rnd, $, escapeHtml, logEvent, flash, ai: () => ({ apiKey, cli }), today })` · `rnd.wire()` 뒤 `rndgen.wire()` |
-| `rndpanel.js` | 손잡이 `current`·`view`·`onView`·`onAdd`·`setOverlay`·`addManually`·`intake`(결과를 돌려줌)·`onIntake`·`onDelete`·`pick`·`setAlias`·`download`·`readAsset`, `st.overlay`, 칩·머리의 폼/덮개 칠, 머리 줄의 차년도 아이콘·과제 더하기·빈 차년도 카드 단추 → onAdd(없으면 새 과제 폼 — 칩 줄의 ＋ 는 2026-10-19 에 없앰), 드롭 표시 거두기(잡는 단계) |
+| `rndpanel.js` | 손잡이 `current`·`view`·`onView`·`onAdd`·`setOverlay`·`addManually`·`intake`(결과를 돌려줌)·`onIntake`·`onDelete`·`pick`·`setAlias`·`download`·`readAsset`, `st.overlay`, 칩·머리의 폼/덮개 칠, 칩 줄 끝의 ＋·머리 줄의 차년도 아이콘·과제 더하기·빈 차년도 카드 단추 → onAdd(없으면 새 과제 폼), 드롭 표시 거두기(잡는 단계) |
 | `actions/spec/rnd/` | `_domain.yaml`(llm per-kind · consumer `rndgen/llm.js askRndTask`) · `extract.yaml`·`revise.yaml`(planned — 답 칸·규칙·uses) → `node tools/gen-actions.mjs` → `actions/spec.js` |
 | `src/tasktune.js` · `src/ai.js` · `native/host.mjs` | 두 작업만 effort medium · max_tokens 32000 · 입력 15만 자 · CLI 10분 · API 스트리밍(SSE). 다른 작업은 바이트까지 그대로 |
 | `doctext/browser.js` | 끝에 `pdfAllText`(모든 쪽 글자 층 — 기존 `pdfText` 는 6쪽) |
