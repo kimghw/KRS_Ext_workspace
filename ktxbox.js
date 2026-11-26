@@ -4,7 +4,7 @@
 // 말로 찾기(2026-11-06 사용자 지정: "차량 ktx 부분에도 채팅으로 조회 하는거 기능 차량이랑 동일하게 넣어줘") — 날짜 줄 아래의 말로 찾기 칸(sidepanel.js runKtxAsk)이
 // KTX 보기에서는 여기의 ask(text) 로 온다: parse(src/llm.js ktxSmart)가 읽은 조각을 지금 칸 위에 얹어 역·인원은 이 칸에, 출발일·시는 날짜 줄(setWhen)에 채우고 바로 조회한다.
 import { TRANSPORT_ICON } from './src/icons.js';
-import { KTX_STATIONS, KTX_LIMIT, WATCH_MAX } from './src/ktx.js';
+import { KTX_STATIONS, KTX_TOP, KTX_LIMIT, WATCH_MAX } from './src/ktx.js';
 
 export const PREF_KEY = 'ktxPref';
 const DEFAULT = { from: '부산', to: '서울', adults: 1 };
@@ -92,7 +92,13 @@ export function createKtxBox({
   });
 
   const option = (text, value) => new doc.defaultView.Option(text, value);
-  for (const select of [el.from, el.to]) for (const [name] of KTX_STATIONS) select.add(option(name, name));
+  for (const select of [el.from, el.to]) {
+    KTX_STATIONS.forEach(([name], i) => {
+      // 자주 쓰는 역(앞의 KTX_TOP 곳)과 나머지 사이에 고를 수 없는 줄을 둔다.
+      if (i === KTX_TOP) { const rule = option('──────', ''); rule.disabled = true; select.add(rule); }
+      select.add(option(name, name));
+    });
+  }
   for (let n = 1; n <= 9; n++) el.pax.add(option(`${n}명`, String(n)));
   const names = new Set(KTX_STATIONS.map(([name]) => name));
   const setPref = (p) => {
