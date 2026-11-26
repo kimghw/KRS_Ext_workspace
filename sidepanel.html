@@ -430,7 +430,7 @@
          어디에도 올리지 않는다 — 이 브라우저(chrome.storage 의 rndBook)에만 남고, JSON 으로 내보내고 들여온다. rndpanel.js 가 그린다.
          과제는 공문 탭의 공문 설정에서 가져올 수 있다(처음 열 때 과제가 없으면 저절로). 다른 탭에서는 통째로 숨는다. -->
     <section id="rnd" class="rnd hidden" aria-label="R&amp;D 과제 관리">
-      <!-- 과제 칩 한 줄 — 별칭(없으면 과제명을 줄여). 맨 끝의 ＋ 칩은 2026-10-19 에 없앴다 — 과제 더하기 카드는 머리 줄의 차년도 아이콘으로 열고 대상 과제는 그 카드 제목 옆의 배지로. -->
+      <!-- 과제 칩 한 줄 — 별칭(없으면 과제명을 줄여). 맨 끝의 ＋ 는 새 과제를 대상으로 과제 더하기 카드를 연다(2026-10-19 에 없앴다가 2026-11-26 에 다시 둠) — 대상 과제는 그 카드 제목 옆의 배지로 바꾼다. -->
       <div id="rdProjects" class="rd-projects" role="group" aria-label="과제"></div>
       <div id="rdEmpty" class="rd-empty card hidden">
         <p>적어 둔 과제가 없습니다. <strong>과제 더하기</strong>로 연구개발계획서 YAML 을 넣거나 사업계획서에서 뽑고, 공문 탭의 공문 설정에 둔 과제를 가져오거나, 직접 적으세요.</p>
@@ -499,8 +499,8 @@
           <button type="button" id="rdFDel" class="ghost rd-del hidden" title="이 과제와 적어 둔 차년도 내용을 모두 지웁니다. 두 번 누릅니다.">과제 지우기</button>
         </div>
       </div>
-      <!-- 과제 더하기 카드(rndgen/panel.js — YAML 넣기 또는 사업계획서에서 고른 차년도(여러 개도) KR 스냅샷 뽑기, 2026-10-16). 머리 줄의 차년도 아이콘·과제 없음 카드의 과제 더하기·빈 차년도 카드의 단추가 연다.
-           제목 옆의 과제 배지로 대상 과제를 고른다(2026-10-19 — 칩 줄의 ＋ 는 없앰). 열려 있으면 머리·몸통은 숨는다(rndpanel.js setOverlay) — 과제 칩을 누르면 닫히고 그 과제로 간다. 안은 rndgen/panel.js 가 그린다. -->
+      <!-- 과제 더하기 카드(rndgen/panel.js — YAML 넣기 또는 사업계획서에서 고른 차년도(여러 개도) KR 스냅샷 뽑기, 2026-10-16). 칩 줄 끝의 ＋·머리 줄의 차년도 아이콘·과제 없음 카드의 과제 더하기·빈 차년도 카드의 단추가 연다.
+           제목 옆의 과제 배지로 대상 과제를 고른다(2026-10-19). 열려 있으면 머리·몸통은 숨고 칩 줄의 ＋ 가 켜진다(rndpanel.js setOverlay) — 과제 칩을 누르면 닫히고 그 과제로 간다. 안은 rndgen/panel.js 가 그린다. -->
       <div id="rdgAdd" class="rdg hidden"></div>
       <div class="statusline"><span id="rdStatus" class="status" role="status" aria-live="polite"></span></div>
       <!-- 예산 정보가 없는 차년도를 보고 있을 때(2026-10-11 사용자 지정 — "비활성 차년도면 이전 차년도 기록을 보여주지 말고 R&D 설정을 열어서") —
