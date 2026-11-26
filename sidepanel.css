@@ -4,7 +4,7 @@
   --fg: #1d1d1f; --muted: #6e6e76; --faint: #76767e; --line: #eaeaec;
   --free: #d6eee1; --free-line: #acd6bc; --free-hover: #b4dec5;
   --busy: #e5e6eb; --busy-line: #d3d5dd;
-  --pick: #007aff; --pick-soft: #eaf3ff; --danger: #d73333;
+  --pick: #007aff; --pick-soft: #eaf3ff; --danger: #d73333; --done: #1e8e3e;
   --unknown: #d2a24a; --mine: #dcaa37;
   --shadow: 0 2px 8px rgb(25 30 45 / 3%), 0 0 1px rgb(25 30 45 / 5%);
 }
@@ -48,11 +48,12 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 .app-header .teams-notes[hidden] { display: none; }
 .refresh.spin svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* GitHub 새 커밋(gitsync.js). 로고(rerp 와 같은 mark-github)는 칠한 모양이라 선 아이콘의 fill/stroke 를 뒤집는다. 새 커밋·재시작 대기는 연한 파랑, 갈라짐·겹침은 빨간 배지로 구분한다. */
+/* GitHub 새 커밋(gitsync.js). 로고(rerp 와 같은 mark-github)는 칠한 모양이라 선 아이콘의 fill/stroke 를 뒤집는다. 새 커밋은 연한 파랑, 받기 완료(다시 불러오기 대기 포함)는 초록 ✓(2026-11-26), 갈라짐·겹침은 빨간 배지로 구분한다. */
 .app-header .git-sync svg { fill: currentColor; stroke: none; }
 .app-header .git-sync[hidden] { display: none; }
 .app-header .git-sync[data-mode="error"] svg { opacity: .45; }
-.app-header .git-sync[data-mode="new"], .app-header .git-sync[data-mode="reload"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
+.app-header .git-sync[data-mode="new"] { color: var(--pick); border-color: color-mix(in srgb, var(--pick) 30%, var(--line)); background: var(--pick-soft); }
+.app-header .git-sync[data-mode="reload"], .app-header .git-sync[data-mode="done"] { color: var(--done); border-color: color-mix(in srgb, var(--done) 35%, var(--line)); background: color-mix(in srgb, var(--done) 12%, var(--surface)); }
 /* B(브릿지) — 연결 지침 복사(머리, 2026-10-23 · 10-24 사용자 지정 "rerp의 B와 동일하게"): 다리가 없으면 늘 보이는 글자 B(sidepanel.js paintAskReady).
    API 키로 말 찾기가 되는 중이면 옅게(.alt). hidden 은 button 의 display 가 UA 의 [hidden] 을 이기므로 따로. */
 .app-header .cli-guide-head[hidden] { display: none; }
@@ -98,6 +99,7 @@ button.icon { width: 32px; min-height: 32px; padding: 7px; }
 }
 .git-count[hidden] { display: none; }
 .git-sync[data-mode="diverged"] .git-count, .git-sync[data-mode="blocked"] .git-count { background: var(--danger); }
+.git-sync[data-mode="reload"] .git-count, .git-sync[data-mode="done"] .git-count { background: var(--done); }
 .controls { padding: 11px 16px; }
 .date-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .date-display { position: relative; display: flex; align-items: center; gap: 11px; min-width: 0; cursor: pointer; border-radius: 8px; }
@@ -577,7 +579,7 @@ body { padding-bottom: var(--helpbar-h, 0px); }
     --fg: #f5f5f7; --muted: #a4a4ac; --faint: #8e8e97; --line: #36363a;
     --free: #284d3d; --free-line: #46765c; --free-hover: #35664b;
     --busy: #414149; --busy-line: #54545e; --pick: #409cff; --pick-soft: #233449;
-    --danger: #ff7871; --mine: #e8ba56; --shadow: 0 2px 8px rgb(0 0 0 / 8%);
+    --danger: #ff7871; --done: #3fb27f; --mine: #e8ba56; --shadow: 0 2px 8px rgb(0 0 0 / 8%);
   }
   .count { background: var(--surface-soft); }
 }

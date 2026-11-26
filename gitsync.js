@@ -1,7 +1,9 @@
 // 패널 머리의 git 아이콘 — 확장 폴더(git 저장소)가 GitHub 보다 뒤졌는지 몇 분마다 보고, 새 커밋이 있으면 그 수를 띄운다.
 // 누르면 받는다(빨리 감기만 — 고치던 것은 줄이 부딪치지 않으면 받은 뒤 다시 얹는다). git 은 다리(native/gitsync.mjs)가 돌린다 — 다리가 없으면 아이콘은 숨는다.
-// 받은 것에 확장 파일이 있으면 브라우저에 다시 불러와야 반영된다 — 그때는 아이콘이 '다시 불러오기'(↻)가 되고,
-// 한 번 더 누르면 확장을 다시 불러온다(패널이 닫힌다 — 다시 열면 된다).
+// 받기가 끝나면 다시 확인하지 않고 곧바로 귀퉁이가 초록 ✓(받기 완료)가 된다 — 받은 것에 확장 파일이 있으면 브라우저에 다시 불러와야 반영되므로
+// 그 ✓ 를 한 번 더 누르면 확장을 다시 불러오고(패널이 닫힌다 — 다시 열면 된다), 없으면 ✓ 는 10분(다음 확인)까지 남고 누르면 다시 확인한다.
+// (2026-11-26 사용자 지정: "완료되고 나서도 진행 표시가 나온는데 완료되면 완료되었다고 표기해 줄 수 없나?" — 그 전엔 받은 뒤 ↻ 가 진행 중처럼 보였고,
+//  받은 뒤 다시 확인하는 동안 깜박임이 이어지다 아이콘이 말없이 숨었다.)
 // 2026-10-09 사용자 지정: "현재 프로젝트의 github 커밋된게 있는지 모니터링 할수 있는 아이콘 추가하고, 클릭하면 git pull".
 
 import { NATIVE_HOST } from './src/llm.js';
@@ -82,11 +84,15 @@ export function pullSaid(r) {
  */
 export function createGitSync({ button, badge, log = () => {}, say = () => {}, send = ask, reload = () => chrome.runtime.reload(), now = () => new Date() }) {
   // last 는 마지막으로 확인한 것, at 은 그때. reload 는 받은 것을 반영하려면 다시 불러와야 한다는 표시(그 말은 reloadTitle).
-  const st = { last: null, at: null, busy: false, reload: false, reloadTitle: '' };
+  // done 은 받기 완료({ at, text }) — 귀퉁이 ✓. 사용자가 누른 확인·새 커밋·GIT_CHECK_MS 가 지운다.
+  const st = { last: null, at: null, busy: false, reload: false, reloadTitle: '', done: null };
 
   function paint() {
-    const v = st.reload ? { mode: 'reload', count: '↻', title: st.reloadTitle } : gitView(st.last, { at: st.at });
-    // 받을 것이 있을 때만 보인다 — 귀퉁이 수(새 커밋 수·다시 불러오기 ↻)가 서는 모양(new·blocked·diverged·reload). 같음·ahead·확인 실패·다리 없음은 숨김
+    const doneAt = st.done ? ` (${hhmm(st.done.at)})` : '';
+    const v = st.reload ? { mode: 'reload', count: '✓', title: `받기 완료${doneAt} — ${st.reloadTitle}` }
+      : st.done ? { mode: 'done', count: '✓', title: `받기 완료${doneAt} — ${st.done.text}\n누르면 다시 확인합니다.` }
+      : gitView(st.last, { at: st.at });
+    // 받을 것이 있을 때만 보인다 — 귀퉁이 수(새 커밋 수·받기 완료 ✓)가 서는 모양(new·blocked·diverged·reload·done). 같음·ahead·확인 실패·다리 없음은 숨김
     // (2026-11-05 사용자 지정: "깃허브 업데이트 할게 아니면 아 이이콘 안보여줘도 될듯" — 10-26 의 "늘 보이게"를 뒤집음).
     button.hidden = !v.count;
     button.dataset.mode = v.mode;
@@ -96,15 +102,16 @@ export function createGitSync({ button, badge, log = () => {}, say = () => {}, s
     badge.hidden = !v.count;
   }
 
-  const busy = (on) => {
+  /** show 가 거짓이면 깜박이지 않는다(받기가 끝난 뒤의 확인 — 끝났는데 진행 중처럼 보이지 않게). */
+  const busy = (on, show = true) => {
     st.busy = on;
-    button.classList.toggle('busy', on);
+    button.classList.toggle('busy', on && show);
   };
 
-  /** quiet 는 몇 분마다 도는 확인이다 — 패널이 가려져 있으면 건너뛴다. */
-  async function check({ quiet = true } = {}) {
+  /** quiet 는 몇 분마다 도는 확인이다 — 패널이 가려져 있으면 건너뛰고, 받기 완료(✓)는 10분이 될 때까지 남긴다. */
+  async function check({ quiet = true, show = true } = {}) {
     if (st.busy || st.reload || (quiet && document.hidden)) return;
-    busy(true);
+    busy(true, show);
     try {
       st.last = await send('gitStatus', 45_000);
     } catch (err) {
@@ -113,11 +120,13 @@ export function createGitSync({ button, badge, log = () => {}, say = () => {}, s
       busy(false);
     }
     st.at = now();
+    if (st.done && (!quiet || !(st.last?.ok && !st.last.behind) || now() - st.done.at >= GIT_CHECK_MS)) st.done = null;
     paint();
   }
 
   async function pull() {
     busy(true);
+    st.done = null;
     button.title = 'GitHub 에서 받는 중…';
     let r;
     try {
@@ -133,10 +142,20 @@ export function createGitSync({ button, badge, log = () => {}, say = () => {}, s
     if (said.reload) {
       st.reload = true;
       st.reloadTitle = said.text;
+      st.done = { at: now(), text: said.text };
       paint();
       return;
     }
-    await check({ quiet: false });
+    if (said.ok) {
+      // 빨리 감기로 받았으니 올라간 곳과 같다 — 다시 확인하지 않고 곧바로 받기 완료(✓)
+      const was = st.last?.ok ? st.last : {};
+      st.last = { ...was, ok: true, behind: 0, ahead: r.pulled ? 0 : was.ahead || 0, commits: [], overlap: [], carry: [], fetchError: '' };
+      st.at = now();
+      st.done = { at: now(), text: said.text };
+      paint();
+      return;
+    }
+    await check({ quiet: false, show: false });
     // 못 받았으면 그 까닭을 풍선 말 맨 위에 둔다(다른 탭에서는 상태 줄이 보이지 않는다).
     if (!said.ok) button.title = `${said.text}\n\n${button.title}`;
   }

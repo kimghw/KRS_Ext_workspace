@@ -323,8 +323,10 @@ console.log('아이콘 — 확인·받기·다시 불러오기');
     sent.length = 0;
     await sync.click();
     assert.deepEqual(sent, ['gitPull']);
-    assert.deepEqual([button.hidden, button.dataset.mode, badge.textContent], [false, 'reload', '↻']);
+    assert.deepEqual([button.hidden, button.dataset.mode, badge.textContent], [false, 'reload', '✓']);
+    assert.match(button.title, /^받기 완료 \(09:30\) — GitHub 에서 커밋 2개를 받았습니다/);
     assert.match(button.title, /한 번 더 누르면 확장을 다시 불러옵니다/);
+    assert.equal(button.classList.contains('busy'), false, '받기가 끝나면 깜박임이 멈춘다');
     assert.deepEqual([logs.at(-1)[0], logs.at(-1)[1], logs.at(-1)[3].pulled], ['git', true, 2]);
     assert.equal(said.at(-1)[1], '');
   });
@@ -337,6 +339,65 @@ console.log('아이콘 — 확인·받기·다시 불러오기');
   });
 }
 {
+  // 받기 완료(✓) — 확장 파일이 없으면(문서·다리만) 다시 확인하지 않고 곧바로 ✓, 몇 분마다 도는 확인은 남기고 누른 확인·새 커밋·10분이 지운다
+  // (2026-11-26 사용자 지정: "완료되고 나서도 진행 표시가 나온는데 완료되면 완료되었다고 표기해 줄 수 없나?")
+  const dom = new JSDOM('<button id="b" hidden><span id="c" hidden></span></button>');
+  globalThis.document = dom.window.document;
+  const button = dom.window.document.getElementById('b');
+  const badge = dom.window.document.getElementById('c');
+  const base = { ok: true, branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0, commits: [], dirty: 1, overlap: [] };
+  let t = new Date(2026, 10, 26, 14, 5).getTime();
+  let status = { ...base, behind: 1, commits: [{ hash: 'abc1234', subject: '설명' }], fetchError: '네트워크' };
+  const sent = [];
+  const busyDuring = [];
+  const send = async (task) => {
+    sent.push(task);
+    busyDuring.push(button.classList.contains('busy'));
+    return task === 'gitStatus' ? status : { ok: true, from: 'aaa', to: 'bbb', pulled: 1, files: ['README.md'], fileCount: 1, reload: false, deps: false };
+  };
+  Object.defineProperty(dom.window.document, 'hidden', { configurable: true, get: () => false });   // jsdom 은 기본이 가려짐 — 몇 분마다 도는 확인이 돌게
+  const sync = createGitSync({ button, badge, send, now: () => new Date(t) });
+  await ta('받으면 다시 확인하지 않고 곧바로 초록 ✓(받기 완료) — 깜박임은 받는 동안만', async () => {
+    await sync.check({ quiet: false });
+    sent.length = 0; busyDuring.length = 0;
+    await sync.click();
+    assert.deepEqual(sent, ['gitPull']);
+    assert.deepEqual(busyDuring, [true]);
+    assert.deepEqual([button.hidden, button.dataset.mode, badge.textContent, badge.hidden, button.classList.contains('busy')], [false, 'done', '✓', false, false]);
+    assert.match(button.title, /^받기 완료 \(14:05\) — GitHub 에서 커밋 1개를 받았습니다\(aaa → bbb, 파일 1개\)\.\n누르면 다시 확인합니다\.$/);
+    assert.deepEqual([sync.state.last.behind, sync.state.last.commits, sync.state.last.fetchError, sync.state.last.dirty], [0, [], '', 1]);
+  });
+  await ta('몇 분마다 도는 확인은 ✓ 를 남기고, 10분이 지나면 지운다(같음이면 숨음)', async () => {
+    status = base;
+    t += 5 * 60_000;
+    await sync.check();
+    assert.deepEqual([button.hidden, button.dataset.mode], [false, 'done']);
+    t += 6 * 60_000;
+    await sync.check();
+    assert.deepEqual([button.hidden, button.dataset.mode], [true, 'same']);
+  });
+  await ta('그 사이 새 커밋이 생기면 ✓ 대신 새 커밋 수', async () => {
+    status = { ...base, behind: 1 };
+    await sync.click();   // 같음 → 다시 확인(숨은 단추지만 누름을 흉내)
+    await sync.click();   // 받기 → ✓
+    assert.equal(button.dataset.mode, 'done');
+    status = { ...base, behind: 3 };
+    await sync.check();
+    assert.deepEqual([button.dataset.mode, badge.textContent], ['new', '3']);
+  });
+  await ta('✓ 를 누르면 다시 확인하고 ✓ 는 지운다', async () => {
+    status = { ...base, behind: 1 };
+    await sync.check({ quiet: false });
+    await sync.click();
+    assert.equal(button.dataset.mode, 'done');
+    status = base;
+    sent.length = 0;
+    await sync.click();
+    assert.deepEqual(sent, ['gitStatus']);
+    assert.deepEqual([button.hidden, button.dataset.mode], [true, 'same']);
+  });
+}
+{
   const dom = new JSDOM('<button id="b"><span id="c"></span></button>');
   globalThis.document = dom.window.document;
   const button = dom.window.document.getElementById('b');
@@ -344,12 +405,15 @@ console.log('아이콘 — 확인·받기·다시 불러오기');
   const base = { ok: true, branch: 'main', upstream: 'origin/main', ahead: 0, behind: 1, commits: [], dirty: 0, overlap: [] };
   let status = base;
   const said = [];
-  const send = async (task) => (task === 'gitStatus' ? status : { ok: false, error: '고치고 있는 파일과 겹쳐 받지 않았습니다(a.js) — 커밋하거나 치운 뒤 다시 누르세요.' });
+  const busyAt = [];
+  const send = async (task) => { busyAt.push([task, button.classList.contains('busy')]); return task === 'gitStatus' ? status : { ok: false, error: '고치고 있는 파일과 겹쳐 받지 않았습니다(a.js) — 커밋하거나 치운 뒤 다시 누르세요.' }; };
   const sync = createGitSync({ button, badge, send, say: (...a) => said.push(a) });
-  await ta('받지 못하면 그 까닭이 풍선 말 맨 위에 오고, 상태 줄에도 오류로', async () => {
+  await ta('받지 못하면 그 까닭이 풍선 말 맨 위에 오고, 상태 줄에도 오류로 — 받은 뒤의 다시 확인은 깜박이지 않는다', async () => {
     await sync.check({ quiet: false });
     status = { ...base, overlap: ['a.js'] };
+    busyAt.length = 0;
     await sync.click();
+    assert.deepEqual(busyAt, [['gitPull', true], ['gitStatus', false]]);
     assert.match(button.title, /^GitHub 에서 받지 못했습니다 — 고치고 있는 파일과 겹쳐/);
     assert.deepEqual([button.dataset.mode, button.hidden], ['blocked', false], '새 커밋이 있으니 받을 수 없어도 보인다');
     assert.equal(said.at(-1)[1], 'error');
