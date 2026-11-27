@@ -67,7 +67,8 @@ export async function findPeer(management = globalThis.chrome?.management) {
 }
 
 /**
- * 같은 PC 의 rERP 확장을 이어서 연결하는 절. 그 확장은 다리 대신 Help 서버(kr_ext_rerp help-server/server.js)로 Claude 에 닿는다 —
+ * 같은 PC 의 rERP 확장을 이어서 연결하는 절. 그 확장은 다리 대신 Help 서버(kr_ext_rerp help-server/server.js)로 Claude 에 닿고, 그 서버는
+ * 그 확장의 브릿지 실행기(native/install.ps1 — 호스트 com.krs.krx_help)를 한 번 등록하면 그 확장이 스스로 띄운다(2026-11-27 사용자 "워크스페이스도 동일하게") —
  * 연결 방법은 그 저장소의 CLAUDE.md 가 정본이라 여기서는 폴더를 찾는 법과 어디를 따르는지만 적는다. 있는지 모르면(undefined) 찾아보라고만 한다.
  */
 function peerSection(peer, ops, browser) {
@@ -80,8 +81,9 @@ ${known
     : `이 브라우저에 rERP 확장(${RERP_NAME})이 있는지 확장이 확인하지 못했습니다 — ${browser.page} 에서 보고, 없으면 이 절은 건너뜁니다.`}
 그 확장은 다리 대신 이 PC 의 Help 서버(node help-server/server.js, http://127.0.0.1:8106)로 Claude 에 닿습니다. 위 다리를 연결한 뒤 이어서:
 1. 그 확장 폴더를 찾습니다 — 흔히 이 확장 폴더 옆의 kr_ext_rerp 입니다. 맞는지는 \`${ops} id <그 폴더>\` 의 값이 ${known ? `${peer.id} 와` : '그 확장 카드의 ID 와'} 같은지로 봅니다(아니면 ${browser.page} 의 그 확장 카드 "로드 위치").
-2. 그 폴더의 CLAUDE.md "Help Chat (help-server) 을 쓸 때 필요한 것" 절을 따라 준비물을 확인하고 Help 서버를 띄웁니다(그 폴더의 help-server\\setup.cmd 가 CLI 최신화 · git pull · 서버 실행을 한 번에 — 그 창은 닫지 않게 안내).
-3. 확인 — curl http://127.0.0.1:8106/health 의 답에 "name":"krx-help" 가 있으면 됩니다. 그 확장 코드도 고치지 않습니다.${known && !peer.enabled ? `\n(그 확장이 꺼져 있으니 쓰려면 ${browser.page} 에서 켜 달라고 사용자에게 말합니다.)` : ''}`;
+2. 그 폴더의 CLAUDE.md "Help Chat (help-server) 을 쓸 때 필요한 것" 절을 따라 준비물을 확인합니다(그 폴더의 help-server\\setup.cmd 가 CLI 최신화 · git pull · 서버 실행을 한 번에).
+3. 그 확장의 브릿지 실행기를 등록합니다 — \`powershell -NoProfile -ExecutionPolicy Bypass -File <그 폴더>\\native\\install.ps1 -ExtensionId ${known ? peer.id : '<그 확장 ID>'}\` (관리자 권한 없이 HKCU, 호스트 com.krs.krx_help). 그러면 그 확장이 Help 서버를 창 없이 스스로 띄웁니다 — 브라우저를 켤 때 · 패널을 열 때 서버가 없으면(그 확장 설정 "서버가 없으면 자동 실행", 기본 켜짐). 그래서 setup.cmd 창은 닫아도 됩니다.
+4. 확인 — curl http://127.0.0.1:8106/health 의 답에 "name":"krx-help" 가 있으면 됩니다. 그 확장 코드도 고치지 않습니다.${known && !peer.enabled ? `\n(그 확장이 꺼져 있으니 쓰려면 ${browser.page} 에서 켜 달라고 사용자에게 말합니다.)` : ''}`;
 }
 
 /**
